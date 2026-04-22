@@ -1,0 +1,11 @@
+[Unit]
+Description=Run failover watchdog every 30 seconds
+Requires=failover-watchdog.service
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec=30
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

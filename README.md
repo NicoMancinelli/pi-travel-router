@@ -18,16 +18,20 @@ Hotel/Cafe Wi-Fi ──► wlan0 (STA) ──► Pi Zero 2 W ──► uap0 (AP)
                                      bypass Visible DPI
 ```
 
-**Uplink priority** (configure failover manually or via RaspAP):
-1. iPhone USB tether (`enx...` / `eth0`)
-2. Wi-Fi STA (`wlan0`)
+**Uplink priority** (automatic, managed by failover watchdog):
+1. iPhone USB tether (`enx...`) — metric 100, preferred
+2. Wi-Fi STA (`wlan0`) — metric 600, fallback
 
 **Key features:**
 - AP/STA concurrent mode — Pi connects upstream and broadcasts its own SSID simultaneously
 - TTL=65 mangling — makes all hotspot traffic appear to originate from the phone, bypassing Visible's hotspot throttling/detection
-- TCP BBR congestion control — better throughput on cellular links
+- TCP BBR + FQ — better throughput on cellular links
 - Tailscale mesh VPN — remote access to the router from anywhere; optional exit node for encrypted tunnel
-- iPhone keepalive — prevents iOS from sleeping the USB tether
+- **Auto iPhone tether** — udev rule detects plug-in and runs dhclient automatically; no manual hotspot toggle
+- **Uplink failover watchdog** — systemd timer every 30s; promotes tether to metric 100, falls back to Wi-Fi if tether drops
+- **log2ram** — `/var/log` in RAM, synced to SD periodically; protects card from continuous log writes
+- IPv6 disabled on uplinks — closes carrier DPI fingerprinting vector that TTL mangling alone doesn't cover
+- iPhone keepalive — root cron ping prevents iOS from suspending the USB tether
 - RaspAP web UI — browser-based management at `http://10.3.141.1`
 
 ---
@@ -442,6 +446,25 @@ cat /etc/modules-load.d/tcp_bbr.conf  # should contain: tcp_bbr
 
 ---
 
+## Repository Structure
+
+```
+├── scripts/
+│   ├── start-tether.sh        # udev: called on iPhone plug-in, runs dhclient
+│   ├── stop-tether.sh         # udev: called on iPhone unplug, releases lease
+│   ├── failover-watchdog.sh   # systemd: checks uplinks every 30s, adjusts metrics
+│   └── keepalive.sh           # cron: pings 8.8.8.8 to keep iOS tether alive
+├── config/
+│   ├── rc.local               # AP interface creation, TTL rules, power save
+│   ├── 90-ipheth.rules        # udev rules for auto iPhone tether
+│   ├── 99-tailscale.conf      # sysctl: IP forwarding for Tailscale
+│   ├── 99-disable-ipv6-uplink.conf  # sysctl: IPv6 off on uplinks
+│   └── tcp-bbr.conf           # sysctl: BBR + FQ
+└── systemd/
+    ├── failover-watchdog.service
+    └── failover-watchdog.timer
+```
+
 ## Potential Improvements
 
-See [IMPROVEMENTS.md](IMPROVEMENTS.md) for a roadmap of enhancements.
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for a full roadmap with GitHub-sourced tweaks, prioritized by impact.

@@ -1,0 +1,30 @@
+#!/bin/bash
+# Install to: /etc/rc.local
+# Make executable: chmod +x /etc/rc.local
+
+# Wait for wlan0 to associate, then match hostapd channel to it
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    CHAN=$(iw dev wlan0 info 2>/dev/null | awk '/channel/{print $2}')
+    [ -n "$CHAN" ] && break
+    sleep 1
+done
+[ -n "$CHAN" ] && sed -i "s/^channel=.*/channel=$CHAN/" /etc/hostapd/hostapd.conf
+
+# Create virtual AP interface for concurrent AP+STA mode
+iw dev wlan0 interface add uap0 type __ap 2>/dev/null || true
+ip link set uap0 up
+ip addr add 10.3.141.1/24 dev uap0 2>/dev/null || true
+
+# Restart hostapd with correct channel
+systemctl restart hostapd
+
+# TTL hack for Visible DPI bypass — all outbound traffic appears to come from phone
+iptables -t mangle -A POSTROUTING -o uap0 -j TTL --ttl-set 65
+iptables -t mangle -A POSTROUTING -o wlan0 -j TTL --ttl-set 65
+iptables -t mangle -A POSTROUTING -o eth+ -j TTL --ttl-set 65
+iptables -t mangle -A POSTROUTING -o enx+ -j TTL --ttl-set 65
+
+# Disable wlan0 power save (prevents STA disconnects in AP/STA concurrent mode)
+iw dev wlan0 set power_save off
+
+exit 0

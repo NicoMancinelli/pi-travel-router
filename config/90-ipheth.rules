@@ -1,0 +1,6 @@
+# Auto-configure iPhone USB tether when plugged in
+# Install to: /etc/udev/rules.d/90-ipheth.rules
+# Then reload: udevadm control --reload-rules && udevadm trigger
+
+SUBSYSTEM=="net", ACTION=="add", ATTRS{idVendor}=="05ac", KERNEL=="enx*", RUN+="/usr/local/bin/start-tether.sh %k"
+SUBSYSTEM=="net", ACTION=="remove", ATTRS{idVendor}=="05ac", KERNEL=="enx*", RUN+="/usr/local/bin/stop-tether.sh %k"
