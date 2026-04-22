@@ -210,26 +210,89 @@ sudo apt install -y unattended-upgrades
 
 ---
 
+## Roadmap — 18 Additional Features (From Cross-Project Research)
+
+Research sources: Juraj Bednar bypass-anti-tethering, xiv3r bypass-anti-tethering, MobileHop TCP fingerprint docs, PORTAL onion router, banIP/OpenWrt, OpenMPTCProuter, Headscale, Firewalla, captive-login bash utility, pfSense DNS rebind docs, PiSugar 3 hardware docs, Sagan/ntopng on Pi research.
+
+### Carrier Bypass (Beyond TTL)
+
+| # | Feature | Effort | Package/Tool |
+|---|---|---|---|
+| 36 | **DNS Rebinding Protection** — dnsmasq `stop-dns-rebind` + `rebind-localhost-ok`; blocks hotel/captive-portal DNS poisoning that redirects your queries to private RFC1918 IPs | 10 min | dnsmasq config |
+| 37 | **DSCP Remarking Strip** — strip DSCP/ToS bits on upstream traffic; some carriers use DSCP to fingerprint hotspot vs. native traffic. One iptables `MARK` + `TOS` rule on FORWARD chain | 5 min | iptables |
+| 38 | **IPv6 Extension Header Normalization** — strip/normalize IPv6 extension headers (hop-by-hop options) on uplink; used by some DPI systems to fingerprint tethered traffic differently from native | 15 min | ip6tables |
+| 39 | **HTTP User-Agent Normalization (tinyproxy)** — transparent HTTP proxy rewrites User-Agent to match a common Android browser; closes UA-based hotspot fingerprinting | 2 hr | `tinyproxy` |
+| 40 | **TCP/IP Fingerprint OS Spoofing (p0f/NFQUEUE)** — rewrite TCP window size + options at the IP layer to look like an Android device instead of a router; defeats advanced Visible/carrier fingerprinting that TTL alone doesn't cover | 4–8 hr | `nfqueue`-based shim or `nftables` osf match |
+
+### Security
+
+| # | Feature | Effort | Package/Tool |
+|---|---|---|---|
+| 41 | **Threat Intel IP Blocking (banIP/nftables sets)** — fetch Firehol Level 1 blocklist + known Tor exit nodes + malware C2 IPs into nftables `ip sets`; auto-refresh via systemd timer | 2–3 hr | `nftables` sets + `curl` (already installed) |
+| 42 | **Transparent Tor SSID** — second SSID (`TorAP`) that routes all TCP through Tor's TransPort; clients connect to it for anonymized browsing without per-device config; separate subnet (172.16.x.x) | 2–3 hr | `tor` + iptables NAT |
+
+### Multi-WAN & Policy Routing
+
+| # | Feature | Effort | Package/Tool |
+|---|---|---|---|
+| 43 | **Bluetooth Tethering as Tertiary WAN** — pair iPhone via Bluetooth, use `bnep0` interface as a low-bandwidth 3rd uplink; useful when both WiFi and USB are unavailable | 2–3 hr | `bluez` + `NetworkManager` |
+| 44 | **Per-Device fwmark Split Tunnel** — assign a specific AP client MAC a fwmark, route that device's traffic through Tailscale exit node while others go direct; 20 lines of nftables + `ip rule` | 3–4 hr | `nftables` fwmark + `ip rule` |
+| 45 | **Domain-Based Split Tunnel (dnsmasq ipset)** — specific domains (banking, corporate) resolve into an `ipset`; fwmark routes matching traffic through Tailscale tunnel while all other traffic goes direct | 4–6 hr | `ipset` + dnsmasq `ipset=` directive |
+
+### VPN & Remote Access
+
+| # | Feature | Effort | Package/Tool |
+|---|---|---|---|
+| 46 | **Headscale (Self-Hosted Tailscale Control Server)** — replace the Tailscale cloud coordination server with self-hosted Headscale on your VPS; full control of your Tailnet topology, no Tailscale account dependency, zero telemetry | 3–4 hr + VPS | `headscale` binary |
+
+### Captive Portal Automation
+
+| # | Feature | Effort | Package/Tool |
+|---|---|---|---|
+| 47 | **Captive Portal Auto-Login (curl scripts)** — extend captive-check.sh with per-SSID login scripts; for known hotel chains, auto-submit the portal form via curl; pattern from authq/captive-login | 2–3 hr | `curl` (already installed) |
+
+### Observability
+
+| # | Feature | Effort | Package/Tool |
+|---|---|---|---|
+| 48 | **vnStat + Prometheus Push** — vnStat's per-interface monthly stats pushed to homelab Prometheus via curl push gateway over Tailscale; adds cellular data usage tracking alongside existing CPU/memory metrics | 1–2 hr | `vnstat-json` + `curl` |
+| 49 | **Lightweight IDS (Sagan log correlator)** — correlate dnsmasq, iptables, and auth logs in real time; alert via ntfy.sh on port-scan patterns or DNS exfil signatures; Sagan runs on Pi-class hardware unlike Suricata | 4–6 hr | `sagan` + existing ntfy.sh |
+
+### Reliability & Hardware
+
+| # | Feature | Effort | Package/Tool |
+|---|---|---|---|
+| 50 | **PiSugar 3 UPS + Hardware Watchdog + RTC** — I2C battery board attaches to Pi GPIO; monitors charge level, triggers safe shutdown before depletion, adds hardware watchdog (GPIO pin), and provides RTC for accurate time without NTP; definitively solves SD corruption and time drift | 1 hr (sw) + hardware | PiSugar 3 board (~$25) |
+
+---
+
 ## Priority Picks (best ROI given current stack)
 
 **Do these next — low effort, high travel value:**
-- Feature 16 (Encrypted DNS) — biggest daily privacy gap still open
+- Feature 37 (DSCP strip) — 5 min, closes another carrier fingerprinting vector
+- Feature 36 (DNS rebinding protection) — 10 min, blocks a real attack at hotel WiFi
+- Feature 38 (IPv6 extension header normalization) — 15 min, pairs with existing IPv6 hop-limit rule
+- Feature 16 (Encrypted DNS / DoT) — biggest daily privacy gap still open
 - Feature 28 (Avahi mDNS) — 5 min setup, unlocks home device discovery over Tailscale
 - Feature 26 (Unattended upgrades) — passive; just turn it on
-- Feature 32 (vnStat dashboard) — vnStat already running, just need a web frontend
 - Feature 35 (Tailscale peer dashboard) — 50 lines of bash, uses ntfy.sh already deployed
 
 **High-value medium effort:**
 - Feature 18 (AdGuard Home) — single binary replaces dnsmasq DNS, adds per-client analytics; rivals $150 GL.iNet feature set
-- Feature 31 (MAC clone for portals) — combined with captive-check.sh, fully automates hotel WiFi onboarding
-- Feature 24 (Android tethering) — real second-carrier redundancy for pennies
+- Feature 41 (Threat intel IP blocking) — banIP pattern, nftables sets auto-update
+- Feature 47 (Captive portal auto-login) — combined with captive-check.sh + MAC clone, fully automates hotel WiFi onboarding
+- Feature 46 (Headscale) — eliminates Tailscale cloud dependency
+- Feature 31 (MAC clone for portals) — combined with captive-check.sh
+- Feature 24 (Android tethering) — real second-carrier redundancy
 - Feature 17 (VPN kill switch) — makes the VPN setup fail-safe
 
 **Only if specific need:**
-- Feature 20 (Tor proxy) — significant throughput hit, for high-risk travel only
-- Feature 25 (UPS HAT) — requires hardware, but definitively solves SD corruption
-- Feature 22 (Domain split tunnel) — complex to maintain; only if you need selective VPN routing
+- Feature 40 (TCP fingerprint spoofing) — significant implementation effort, marginal carrier bypass benefit unless TTL alone fails
+- Feature 42 (Tor SSID) — significant throughput hit, for high-risk travel only
+- Feature 49 (Sagan IDS) — worthwhile if you want edge threat detection; heavier to maintain
+- Feature 25/50 (UPS HAT/PiSugar 3) — requires hardware, but definitively solves SD corruption
+- Feature 45 (Domain split tunnel) — complex to maintain; only if you need selective VPN routing by domain
 
 ---
 
-*Sources: GL.iNet v4.8 firmware docs, OpenWrt travelmate, itiligent/OpenWRT-Raspi-TravelRouter, bufferbloat.net, raspberrypi/bookworm-feedback, ArchWiki iPhone tethering, Cloudflare DoT guide*
+*Sources: GL.iNet v4.8 firmware docs, OpenWrt travelmate, itiligent/OpenWRT-Raspi-TravelRouter, bufferbloat.net, raspberrypi/bookworm-feedback, ArchWiki iPhone tethering, Cloudflare DoT guide, Juraj Bednar bypass-anti-tethering, xiv3r bypass-anti-tethering, PORTAL onion router, banIP OpenWrt, OpenMPTCProuter, Headscale docs, Firewalla deep insight, authq/captive-login, pfSense DNS rebind docs, PiSugar 3 CNX Software review, Sagan IDS HookProbe guide*
