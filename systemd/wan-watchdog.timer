@@ -1,0 +1,11 @@
+[Unit]
+Description=Run WAN watchdog every 60 seconds
+Requires=wan-watchdog.service
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+# Travel Router configuration
+# Install to: /etc/default/travel-router
+# Sourced by: wan-watchdog.sh, captive-check.sh, notify-router.sh
+
+# ntfy.sh push notifications
+# 1. Pick a unique topic name (treated as a secret — don't share publicly)
+# 2. Install ntfy app on iOS/Android: https://ntfy.sh
+# 3. Subscribe to your topic in the app
+# 4. Set NTFY_TOPIC below — notifications activate immediately
+#
+# NTFY_TOPIC="travel-router-yourname-2024"
+NTFY_TOPIC=""

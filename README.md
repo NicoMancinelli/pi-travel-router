@@ -1,38 +1,54 @@
 # Pi Zero Travel Router
 
-An advanced travel router built on a **Raspberry Pi Zero 2 W** optimized for the **Visible wireless network**. Provides a clean, private Wi-Fi hotspot from an iPhone USB tether or any Wi-Fi uplink, with a Tailscale tunnel and TTL manipulation to bypass carrier DPI/hotspot detection.
+An advanced travel router built on a **Raspberry Pi Zero 2 W** optimized for the **Visible wireless network**. Provides a clean, private Wi-Fi hotspot from an iPhone USB tether or any Wi-Fi uplink — with USB Ethernet gadget mode for direct laptop connection, Tailscale VPN, TTL mangling to bypass carrier DPI, captive portal auto-handling, and push notifications via ntfy.sh.
 
 ---
 
 ## Architecture
 
 ```
-iPhone (USB) ──────────────────────────────────────────────────────────┐
-                                                                       ▼
-Hotel/Cafe Wi-Fi ──► wlan0 (STA) ──► Pi Zero 2 W ──► uap0 (AP) ──► Your Devices
-                                          │            10.3.141.1/24
-                                          │
-                                     tailscale0
-                                          │
-                                     Exit Node (optional)
-                                     bypass Visible DPI
+                    ┌─────────────────────────────────────────────────────────┐
+iPhone USB ─────────►  enx* (ipheth, metric 100)  ─────────────────────────┐ │
+                    │                                                        │ │
+Hotel/Cafe WiFi ────►  wlan0 (STA, metric 600)     ──► NAT/routing ──► uap0 (AP) ──► WiFi clients
+                    │                                       │         10.3.141.1/24   │
+                    │  Open WiFi fallback ──────────────────┘                        │
+                    │                                                                 │
+Laptop USB-C ───────►  usb0 (g_ether gadget)  ─────────────────────────────────────┘
+                    │  192.168.7.1/24                                                 │
+                    │                                                                 │
+                    │  tailscale0 ──► Tailnet / Exit Node (optional DPI bypass)      │
+                    └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Uplink priority** (automatic, managed by failover watchdog):
-1. iPhone USB tether (`enx...`) — metric 100, preferred
+**Uplink priority** (automatic, 30s failover watchdog):
+1. iPhone USB tether (`enx*`) — metric 100, preferred
 2. Wi-Fi STA (`wlan0`) — metric 600, fallback
+3. Open WiFi — catches any open network if no saved SSID is found
+
+**Client connections:**
+- Wi-Fi AP (`uap0`) — `10.3.141.1/24` — any device on your SSID
+- USB direct (`usb0`) — `192.168.7.1/24` — laptop via USB-C → micro-USB cable
 
 **Key features:**
-- AP/STA concurrent mode — Pi connects upstream and broadcasts its own SSID simultaneously
-- TTL=65 mangling — makes all hotspot traffic appear to originate from the phone, bypassing Visible's hotspot throttling/detection
-- TCP BBR + FQ — better throughput on cellular links
-- Tailscale mesh VPN — remote access to the router from anywhere; optional exit node for encrypted tunnel
-- **Auto iPhone tether** — udev rule detects plug-in and runs dhclient automatically; no manual hotspot toggle
-- **Uplink failover watchdog** — systemd timer every 30s; promotes tether to metric 100, falls back to Wi-Fi if tether drops
-- **log2ram** — `/var/log` in RAM, synced to SD periodically; protects card from continuous log writes
-- IPv6 disabled on uplinks — closes carrier DPI fingerprinting vector that TTL mangling alone doesn't cover
-- iPhone keepalive — root cron ping prevents iOS from suspending the USB tether
-- RaspAP web UI — browser-based management at `http://10.3.141.1`
+| Feature | Details |
+|---|---|
+| AP/STA concurrent mode | Pi connects upstream and broadcasts own SSID simultaneously |
+| TTL=65 + IPv6 hop-limit=65 | Both IPv4 and IPv6 traffic appears to come from phone — bypasses Visible DPI |
+| TCP BBR + CAKE qdisc | BBR handles sender congestion; CAKE eliminates bufferbloat on egress |
+| 802.11n + DTIM=1 | HT40, WMM enabled; DTIM=1 halves iOS client wake latency |
+| CPU performance governor | Eliminates ramp-up latency spikes during packet forwarding bursts |
+| USB Ethernet Gadget | Laptop gets internet via USB without using Wi-Fi — `192.168.7.1/24` |
+| Auto iPhone tether | udev detects plug-in, runs dhclient + CAKE automatically |
+| Uplink failover watchdog | 30s; promotes tether, demotes WiFi, falls back on failure |
+| WAN watchdog + recovery | 60s; reassociate → restart dhcpcd → restart networking → reboot |
+| Captive portal detection | Probes generate_204; auto-pauses/restores Tailscale for portal auth |
+| Open WiFi fallback | Connects to any open network (priority=1) when no saved SSID found |
+| MAC randomization | NetworkManager + macchanger randomize wlan0 MAC on each connection |
+| Client isolation | AP clients can't reach each other or Pi admin interfaces |
+| Tailscale VPN | Remote access from anywhere; optional exit node; subnet routing |
+| ntfy.sh notifications | Push alerts for WAN events, tether connect/disconnect, captive portals |
+| log2ram | `/var/log` in RAM → SD card not worn by continuous log writes |
 
 ---
 
@@ -42,9 +58,12 @@ Hotel/Cafe Wi-Fi ──► wlan0 (STA) ──► Pi Zero 2 W ──► uap0 (AP)
 |---|---|
 | Board | Raspberry Pi Zero 2 W |
 | Storage | 32GB+ microSD (Class 10 / A1 minimum) |
-| Power | USB-C, 5V/2.5A minimum |
-| iPhone cable | Lightning or USB-C to USB-A (with USB-A to Micro-USB adapter for Pi Zero) |
-| Optional | USB hub if powering Pi from laptop |
+| Power | 5V/2.5A via micro-USB power port |
+| iPhone cable | Lightning/USB-C → USB-A → micro-USB OTG adapter → Pi OTG port |
+| Laptop connection | USB-C → micro-USB OTG (Pi appears as USB Ethernet adapter) |
+| Optional | USB hub + OTG adapter if using iPhone USB tether AND laptop USB simultaneously |
+
+> **Note:** The Pi Zero 2 W has one micro-USB OTG port. iPhone USB tethering (Pi as USB host) and USB Ethernet Gadget (Pi as USB device) are mutually exclusive on this port. Use a USB hub with an OTG adapter to run both simultaneously, or tether iPhone via WiFi hotspot when using USB gadget mode.
 
 ---
 
@@ -272,6 +291,25 @@ ssh -L 8080:10.3.141.1:80 neek@<TAILSCALE_IP>
 | Ad Blocking | Optional DNS-based ad/tracker blocking |
 | System | RaspAP updates, password change |
 
+### USB Ethernet Gadget (Laptop Direct Connection)
+
+Plug the Pi into your laptop via USB-C → micro-USB (OTG port). After the Pi boots, your laptop sees a USB Ethernet adapter and gets an IP automatically:
+
+| Address | Role |
+|---|---|
+| `192.168.7.1` | Pi (gateway) |
+| `192.168.7.2–100` | DHCP pool (your laptop) |
+
+**macOS:** A new "RNDIS/Ethernet Gadget" adapter appears in Network Preferences. It auto-configures via DHCP. No drivers needed.
+
+**Windows:** May require the RNDIS driver (built into Windows 10/11). Check Device Manager if the adapter doesn't appear.
+
+**Linux:** The interface appears as `enp0s...` or `usb0`. Run `sudo dhclient usb0` if it doesn't auto-configure.
+
+**Requires a reboot after initial setup** to activate the `dwc2` kernel overlay and load the `g_ether` module.
+
+> **iPhone USB tether and USB gadget are mutually exclusive** on the Pi Zero 2 W's single OTG port. When using USB gadget for the laptop, tether your iPhone via WiFi hotspot instead (iPhone broadcasts, Pi connects as STA on wlan0).
+
 ### Tailscale Remote Access
 
 Access the Pi from anywhere on your Tailnet:
@@ -291,6 +329,16 @@ Check Tailscale status:
 sudo tailscale status
 sudo tailscale ping <node-name>
 ```
+
+### Push Notifications (ntfy.sh)
+
+1. Pick a unique topic name — treat it as a secret: `travel-router-yourname-abc123`
+2. Install the **ntfy** app on iOS/Android and subscribe to your topic
+3. On the Pi: `sudo nano /etc/default/travel-router` → set `NTFY_TOPIC="your-topic"`
+
+You'll receive notifications for: WAN up/down, captive portal detected, iPhone tether connect/disconnect, router reboots.
+
+Test: `sudo /usr/local/bin/notify-router.sh "test" default`
 
 ### Bandwidth Monitoring (vnstat)
 
@@ -450,19 +498,32 @@ cat /etc/modules-load.d/tcp_bbr.conf  # should contain: tcp_bbr
 
 ```
 ├── scripts/
-│   ├── start-tether.sh        # udev: called on iPhone plug-in, runs dhclient
-│   ├── stop-tether.sh         # udev: called on iPhone unplug, releases lease
-│   ├── failover-watchdog.sh   # systemd: checks uplinks every 30s, adjusts metrics
-│   └── keepalive.sh           # cron: pings 8.8.8.8 to keep iOS tether alive
+│   ├── start-tether.sh        # udev: iPhone plug-in → dhclient + CAKE + ntfy
+│   ├── stop-tether.sh         # udev: iPhone unplug → release DHCP + ntfy
+│   ├── failover-watchdog.sh   # systemd: uplink metrics every 30s
+│   ├── wan-watchdog.sh        # systemd: WAN health + graduated recovery every 60s
+│   ├── captive-check.sh       # called by wan-watchdog: portal detect + Tailscale pause
+│   ├── notify-router.sh       # ntfy.sh push notification wrapper
+│   ├── apply-cake.sh          # CAKE qdisc on uplinks (also called at boot)
+│   └── keepalive.sh           # legacy (replaced by wan-watchdog)
 ├── config/
-│   ├── rc.local               # AP interface creation, TTL rules, power save
-│   ├── 90-ipheth.rules        # udev rules for auto iPhone tether
-│   ├── 99-tailscale.conf      # sysctl: IP forwarding for Tailscale
-│   ├── 99-disable-ipv6-uplink.conf  # sysctl: IPv6 off on uplinks
-│   └── tcp-bbr.conf           # sysctl: BBR + FQ
+│   ├── rc.local                          # AP interface, TTL rules, power save
+│   ├── 90-ipheth.rules                   # udev: auto iPhone tether
+│   ├── 99-tailscale.conf                 # sysctl: IP forwarding
+│   ├── 99-disable-ipv6-uplink.conf       # sysctl: IPv6 off on uplinks
+│   ├── tcp-bbr.conf                      # sysctl: BBR + FQ
+│   ├── hostapd.conf                      # reference: 802.11n/DTIM config
+│   ├── dnsmasq-travel-tweaks.conf        # DNS cache, min-TTL, query slots
+│   ├── dnsmasq-usb-gadget.conf           # DHCP for USB gadget (usb0)
+│   ├── dnsmasq-static-leases.conf        # template: assign fixed IPs to devices
+│   ├── travel-router-defaults            # /etc/default/travel-router: ntfy topic
+│   ├── wpa_supplicant-open-fallback.conf # open WiFi catch-all (priority=1)
+│   └── NetworkManager-wifi-random-mac.conf  # MAC randomization
 └── systemd/
-    ├── failover-watchdog.service
-    └── failover-watchdog.timer
+    ├── failover-watchdog.service / .timer  # uplink metric management (30s)
+    ├── wan-watchdog.service / .timer       # WAN health + recovery (60s)
+    ├── cpu-performance.service             # performance CPU governor at boot
+    └── cake-qdisc.service                  # apply CAKE on wlan0 at boot
 ```
 
 ## Potential Improvements
