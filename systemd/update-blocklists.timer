@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh threat intel blocklists daily
+
+[Timer]
+OnBootSec=5min
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

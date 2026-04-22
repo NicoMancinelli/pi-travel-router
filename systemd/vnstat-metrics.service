@@ -1,0 +1,7 @@
+[Unit]
+Description=vnStat Prometheus metrics exporter
+After=network.target vnstat.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vnstat-metrics.sh

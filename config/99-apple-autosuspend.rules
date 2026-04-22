@@ -1,0 +1,4 @@
+# Disable USB autosuspend for Apple devices (prevents ipheth link drops)
+# Linux USB autosuspend defaults to 2s idle timeout, silently kills ipheth sessions
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", TEST=="power/autosuspend", ATTR{power/autosuspend}="-1"

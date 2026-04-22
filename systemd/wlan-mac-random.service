@@ -1,0 +1,13 @@
+[Unit]
+Description=Randomize wlan0 MAC address at boot
+After=network-pre.target
+Before=NetworkManager.service wpa_supplicant.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/macchanger -r wlan0
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+# Rewrite User-Agent to Android generic browser for all HTTP traffic
+# Closes UA-based hotspot fingerprinting on unencrypted HTTP
+# Install to: /etc/privoxy/user.action
+{ +hide-user-agent{Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Mobile Safari/537.36} }
+/
