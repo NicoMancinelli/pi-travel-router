@@ -302,7 +302,8 @@ for script in \
     failover-watchdog.sh wan-watchdog.sh captive-check.sh \
     notify-router.sh apply-cake.sh \
     vnstat-metrics.sh update-blocklists.sh travel-router-firewall.sh \
-    start-bt-tether.sh stop-bt-tether.sh; do
+    start-bt-tether.sh stop-bt-tether.sh \
+    update-router.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"
 done
@@ -350,7 +351,8 @@ for unit in \
     cpu-performance.service cake-qdisc.service \
     wlan-mac-random.service \
     vnstat-metrics.service vnstat-metrics.timer \
-    update-blocklists.service update-blocklists.timer; do
+    update-blocklists.service update-blocklists.timer \
+    update-router.service update-router.timer; do
     install_file "systemd/$unit" "$SYSTEMD_DEST/$unit" 644
     ok "  $unit"
 done
@@ -361,7 +363,8 @@ for unit in \
     failover-watchdog.timer wan-watchdog.timer \
     cpu-performance.service cake-qdisc.service \
     wlan-mac-random.service \
-    vnstat-metrics.timer update-blocklists.timer; do
+    vnstat-metrics.timer update-blocklists.timer \
+    update-router.timer; do
     if systemctl enable "$unit" 2>/dev/null; then ok "  enabled: $unit"; else warn "  could not enable $unit"; fi
 done
 
@@ -518,6 +521,16 @@ vnstat --add -i wlan0 2>/dev/null || true
 vnstat --add -i uap0  2>/dev/null || true
 ok "vnStat tracking wlan0 + uap0"
 
+# ── 23. Version stamp ─────────────────────────────────────────────────────────
+section "Version stamp"
+INSTALLED_VERSION="$(cat "$REPO/VERSION" 2>/dev/null || echo "unknown")"
+echo "$INSTALLED_VERSION" > /etc/travel-router-version
+# Keep a copy of install.sh for reference (update-router.sh compares against it)
+mkdir -p /usr/local/share/travel-router
+cp "$REPO/install.sh" /usr/local/share/travel-router/install.sh
+chmod 755 /usr/local/share/travel-router/install.sh
+ok "Installed version: $INSTALLED_VERSION"
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 section "Installation complete"
 
@@ -534,6 +547,8 @@ echo "    • TTL=65 + DSCP strip (Visible carrier bypass)"
 echo "    • privoxy: HTTP User-Agent normalization (${ENABLE_HTTP_UA_REWRITE:-0})"
 echo "    • Tor: transparent proxy (${ENABLE_TOR_TRANSPARENT:-0})"
 echo "    • Threat intel blocklist: daily timer installed, loading enabled=${ENABLE_BLOCKLISTS:-0}"
+echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo update-router.sh"
+echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"
 echo "    • Tailscale: subnet router for 10.3.141.0/24"
 echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
 echo "    • log2ram: /var/log in RAM"

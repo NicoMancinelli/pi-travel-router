@@ -1,0 +1,11 @@
+[Unit]
+Description=Weekly auto-update check for travel router
+
+[Timer]
+OnBootSec=10min
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

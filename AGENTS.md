@@ -94,49 +94,52 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 
 ## Pending Tasks
 
-These are intentionally gated behind feature flags until verified on the target Pi:
+### Deploy-to-existing-Pi catch-up (Pi was offline when last attempted)
 
-### 1. nftables Threat Intel Blocklist (#41) — PARTIALLY DONE
-The script `update-blocklists.sh` is deployed at `/usr/local/bin/update-blocklists.sh`.
-It exits unless `ENABLE_BLOCKLISTS=1` is set. After enabling it, run and verify:
+The existing Pi was provisioned before recent repo additions. When it next comes online, run these to bring it up to date — then the auto-updater takes over for future changes.
+
 ```bash
+# Pull latest repo on Pi (or scp the changed files)
+cd /tmp && git clone https://github.com/NicoMancinelli/pi-travel-router repo
+
+# 1. Deploy updated scripts
+sudo cp repo/scripts/*.sh /usr/local/bin/
+sudo chmod 755 /usr/local/bin/*.sh
+
+# 2. Deploy new systemd units
+sudo cp repo/systemd/*.service repo/systemd/*.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+
+# 3. Enable blocklist (set flag, run initial load, monitor RAM)
+sudo sed -i 's/^ENABLE_BLOCKLISTS=.*/ENABLE_BLOCKLISTS="1"/' /etc/default/travel-router
+watch -n1 free -m &  WATCH_PID=$!
 sudo systemctl start update-blocklists.service
+kill $WATCH_PID 2>/dev/null || true
 sudo journalctl -u update-blocklists.service -n 20 --no-pager
 sudo nft list set inet blocklists firehol_l1 2>/dev/null | head -5
-```
-The script validates the generated nft file before replacing the on-disk ruleset.
-If it still fails on the Pi, lower `MAX_BLOCKLIST_ENTRIES` or switch to a smaller source list.
 
-### 2. Tor Transparent Proxy iptables Rules (#42) — NOT DONE
-Tor is installed, but transparent proxying is disabled by default. Enable it only after confirming `uap1` support or documenting the static-IP fallback:
-```bash
-TOR_SUBNET="172.16.100.0/24"
+# 4. Enable Tor + apply firewall (also tests uap1 — see installer output)
 sudo sed -i 's/^ENABLE_TOR_TRANSPARENT=.*/ENABLE_TOR_TRANSPARENT="1"/' /etc/default/travel-router
 sudo /usr/local/bin/travel-router-firewall.sh --save
-```
-Also check if brcmfmac supports a second virtual AP for the TorAP SSID:
-```bash
-sudo iw dev wlan0 interface add uap1 type __ap 2>&1
-```
-If uap1 is supported: add second BSS to hostapd.conf, add dnsmasq-tor-ap.conf (in repo at config/dnsmasq-tor-ap.conf), add uap1 creation to rc.local.
-If not: document the static-IP fallback (clients on uap0 set 172.16.100.x static IP).
+sudo iw dev wlan0 interface add uap1 type __ap 2>&1 && echo "uap1 OK" || echo "uap1 not supported"
 
-### 3. Bluetooth Tethering (#43) — NOT DONE
-Scripts are in the repo (`scripts/start-bt-tether.sh`, `scripts/stop-bt-tether.sh`) and installed by `install.sh`. Pair the phone, set `IPHONE_BT_MAC`, then verify:
-```bash
-sudo systemctl enable --now bluetooth
-sudo /usr/local/bin/start-bt-tether.sh
+# 5. Enable + start auto-updater
+sudo systemctl enable --now update-router.timer
+
+# 6. Write version stamp
+cat /tmp/repo/VERSION | sudo tee /etc/travel-router-version
+
+rm -rf /tmp/repo
 ```
-Failover checks bnep0 between USB tether (100) and WiFi (600).
 
-### 4. Captive Portal Auto-Login (#47) — NOT DONE
-Add `attempt_portal_login()` function to `/usr/local/bin/captive-check.sh`. The function is documented in IMPROVEMENTS.md. Read the current captive-check.sh first, add the function, call it from the portal-detected branch, verify with `bash -n`.
+If it still fails on the Pi, lower `MAX_BLOCKLIST_ENTRIES` in `/etc/default/travel-router` or switch to firehol_level2.
 
-### 5. Push Pi's live config back to repo
-After completing the above, pull the live versions of these files from the Pi and commit them to keep the repo in sync:
-- `/usr/local/bin/captive-check.sh` (after #47 edit)
-- `/usr/local/bin/failover-watchdog.sh`
-- `/usr/local/bin/travel-router-firewall.sh`
+## Completed
+
+- ✅ #43 Bluetooth tethering — scripts in repo, bluez installed by install.sh, failover-watchdog handles bnep0
+- ✅ #47 Captive portal auto-login — `attempt_portal_login()` added to captive-check.sh; per-SSID hooks go in /etc/travel-router/portals/<SSID>.sh
+- ✅ Auto-update — `update-router.sh` + weekly timer; checks GitHub releases, falls back to main branch SHA; updates scripts + systemd units, never touches user config files
+- ✅ install.sh fully reproducible — interactive prompts for all optional features, uap1 probe + Tor AP setup, blocklist first-load trigger
 
 ## Repo Structure
 
