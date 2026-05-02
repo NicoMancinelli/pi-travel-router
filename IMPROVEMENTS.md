@@ -37,6 +37,12 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | iptables-persistent save | Firewall rules saved in `/etc/iptables/rules.v{4,6}` |
 | ✅ | iPhone keepalive (replaced by WAN watchdog) | Legacy script retained but not installed by default |
 | ✅ | Static DHCP leases template | `/etc/dnsmasq.d/static-leases.conf` — fill in your MACs |
+| ✅ | Bluetooth PAN tethering (#43) | `start-bt-tether.sh` + bnep0 as metric-300 uplink; set `IPHONE_BT_MAC` in `/etc/default/travel-router` |
+| ✅ | Captive portal auto-login (#47) | `attempt_portal_login()` in captive-check.sh; per-SSID hooks in `/etc/travel-router/portals/<SSID>.sh` |
+| ✅ | Captive portal MAC clone (#31) | `clone-mac.sh <MAC>` — clones laptop MAC to wlan0 before portal auth; `--restore` to reset |
+| ✅ | Threat intel IP blocklist (#41) | `update-blocklists.sh` + daily timer; enable with `ENABLE_BLOCKLISTS=1` in `/etc/default/travel-router` |
+| ✅ | Tor transparent proxy (#42) | Installed, disabled by default; enable with `ENABLE_TOR_TRANSPARENT=1`; uap1 (TorAP SSID) probed at install time |
+| ✅ | Auto-update from GitHub | `update-router.sh` + weekly timer (Sun 03:00); checks releases, falls back to main SHA; run manually with `sudo update-router.sh` |
 
 Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 
@@ -282,10 +288,7 @@ Research sources: Juraj Bednar bypass-anti-tethering, xiv3r bypass-anti-tetherin
 
 **High-value medium effort:**
 - Feature 18 (AdGuard Home) — single binary replaces dnsmasq DNS, adds per-client analytics; rivals $150 GL.iNet feature set
-- Feature 41 (Threat intel IP blocking) — banIP pattern, nftables sets auto-update
-- Feature 47 (Captive portal auto-login) — combined with captive-check.sh + MAC clone, fully automates hotel WiFi onboarding
 - Feature 46 (Headscale) — eliminates Tailscale cloud dependency
-- Feature 31 (MAC clone for portals) — combined with captive-check.sh
 - Feature 24 (Android tethering) — real second-carrier redundancy
 - Feature 17 (VPN kill switch) — makes the VPN setup fail-safe
 

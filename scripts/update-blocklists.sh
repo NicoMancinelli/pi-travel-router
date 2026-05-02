@@ -5,6 +5,7 @@
 
 set -euo pipefail
 
+# shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
 if [ "${ENABLE_BLOCKLISTS:-0}" != "1" ]; then
@@ -86,11 +87,14 @@ nft -c -f "$NFT_NEW" || {
     exit 1
 }
 
-nft -f "$NFT_NEW" && mv "$NFT_NEW" "$NFT_FILE" && echo "Blocklist loaded: $COUNT entries (max $MAX_BLOCKLIST_ENTRIES)" || {
+if nft -f "$NFT_NEW"; then
+    mv "$NFT_NEW" "$NFT_FILE"
+    echo "Blocklist loaded: $COUNT entries (max $MAX_BLOCKLIST_ENTRIES)"
+else
     echo "nft load failed — previous in-kernel rules remain active"
     rm -f "$NFT_NEW"
     exit 1
-}
+fi
 
 if [ -n "${NTFY_TOPIC:-}" ]; then
     /usr/local/bin/notify-router.sh "Blocklist updated: up to $MAX_BLOCKLIST_ENTRIES IP ranges loaded" 2>/dev/null || true

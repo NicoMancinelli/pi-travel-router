@@ -303,6 +303,7 @@ for script in \
     notify-router.sh apply-cake.sh \
     vnstat-metrics.sh update-blocklists.sh travel-router-firewall.sh \
     start-bt-tether.sh stop-bt-tether.sh \
+    clone-mac.sh \
     update-router.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"

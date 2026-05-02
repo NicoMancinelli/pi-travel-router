@@ -5,6 +5,7 @@
 #
 # Set NTFY_TOPIC in /etc/default/travel-router to activate
 # Install ntfy app (iOS/Android) and subscribe to your topic
+# shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null
 
 MSG="${1:-ping}"

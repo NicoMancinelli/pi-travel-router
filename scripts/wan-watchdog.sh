@@ -3,6 +3,7 @@
 # Replaces the basic keepalive.sh cron
 # Runs every 60s via systemd wan-watchdog.timer
 
+# shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
 if command -v flock >/dev/null 2>&1; then

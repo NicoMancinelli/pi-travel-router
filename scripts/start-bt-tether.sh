@@ -6,6 +6,7 @@
 
 set -euo pipefail
 
+# shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 BT_MAC="${1:-${IPHONE_BT_MAC:-}}"
 
@@ -17,7 +18,7 @@ fi
 logger -t bt-tether "Connecting Bluetooth PAN to $BT_MAC"
 bt-pan --dbus client "$BT_MAC" &
 
-for i in $(seq 1 15); do
+for _ in $(seq 1 15); do
     ip link show bnep0 >/dev/null 2>&1 && break
     sleep 1
 done

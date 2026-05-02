@@ -8,6 +8,7 @@ set -euo pipefail
 METRICS_FILE="/var/lib/prometheus/node-exporter/vnstat.prom"
 mkdir -p "$(dirname "$METRICS_FILE")"
 
+# shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 PUSHGW_URL="${PUSHGW_URL:-}"
 

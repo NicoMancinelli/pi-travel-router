@@ -44,11 +44,16 @@ Laptop USB-C ───────►  usb0 (g_ether gadget)  ──────
 | Uplink failover watchdog | 30s; promotes tether, demotes WiFi, falls back on failure |
 | WAN watchdog + recovery | 60s; reassociate → restart dhcpcd → restart networking → reboot |
 | Captive portal detection | Probes generate_204; auto-pauses/restores Tailscale for portal auth |
+| Captive portal auto-login | Tries per-SSID hook scripts then generic form POST; reports via ntfy.sh |
+| Captive portal MAC clone | `sudo clone-mac.sh <MAC>` clones laptop MAC to wlan0 before portal auth |
 | Open WiFi fallback | Optional; disabled by default in `/etc/default/travel-router` |
 | MAC randomization | NetworkManager + macchanger randomize wlan0 MAC on each connection |
 | Client isolation | AP clients can't reach each other or Pi admin interfaces |
 | Tailscale VPN | Remote access from anywhere; optional exit node; subnet routing |
 | ntfy.sh notifications | Push alerts for WAN events, tether connect/disconnect, captive portals |
+| Threat intel blocklist | Firehol Level 1 into nftables sets; daily refresh; opt-in via feature flag |
+| Tor transparent proxy | Optional; routes a dedicated subnet (172.16.100.0/24) through Tor |
+| Auto-update | Weekly pull from GitHub; updates scripts + systemd units; ntfy on success |
 | log2ram | `/var/log` in RAM → SD card not worn by continuous log writes |
 
 ---

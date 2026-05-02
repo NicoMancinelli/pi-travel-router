@@ -3,6 +3,7 @@
 
 set -euo pipefail
 
+# shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
 ENABLE_HTTP_UA_REWRITE="${ENABLE_HTTP_UA_REWRITE:-0}"
