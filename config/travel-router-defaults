@@ -1,6 +1,6 @@
 # Travel Router configuration
 # Install to: /etc/default/travel-router
-# Sourced by: wan-watchdog.sh, captive-check.sh, notify-router.sh
+# Sourced by: router scripts and installer-managed services
 
 # ntfy.sh push notifications
 # 1. Pick a unique topic name (treated as a secret — don't share publicly)
@@ -10,3 +10,25 @@
 #
 # NTFY_TOPIC="travel-router-yourname-2024"
 NTFY_TOPIC=""
+
+# iPhone Bluetooth MAC for Bluetooth PAN tethering.
+# Pair first with bluetoothctl, then set the phone MAC here.
+IPHONE_BT_MAC=""
+
+# Prometheus push gateway endpoint for vnStat metrics.
+PUSHGW_URL=""
+
+# Tailscale restore arguments used after captive portal login.
+TAILSCALE_UP_ARGS="--advertise-routes=10.3.141.0/24 --accept-dns=false"
+
+# WAN probe targets tried in order by wan-watchdog.sh.
+WAN_PING_TARGETS="1.1.1.1 8.8.8.8"
+
+# Optional features. Keep disabled until tested end-to-end on the target Pi.
+ENABLE_OPEN_WIFI_FALLBACK="0"
+ENABLE_HTTP_UA_REWRITE="0"
+ENABLE_TOR_TRANSPARENT="0"
+ENABLE_BLOCKLISTS="0"
+
+# Safety cap for update-blocklists.sh on memory-constrained Pi Zero hardware.
+MAX_BLOCKLIST_ENTRIES="20000"

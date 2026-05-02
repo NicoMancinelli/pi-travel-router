@@ -3,23 +3,39 @@
 # Replaces the basic keepalive.sh cron
 # Runs every 60s via systemd wan-watchdog.timer
 
-PING_HOST="8.8.8.8"
-PING_ALT="1.1.1.1"
+source /etc/default/travel-router 2>/dev/null || true
+
+if command -v flock >/dev/null 2>&1; then
+    exec 9>/run/lock/wan-watchdog.lock
+    flock -n 9 || exit 0
+fi
+
+WAN_PING_TARGETS="${WAN_PING_TARGETS:-1.1.1.1 8.8.8.8}"
 LOGFILE="/var/log/wan-watchdog.log"
 STATE_FILE="/tmp/wan-watchdog-fails"
-NTFY_TOPIC="${NTFY_TOPIC:-}"  # set in /etc/default/travel-router
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOGFILE"; }
-notify() { [ -n "$NTFY_TOPIC" ] && curl -s -d "$1" "https://ntfy.sh/$NTFY_TOPIC" > /dev/null 2>&1 || true; }
+notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || true; }
+
+can_reach_wan() {
+    local target
+    for target in $WAN_PING_TARGETS; do
+        ping -c 2 -W 3 "$target" > /dev/null 2>&1 && return 0
+    done
+    return 1
+}
 
 # Read consecutive fail count
 FAILS=$(cat "$STATE_FILE" 2>/dev/null || echo 0)
+case "$FAILS" in
+    ''|*[!0-9]*) FAILS=0 ;;
+esac
 
-# Test connectivity (try both targets)
-if ping -c 2 -W 3 "$PING_HOST" > /dev/null 2>&1 || ping -c 2 -W 3 "$PING_ALT" > /dev/null 2>&1; then
+# Test connectivity
+if can_reach_wan; then
     if [ "$FAILS" -gt 0 ]; then
         log "WAN restored after $FAILS failure(s)"
-        notify "travel-router: WAN restored ✓"
+        notify "travel-router: WAN restored" low
     fi
     echo 0 > "$STATE_FILE"
     exit 0
@@ -36,12 +52,12 @@ case "$FAILS" in
         ;;
     2)
         log "Recovery step 2: restarting dhcpcd"
-        notify "travel-router: WAN down, restarting dhcpcd"
+        notify "travel-router: WAN down, restarting dhcpcd" high
         systemctl restart dhcpcd
         ;;
     3)
         log "Recovery step 3: restarting networking services"
-        notify "travel-router: WAN down 3x, restarting networking"
+        notify "travel-router: WAN down 3x, restarting networking" high
         systemctl restart dhcpcd wpa_supplicant 2>/dev/null || true
         ;;
     4|5)
@@ -49,11 +65,11 @@ case "$FAILS" in
         ;;
     *)
         log "Recovery step final: rebooting after $FAILS consecutive failures"
-        notify "travel-router: rebooting after $FAILS WAN failures"
+        notify "travel-router: rebooting after $FAILS WAN failures" urgent
         sleep 5
         reboot
         ;;
 esac
 
 # Check for captive portal on each run
-/usr/local/bin/captive-check.sh &
+/usr/local/bin/captive-check.sh

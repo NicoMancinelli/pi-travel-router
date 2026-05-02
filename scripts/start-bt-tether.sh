@@ -35,5 +35,7 @@ GW=$(ip route show dev bnep0 | awk '/via/{print $3}' | head -1)
 
 tc qdisc replace dev bnep0 root cake bandwidth 3mbit besteffort 2>/dev/null || true
 
+/usr/local/bin/failover-watchdog.sh 2>/dev/null || true
+
 logger -t bt-tether "BT PAN up: bnep0 via ${GW:-unknown} metric 300"
 /usr/local/bin/notify-router.sh "Bluetooth tether connected: bnep0" 2>/dev/null || true

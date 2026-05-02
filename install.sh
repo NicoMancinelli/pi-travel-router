@@ -21,6 +21,10 @@ info()    { echo -e "${C}→${NC} $*"; }
 warn()    { echo -e "${Y}⚠${NC} $*"; }
 die()     { echo -e "${R}✗ FATAL:${NC} $*" >&2; exit 1; }
 section() { echo -e "\n${C}━━ $* ━━${NC}"; }
+validate_flag() {
+    local name=$1 value=${!1:-0}
+    [[ "$value" =~ ^[01]$ ]] || die "$name must be 0 or 1"
+}
 
 # ── Guards ────────────────────────────────────────────────────────────────────
 [[ $EUID -ne 0 ]] && die "Run as root: sudo bash install.sh"
@@ -38,10 +42,31 @@ section "Configuration"
 
 read -rp "  AP SSID [TravelRouter]: " AP_SSID;          AP_SSID="${AP_SSID:-TravelRouter}"
 read -rsp "  AP passphrase (8+ chars): " AP_PASS;        echo
-[[ ${#AP_PASS} -ge 8 ]] || die "Passphrase must be at least 8 characters"
 read -rp "  WiFi country code [US]: " COUNTRY;           COUNTRY="${COUNTRY:-US}"
 read -rp "  ntfy.sh topic (blank = no notifications): " NTFY_TOPIC; NTFY_TOPIC="${NTFY_TOPIC:-}"
-read -rp "  Tailscale auth key (tskey-auth-... or blank): " TS_KEY; TS_KEY="${TS_KEY:-}"
+read -rsp "  Tailscale auth key (tskey-auth-... or blank): " TS_KEY; echo; TS_KEY="${TS_KEY:-}"
+
+# Optional features — env-var pre-set wins (allows scripted/non-interactive installs)
+_yn() { local v="${!1:-}"; [[ "$v" =~ ^[01]$ ]] && return; read -rp "  $2 [y/N] " _r; printf -v "$1" '%s' "$([[ "$_r" =~ ^[Yy]$ ]] && echo 1 || echo 0)"; }
+_yn ENABLE_BLOCKLISTS          "Enable threat-intel blocklist (Firehol L1)?"
+_yn ENABLE_TOR_TRANSPARENT     "Enable Tor transparent proxy?"
+_yn ENABLE_HTTP_UA_REWRITE     "Enable HTTP User-Agent normalization (privoxy)?"
+_yn ENABLE_OPEN_WIFI_FALLBACK  "Enable open WiFi fallback (join any open network)?"
+
+if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
+    read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
+    [[ ${#TOR_AP_PASS} -ge 8 ]] || die "Tor AP passphrase must be 8+ characters"
+fi
+
+[[ -n "$AP_SSID" && ${#AP_SSID} -le 32 ]] || die "SSID must be 1-32 characters"
+[[ ${#AP_PASS} -ge 8 && ${#AP_PASS} -le 63 ]] || die "Passphrase must be 8-63 characters"
+[[ "$COUNTRY" =~ ^[A-Za-z]{2}$ ]] || die "Country code must be two letters, e.g. US"
+COUNTRY="${COUNTRY^^}"
+[[ "$NTFY_TOPIC" =~ ^[A-Za-z0-9._-]*$ ]] || die "ntfy.sh topic may only contain letters, numbers, dot, underscore, or dash"
+[[ -z "$TS_KEY" || "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS; do
+    validate_flag "$flag"
+done
 
 echo ""
 info "SSID:      $AP_SSID"
@@ -61,9 +86,6 @@ install_file() {
     chmod "$mode" "$dst"
 }
 
-ipt_add()  { iptables  -C "$@" 2>/dev/null || iptables  -A "$@"; }
-ip6t_add() { ip6tables -C "$@" 2>/dev/null || ip6tables -A "$@"; }
-
 # ── 1. Packages ───────────────────────────────────────────────────────────────
 section "Installing packages"
 
@@ -71,13 +93,12 @@ apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     hostapd dnsmasq iptables iptables-persistent netfilter-persistent \
     dhcpcd5 curl wget git jq \
-    usbmuxd libimobiledevice6 libimobiledevice-utils \
+    usbmuxd libimobiledevice6 libimobiledevice-utils ipheth-utils \
     macchanger vnstat \
     privoxy \
     tor \
     bluez bluez-tools python3-dbus \
-    tc iproute2 iw wireless-tools \
-    2>&1 | grep -E "^(Get:|Setting up|E:)" || true
+    iproute2 iw wireless-tools
 
 ok "Packages installed"
 
@@ -115,9 +136,7 @@ CONFIG_TXT="/boot/firmware/config.txt"
 [[ -f "$CONFIG_TXT" ]] || CONFIG_TXT="/boot/config.txt"
 
 if ! grep -q "dtoverlay=dwc2" "$CONFIG_TXT"; then
-    echo "" >> "$CONFIG_TXT"
-    echo "[all]" >> "$CONFIG_TXT"
-    echo "dtoverlay=dwc2,dr_mode=peripheral" >> "$CONFIG_TXT"
+    { echo ""; echo "[all]"; echo "dtoverlay=dwc2,dr_mode=peripheral"; } >> "$CONFIG_TXT"
     ok "dwc2 overlay added to $CONFIG_TXT"
 else
     ok "dwc2 overlay already present"
@@ -193,10 +212,10 @@ options brcmfmac roamoff=1 feature_disable=0x82000
 EOF
 ok "brcmfmac roamoff=1 feature_disable=0x82000"
 
-# ── 7. wpa_supplicant — open WiFi fallback ────────────────────────────────────
-section "wpa_supplicant — open WiFi fallback"
+# ── 7. wpa_supplicant — optional open WiFi fallback ──────────────────────────
+section "wpa_supplicant — optional open WiFi fallback"
 
-if [[ ! -f /etc/wpa_supplicant/wpa_supplicant.conf ]]; then
+if [[ "${ENABLE_OPEN_WIFI_FALLBACK:-0}" = "1" && ! -f /etc/wpa_supplicant/wpa_supplicant.conf ]]; then
     cat > /etc/wpa_supplicant/wpa_supplicant.conf << EOF
 ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
 update_config=1
@@ -212,9 +231,11 @@ network={
 }
 EOF
     ok "wpa_supplicant open fallback configured"
-else
+elif [[ "${ENABLE_OPEN_WIFI_FALLBACK:-0}" = "1" ]]; then
     warn "wpa_supplicant.conf already exists — open fallback not modified"
     warn "Manually add: network={key_mgmt=NONE priority=1 id_str=\"open-fallback\"}"
+else
+    ok "Open WiFi fallback disabled by default"
 fi
 
 # ── 8. hostapd ────────────────────────────────────────────────────────────────
@@ -268,7 +289,7 @@ install_file config/dnsmasq-static-leases.conf /etc/dnsmasq.d/static-leases.conf
 ok "dnsmasq configs installed"
 
 # ── 10. rc.local ──────────────────────────────────────────────────────────────
-section "rc.local — AP interface + channel sync + TTL"
+section "rc.local — AP interface + channel sync + power save"
 
 install_file config/rc.local /etc/rc.local 755
 ok "rc.local installed"
@@ -280,7 +301,7 @@ for script in \
     start-tether.sh stop-tether.sh \
     failover-watchdog.sh wan-watchdog.sh captive-check.sh \
     notify-router.sh apply-cake.sh \
-    vnstat-metrics.sh update-blocklists.sh \
+    vnstat-metrics.sh update-blocklists.sh travel-router-firewall.sh \
     start-bt-tether.sh stop-bt-tether.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"
@@ -309,21 +330,13 @@ EOF
 # ── 12. /etc/default/travel-router ───────────────────────────────────────────
 section "Travel router config defaults"
 
-cat > /etc/default/travel-router << EOF
-# Travel Router configuration
-# Sourced by: wan-watchdog.sh, captive-check.sh, notify-router.sh, tether scripts
-
-# ntfy.sh push notifications (https://ntfy.sh)
-# Install the ntfy app and subscribe to this topic for router alerts
-NTFY_TOPIC="${NTFY_TOPIC}"
-
-# iPhone Bluetooth MAC for Bluetooth PAN tethering
-# Run: sudo bluetoothctl (pair first, see bluetooth-pair.txt)
-IPHONE_BT_MAC=""
-
-# Prometheus push gateway (optional, for vnStat metrics over Tailscale)
-# PUSHGW_URL=""
-EOF
+install_file config/travel-router-defaults /etc/default/travel-router 600
+sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-router
+# shellcheck source=/dev/null
+source /etc/default/travel-router
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS; do
+    validate_flag "$flag"
+done
 ok "/etc/default/travel-router written"
 
 # ── 13. Systemd units ─────────────────────────────────────────────────────────
@@ -332,6 +345,7 @@ section "Systemd units"
 SYSTEMD_DEST="/etc/systemd/system"
 for unit in \
     failover-watchdog.service failover-watchdog.timer \
+    tether@.service \
     wan-watchdog.service wan-watchdog.timer \
     cpu-performance.service cake-qdisc.service \
     wlan-mac-random.service \
@@ -348,8 +362,19 @@ for unit in \
     cpu-performance.service cake-qdisc.service \
     wlan-mac-random.service \
     vnstat-metrics.timer update-blocklists.timer; do
-    systemctl enable "$unit" 2>/dev/null && ok "  enabled: $unit" || warn "  could not enable $unit"
+    if systemctl enable "$unit" 2>/dev/null; then ok "  enabled: $unit"; else warn "  could not enable $unit"; fi
 done
+
+# Trigger initial blocklist load immediately if enabled (daily timer fires first time at next scheduled slot)
+if [[ "${ENABLE_BLOCKLISTS:-0}" = "1" ]]; then
+    info "Running initial blocklist load (this may take ~30s)..."
+    if systemctl start update-blocklists.service 2>/dev/null; then
+        ok "Initial blocklist loaded"
+    else
+        warn "Initial blocklist load failed — will retry at next timer fire"
+        warn "  Check: journalctl -u update-blocklists.service -n 20"
+    fi
+fi
 
 # ── 14. udev rules ────────────────────────────────────────────────────────────
 section "udev rules"
@@ -370,18 +395,23 @@ if [[ -f /etc/log2ram.conf ]]; then
     ok "log2ram: SIZE=128M, JOURNALD_AWARE=true"
 fi
 
-# ── 16. privoxy — User-Agent normalization ────────────────────────────────────
-section "privoxy — HTTP User-Agent normalization"
+# ── 16. privoxy — optional User-Agent normalization ──────────────────────────
+section "privoxy — optional HTTP User-Agent normalization"
 
 install_file config/privoxy-user.action /etc/privoxy/user.action 644
-systemctl enable --now privoxy 2>/dev/null || true
-ok "privoxy configured and enabled"
+if [[ "${ENABLE_HTTP_UA_REWRITE:-0}" = "1" ]]; then
+    systemctl enable --now privoxy 2>/dev/null || true
+    ok "privoxy configured and enabled"
+else
+    systemctl disable --now privoxy 2>/dev/null || true
+    ok "privoxy installed but disabled by default"
+fi
 
-# ── 17. Tor — transparent proxy ───────────────────────────────────────────────
-section "Tor — transparent proxy config"
+# ── 17. Tor — optional transparent proxy ─────────────────────────────────────
+section "Tor — optional transparent proxy config"
 
 # Append transparent proxy config if not already present
-if ! grep -q "TransPort 9040" /etc/tor/torrc 2>/dev/null; then
+if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" ]] && ! grep -q "TransPort 9040" /etc/tor/torrc 2>/dev/null; then
     cat >> /etc/tor/torrc << 'EOF'
 
 # Transparent proxy (for Tor subnet 172.16.100.0/24)
@@ -391,57 +421,56 @@ TransPort 9040 IsolateClientAddr
 DNSPort 5353
 EOF
     ok "Tor transparent proxy config added"
-else
+elif [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" ]]; then
     ok "Tor already configured for transparent proxy"
+else
+    ok "Tor transparent proxy disabled by default"
 fi
 
-systemctl enable tor 2>/dev/null || true
-ok "Tor enabled (will start on next boot)"
+if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" ]]; then
+    systemctl enable tor 2>/dev/null || true
+    ok "Tor enabled"
 
-# ── 18. iptables / ip6tables rules ────────────────────────────────────────────
-section "iptables — TTL, DSCP, Tor, privoxy, firewall"
+    # Test whether brcmfmac supports a second virtual AP for a dedicated Tor SSID
+    if iw dev wlan0 interface add uap1 type __ap 2>/dev/null; then
+        iw dev uap1 del 2>/dev/null || true
 
-# TTL=65 mangle (Visible carrier bypass)
-ipt_add  POSTROUTING -t mangle -o uap0  -j TTL --ttl-set 65
-ipt_add  POSTROUTING -t mangle -o wlan0 -j TTL --ttl-set 65
-ipt_add  POSTROUTING -t mangle -o usb0  -j TTL --ttl-set 65
-iptables -t mangle -A POSTROUTING -o enx+ -j TTL --ttl-set 65 2>/dev/null || \
-    ipt_add POSTROUTING -t mangle -o eth0 -j TTL --ttl-set 65
+        # Second BSS in hostapd.conf (uses same radio, separate SSID)
+        if ! grep -q "^bss=uap1" /etc/hostapd/hostapd.conf; then
+            cat >> /etc/hostapd/hostapd.conf << EOF
 
-# ip6tables hop-limit=65
-ip6t_add POSTROUTING -t mangle -o uap0  -j HL --hl-set 65
-ip6t_add POSTROUTING -t mangle -o wlan0 -j HL --hl-set 65
+# Tor transparent-proxy AP (all traffic routed through Tor)
+bss=uap1
+ssid=TorAP
+wpa=2
+wpa_passphrase=${TOR_AP_PASS:-changeme}
+wpa_key_mgmt=WPA-PSK
+wpa_pairwise=CCMP
+EOF
+        fi
 
-# DSCP strip (clears carrier ToS fingerprinting on uplink)
-ipt_add POSTROUTING -t mangle -o wlan0 -j DSCP --set-dscp 0
-ipt_add POSTROUTING -t mangle -o usb0  -j DSCP --set-dscp 0
+        install_file config/dnsmasq-tor-ap.conf /etc/dnsmasq.d/tor-ap.conf
 
-# IPv6 extension header (hop-by-hop) drop on uplink
-ip6t_add POSTROUTING -t mangle -o wlan0 -m ipv6header --header hop-by-hop -j DROP 2>/dev/null || true
+        # Create uap1 at boot alongside uap0 in rc.local
+        if ! grep -q "uap1" /etc/rc.local; then
+            sed -i '/interface add uap0/a iw dev wlan0 interface add uap1 type __ap || true' /etc/rc.local
+        fi
 
-# AP client → privoxy for HTTP User-Agent rewrite (port 80 only)
-ipt_add PREROUTING -t nat -i uap0 -p tcp --dport 80 -j REDIRECT --to-port 8118
+        ok "uap1 supported — TorAP SSID configured on 172.16.100.0/24"
+    else
+        warn "uap1 not supported by brcmfmac — Tor AP uses static-IP fallback"
+        warn "  Clients: set static IP 172.16.100.x/24, GW+DNS 172.16.100.1 on the main AP"
+    fi
+else
+    systemctl disable --now tor 2>/dev/null || true
+    ok "Tor disabled by default"
+fi
 
-# Tor transparent proxy for 172.16.100.0/24 subnet
-TOR_SUBNET="172.16.100.0/24"
-ipt_add PREROUTING -t nat -s "$TOR_SUBNET" -p udp --dport 53 -j REDIRECT --to-ports 5353
-ipt_add PREROUTING -t nat -s "$TOR_SUBNET" -p tcp -d 10.0.0.0/8     -j RETURN
-ipt_add PREROUTING -t nat -s "$TOR_SUBNET" -p tcp -d 172.16.0.0/12  -j RETURN
-ipt_add PREROUTING -t nat -s "$TOR_SUBNET" -p tcp -d 192.168.0.0/16 -j RETURN
-ipt_add PREROUTING -t nat -s "$TOR_SUBNET" -p tcp --syn -j REDIRECT --to-ports 9040
+# ── 18. firewall rules ───────────────────────────────────────────────────────
+section "Firewall — TTL, DSCP, isolation, optional proxy rules"
 
-# AP client isolation — clients can't reach each other or Pi admin ports
-ipt_add FORWARD -i uap0 -o uap0 -j DROP
-ipt_add INPUT   -i uap0 -p tcp --dport 22 -j DROP
-ipt_add INPUT   -i uap0 -p tcp --dport 80 -j DROP
-
-ok "iptables rules applied"
-
-# Save rules
-netfilter-persistent save 2>/dev/null || \
-    iptables-save > /etc/iptables/rules.v4
-ip6tables-save > /etc/iptables/rules.v6
-ok "iptables rules saved (persistent)"
+/usr/local/bin/travel-router-firewall.sh --save
+ok "Firewall rules applied and saved"
 
 # ── 19. Tailscale ─────────────────────────────────────────────────────────────
 section "Tailscale"
@@ -449,15 +478,19 @@ section "Tailscale"
 systemctl enable --now tailscaled 2>/dev/null || true
 
 if [[ -n "$TS_KEY" ]]; then
-    tailscale up \
+    # shellcheck disable=SC2206
+    TS_ARGS=($TAILSCALE_UP_ARGS)
+    if tailscale up \
         --authkey="$TS_KEY" \
-        --advertise-routes=10.3.141.0/24 \
-        --accept-dns=false \
-        2>/dev/null && ok "Tailscale authenticated and subnet advertised" \
-                     || warn "Tailscale auth failed — run manually: sudo tailscale up --advertise-routes=10.3.141.0/24 --accept-dns=false"
+        "${TS_ARGS[@]}" \
+        2>/dev/null; then
+        ok "Tailscale authenticated and subnet advertised"
+    else
+        warn "Tailscale auth failed — run manually: sudo tailscale up $TAILSCALE_UP_ARGS"
+    fi
 else
     warn "No Tailscale key provided. After reboot, run:"
-    warn "  sudo tailscale up --advertise-routes=10.3.141.0/24 --accept-dns=false"
+    warn "  sudo tailscale up $TAILSCALE_UP_ARGS"
 fi
 
 # ── 20. usbmuxd / ipheth ──────────────────────────────────────────────────────
@@ -498,9 +531,9 @@ echo "    • Bluetooth tether: set IPHONE_BT_MAC in /etc/default/travel-router"
 echo "    • Uplink failover watchdog: 30s timer"
 echo "    • WAN watchdog + captive portal detection: 60s timer"
 echo "    • TTL=65 + DSCP strip (Visible carrier bypass)"
-echo "    • privoxy: HTTP User-Agent normalization"
-echo "    • Tor: transparent proxy on 172.16.100.0/24 subnet"
-echo "    • Threat intel blocklist: daily refresh via update-blocklists.timer"
+echo "    • privoxy: HTTP User-Agent normalization (${ENABLE_HTTP_UA_REWRITE:-0})"
+echo "    • Tor: transparent proxy (${ENABLE_TOR_TRANSPARENT:-0})"
+echo "    • Threat intel blocklist: daily timer installed, loading enabled=${ENABLE_BLOCKLISTS:-0}"
 echo "    • Tailscale: subnet router for 10.3.141.0/24"
 echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
 echo "    • log2ram: /var/log in RAM"
@@ -508,7 +541,7 @@ echo "    • MAC randomization: wlan0 at boot"
 echo "    • ntfy.sh: ${NTFY_TOPIC:-not configured (set NTFY_TOPIC in /etc/default/travel-router)}"
 echo ""
 echo "  Next steps:"
-[[ -z "$TS_KEY" ]] && echo "    1. sudo tailscale up --advertise-routes=10.3.141.0/24 --accept-dns=false"
+[[ -z "$TS_KEY" ]] && echo "    1. sudo tailscale up $TAILSCALE_UP_ARGS"
 echo "    ${TS_KEY:+1}${TS_KEY:-2}. sudo reboot  ← activates USB gadget mode (dwc2) + log2ram"
 echo "    3. Connect Mac via USB-C → ssh neek@192.168.7.1"
 echo "    4. Edit /etc/default/travel-router to set NTFY_TOPIC + IPHONE_BT_MAC"

@@ -1,3 +1,6 @@
 .DS_Store
 *.log
 *.bak
+AGENTS.local.md
+.env.local
+.env.*.local

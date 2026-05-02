@@ -5,9 +5,29 @@
 
 set -euo pipefail
 
+source /etc/default/travel-router 2>/dev/null || true
+
+if [ "${ENABLE_BLOCKLISTS:-0}" != "1" ]; then
+    echo "Blocklists disabled: set ENABLE_BLOCKLISTS=1 in /etc/default/travel-router"
+    exit 0
+fi
+
 BLOCKLIST_URL="https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset"
 TMP_FILE="/tmp/firehol_level1.netset"
 NFT_FILE="/etc/nftables.d/blocklists.nft"
+NFT_NEW="${NFT_FILE}.new"
+MAX_BLOCKLIST_ENTRIES="${MAX_BLOCKLIST_ENTRIES:-20000}"
+
+case "$MAX_BLOCKLIST_ENTRIES" in
+    ''|*[!0-9]*)
+        echo "MAX_BLOCKLIST_ENTRIES must be a positive integer"
+        exit 1
+        ;;
+esac
+if [ "$MAX_BLOCKLIST_ENTRIES" -lt 1 ]; then
+    echo "MAX_BLOCKLIST_ENTRIES must be greater than 0"
+    exit 1
+fi
 
 mkdir -p /etc/nftables.d
 
@@ -21,11 +41,18 @@ COUNT=$(grep -c -v '^#' "$TMP_FILE" 2>/dev/null || echo 0)
 echo "Fetched $COUNT entries"
 
 # Use Python for RAM-safe file generation (avoids bash tr/sed on large strings)
-python3 - "$TMP_FILE" "$NFT_FILE" << 'PYEOF'
+python3 - "$TMP_FILE" "$NFT_NEW" "$MAX_BLOCKLIST_ENTRIES" << 'PYEOF'
 import sys, datetime
 
-src, dst = sys.argv[1], sys.argv[2]
-entries = [l.strip() for l in open(src) if l.strip() and not l.startswith('#')]
+src, dst, max_entries = sys.argv[1], sys.argv[2], int(sys.argv[3])
+entries = []
+with open(src) as source:
+    for line in source:
+        entry = line.strip()
+        if entry and not entry.startswith('#'):
+            entries.append(entry)
+            if len(entries) >= max_entries:
+                break
 
 with open(dst, 'w') as f:
     f.write("#!/usr/sbin/nft -f\n")
@@ -53,12 +80,18 @@ with open(dst, 'w') as f:
 print(f"Written {len(entries)} entries to {dst}")
 PYEOF
 
-nft -f "$NFT_FILE" && echo "Blocklist loaded: $COUNT entries" || {
-    echo "nft load failed — check $NFT_FILE"
+nft -c -f "$NFT_NEW" || {
+    echo "nft validation failed — keeping existing rules"
+    rm -f "$NFT_NEW"
     exit 1
 }
 
-source /etc/default/travel-router 2>/dev/null || true
+nft -f "$NFT_NEW" && mv "$NFT_NEW" "$NFT_FILE" && echo "Blocklist loaded: $COUNT entries (max $MAX_BLOCKLIST_ENTRIES)" || {
+    echo "nft load failed — previous in-kernel rules remain active"
+    rm -f "$NFT_NEW"
+    exit 1
+}
+
 if [ -n "${NTFY_TOPIC:-}" ]; then
-    /usr/local/bin/notify-router.sh "Blocklist updated: $COUNT IPs blocked" 2>/dev/null || true
+    /usr/local/bin/notify-router.sh "Blocklist updated: up to $MAX_BLOCKLIST_ENTRIES IP ranges loaded" 2>/dev/null || true
 fi

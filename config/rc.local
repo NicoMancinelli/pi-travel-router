@@ -18,12 +18,6 @@ ip addr add 10.3.141.1/24 dev uap0 2>/dev/null || true
 # Restart hostapd with correct channel
 systemctl restart hostapd
 
-# TTL hack for Visible DPI bypass — all outbound traffic appears to come from phone
-iptables -t mangle -A POSTROUTING -o uap0 -j TTL --ttl-set 65
-iptables -t mangle -A POSTROUTING -o wlan0 -j TTL --ttl-set 65
-iptables -t mangle -A POSTROUTING -o eth+ -j TTL --ttl-set 65
-iptables -t mangle -A POSTROUTING -o enx+ -j TTL --ttl-set 65
-
 # Disable wlan0 power save (prevents STA disconnects in AP/STA concurrent mode)
 iw dev wlan0 set power_save off
 

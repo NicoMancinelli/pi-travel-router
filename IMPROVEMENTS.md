@@ -10,29 +10,35 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 |---|---|---|
 | ✅ | RaspAP (lighttpd, hostapd, dnsmasq) | AP/STA concurrent mode on uap0 |
 | ✅ | iOS USB tether auto-detect (udev) | Plug in iPhone → DHCP fires automatically |
-| ✅ | Uplink failover watchdog | 30s timer; tether metric 100, wlan0 metric 600 |
+| ✅ | Uplink failover watchdog | 30s timer; USB tether metric 100, Bluetooth PAN metric 300, wlan0 metric 600 |
 | ✅ | WAN watchdog with graduated recovery | 60s timer; reassociate → restart dhcpcd → reboot |
 | ✅ | Captive portal detection + Tailscale pause | Probes generate_204; pauses/restores Tailscale automatically |
 | ✅ | ntfy.sh push notification framework | Set `NTFY_TOPIC` in `/etc/default/travel-router` |
 | ✅ | USB Ethernet Gadget (g_ether) | Laptop via USB-C → micro-USB; 192.168.7.1/24 **[needs reboot]** |
-| ✅ | Open WiFi fallback | wpa_supplicant connects to any open network (priority=1) |
+| ✅ | Open WiFi fallback | Available but disabled by default via `ENABLE_OPEN_WIFI_FALLBACK=0` |
 | ✅ | Tailscale + subnet routing (10.3.141.0/24) | Remote access over mesh VPN |
 | ✅ | IP forwarding (IPv4 + IPv6) | `/etc/sysctl.d/99-tailscale.conf` |
 | ✅ | TTL=65 iptables mangling | uap0, wlan0, eth+, enx+ — bypasses Visible hotspot detection |
 | ✅ | IPv6 hop-limit=65 (ip6tables) | Mirrors TTL mangling for IPv6 traffic |
 | ✅ | IPv6 disabled on uplink interfaces | Closes DPI fingerprinting vector TTL alone doesn't cover |
+| ✅ | DSCP strip | Clears carrier ToS fingerprinting on uplinks |
+| ✅ | IPv6 extension header drop | Drops hop-by-hop extension headers on wlan0 when supported |
 | ✅ | TCP BBR + FQ qdisc | Better cellular throughput; persists via modules-load.d |
 | ✅ | CAKE qdisc for bufferbloat | wlan0 at 50mbit; tether at 15mbit via start-tether.sh |
 | ✅ | CPU performance governor | Systemd oneshot; eliminates ramp-up latency spikes |
 | ✅ | hostapd 802.11n (HT40, WMM, DTIM=1) | ~150 Mbps AP; DTIM=1 halves iOS client wake latency |
 | ✅ | dnsmasq tuning | cache-size=2048, min-cache-ttl=300, dns-forward-max=300 |
+| ✅ | DNS rebinding protection | `stop-dns-rebind` plus local/lan exceptions |
 | ✅ | FORWARD chain client isolation | AP clients can't reach each other or Pi admin interfaces |
 | ✅ | INPUT: block AP clients from port 80/22 | Manage only via Tailscale or USB gadget (192.168.7.x) |
 | ✅ | MAC address randomization (wlan0) | NetworkManager + macchanger systemd service |
 | ✅ | log2ram | `/var/log` in RAM; protects SD card (active after reboot) |
-| ✅ | iptables-persistent save | TTL + firewall rules in `/etc/iptables/rules.v{4,6}` |
-| ✅ | iPhone keepalive (replaced by WAN watchdog) | Old cron removed; watchdog covers this and more |
+| ✅ | Idempotent firewall script | `/usr/local/bin/travel-router-firewall.sh --save` owns TTL, DSCP, isolation, optional proxy rules |
+| ✅ | iptables-persistent save | Firewall rules saved in `/etc/iptables/rules.v{4,6}` |
+| ✅ | iPhone keepalive (replaced by WAN watchdog) | Legacy script retained but not installed by default |
 | ✅ | Static DHCP leases template | `/etc/dnsmasq.d/static-leases.conf` — fill in your MACs |
+
+Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 
 ---
 
@@ -269,9 +275,6 @@ Research sources: Juraj Bednar bypass-anti-tethering, xiv3r bypass-anti-tetherin
 ## Priority Picks (best ROI given current stack)
 
 **Do these next — low effort, high travel value:**
-- Feature 37 (DSCP strip) — 5 min, closes another carrier fingerprinting vector
-- Feature 36 (DNS rebinding protection) — 10 min, blocks a real attack at hotel WiFi
-- Feature 38 (IPv6 extension header normalization) — 15 min, pairs with existing IPv6 hop-limit rule
 - Feature 16 (Encrypted DNS / DoT) — biggest daily privacy gap still open
 - Feature 28 (Avahi mDNS) — 5 min setup, unlocks home device discovery over Tailscale
 - Feature 26 (Unattended upgrades) — passive; just turn it on

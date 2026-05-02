@@ -23,8 +23,9 @@ Laptop USB-C ───────►  usb0 (g_ether gadget)  ──────
 
 **Uplink priority** (automatic, 30s failover watchdog):
 1. iPhone USB tether (`enx*`) — metric 100, preferred
-2. Wi-Fi STA (`wlan0`) — metric 600, fallback
-3. Open WiFi — catches any open network if no saved SSID is found
+2. Bluetooth PAN (`bnep0`) — metric 300, low-bandwidth fallback
+3. Wi-Fi STA (`wlan0`) — metric 600, fallback
+4. Optional Open WiFi fallback — disabled by default; catches any open network if enabled
 
 **Client connections:**
 - Wi-Fi AP (`uap0`) — `10.3.141.1/24` — any device on your SSID
@@ -43,7 +44,7 @@ Laptop USB-C ───────►  usb0 (g_ether gadget)  ──────
 | Uplink failover watchdog | 30s; promotes tether, demotes WiFi, falls back on failure |
 | WAN watchdog + recovery | 60s; reassociate → restart dhcpcd → restart networking → reboot |
 | Captive portal detection | Probes generate_204; auto-pauses/restores Tailscale for portal auth |
-| Open WiFi fallback | Connects to any open network (priority=1) when no saved SSID found |
+| Open WiFi fallback | Optional; disabled by default in `/etc/default/travel-router` |
 | MAC randomization | NetworkManager + macchanger randomize wlan0 MAC on each connection |
 | Client isolation | AP clients can't reach each other or Pi admin interfaces |
 | Tailscale VPN | Remote access from anywhere; optional exit node; subnet routing |
@@ -71,7 +72,7 @@ Laptop USB-C ───────►  usb0 (g_ether gadget)  ──────
 
 | Component | Package / Service | Purpose |
 |---|---|---|
-| OS | Raspberry Pi OS Lite Bookworm (64-bit) | Base system |
+| OS | Raspberry Pi OS Lite Bookworm (32-bit or 64-bit) | Base system |
 | AP daemon | `hostapd` | Broadcasts Wi-Fi hotspot on `uap0` |
 | DHCP/DNS | `dnsmasq` | Assigns IPs to clients, local DNS |
 | Web UI | `lighttpd` + RaspAP | Browser-based router management |
@@ -86,7 +87,7 @@ Laptop USB-C ───────►  usb0 (g_ether gadget)  ──────
 
 ### Phase 1 — OS & Base Config
 
-1. Flash **Raspberry Pi OS Lite (Bookworm, 32-bit)** to microSD using Raspberry Pi Imager.
+1. Flash **Raspberry Pi OS Lite Bookworm (32-bit or 64-bit)** to microSD using Raspberry Pi Imager.
 2. In Imager's advanced settings, set:
    - Hostname: `travel-router`
    - SSH: enabled
@@ -180,9 +181,9 @@ sudo tailscale up \
 
 Your exit node (home server, VPS) must have `--advertise-exit-node` set and be approved in the admin console.
 
-### Phase 5 — TTL Hack & TCP BBR
+### Phase 5 — AP Interface, Firewall & TCP BBR
 
-**rc.local** (handles TTL mangling, AP interface creation, and power save):
+**rc.local** (handles AP interface creation, channel sync, and power save):
 
 ```bash
 sudo tee /etc/rc.local <<'EOF'
@@ -204,18 +205,18 @@ ip addr add 10.3.141.1/24 dev uap0 2>/dev/null || true
 # Restart hostapd with correct channel
 systemctl restart hostapd
 
-# TTL hack for Visible DPI bypass — all outbound traffic appears to come from phone
-iptables -t mangle -A POSTROUTING -o uap0 -j TTL --ttl-set 65
-iptables -t mangle -A POSTROUTING -o wlan0 -j TTL --ttl-set 65
-iptables -t mangle -A POSTROUTING -o eth+ -j TTL --ttl-set 65
-iptables -t mangle -A POSTROUTING -o enx+ -j TTL --ttl-set 65
-
 # Disable wlan0 power save (prevents STA disconnects)
 iw dev wlan0 set power_save off
 
 exit 0
 EOF
 sudo chmod +x /etc/rc.local
+```
+
+Firewall, TTL, DSCP, and optional proxy rules are applied idempotently by:
+```bash
+sudo install -m 755 scripts/travel-router-firewall.sh /usr/local/bin/travel-router-firewall.sh
+sudo /usr/local/bin/travel-router-firewall.sh --save
 ```
 
 **TCP BBR** (better throughput on high-latency cellular):
@@ -232,7 +233,7 @@ sudo sysctl -p
 
 ### Phase 6 — iPhone Anti-Sleep Keepalive
 
-The iPhone suspends the USB tether after ~60s of inactivity. This cron pings Google every minute to keep it alive:
+Legacy installs used a cron keepalive. Current installs use `wan-watchdog.timer` instead, so do not add this cron on new systems unless you intentionally want a simple fallback:
 
 ```bash
 sudo tee /usr/local/bin/keepalive.sh <<'EOF'
@@ -278,7 +279,7 @@ sudo chmod +x /usr/local/bin/keepalive.sh
 
 Access at `http://10.3.141.1` from any device connected to the Pi's hotspot, or via SSH tunnel:
 ```bash
-ssh -L 8080:10.3.141.1:80 neek@<TAILSCALE_IP>
+ssh -L 8080:10.3.141.1:80 <pi-user>@<TAILSCALE_IP>
 # Then open http://localhost:8080
 ```
 
@@ -314,9 +315,9 @@ Plug the Pi into your laptop via USB-C → micro-USB (OTG port). After the Pi bo
 
 Access the Pi from anywhere on your Tailnet:
 ```bash
-ssh neek@100.105.78.127
+ssh <pi-user>@<TAILSCALE_IP>
 # or
-ssh neek@travel-router
+ssh <pi-user>@travel-router
 ```
 
 Access a device connected *to* the Pi's hotspot (after approving the `10.3.141.0/24` route):
@@ -479,7 +480,7 @@ cat /etc/modules-load.d/tcp_bbr.conf  # should contain: tcp_bbr
 |---|---|
 | `10.3.141.1` | Pi — AP gateway, RaspAP web UI |
 | `10.3.141.2–254` | DHCP pool — connected client devices |
-| `100.105.78.127` | Pi — Tailscale IP |
+| `<TAILSCALE_IP>` | Pi — Tailscale IP |
 | `10.3.141.0/24` | LAN subnet advertised via Tailscale |
 
 ---
@@ -488,6 +489,7 @@ cat /etc/modules-load.d/tcp_bbr.conf  # should contain: tcp_bbr
 
 - **Change the RaspAP admin password** from `secret` immediately after install
 - **Change the hotspot SSID/password** from the defaults
+- Never commit live Pi passwords, Tailscale auth keys, ntfy topics, or private host details. If one lands in git, rotate it outside the repo before continuing.
 - The Pi's SSH port is open on the Tailscale IP — keep your Tailscale ACLs tight
 - The TTL hack is legal to use on your own devices; it simply prevents artificial throttling
 - Tailscale traffic is encrypted end-to-end (WireGuard); Visible cannot inspect it
@@ -505,10 +507,16 @@ cat /etc/modules-load.d/tcp_bbr.conf  # should contain: tcp_bbr
 │   ├── captive-check.sh       # called by wan-watchdog: portal detect + Tailscale pause
 │   ├── notify-router.sh       # ntfy.sh push notification wrapper
 │   ├── apply-cake.sh          # CAKE qdisc on uplinks (also called at boot)
-│   └── keepalive.sh           # legacy (replaced by wan-watchdog)
+│   ├── travel-router-firewall.sh  # idempotent firewall / TTL / optional proxy rules
+│   ├── start-bt-tether.sh     # Bluetooth PAN tethering
+│   ├── stop-bt-tether.sh      # Bluetooth PAN teardown
+│   ├── update-blocklists.sh   # optional nftables blocklist updater
+│   ├── vnstat-metrics.sh      # Prometheus textfile exporter
+│   └── keepalive.sh           # legacy, not installed by default
 ├── config/
-│   ├── rc.local                          # AP interface, TTL rules, power save
-│   ├── 90-ipheth.rules                   # udev: auto iPhone tether
+│   ├── rc.local                          # AP interface, channel sync, power save
+│   ├── 90-ipheth.rules                   # udev: systemd tether@.service trigger
+│   ├── 99-apple-autosuspend.rules        # udev: disable Apple USB autosuspend
 │   ├── 99-tailscale.conf                 # sysctl: IP forwarding
 │   ├── 99-disable-ipv6-uplink.conf       # sysctl: IPv6 off on uplinks
 │   ├── tcp-bbr.conf                      # sysctl: BBR + FQ
@@ -516,13 +524,19 @@ cat /etc/modules-load.d/tcp_bbr.conf  # should contain: tcp_bbr
 │   ├── dnsmasq-travel-tweaks.conf        # DNS cache, min-TTL, query slots
 │   ├── dnsmasq-usb-gadget.conf           # DHCP for USB gadget (usb0)
 │   ├── dnsmasq-static-leases.conf        # template: assign fixed IPs to devices
-│   ├── travel-router-defaults            # /etc/default/travel-router: ntfy topic
-│   ├── wpa_supplicant-open-fallback.conf # open WiFi catch-all (priority=1)
+│   ├── dnsmasq-tor-ap.conf               # optional Tor AP DHCP config
+│   ├── privoxy-user.action               # optional HTTP UA rewrite action
+│   ├── travel-router-defaults            # /etc/default/travel-router config
+│   ├── wpa_supplicant-open-fallback.conf # optional open WiFi catch-all
 │   └── NetworkManager-wifi-random-mac.conf  # MAC randomization
 └── systemd/
     ├── failover-watchdog.service / .timer  # uplink metric management (30s)
     ├── wan-watchdog.service / .timer       # WAN health + recovery (60s)
+    ├── tether@.service                     # udev-triggered USB tether setup
+    ├── update-blocklists.service / .timer  # optional nftables blocklist refresh
+    ├── vnstat-metrics.service / .timer     # bandwidth metrics export
     ├── cpu-performance.service             # performance CPU governor at boot
+    ├── wlan-mac-random.service             # randomize wlan0 MAC at boot
     └── cake-qdisc.service                  # apply CAKE on wlan0 at boot
 ```
 
