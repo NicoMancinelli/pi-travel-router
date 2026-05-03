@@ -1,550 +1,320 @@
-# Pi Zero Travel Router
+# pi-travel-router
 
-An advanced travel router built on a **Raspberry Pi Zero 2 W** optimized for the **Visible wireless network**. Provides a clean, private Wi-Fi hotspot from an iPhone USB tether or any Wi-Fi uplink — with USB Ethernet gadget mode for direct laptop connection, Tailscale VPN, TTL mangling to bypass carrier DPI, captive portal auto-handling, and push notifications via ntfy.sh.
+A self-contained travel router built on a Raspberry Pi Zero 2 W that shares any uplink (iPhone USB, Android USB, Bluetooth PAN, or hotel WiFi) as a private, Tailscale-connected Wi-Fi AP.
 
----
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform: Pi Zero 2W](https://img.shields.io/badge/platform-Pi%20Zero%202W-c51a4a.svg)
+![OS: Pi OS Bookworm](https://img.shields.io/badge/OS-Pi%20OS%20Bookworm-green.svg)
 
-## Architecture
-
-```
-                    ┌─────────────────────────────────────────────────────────┐
-iPhone USB ─────────►  enx* (ipheth, metric 100)  ─────────────────────────┐ │
-                    │                                                        │ │
-Hotel/Cafe WiFi ────►  wlan0 (STA, metric 600)     ──► NAT/routing ──► uap0 (AP) ──► WiFi clients
-                    │                                       │         10.3.141.1/24   │
-                    │  Open WiFi fallback ──────────────────┘                        │
-                    │                                                                 │
-Laptop USB-C ───────►  usb0 (g_ether gadget)  ─────────────────────────────────────┘
-                    │  192.168.7.1/24                                                 │
-                    │                                                                 │
-                    │  tailscale0 ──► Tailnet / Exit Node (optional DPI bypass)      │
-                    └─────────────────────────────────────────────────────────────────┘
-```
-
-**Uplink priority** (automatic, 30s failover watchdog):
-1. iPhone USB tether (`enx*`) — metric 100, preferred
-2. Bluetooth PAN (`bnep0`) — metric 300, low-bandwidth fallback
-3. Wi-Fi STA (`wlan0`) — metric 600, fallback
-4. Optional Open WiFi fallback — disabled by default; catches any open network if enabled
-
-**Client connections:**
-- Wi-Fi AP (`uap0`) — `10.3.141.1/24` — any device on your SSID
-- USB direct (`usb0`) — `192.168.7.1/24` — laptop via USB-C → micro-USB cable
-
-**Key features:**
-| Feature | Details |
-|---|---|
-| AP/STA concurrent mode | Pi connects upstream and broadcasts own SSID simultaneously |
-| TTL=65 + IPv6 hop-limit=65 | Both IPv4 and IPv6 traffic appears to come from phone — bypasses Visible DPI |
-| TCP BBR + CAKE qdisc | BBR handles sender congestion; CAKE eliminates bufferbloat on egress |
-| 802.11n + DTIM=1 | HT40, WMM enabled; DTIM=1 halves iOS client wake latency |
-| CPU performance governor | Eliminates ramp-up latency spikes during packet forwarding bursts |
-| USB Ethernet Gadget | Laptop gets internet via USB without using Wi-Fi — `192.168.7.1/24` |
-| Auto iPhone tether | udev detects plug-in, runs dhclient + CAKE automatically |
-| Uplink failover watchdog | 30s; promotes tether, demotes WiFi, falls back on failure |
-| WAN watchdog + recovery | 60s; reassociate → restart dhcpcd → restart networking → reboot |
-| Captive portal detection | Probes generate_204; auto-pauses/restores Tailscale for portal auth |
-| Captive portal auto-login | Tries per-SSID hook scripts then generic form POST; reports via ntfy.sh |
-| Captive portal MAC clone | `sudo clone-mac.sh <MAC>` clones laptop MAC to wlan0 before portal auth |
-| Open WiFi fallback | Optional; disabled by default in `/etc/default/travel-router` |
-| MAC randomization | NetworkManager + macchanger randomize wlan0 MAC on each connection |
-| Client isolation | AP clients can't reach each other or Pi admin interfaces |
-| Tailscale VPN | Remote access from anywhere; optional exit node; subnet routing |
-| ntfy.sh notifications | Push alerts for WAN events, tether connect/disconnect, captive portals |
-| Threat intel blocklist | Firehol Level 1 into nftables sets; daily refresh; opt-in via feature flag |
-| Tor transparent proxy | Optional; routes a dedicated subnet (172.16.100.0/24) through Tor |
-| Auto-update | Weekly pull from GitHub; updates scripts + systemd units; ntfy on success |
-| log2ram | `/var/log` in RAM → SD card not worn by continuous log writes |
+It plugs into your laptop via USB-C and appears as both a USB Ethernet adapter (192.168.7.1) and a Wi-Fi AP, routing all connected devices through whatever uplink is available. Optional features include DNS-over-TLS, AdGuard Home, a VPN kill switch, Tor transparent proxy, threat-intel IP blocklists, and automatic failover across four uplink types. The goal is a reproducible, auditable setup you can re-flash and re-run from scratch in under 20 minutes.
 
 ---
 
 ## Hardware
 
-| Component | Details |
+| Item | Notes |
 |---|---|
-| Board | Raspberry Pi Zero 2 W |
-| Storage | 32GB+ microSD (Class 10 / A1 minimum) |
-| Power | 5V/2.5A via micro-USB power port |
-| iPhone cable | Lightning/USB-C → USB-A → micro-USB OTG adapter → Pi OTG port |
-| Laptop connection | USB-C → micro-USB OTG (Pi appears as USB Ethernet adapter) |
-| Optional | USB hub + OTG adapter if using iPhone USB tether AND laptop USB simultaneously |
-
-> **Note:** The Pi Zero 2 W has one micro-USB OTG port. iPhone USB tethering (Pi as USB host) and USB Ethernet Gadget (Pi as USB device) are mutually exclusive on this port. Use a USB hub with an OTG adapter to run both simultaneously, or tether iPhone via WiFi hotspot when using USB gadget mode.
+| Raspberry Pi Zero 2 W | Required. The installer targets this board only. |
+| MicroSD card, 8 GB+ | Class 10 or better. 16 GB recommended for log storage. |
+| USB-C to Micro-USB cable | Connects Pi to laptop or iPhone USB-C hub. Carries both power and USB gadget data. |
+| USB hub (optional) | Allows iPhone tethering and laptop connection simultaneously via the same Micro-USB port. |
 
 ---
 
-## Software Stack
+## Quick Start
 
-| Component | Package / Service | Purpose |
-|---|---|---|
-| OS | Raspberry Pi OS Lite Bookworm (32-bit or 64-bit) | Base system |
-| AP daemon | `hostapd` | Broadcasts Wi-Fi hotspot on `uap0` |
-| DHCP/DNS | `dnsmasq` | Assigns IPs to clients, local DNS |
-| Web UI | `lighttpd` + RaspAP | Browser-based router management |
-| VPN mesh | `tailscale` | Remote access + optional exit node |
-| iOS tether | `usbmuxd`, `libimobiledevice`, `ipheth-utils` | iPhone USB tethering |
-| Monitoring | `vnstat` | Bandwidth usage tracking |
-| Firewall | `iptables` + `iptables-persistent` | TTL mangling, NAT |
+These steps take you from a blank SD card to a working router.
 
----
+**1. Flash Pi OS Lite Bookworm (64-bit)**
 
-## Initial Setup (from scratch)
+Use Raspberry Pi Imager: https://www.raspberrypi.com/software/
 
-### Phase 1 — OS & Base Config
+Select "Raspberry Pi OS Lite (64-bit)" — the desktop image is not needed.
 
-1. Flash **Raspberry Pi OS Lite Bookworm (32-bit or 64-bit)** to microSD using Raspberry Pi Imager.
-2. In Imager's advanced settings, set:
-   - Hostname: `travel-router`
-   - SSH: enabled
-   - Username: `neek` (or your choice)
-   - Password: (set a strong password)
-   - Wi-Fi: your home network (for initial setup)
-   - Locale/timezone: your region
-3. Boot the Pi and SSH in:
-   ```bash
-   ssh neek@travel-router.local
-   ```
-4. Update the system:
-   ```bash
-   sudo apt update && sudo apt full-upgrade -y
-   sudo apt install -y git curl
-   ```
+**2. Enable SSH before first boot**
 
-### Phase 2 — iOS Tethering Dependencies
+Mount the `bootfs` partition and create an empty file named `ssh` at its root:
 
 ```bash
-sudo apt install -y usbmuxd libimobiledevice6 libimobiledevice-utils ipheth-utils vnstat
+touch /Volumes/bootfs/ssh
 ```
 
-Enable and start usbmuxd:
+On Windows, create a file named `ssh` (no extension) in the boot partition root.
+
+**3. Boot the Pi and SSH in**
+
+Connect the Pi to power via the `PWR` port. Find its IP from your router's DHCP table or use the hostname:
+
 ```bash
-sudo systemctl enable usbmuxd
-sudo systemctl start usbmuxd
+ssh pi@raspberrypi.local
 ```
 
-### Phase 3 — RaspAP
+Default credentials: user `pi`, password `raspberry`. Change the password immediately.
 
-Install RaspAP in non-interactive mode:
+**4. Clone the repository**
+
 ```bash
-curl -sL https://install.raspap.com | bash -s -- --yes
+git clone https://github.com/NicoMancinelli/pi-travel-router.git && cd pi-travel-router
 ```
 
-This installs and configures: `lighttpd`, `hostapd`, `dnsmasq`, PHP, and sets up the web UI. The installer enables AP/STA concurrent mode automatically on Pi hardware.
+**5. Run the installer**
 
-After install, reboot:
+```bash
+sudo bash install.sh
+```
+
+**6. Answer the interactive prompts**
+
+The installer asks for:
+- AP SSID and passphrase (8+ characters)
+- Wi-Fi country code (e.g. `US`)
+- ntfy.sh topic for push notifications (optional)
+- Tailscale auth key (`tskey-auth-...`, optional — you can auth manually later)
+- Optional feature flags (DoT, AdGuard Home, kill switch, Tor, blocklists, and more)
+
+All optional features are disabled by default and can be toggled later.
+
+**7. Reboot to activate USB gadget mode**
+
 ```bash
 sudo reboot
 ```
 
-**Post-install — change default credentials immediately:**
+The `dwc2`/`g_ether` USB gadget only activates after a reboot.
 
-Access the web UI at `http://10.3.141.1` (connect to the `RaspAP` SSID first, or access via SSH tunnel).
+**8. Connect via USB**
 
-Default RaspAP login:
-- Username: `admin`
-- Password: `secret`
+Plug the Pi into your laptop using the `USB` port (not `PWR`). The Pi will appear as a USB Ethernet adapter. SSH in at the fixed gadget address:
 
-Change in **Authentication → Change Password**.
-
-Then under **Hotspot → Basic**:
-- Change SSID from `RaspAP` to something inconspicuous
-- Set a strong WPA2 password
-- Save & restart hotspot
-
-### Phase 4 — Tailscale
-
-Install:
 ```bash
-curl -fsSL https://tailscale.com/install.sh | sh
+ssh pi@192.168.7.1
 ```
 
-Enable IP forwarding:
+The Wi-Fi AP (the SSID you configured) is also up at this point.
+
+---
+
+## From Blink Shell on iPhone
+
+Install Blink Shell from the App Store: https://apps.apple.com/app/blink-shell/id1156707581
+
+**Connect via Tailscale (recommended)**
+
+After install, with Tailscale running on both your iPhone and the Pi:
+
 ```bash
-sudo tee /etc/sysctl.d/99-tailscale.conf <<EOF
-net.ipv4.ip_forward = 1
-net.ipv6.conf.all.forwarding = 1
-EOF
-sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
+ssh neek@<tailscale-ip>
 ```
 
-Authenticate (advertise the RaspAP subnet so your other Tailscale devices can reach clients):
+Replace `neek` with your configured username and `<tailscale-ip>` with the Pi's Tailscale address (shown by `tailscale ip -4`).
+
+**Connect via USB-C hub**
+
+Plug a USB-C hub with a USB-A port into your iPhone. Connect the Pi's `USB` port to the hub. SSH to the gadget address:
+
 ```bash
-sudo tailscale up --advertise-routes=10.3.141.0/24 --accept-dns=false
+ssh pi@192.168.7.1
 ```
 
-Open the authentication URL in a browser. Then in the **Tailscale admin console**:
-- Approve the advertised route `10.3.141.0/24`
-- Optionally: set an exit node if you want all Pi traffic to egress through a trusted server
-
-**Optional — use an exit node to bypass Visible DPI:**
-```bash
-sudo tailscale up \
-  --advertise-routes=10.3.141.0/24 \
-  --exit-node=<TAILSCALE_IP_OF_EXIT_NODE> \
-  --accept-dns=false
-```
-
-Your exit node (home server, VPS) must have `--advertise-exit-node` set and be approved in the admin console.
-
-### Phase 5 — AP Interface, Firewall & TCP BBR
-
-**rc.local** (handles AP interface creation, channel sync, and power save):
+**Key commands once connected**
 
 ```bash
-sudo tee /etc/rc.local <<'EOF'
-#!/bin/bash
-
-# Wait for wlan0 to associate, then match hostapd channel to it
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
-    CHAN=$(iw dev wlan0 info 2>/dev/null | awk '/channel/{print $2}')
-    [ -n "$CHAN" ] && break
-    sleep 1
-done
-[ -n "$CHAN" ] && sed -i "s/^channel=.*/channel=$CHAN/" /etc/hostapd/hostapd.conf
-
-# Create virtual AP interface for concurrent AP+STA mode
-iw dev wlan0 interface add uap0 type __ap 2>/dev/null || true
-ip link set uap0 up
-ip addr add 10.3.141.1/24 dev uap0 2>/dev/null || true
-
-# Restart hostapd with correct channel
-systemctl restart hostapd
-
-# Disable wlan0 power save (prevents STA disconnects)
-iw dev wlan0 set power_save off
-
-exit 0
-EOF
-sudo chmod +x /etc/rc.local
-```
-
-Firewall, TTL, DSCP, and optional proxy rules are applied idempotently by:
-```bash
-sudo install -m 755 scripts/travel-router-firewall.sh /usr/local/bin/travel-router-firewall.sh
-sudo /usr/local/bin/travel-router-firewall.sh --save
-```
-
-**TCP BBR** (better throughput on high-latency cellular):
-```bash
-# Load module now and persist at boot
-sudo modprobe tcp_bbr
-echo tcp_bbr | sudo tee /etc/modules-load.d/tcp_bbr.conf
-
-# Add to sysctl
-echo "net.core.default_qdisc=fq" | sudo tee -a /etc/sysctl.conf
-echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
-```
-
-### Phase 6 — iPhone Anti-Sleep Keepalive
-
-Legacy installs used a cron keepalive. Current installs use `wan-watchdog.timer` instead, so do not add this cron on new systems unless you intentionally want a simple fallback:
-
-```bash
-sudo tee /usr/local/bin/keepalive.sh <<'EOF'
-#!/bin/bash
-ping -c 1 8.8.8.8 > /dev/null 2>&1
-EOF
-sudo chmod +x /usr/local/bin/keepalive.sh
-
-# Add to root crontab
-(sudo crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/keepalive.sh") | sudo crontab -
+sudo travel-tui        # interactive dashboard: uplink, AP clients, feature flags, logs
+sudo travel-status     # one-shot status snapshot
+sudo update-router.sh  # pull latest version from GitHub
 ```
 
 ---
 
-## Daily Use
+## Features
 
-### Connecting Devices
+### Core (always on)
 
-1. On your laptop/tablet: connect to your custom SSID (set in RaspAP)
-2. Default gateway will be `10.3.141.1`
-3. Internet routes through whatever uplink the Pi is using
-
-### Switching Uplinks
-
-**iPhone USB tether (Visible):**
-1. Plug iPhone into Pi via USB
-2. On iPhone: **Settings → Personal Hotspot → Allow Others to Join** (toggle on)
-3. Trust the computer if prompted
-4. The `enx...` interface will appear; RaspAP handles routing automatically
-5. Verify: `ip addr show` should show an `enx...` interface with a 172.x.x.x address
-
-**Wi-Fi uplink:**
-- Managed via RaspAP web UI → **Wireless Client** tab
-- Or via `wpa_supplicant` directly:
-  ```bash
-  sudo wpa_cli -i wlan0 add_network
-  sudo wpa_cli -i wlan0 set_network 0 ssid '"NetworkName"'
-  sudo wpa_cli -i wlan0 set_network 0 psk '"Password"'
-  sudo wpa_cli -i wlan0 enable_network 0
-  ```
-
-### RaspAP Web UI
-
-Access at `http://10.3.141.1` from any device connected to the Pi's hotspot, or via SSH tunnel:
-```bash
-ssh -L 8080:10.3.141.1:80 <pi-user>@<TAILSCALE_IP>
-# Then open http://localhost:8080
-```
-
-| Section | What to configure |
+| Feature | Notes |
 |---|---|
-| Dashboard | Live interface stats, client count |
-| Hotspot | SSID, password, channel, band |
-| Wireless Client | Which Wi-Fi network wlan0 connects to |
-| DHCP Server | IP ranges, lease time, static assignments |
-| Ad Blocking | Optional DNS-based ad/tracker blocking |
-| System | RaspAP updates, password change |
+| Wi-Fi AP (hostapd, 802.11n HT40) | `uap0` virtual interface; ~150 Mbps; DTIM=1 for iOS wake latency |
+| USB Ethernet gadget (`g_ether`) | Fixed 192.168.7.1/24; laptop connects over USB-C after reboot |
+| iPhone USB tethering | udev auto-detect; DHCP fires on plug-in; metric 100 |
+| Uplink failover watchdog | 30s timer; tries uplinks in priority order |
+| WAN watchdog with graduated recovery | 60s timer; reassociate → restart dhcpcd → reboot |
+| Captive portal detection | Probes `generate_204`; pauses/restores Tailscale automatically |
+| Tailscale + subnet routing | Advertises `10.3.141.0/24`; remote access over mesh VPN |
+| TTL/hop-limit mangling | Sets TTL=65 and IPv6 hop-limit=65 on all uplinks; bypasses hotspot detection |
+| DSCP strip | Clears carrier ToS fingerprinting on uplink traffic |
+| CAKE qdisc (bufferbloat) | `wlan0` at 50 Mbit; tether at 15 Mbit |
+| TCP BBR + FQ qdisc | Better cellular throughput; loaded via `modules-load.d` |
+| dnsmasq tuning | cache-size=2048, min-cache-ttl=300, dns-forward-max=300 |
+| DNS rebinding protection | `stop-dns-rebind` with local/lan exceptions |
+| Client isolation (FORWARD chain) | AP clients cannot reach each other or Pi admin interfaces |
+| log2ram | `/var/log` in RAM; protects SD card from write wear |
+| CPU performance governor | Eliminates frequency ramp-up latency spikes |
+| Hardware watchdog | BCM2835 dtoverlay + `RuntimeWatchdogSec=15`; auto-reboot on kernel lockup |
 
-### USB Ethernet Gadget (Laptop Direct Connection)
+### Privacy and Security (opt-in)
 
-Plug the Pi into your laptop via USB-C → micro-USB (OTG port). After the Pi boots, your laptop sees a USB Ethernet adapter and gets an IP automatically:
-
-| Address | Role |
+| Feature | How to enable |
 |---|---|
-| `192.168.7.1` | Pi (gateway) |
-| `192.168.7.2–100` | DHCP pool (your laptop) |
+| DNS-over-TLS | `ENABLE_DOT=1` — stubby forwards to Cloudflare + Quad9 on port 5300 |
+| VPN kill switch | `ENABLE_VPN_KILLSWITCH=1` — blocks AP traffic when Tailscale drops |
+| AdGuard Home | `ENABLE_ADGUARD=1` — replaces dnsmasq DNS; web UI at `:3000`; per-client analytics |
+| Tor transparent proxy | `ENABLE_TOR_TRANSPARENT=1` — second SSID (TorAP) routes all TCP through Tor |
+| Threat-intel IP blocklist | `ENABLE_BLOCKLISTS=1` — Firehol L1 fetched daily; capped at 20,000 entries for Pi Zero RAM |
+| MAC address randomization | Always on for `wlan0` via macchanger systemd service |
+| Captive portal MAC clone | `sudo clone-mac.sh <MAC>` — clones laptop MAC to wlan0 before portal auth |
 
-**macOS:** A new "RNDIS/Ethernet Gadget" adapter appears in Network Preferences. It auto-configures via DHCP. No drivers needed.
+### Connectivity (opt-in)
 
-**Windows:** May require the RNDIS driver (built into Windows 10/11). Check Device Manager if the adapter doesn't appear.
-
-**Linux:** The interface appears as `enp0s...` or `usb0`. Run `sudo dhclient usb0` if it doesn't auto-configure.
-
-**Requires a reboot after initial setup** to activate the `dwc2` kernel overlay and load the `g_ether` module.
-
-> **iPhone USB tether and USB gadget are mutually exclusive** on the Pi Zero 2 W's single OTG port. When using USB gadget for the laptop, tether your iPhone via WiFi hotspot instead (iPhone broadcasts, Pi connects as STA on wlan0).
-
-### Tailscale Remote Access
-
-Access the Pi from anywhere on your Tailnet:
-```bash
-ssh <pi-user>@<TAILSCALE_IP>
-# or
-ssh <pi-user>@travel-router
-```
-
-Access a device connected *to* the Pi's hotspot (after approving the `10.3.141.0/24` route):
-```bash
-ssh user@10.3.141.<X>
-```
-
-Check Tailscale status:
-```bash
-sudo tailscale status
-sudo tailscale ping <node-name>
-```
-
-### Push Notifications (ntfy.sh)
-
-1. Pick a unique topic name — treat it as a secret: `travel-router-yourname-abc123`
-2. Install the **ntfy** app on iOS/Android and subscribe to your topic
-3. On the Pi: `sudo nano /etc/default/travel-router` → set `NTFY_TOPIC="your-topic"`
-
-You'll receive notifications for: WAN up/down, captive portal detected, iPhone tether connect/disconnect, router reboots.
-
-Test: `sudo /usr/local/bin/notify-router.sh "test" default`
-
-### Bandwidth Monitoring (vnstat)
-
-```bash
-# Current session
-vnstat -l
-
-# Daily summary
-vnstat -d
-
-# Monthly
-vnstat -m
-
-# Per interface
-vnstat -i enx0000000000  # replace with actual tether interface name
-```
-
----
-
-## Verification Checklist
-
-After every reboot, confirm:
-
-```bash
-# 1. Services running
-systemctl is-active lighttpd hostapd dnsmasq tailscaled
-
-# 2. AP interface up with correct IP
-ip addr show uap0
-
-# 3. TTL rules applied
-sudo iptables -t mangle -L POSTROUTING --line-numbers | grep TTL
-
-# 4. BBR active
-sysctl net.ipv4.tcp_congestion_control net.core.default_qdisc
-
-# 5. Tailscale connected
-sudo tailscale status | head -3
-
-# 6. IP forwarding on
-sysctl net.ipv4.ip_forward
-```
-
----
-
-## Troubleshooting
-
-### No internet on connected devices
-
-```bash
-# Check uplink
-ip route show
-ping -c 3 8.8.8.8
-
-# Check NAT masquerade rule (RaspAP sets this)
-sudo iptables -t nat -L POSTROUTING -n -v
-
-# Check dnsmasq
-sudo systemctl status dnsmasq
-sudo journalctl -u dnsmasq -n 30
-```
-
-### iPhone tether interface not appearing
-
-```bash
-# Check usbmuxd is running
-systemctl status usbmuxd
-
-# List connected iOS devices
-idevice_id -l
-
-# Check kernel sees the device
-dmesg | tail -20 | grep -i usb
-
-# Manually bring up the interface (replace enx... with actual name)
-sudo dhclient enx000000000000
-```
-
-The iPhone must have **Personal Hotspot enabled** and have **trusted this computer**. If not trusted, a dialog appears on the phone.
-
-### hostapd not starting / stuck in "activating"
-
-```bash
-sudo systemctl status hostapd
-sudo journalctl -u hostapd -n 50
-
-# Check hostapd config syntax
-sudo hostapd -d /etc/hostapd/hostapd.conf
-
-# Verify uap0 interface exists
-ip link show uap0
-
-# If uap0 is missing, recreate it:
-sudo iw dev wlan0 interface add uap0 type __ap
-sudo ip link set uap0 up
-sudo ip addr add 10.3.141.1/24 dev uap0
-sudo systemctl restart hostapd
-```
-
-### Tailscale not connecting
-
-```bash
-sudo tailscale status
-sudo journalctl -u tailscaled -n 30
-
-# Re-authenticate if needed
-sudo tailscale up --advertise-routes=10.3.141.0/24 --accept-dns=false
-```
-
-### rc.local not running on boot
-
-```bash
-sudo systemctl status rc-local
-sudo bash -n /etc/rc.local  # check for syntax errors
-sudo systemctl restart rc-local
-```
-
-### BBR not active after reboot
-
-```bash
-# Check if module is loaded
-lsmod | grep bbr
-
-# Load manually
-sudo modprobe tcp_bbr
-sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
-sudo sysctl -w net.core.default_qdisc=fq
-
-# Verify module loads at boot
-cat /etc/modules-load.d/tcp_bbr.conf  # should contain: tcp_bbr
-```
-
----
-
-## Network Reference
-
-| Address | Description |
+| Feature | How to enable |
 |---|---|
-| `10.3.141.1` | Pi — AP gateway, RaspAP web UI |
-| `10.3.141.2–254` | DHCP pool — connected client devices |
-| `<TAILSCALE_IP>` | Pi — Tailscale IP |
-| `10.3.141.0/24` | LAN subnet advertised via Tailscale |
+| Bluetooth PAN tethering | Set `IPHONE_BT_MAC` in `/etc/default/travel-router`; metric 300 |
+| Android USB tethering | Plug in Android with USB tethering on; udev detects `rndis0`/`usb0`; metric 200 |
+| Open Wi-Fi fallback | `ENABLE_OPEN_WIFI_FALLBACK=1` — joins any open network when no other uplink is available |
+| Per-device VPN routing | `ENABLE_PER_DEVICE_VPN=1` + `VPN_DEVICE_MACS="..."` — specified MACs routed through Tailscale, others go direct |
+| Avahi mDNS reflector | `ENABLE_AVAHI_REFLECTOR=1` — bridges mDNS between `uap0` and `tailscale0` for AirPrint/AirPlay |
+
+### Usability
+
+| Feature | How to enable |
+|---|---|
+| `travel-tui` interactive dashboard | Always installed; `sudo travel-tui` |
+| `travel-status` one-shot status | Always installed; `sudo travel-status` |
+| Per-client bandwidth fairness | `ENABLE_CLIENT_QOS=1`; set `AP_CLIENT_BANDWIDTH` for a hard cap |
+| Scheduled AP disable | `ENABLE_AP_SCHEDULE=1` — AP off at `AP_DISABLE_TIME` (default 02:00), on at `AP_ENABLE_TIME` (default 07:00) |
+| ntfy.sh push notifications | Set `NTFY_TOPIC` in `/etc/default/travel-router` |
+| Tailscale peer watchdog | Always on; ntfy alert on daemon down, stale handshake, or peer loss |
+| Captive portal auto-login | Per-SSID curl hooks in `/etc/travel-router/portals/<SSID>.sh` |
+| Static DHCP leases | Edit `/etc/dnsmasq.d/static-leases.conf` — fill in your MACs |
+
+### Maintenance
+
+| Feature | How to enable |
+|---|---|
+| Unattended security updates | `ENABLE_AUTO_UPDATES=1` — `unattended-upgrades`; auto-reboot at 03:30 + ntfy notify |
+| Auto-update from GitHub | Always installed; `sudo update-router.sh` or weekly systemd timer (Sun 03:00) |
+| Log rotation | Always on — daily rotation, 7-day retention, compressed |
+| Hardware watchdog | Active after reboot — BCM2835 watchdog via `RuntimeWatchdogSec=15` |
 
 ---
 
-## Security Notes
+## Configuration
 
-- **Change the RaspAP admin password** from `secret` immediately after install
-- **Change the hotspot SSID/password** from the defaults
-- Never commit live Pi passwords, Tailscale auth keys, ntfy topics, or private host details. If one lands in git, rotate it outside the repo before continuing.
-- The Pi's SSH port is open on the Tailscale IP — keep your Tailscale ACLs tight
-- The TTL hack is legal to use on your own devices; it simply prevents artificial throttling
-- Tailscale traffic is encrypted end-to-end (WireGuard); Visible cannot inspect it
+The single config file is `/etc/default/travel-router`. It is sourced by all router scripts at runtime.
+
+```bash
+# Push notifications
+NTFY_TOPIC=""                      # ntfy.sh topic name (treat as a secret)
+
+# Bluetooth tethering
+IPHONE_BT_MAC=""                   # iPhone BT MAC, e.g. "AA:BB:CC:DD:EE:FF"
+
+# Tailscale
+TAILSCALE_UP_ARGS="--advertise-routes=10.3.141.0/24 --accept-dns=false"
+
+# WAN watchdog probe targets
+WAN_PING_TARGETS="1.1.1.1 8.8.8.8"
+
+# Optional feature flags (0 = off, 1 = on)
+ENABLE_DOT="0"                     # DNS-over-TLS via stubby
+ENABLE_VPN_KILLSWITCH="0"          # Block AP traffic when Tailscale drops
+ENABLE_ADGUARD="0"                 # AdGuard Home DNS (web UI at :3000)
+ENABLE_BLOCKLISTS="0"              # Firehol L1 IP blocklist
+ENABLE_TOR_TRANSPARENT="0"         # Tor transparent proxy on TorAP SSID
+ENABLE_HTTP_UA_REWRITE="0"         # HTTP User-Agent normalization (privoxy)
+ENABLE_OPEN_WIFI_FALLBACK="0"      # Join any open network as last-resort uplink
+ENABLE_AVAHI_REFLECTOR="0"         # mDNS bridge between uap0 and tailscale0
+ENABLE_AP_SCHEDULE="0"             # Scheduled AP disable/enable
+AP_DISABLE_TIME="02:00"
+AP_ENABLE_TIME="07:00"
+ENABLE_CLIENT_QOS="0"              # Per-client CAKE bandwidth fairness on uap0
+AP_CLIENT_BANDWIDTH="unlimited"    # Hard cap per AP client when QOS is on
+ENABLE_PER_DEVICE_VPN="0"          # Route specific MACs through Tailscale
+VPN_DEVICE_MACS=""                 # Space-separated MACs for per-device VPN
+ENABLE_AUTO_UPDATES="0"            # Unattended security updates
+
+# Blocklist safety cap (Pi Zero has limited RAM)
+MAX_BLOCKLIST_ENTRIES="20000"
+```
+
+The `travel-tui` Features screen can toggle any `ENABLE_*` flag live without editing the file manually. For flags that affect firewall rules (e.g. `ENABLE_VPN_KILLSWITCH`), the TUI reloads the firewall automatically on toggle.
 
 ---
 
-## Repository Structure
+## Optional Features
 
-```
-├── scripts/
-│   ├── start-tether.sh        # udev: iPhone plug-in → dhclient + CAKE + ntfy
-│   ├── stop-tether.sh         # udev: iPhone unplug → release DHCP + ntfy
-│   ├── failover-watchdog.sh   # systemd: uplink metrics every 30s
-│   ├── wan-watchdog.sh        # systemd: WAN health + graduated recovery every 60s
-│   ├── captive-check.sh       # called by wan-watchdog: portal detect + Tailscale pause
-│   ├── notify-router.sh       # ntfy.sh push notification wrapper
-│   ├── apply-cake.sh          # CAKE qdisc on uplinks (also called at boot)
-│   ├── travel-router-firewall.sh  # idempotent firewall / TTL / optional proxy rules
-│   ├── start-bt-tether.sh     # Bluetooth PAN tethering
-│   ├── stop-bt-tether.sh      # Bluetooth PAN teardown
-│   ├── update-blocklists.sh   # optional nftables blocklist updater
-│   ├── vnstat-metrics.sh      # Prometheus textfile exporter
-│   └── keepalive.sh           # legacy, not installed by default
-├── config/
-│   ├── rc.local                          # AP interface, channel sync, power save
-│   ├── 90-ipheth.rules                   # udev: systemd tether@.service trigger
-│   ├── 99-apple-autosuspend.rules        # udev: disable Apple USB autosuspend
-│   ├── 99-tailscale.conf                 # sysctl: IP forwarding
-│   ├── 99-disable-ipv6-uplink.conf       # sysctl: IPv6 off on uplinks
-│   ├── tcp-bbr.conf                      # sysctl: BBR + FQ
-│   ├── hostapd.conf                      # reference: 802.11n/DTIM config
-│   ├── dnsmasq-travel-tweaks.conf        # DNS cache, min-TTL, query slots
-│   ├── dnsmasq-usb-gadget.conf           # DHCP for USB gadget (usb0)
-│   ├── dnsmasq-static-leases.conf        # template: assign fixed IPs to devices
-│   ├── dnsmasq-tor-ap.conf               # optional Tor AP DHCP config
-│   ├── privoxy-user.action               # optional HTTP UA rewrite action
-│   ├── travel-router-defaults            # /etc/default/travel-router config
-│   ├── wpa_supplicant-open-fallback.conf # optional open WiFi catch-all
-│   └── NetworkManager-wifi-random-mac.conf  # MAC randomization
-└── systemd/
-    ├── failover-watchdog.service / .timer  # uplink metric management (30s)
-    ├── wan-watchdog.service / .timer       # WAN health + recovery (60s)
-    ├── tether@.service                     # udev-triggered USB tether setup
-    ├── update-blocklists.service / .timer  # optional nftables blocklist refresh
-    ├── vnstat-metrics.service / .timer     # bandwidth metrics export
-    ├── cpu-performance.service             # performance CPU governor at boot
-    ├── wlan-mac-random.service             # randomize wlan0 MAC at boot
-    └── cake-qdisc.service                  # apply CAKE on wlan0 at boot
+All optional features are disabled by default. Enable them at install time (the interactive prompts ask about each one) or afterwards by editing `/etc/default/travel-router`.
+
+For features that affect firewall rules — `ENABLE_VPN_KILLSWITCH`, `ENABLE_BLOCKLISTS`, `ENABLE_TOR_TRANSPARENT` — reload the firewall after changing the flag:
+
+```bash
+sudo travel-router-firewall.sh --save
 ```
 
-## Potential Improvements
+For service-backed features — `ENABLE_DOT`, `ENABLE_ADGUARD`, `ENABLE_AVAHI_REFLECTOR` — restart the relevant service after enabling:
 
-See [IMPROVEMENTS.md](IMPROVEMENTS.md) for a full roadmap with GitHub-sourced tweaks, prioritized by impact.
+```bash
+sudo systemctl restart stubby          # ENABLE_DOT
+sudo systemctl restart adguard-home    # ENABLE_ADGUARD
+sudo systemctl restart avahi-daemon    # ENABLE_AVAHI_REFLECTOR
+```
+
+---
+
+## Uplink Priority
+
+The failover watchdog checks uplinks in metric order. Lower metric wins:
+
+```
+iPhone USB tether  (metric 100)
+       |
+Android USB tether (metric 200)
+       |
+Bluetooth PAN      (metric 300)
+       |
+WiFi STA (wlan0)   (metric 600)
+```
+
+The watchdog polls every 30 seconds. When the active uplink loses connectivity, it promotes the next available interface. The WAN watchdog runs independently every 60 seconds and attempts graduated recovery: reassociate → restart dhcpcd → reboot.
+
+---
+
+## Updating
+
+Pull the latest release manually:
+
+```bash
+sudo update-router.sh
+```
+
+The script checks GitHub releases, falls back to the latest `main` SHA, and re-runs any changed install steps. The install is idempotent — running it again on an already-configured Pi is safe.
+
+Automatic updates run via a weekly systemd timer every Sunday at 03:00. Enable at install time with `ENABLE_AUTO_UPDATES=1`, or enable manually:
+
+```bash
+sudo systemctl enable --now travel-router-autoupdate.timer
+```
+
+---
+
+## Development
+
+**Linting**
+
+All shell scripts are validated with shellcheck at the warning level:
+
+```bash
+shellcheck -S warning scripts/*.sh install.sh
+```
+
+**CI**
+
+GitHub Actions runs shellcheck on every push. The workflow file is at `.github/workflows/shellcheck.yml`.
+
+**Idempotency**
+
+The installer is designed to be re-run after changes. It overwrites config files, reinstalls packages, and reloads services without leaving residual state. Running `sudo bash install.sh` on an already-provisioned Pi applies any changes from the repo without requiring a fresh flash.
+
+---
+
+## License
+
+MIT. See `LICENSE`.

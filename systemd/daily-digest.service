@@ -1,0 +1,7 @@
+[Unit]
+Description=Travel router daily digest notification
+After=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/daily-digest.sh

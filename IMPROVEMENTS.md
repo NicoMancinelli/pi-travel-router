@@ -53,6 +53,9 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | Scheduled AP disable (#29) | `ap-disable.timer` / `ap-enable.timer`; disable at 02:00, re-enable at 07:00; enable with `ENABLE_AP_SCHEDULE=1` |
 | ✅ | Per-client bandwidth fairness (#21) | CAKE `per-host` on uap0; prevents one device starving others; set `AP_CLIENT_BANDWIDTH` for hard cap; `ENABLE_CLIENT_QOS=1` |
 | ✅ | Per-device Tailscale routing (#44) | fwmark 0x64 + routing table 100; specified MACs routed through Tailscale, others direct; set `VPN_DEVICE_MACS` + `ENABLE_PER_DEVICE_VPN=1` |
+| ✅ | Hardware watchdog | BCM2835 dtoverlay + systemd `RuntimeWatchdogSec=15`; auto-reboot on kernel lockup (active after reboot) |
+| ✅ | Log rotation | `logrotate.d/travel-router` — daily rotation, 7-day retention, compressed |
+| ✅ | Daily digest notification | 08:00 ntfy push: uptime, active uplink, Tailscale state, AP clients, failed units; fires only when `NTFY_TOPIC` set |
 
 Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 

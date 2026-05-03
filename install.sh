@@ -148,7 +148,7 @@ CONFIG_TXT="/boot/firmware/config.txt"
 [[ -f "$CONFIG_TXT" ]] || CONFIG_TXT="/boot/config.txt"
 
 if ! grep -q "dtoverlay=dwc2" "$CONFIG_TXT"; then
-    { echo ""; echo "[all]"; echo "dtoverlay=dwc2,dr_mode=peripheral"; } >> "$CONFIG_TXT"
+    { echo ""; echo "[all]"; echo "dtoverlay=dwc2,dr_mode=peripheral"; echo "dtoverlay=watchdog"; } >> "$CONFIG_TXT"
     ok "dwc2 overlay added to $CONFIG_TXT"
 else
     ok "dwc2 overlay already present"
@@ -157,6 +157,7 @@ fi
 echo "dwc2"    > /etc/modules-load.d/dwc2.conf
 echo "g_ether" > /etc/modules-load.d/g-ether.conf
 echo "tcp_bbr" > /etc/modules-load.d/tcp_bbr.conf
+echo "bcm2835_wdt" > /etc/modules-load.d/watchdog.conf
 ok "Module load configs written"
 
 # ── 3. Sysctl ─────────────────────────────────────────────────────────────────
@@ -335,7 +336,8 @@ for script in \
     update-router.sh \
     tailscale-watchdog.sh \
     travel-status.sh \
-    travel-tui.sh; do
+    travel-tui.sh \
+    daily-digest.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"
 done
@@ -386,6 +388,7 @@ for unit in \
     adguard-home.service \
     ap-disable.service ap-disable.timer \
     ap-enable.service ap-enable.timer \
+    daily-digest.service daily-digest.timer \
     update-router.service update-router.timer; do
     install_file "systemd/$unit" "$SYSTEMD_DEST/$unit" 644
     ok "  $unit"
@@ -399,6 +402,7 @@ for unit in \
     wlan-mac-random.service \
     vnstat-metrics.timer update-blocklists.timer \
     tailscale-watchdog.timer \
+    daily-digest.timer \
     update-router.timer; do
     if systemctl enable "$unit" 2>/dev/null; then ok "  enabled: $unit"; else warn "  could not enable $unit"; fi
 done
@@ -633,6 +637,35 @@ else
     ok "AdGuard Home disabled (set ENABLE_ADGUARD=1 to activate)"
 fi
 
+# ── §. Hardware watchdog ──────────────────────────────────────────────────────
+section "Hardware watchdog (BCM2835)"
+
+# Tell systemd to kick the hardware watchdog every 15s; reboot if it misses.
+if ! grep -q "RuntimeWatchdogSec" /etc/systemd/system.conf 2>/dev/null; then
+    cat >> /etc/systemd/system.conf << 'EOF'
+
+# Hardware watchdog — reboots Pi if kernel locks up
+RuntimeWatchdogSec=15
+ShutdownWatchdogSec=5min
+EOF
+fi
+ok "Hardware watchdog enabled (RuntimeWatchdogSec=15 — needs reboot to activate)"
+
+# ── §. Log rotation ───────────────────────────────────────────────────────────
+section "Log rotation"
+
+cat > /etc/logrotate.d/travel-router << 'EOF'
+/var/log/wan-watchdog.log /var/log/travel-router*.log {
+    daily
+    rotate 7
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
+EOF
+ok "Log rotation configured (daily, 7-day retention, compressed)"
+
 # ── §. Per-client bandwidth fairness (#21) ───────────────────────────────────
 section "Per-client bandwidth fairness (CAKE per-host)"
 
@@ -655,6 +688,15 @@ if [[ "${ENABLE_PER_DEVICE_VPN:-0}" = "1" ]]; then
     fi
 else
     ok "Per-device VPN routing disabled (set ENABLE_PER_DEVICE_VPN=1 + VPN_DEVICE_MACS)"
+fi
+
+# ── §. Daily digest notification ─────────────────────────────────────────────
+section "Daily digest notification"
+
+if [[ -n "${NTFY_TOPIC:-}" ]]; then
+    ok "Daily digest enabled — 08:00 ntfy push with uptime, uplink, Tailscale state"
+else
+    ok "Daily digest installed — set NTFY_TOPIC in /etc/default/travel-router to activate"
 fi
 
 # ── §. MOTD + status command ─────────────────────────────────────────────────
@@ -698,6 +740,7 @@ echo "    • Threat intel blocklist: daily timer installed, loading enabled=${E
 echo "    • Auto security updates: ${ENABLE_AUTO_UPDATES:-0}  (unattended-upgrades, reboot 03:30)"
 echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo update-router.sh"
 echo "    • Tailscale watchdog: 5-min peer health check + ntfy alerts"
+echo "    • Daily digest: 08:00 ntfy push (uptime, uplink, Tailscale, AP clients)"
 echo "    • Per-client QoS: ${ENABLE_CLIENT_QOS:-0}  (CAKE per-host on uap0)"
 echo "    • Per-device VPN: ${ENABLE_PER_DEVICE_VPN:-0}  (set VPN_DEVICE_MACS in /etc/default/travel-router)"
 echo "    • Run 'sudo travel-status' for a one-shot status summary"
@@ -706,6 +749,8 @@ echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-ver
 echo "    • Tailscale: subnet router for 10.3.141.0/24"
 echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
 echo "    • log2ram: /var/log in RAM"
+echo "    • Hardware watchdog: BCM2835 — reboots if kernel locks up (active after reboot)"
+echo "    • Log rotation: daily, 7-day retention for wan-watchdog.log"
 echo "    • MAC randomization: wlan0 at boot"
 echo "    • mDNS reflector: ${ENABLE_AVAHI_REFLECTOR:-0}  (AirPrint/AirPlay/NAS over Tailscale)"
 echo "    • AP schedule: ${ENABLE_AP_SCHEDULE:-0}  (disable 02:00, re-enable 07:00)"
