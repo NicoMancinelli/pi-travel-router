@@ -1,5 +1,5 @@
 #!/bin/bash
-# Uplink failover: prefer iPhone tether (enx*) over Bluetooth PAN (bnep0) over wlan0
+# Uplink failover: iPhone USB tether (enx*, metric 100) → Android USB tether (rndis0/usb0, metric 200) → Bluetooth PAN (bnep0, metric 300) → wlan0 (metric 600)
 # Runs as a systemd service every 30 seconds
 
 LOGFILE="/var/log/failover-watchdog.log"
@@ -14,6 +14,12 @@ log() {
 # Find active iPhone USB tether interface (enx*)
 get_usb_tether_iface() {
     ip -br link | awk '/^enx/ && /UP/ {print $1}' | head -1
+}
+
+# Find active Android USB tether interface (RNDIS or CDC-ECM)
+get_android_tether_iface() {
+    ip -br link | awk '/^rndis0/ && /UP/ {print $1; exit}
+                       /^usb0/  && /UP/ {print $1; exit}' | head -1
 }
 
 # Find active Bluetooth PAN tether interface
@@ -69,17 +75,30 @@ promote_iface() {
 }
 
 USB_TETHER=$(get_usb_tether_iface)
+ANDROID_TETHER=$(get_android_tether_iface)
 BT_TETHER=$(get_bt_tether_iface)
 WIFI=$(get_wifi_iface)
 
 if [ -n "$USB_TETHER" ]; then
     if can_reach_internet "$USB_TETHER"; then
         promote_iface "$USB_TETHER" 100 "USB tether"
+        [ -n "$ANDROID_TETHER" ] && promote_iface "$ANDROID_TETHER" 200 "Android tether"
         [ -n "$BT_TETHER" ] && promote_iface "$BT_TETHER" 300 "Bluetooth tether"
         [ -n "$WIFI" ] && promote_iface "wlan0" 600 "WiFi"
         exit 0
     else
         log "USB tether $USB_TETHER is UP but cannot reach internet"
+    fi
+fi
+
+if [ -n "$ANDROID_TETHER" ]; then
+    if can_reach_internet "$ANDROID_TETHER"; then
+        promote_iface "$ANDROID_TETHER" 100 "Android tether"
+        [ -n "$BT_TETHER" ] && promote_iface "$BT_TETHER" 300 "Bluetooth tether"
+        [ -n "$WIFI" ] && promote_iface "wlan0" 600 "WiFi"
+        exit 0
+    else
+        log "Android tether $ANDROID_TETHER is UP but cannot reach internet"
     fi
 fi
 

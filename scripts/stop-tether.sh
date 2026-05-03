@@ -13,5 +13,5 @@ logger "stop-tether: $IFACE removed, releasing DHCP"
 /sbin/ip link delete "$IFACE" 2>/dev/null || true
 logger "stop-tether: done"
 
-/usr/local/bin/notify-router.sh "iPhone tether disconnected: $IFACE" low
+/usr/local/bin/notify-router.sh "USB tether disconnected: $IFACE" low
 /usr/local/bin/failover-watchdog.sh 2>/dev/null || true

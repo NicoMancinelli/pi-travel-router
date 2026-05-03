@@ -55,6 +55,8 @@ _yn ENABLE_OPEN_WIFI_FALLBACK  "Enable open WiFi fallback (join any open network
 _yn ENABLE_DOT                 "Enable DNS-over-TLS (stubby → Cloudflare + Quad9)?"
 _yn ENABLE_VPN_KILLSWITCH      "Enable VPN kill switch (block AP traffic if Tailscale drops)?"
 _yn ENABLE_AUTO_UPDATES        "Enable automatic OS security updates (unattended-upgrades)?"
+_yn ENABLE_ADGUARD             "Enable AdGuard Home (DNS ad-blocker + per-client analytics)?"
+_yn ENABLE_AVAHI_REFLECTOR  "Enable mDNS reflector (AirPrint/AirPlay over Tailscale)?"
 
 if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
     read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
@@ -67,7 +69,7 @@ fi
 COUNTRY="${COUNTRY^^}"
 [[ "$NTFY_TOPIC" =~ ^[A-Za-z0-9._-]*$ ]] || die "ntfy.sh topic may only contain letters, numbers, dot, underscore, or dash"
 [[ -z "$TS_KEY" || "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD; do
     validate_flag "$flag"
 done
 
@@ -103,6 +105,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     stubby \
     unattended-upgrades \
     bluez bluez-tools python3-dbus \
+    avahi-daemon \
     iproute2 iw wireless-tools
 
 ok "Packages installed"
@@ -324,7 +327,8 @@ for script in \
     vnstat-metrics.sh update-blocklists.sh travel-router-firewall.sh \
     start-bt-tether.sh stop-bt-tether.sh \
     clone-mac.sh \
-    update-router.sh; do
+    update-router.sh \
+    tailscale-watchdog.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"
 done
@@ -354,7 +358,7 @@ section "Travel router config defaults"
 
 install_file config/travel-router-defaults /etc/default/travel-router 600
 sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-router
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD; do
     sed -i "s/^${flag}=.*/${flag}=\"${!flag:-0}\"/" /etc/default/travel-router
 done
 ok "/etc/default/travel-router written"
@@ -371,6 +375,8 @@ for unit in \
     wlan-mac-random.service \
     vnstat-metrics.service vnstat-metrics.timer \
     update-blocklists.service update-blocklists.timer \
+    tailscale-watchdog.service tailscale-watchdog.timer \
+    adguard-home.service \
     update-router.service update-router.timer; do
     install_file "systemd/$unit" "$SYSTEMD_DEST/$unit" 644
     ok "  $unit"
@@ -383,6 +389,7 @@ for unit in \
     cpu-performance.service cake-qdisc.service \
     wlan-mac-random.service \
     vnstat-metrics.timer update-blocklists.timer \
+    tailscale-watchdog.timer \
     update-router.timer; do
     if systemctl enable "$unit" 2>/dev/null; then ok "  enabled: $unit"; else warn "  could not enable $unit"; fi
 done
@@ -403,8 +410,10 @@ section "udev rules"
 
 install_file config/90-ipheth.rules /etc/udev/rules.d/90-ipheth.rules 644
 install_file config/99-apple-autosuspend.rules /etc/udev/rules.d/99-apple-autosuspend.rules 644
+install_file config/91-android-tether.rules /etc/udev/rules.d/91-android-tether.rules 644
+install_file config/modules-android-tether.conf /etc/modules-load.d/android-tether.conf 644
 udevadm control --reload-rules 2>/dev/null || true
-ok "udev rules installed (ipheth + USB autosuspend)"
+ok "udev rules installed (ipheth + Android tethering + USB autosuspend)"
 
 # ── 15. log2ram ───────────────────────────────────────────────────────────────
 section "log2ram"
@@ -553,6 +562,35 @@ else
     ok "Auto security updates disabled (set ENABLE_AUTO_UPDATES=1 to activate)"
 fi
 
+# ── §. Avahi — mDNS reflector ────────────────────────────────────────────────
+section "Avahi — mDNS reflector"
+
+install_file config/avahi-daemon.conf /etc/avahi/avahi-daemon.conf 644
+
+if [[ "${ENABLE_AVAHI_REFLECTOR:-0}" = "1" ]]; then
+    systemctl enable --now avahi-daemon 2>/dev/null || true
+    ok "Avahi mDNS reflector enabled (uap0 ↔ tailscale0)"
+else
+    systemctl disable --now avahi-daemon 2>/dev/null || true
+    ok "Avahi installed but disabled (set ENABLE_AVAHI_REFLECTOR=1 to activate)"
+fi
+
+# ── §. AdGuard Home — DNS ad-blocker ─────────────────────────────────────────
+section "AdGuard Home — DNS ad-blocker"
+
+if [[ "${ENABLE_ADGUARD:-0}" = "1" ]]; then
+    info "Downloading AdGuard Home binary..."
+    bash "$REPO/scripts/install-adguard.sh"
+    install_file config/AdGuardHome.yaml /opt/AdGuardHome/AdGuardHome.yaml 640
+    install_file config/dnsmasq-adguard.conf /etc/dnsmasq.d/adguard.conf
+    rm -f /etc/dnsmasq.d/dot.conf
+    systemctl enable --now adguard-home 2>/dev/null || true
+    ok "AdGuard Home enabled — web UI at http://10.3.141.1:3000 (set password on first visit)"
+    ok "DNS: dnsmasq → AdGuard Home (127.0.0.1:5335) → DoT upstreams"
+else
+    ok "AdGuard Home disabled (set ENABLE_ADGUARD=1 to activate)"
+fi
+
 # ── 24. Version stamp ─────────────────────────────────────────────────────────
 section "Version stamp"
 INSTALLED_VERSION="$(cat "$REPO/VERSION" 2>/dev/null || echo "unknown")"
@@ -572,22 +610,26 @@ echo "    • RaspAP web UI (http://10.3.141.1 after boot)"
 echo "    • AP SSID: $AP_SSID  (on uap0, 10.3.141.0/24)"
 echo "    • USB gadget: usb0 → 192.168.7.1  (active after reboot)"
 echo "    • iPhone USB tether: udev auto-detect (enx*, metric 100)"
+echo "    • Android USB tether: udev auto-detect (rndis0/usb0, metric 200)"
 echo "    • Bluetooth tether: set IPHONE_BT_MAC in /etc/default/travel-router"
 echo "    • Uplink failover watchdog: 30s timer"
 echo "    • WAN watchdog + captive portal detection: 60s timer"
 echo "    • TTL=65 + DSCP strip (Visible carrier bypass)"
 echo "    • DNS-over-TLS: ${ENABLE_DOT:-0}  (stubby → Cloudflare/Quad9)"
+echo "    • AdGuard Home: ${ENABLE_ADGUARD:-0}  (web UI: http://10.3.141.1:3000)"
 echo "    • VPN kill switch: ${ENABLE_VPN_KILLSWITCH:-0}  (AP traffic blocked if Tailscale drops)"
 echo "    • privoxy: HTTP User-Agent normalization (${ENABLE_HTTP_UA_REWRITE:-0})"
 echo "    • Tor: transparent proxy (${ENABLE_TOR_TRANSPARENT:-0})"
 echo "    • Threat intel blocklist: daily timer installed, loading enabled=${ENABLE_BLOCKLISTS:-0}"
 echo "    • Auto security updates: ${ENABLE_AUTO_UPDATES:-0}  (unattended-upgrades, reboot 03:30)"
 echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo update-router.sh"
+echo "    • Tailscale watchdog: 5-min peer health check + ntfy alerts"
 echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"
 echo "    • Tailscale: subnet router for 10.3.141.0/24"
 echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
 echo "    • log2ram: /var/log in RAM"
 echo "    • MAC randomization: wlan0 at boot"
+echo "    • mDNS reflector: ${ENABLE_AVAHI_REFLECTOR:-0}  (AirPrint/AirPlay/NAS over Tailscale)"
 echo "    • ntfy.sh: ${NTFY_TOPIC:-not configured (set NTFY_TOPIC in /etc/default/travel-router)}"
 echo ""
 echo "  Next steps:"

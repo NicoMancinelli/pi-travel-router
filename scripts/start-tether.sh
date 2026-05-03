@@ -1,6 +1,6 @@
 #!/bin/bash
-# Called by udev when iPhone tether interface appears (enx*)
-# /etc/udev/rules.d/90-ipheth.rules triggers this with %k (interface name)
+# Called by udev when a USB tether interface appears (enx*, rndis0, usb0)
+# Triggered by udev rules with %k (interface name)
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ if ! ip link show "$IFACE" >/dev/null 2>&1; then
     exit 1
 fi
 
-sleep 3  # wait for ipheth driver + iOS trust handshake
+sleep 3  # wait for driver init (ipheth iOS trust handshake; RNDIS/CDC-ECM enumeration)
 
 logger "start-tether: bringing up $IFACE"
 /sbin/dhclient -v "$IFACE" 2>&1 | logger -t "start-tether"
@@ -26,4 +26,4 @@ tc qdisc replace dev "$IFACE" root cake bandwidth 15mbit besteffort 2>/dev/null 
 /usr/local/bin/failover-watchdog.sh
 
 logger "start-tether: $IFACE configured"
-/usr/local/bin/notify-router.sh "iPhone tether connected: $IFACE" low
+/usr/local/bin/notify-router.sh "USB tether connected: $IFACE" low

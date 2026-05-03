@@ -1,0 +1,14 @@
+# Android USB tethering (RNDIS / CDC-ECM)
+# Install to: /etc/udev/rules.d/91-android-tether.rules
+# Triggers start-tether.sh on plug (same as ipheth), stop-tether.sh on unplug
+
+SUBSYSTEM=="net", ACTION=="add", KERNEL=="rndis0", \
+    RUN+="/usr/local/bin/start-tether.sh %k"
+SUBSYSTEM=="net", ACTION=="remove", KERNEL=="rndis0", \
+    RUN+="/usr/local/bin/stop-tether.sh %k"
+SUBSYSTEM=="net", ACTION=="add", KERNEL=="usb0", \
+    ATTRS{idVendor}!="05ac", \
+    RUN+="/usr/local/bin/start-tether.sh %k"
+SUBSYSTEM=="net", ACTION=="remove", KERNEL=="usb0", \
+    ATTRS{idVendor}!="05ac", \
+    RUN+="/usr/local/bin/stop-tether.sh %k"

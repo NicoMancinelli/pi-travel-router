@@ -32,6 +32,8 @@ ENABLE_BLOCKLISTS="0"
 ENABLE_DOT="0"
 ENABLE_VPN_KILLSWITCH="0"
 ENABLE_AUTO_UPDATES="0"
+ENABLE_AVAHI_REFLECTOR="0"
+ENABLE_ADGUARD="0"
 
 # Safety cap for update-blocklists.sh on memory-constrained Pi Zero hardware.
 MAX_BLOCKLIST_ENTRIES="20000"

@@ -1,0 +1,12 @@
+[Unit]
+Description=AdGuard Home DNS ad-blocker
+After=network.target syslog.target
+
+[Service]
+Type=simple
+ExecStart=/opt/AdGuardHome/AdGuardHome --no-check-update -s run -c /opt/AdGuardHome/AdGuardHome.yaml -w /opt/AdGuardHome
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

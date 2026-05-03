@@ -1,0 +1,43 @@
+# AdGuard Home pre-seeded config
+# Install to: /opt/AdGuardHome/AdGuardHome.yaml
+# Web UI: http://10.3.141.1:3000 — set admin password on first visit
+
+http:
+  pprof:
+    port: 6060
+    enabled: false
+  address: 0.0.0.0:3000
+  session_ttl: 720h
+
+dns:
+  bind_hosts:
+    - 127.0.0.1
+  port: 5335
+  anonymize_client_ip: false
+  protection_enabled: true
+  blocking_mode: default
+  blocked_response_ttl: 10
+  filters_update_interval: 24
+  upstream_dns:
+    - tls://1.1.1.1
+    - tls://1.0.0.1
+    - tls://9.9.9.9
+    - tls://149.112.112.112
+  bootstrap_dns:
+    - 1.1.1.1:53
+    - 9.9.9.9:53
+  cache_size: 4194304
+  cache_ttl_min: 0
+  cache_ttl_max: 0
+  upstream_timeout: 10s
+
+log:
+  file: ""
+  max_backups: 0
+  max_size: 100
+  max_age: 3
+  compress: false
+  local_time: false
+  verbose: false
+
+schema_version: 28

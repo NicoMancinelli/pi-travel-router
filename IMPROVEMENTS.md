@@ -46,6 +46,10 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | DNS-over-TLS (#16) | `stubby` → Cloudflare + Quad9; dnsmasq forwards via `server=127.0.0.1#5300`; enable with `ENABLE_DOT=1` |
 | ✅ | VPN kill switch (#17) | `KILL_SWITCH` iptables chain in `travel-router-firewall.sh`; blocks AP traffic when Tailscale drops; enable with `ENABLE_VPN_KILLSWITCH=1` |
 | ✅ | Unattended security updates (#26) | `unattended-upgrades` + auto-reboot at 03:30 + ntfy.sh notify; enable with `ENABLE_AUTO_UPDATES=1` |
+| ✅ | Android USB tethering (#24) | RNDIS/CDC-ECM udev rules; `rndis0`/`usb0` as metric-200 uplink; plug in Android with USB tethering on |
+| ✅ | Avahi mDNS reflector (#28) | bridges mDNS between uap0 and tailscale0; AirPrint/AirPlay/NAS discovery; enable with `ENABLE_AVAHI_REFLECTOR=1` |
+| ✅ | Tailscale peer watchdog (#35) | 5-min health check; ntfy alert on daemon down, stale handshake, or peer loss |
+| ✅ | AdGuard Home (#18) | DNS ad-blocker + per-client analytics + DoT upstreams; web UI at `:3000`; enable with `ENABLE_ADGUARD=1` |
 
 Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 
