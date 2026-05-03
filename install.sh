@@ -52,6 +52,9 @@ _yn ENABLE_BLOCKLISTS          "Enable threat-intel blocklist (Firehol L1)?"
 _yn ENABLE_TOR_TRANSPARENT     "Enable Tor transparent proxy?"
 _yn ENABLE_HTTP_UA_REWRITE     "Enable HTTP User-Agent normalization (privoxy)?"
 _yn ENABLE_OPEN_WIFI_FALLBACK  "Enable open WiFi fallback (join any open network)?"
+_yn ENABLE_DOT                 "Enable DNS-over-TLS (stubby → Cloudflare + Quad9)?"
+_yn ENABLE_VPN_KILLSWITCH      "Enable VPN kill switch (block AP traffic if Tailscale drops)?"
+_yn ENABLE_AUTO_UPDATES        "Enable automatic OS security updates (unattended-upgrades)?"
 
 if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
     read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
@@ -64,7 +67,7 @@ fi
 COUNTRY="${COUNTRY^^}"
 [[ "$NTFY_TOPIC" =~ ^[A-Za-z0-9._-]*$ ]] || die "ntfy.sh topic may only contain letters, numbers, dot, underscore, or dash"
 [[ -z "$TS_KEY" || "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES; do
     validate_flag "$flag"
 done
 
@@ -97,6 +100,8 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     macchanger vnstat \
     privoxy \
     tor \
+    stubby \
+    unattended-upgrades \
     bluez bluez-tools python3-dbus \
     iproute2 iw wireless-tools
 
@@ -288,6 +293,21 @@ install_file config/dnsmasq-usb-gadget.conf  /etc/dnsmasq.d/usb-gadget.conf
 install_file config/dnsmasq-static-leases.conf /etc/dnsmasq.d/static-leases.conf
 ok "dnsmasq configs installed"
 
+# ── 9b. stubby — DNS-over-TLS ────────────────────────────────────────────────
+section "stubby — DNS-over-TLS"
+
+mkdir -p /etc/stubby
+install_file config/stubby.yml /etc/stubby/stubby.yml 644
+
+if [[ "${ENABLE_DOT:-0}" = "1" ]]; then
+    install_file config/dnsmasq-dot.conf /etc/dnsmasq.d/dot.conf
+    systemctl enable --now stubby 2>/dev/null || true
+    ok "DNS-over-TLS enabled: dnsmasq → stubby → Cloudflare/Quad9"
+else
+    systemctl disable --now stubby 2>/dev/null || true
+    ok "DNS-over-TLS installed but disabled (set ENABLE_DOT=1 to activate)"
+fi
+
 # ── 10. rc.local ──────────────────────────────────────────────────────────────
 section "rc.local — AP interface + channel sync + power save"
 
@@ -334,10 +354,8 @@ section "Travel router config defaults"
 
 install_file config/travel-router-defaults /etc/default/travel-router 600
 sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-router
-# shellcheck source=/dev/null
-source /etc/default/travel-router
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS; do
-    validate_flag "$flag"
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES; do
+    sed -i "s/^${flag}=.*/${flag}=\"${!flag:-0}\"/" /etc/default/travel-router
 done
 ok "/etc/default/travel-router written"
 
@@ -522,7 +540,20 @@ vnstat --add -i wlan0 2>/dev/null || true
 vnstat --add -i uap0  2>/dev/null || true
 ok "vnStat tracking wlan0 + uap0"
 
-# ── 23. Version stamp ─────────────────────────────────────────────────────────
+# ── 23. Unattended security updates ──────────────────────────────────────────
+section "Unattended security updates"
+
+if [[ "${ENABLE_AUTO_UPDATES:-0}" = "1" ]]; then
+    install_file config/50unattended-upgrades          /etc/apt/apt.conf.d/50unattended-upgrades 644
+    install_file config/20auto-upgrades                /etc/apt/apt.conf.d/20auto-upgrades 644
+    install_file config/99-travel-router-notify.conf   /etc/apt/apt.conf.d/99-travel-router-notify 644
+    systemctl enable --now unattended-upgrades 2>/dev/null || true
+    ok "Auto security updates enabled (reboot at 03:30 when required)"
+else
+    ok "Auto security updates disabled (set ENABLE_AUTO_UPDATES=1 to activate)"
+fi
+
+# ── 24. Version stamp ─────────────────────────────────────────────────────────
 section "Version stamp"
 INSTALLED_VERSION="$(cat "$REPO/VERSION" 2>/dev/null || echo "unknown")"
 echo "$INSTALLED_VERSION" > /etc/travel-router-version
@@ -545,9 +576,12 @@ echo "    • Bluetooth tether: set IPHONE_BT_MAC in /etc/default/travel-router"
 echo "    • Uplink failover watchdog: 30s timer"
 echo "    • WAN watchdog + captive portal detection: 60s timer"
 echo "    • TTL=65 + DSCP strip (Visible carrier bypass)"
+echo "    • DNS-over-TLS: ${ENABLE_DOT:-0}  (stubby → Cloudflare/Quad9)"
+echo "    • VPN kill switch: ${ENABLE_VPN_KILLSWITCH:-0}  (AP traffic blocked if Tailscale drops)"
 echo "    • privoxy: HTTP User-Agent normalization (${ENABLE_HTTP_UA_REWRITE:-0})"
 echo "    • Tor: transparent proxy (${ENABLE_TOR_TRANSPARENT:-0})"
 echo "    • Threat intel blocklist: daily timer installed, loading enabled=${ENABLE_BLOCKLISTS:-0}"
+echo "    • Auto security updates: ${ENABLE_AUTO_UPDATES:-0}  (unattended-upgrades, reboot 03:30)"
 echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo update-router.sh"
 echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"
 echo "    • Tailscale: subnet router for 10.3.141.0/24"

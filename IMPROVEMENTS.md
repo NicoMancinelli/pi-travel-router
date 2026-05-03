@@ -43,6 +43,9 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | Threat intel IP blocklist (#41) | `update-blocklists.sh` + daily timer; enable with `ENABLE_BLOCKLISTS=1` in `/etc/default/travel-router` |
 | ✅ | Tor transparent proxy (#42) | Installed, disabled by default; enable with `ENABLE_TOR_TRANSPARENT=1`; uap1 (TorAP SSID) probed at install time |
 | ✅ | Auto-update from GitHub | `update-router.sh` + weekly timer (Sun 03:00); checks releases, falls back to main SHA; run manually with `sudo update-router.sh` |
+| ✅ | DNS-over-TLS (#16) | `stubby` → Cloudflare + Quad9; dnsmasq forwards via `server=127.0.0.1#5300`; enable with `ENABLE_DOT=1` |
+| ✅ | VPN kill switch (#17) | `KILL_SWITCH` iptables chain in `travel-router-firewall.sh`; blocks AP traffic when Tailscale drops; enable with `ENABLE_VPN_KILLSWITCH=1` |
+| ✅ | Unattended security updates (#26) | `unattended-upgrades` + auto-reboot at 03:30 + ntfy.sh notify; enable with `ENABLE_AUTO_UPDATES=1` |
 
 Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 

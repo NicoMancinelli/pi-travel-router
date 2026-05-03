@@ -8,6 +8,7 @@ source /etc/default/travel-router 2>/dev/null || true
 
 ENABLE_HTTP_UA_REWRITE="${ENABLE_HTTP_UA_REWRITE:-0}"
 ENABLE_TOR_TRANSPARENT="${ENABLE_TOR_TRANSPARENT:-0}"
+ENABLE_VPN_KILLSWITCH="${ENABLE_VPN_KILLSWITCH:-0}"
 
 ipt_add() {
     local table=$1 chain=$2
@@ -66,6 +67,15 @@ if [ "$ENABLE_TOR_TRANSPARENT" = "1" ]; then
     ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp -d 172.16.0.0/12 -j RETURN
     ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp -d 192.168.0.0/16 -j RETURN
     ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp --syn -j REDIRECT --to-ports 9040
+fi
+
+if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
+    # Flush and rebuild chain each run so rules are always current.
+    iptables -t filter -N KILL_SWITCH 2>/dev/null || iptables -t filter -F KILL_SWITCH
+    iptables -t filter -A KILL_SWITCH -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+    iptables -t filter -A KILL_SWITCH -o tailscale0 -j RETURN
+    iptables -t filter -A KILL_SWITCH -j DROP
+    ipt_add filter FORWARD -i uap0 -j KILL_SWITCH
 fi
 
 if [ "${1:-}" = "--save" ]; then
