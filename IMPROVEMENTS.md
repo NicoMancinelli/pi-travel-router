@@ -50,6 +50,7 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | Avahi mDNS reflector (#28) | bridges mDNS between uap0 and tailscale0; AirPrint/AirPlay/NAS discovery; enable with `ENABLE_AVAHI_REFLECTOR=1` |
 | ✅ | Tailscale peer watchdog (#35) | 5-min health check; ntfy alert on daemon down, stale handshake, or peer loss |
 | ✅ | AdGuard Home (#18) | DNS ad-blocker + per-client analytics + DoT upstreams; web UI at `:3000`; enable with `ENABLE_ADGUARD=1` |
+| ✅ | Scheduled AP disable (#29) | `ap-disable.timer` / `ap-enable.timer`; disable at 02:00, re-enable at 07:00; enable with `ENABLE_AP_SCHEDULE=1` |
 
 Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 

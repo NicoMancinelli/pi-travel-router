@@ -1,0 +1,8 @@
+[Unit]
+Description=Disable travel router AP
+ConditionPathExists=/usr/local/bin/ap-schedule.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ap-schedule.sh disable
+EnvironmentFile=-/etc/default/travel-router

@@ -57,6 +57,7 @@ _yn ENABLE_VPN_KILLSWITCH      "Enable VPN kill switch (block AP traffic if Tail
 _yn ENABLE_AUTO_UPDATES        "Enable automatic OS security updates (unattended-upgrades)?"
 _yn ENABLE_ADGUARD             "Enable AdGuard Home (DNS ad-blocker + per-client analytics)?"
 _yn ENABLE_AVAHI_REFLECTOR  "Enable mDNS reflector (AirPrint/AirPlay over Tailscale)?"
+_yn ENABLE_AP_SCHEDULE      "Enable scheduled AP disable at night (02:00–07:00)?"
 
 if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
     read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
@@ -69,7 +70,7 @@ fi
 COUNTRY="${COUNTRY^^}"
 [[ "$NTFY_TOPIC" =~ ^[A-Za-z0-9._-]*$ ]] || die "ntfy.sh topic may only contain letters, numbers, dot, underscore, or dash"
 [[ -z "$TS_KEY" || "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE; do
     validate_flag "$flag"
 done
 
@@ -106,7 +107,8 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     unattended-upgrades \
     bluez bluez-tools python3-dbus \
     avahi-daemon \
-    iproute2 iw wireless-tools
+    iproute2 iw wireless-tools \
+    qrencode
 
 ok "Packages installed"
 
@@ -327,8 +329,11 @@ for script in \
     vnstat-metrics.sh update-blocklists.sh travel-router-firewall.sh \
     start-bt-tether.sh stop-bt-tether.sh \
     clone-mac.sh \
+    ap-schedule.sh \
     update-router.sh \
-    tailscale-watchdog.sh; do
+    tailscale-watchdog.sh \
+    travel-status.sh \
+    travel-tui.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"
 done
@@ -358,7 +363,7 @@ section "Travel router config defaults"
 
 install_file config/travel-router-defaults /etc/default/travel-router 600
 sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-router
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE; do
     sed -i "s/^${flag}=.*/${flag}=\"${!flag:-0}\"/" /etc/default/travel-router
 done
 ok "/etc/default/travel-router written"
@@ -377,6 +382,8 @@ for unit in \
     update-blocklists.service update-blocklists.timer \
     tailscale-watchdog.service tailscale-watchdog.timer \
     adguard-home.service \
+    ap-disable.service ap-disable.timer \
+    ap-enable.service ap-enable.timer \
     update-router.service update-router.timer; do
     install_file "systemd/$unit" "$SYSTEMD_DEST/$unit" 644
     ok "  $unit"
@@ -562,6 +569,27 @@ else
     ok "Auto security updates disabled (set ENABLE_AUTO_UPDATES=1 to activate)"
 fi
 
+# ── §. WiFi QR code ───────────────────────────────────────────────────────────
+section "WiFi QR code"
+
+WIFI_QR_DIR="/usr/local/share/travel-router/wifi-qr"
+mkdir -p "$WIFI_QR_DIR"
+WIFI_STRING="WIFI:T:WPA;S:${AP_SSID};P:${AP_PASS};;"
+printf '%s\n' "$WIFI_STRING" > "$WIFI_QR_DIR/wifi-string.txt"
+chmod 600 "$WIFI_QR_DIR/wifi-string.txt"
+
+if command -v qrencode >/dev/null 2>&1; then
+    qrencode -t UTF8 -o "$WIFI_QR_DIR/wifi-qr.txt" "$WIFI_STRING"
+    chmod 600 "$WIFI_QR_DIR/wifi-qr.txt"
+    ok "WiFi QR code saved to $WIFI_QR_DIR/wifi-qr.txt"
+    ok "Display with: cat $WIFI_QR_DIR/wifi-qr.txt"
+    echo ""
+    qrencode -t UTF8 "$WIFI_STRING" || true
+    echo ""
+else
+    ok "qrencode not available — WiFi string saved to $WIFI_QR_DIR/wifi-string.txt"
+fi
+
 # ── §. Avahi — mDNS reflector ────────────────────────────────────────────────
 section "Avahi — mDNS reflector"
 
@@ -573,6 +601,18 @@ if [[ "${ENABLE_AVAHI_REFLECTOR:-0}" = "1" ]]; then
 else
     systemctl disable --now avahi-daemon 2>/dev/null || true
     ok "Avahi installed but disabled (set ENABLE_AVAHI_REFLECTOR=1 to activate)"
+fi
+
+# ── §. Scheduled AP disable (#29) ────────────────────────────────────────────
+section "Scheduled AP disable"
+
+if [[ "${ENABLE_AP_SCHEDULE:-0}" = "1" ]]; then
+    systemctl enable ap-disable.timer ap-enable.timer 2>/dev/null || true
+    ok "AP schedule enabled: disable at 02:00, re-enable at 07:00"
+    ok "Customise: edit /etc/systemd/system/ap-disable.timer (OnCalendar=)"
+else
+    systemctl disable ap-disable.timer ap-enable.timer 2>/dev/null || true
+    ok "AP schedule disabled (set ENABLE_AP_SCHEDULE=1 to activate)"
 fi
 
 # ── §. AdGuard Home — DNS ad-blocker ─────────────────────────────────────────
@@ -590,6 +630,14 @@ if [[ "${ENABLE_ADGUARD:-0}" = "1" ]]; then
 else
     ok "AdGuard Home disabled (set ENABLE_ADGUARD=1 to activate)"
 fi
+
+# ── §. MOTD + status command ─────────────────────────────────────────────────
+section "MOTD + status command"
+
+install_file config/motd-travel-router /etc/update-motd.d/10-travel-router 755
+chmod +x /etc/update-motd.d/10-travel-router
+ok "SSH login MOTD installed (calls travel-status.sh)"
+ok "Run 'sudo travel-tui' for the interactive dashboard"
 
 # ── 24. Version stamp ─────────────────────────────────────────────────────────
 section "Version stamp"
@@ -624,12 +672,16 @@ echo "    • Threat intel blocklist: daily timer installed, loading enabled=${E
 echo "    • Auto security updates: ${ENABLE_AUTO_UPDATES:-0}  (unattended-upgrades, reboot 03:30)"
 echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo update-router.sh"
 echo "    • Tailscale watchdog: 5-min peer health check + ntfy alerts"
+echo "    • Run 'sudo travel-status' for a one-shot status summary"
+echo "    • Run 'sudo travel-tui' for the interactive management TUI"
 echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"
 echo "    • Tailscale: subnet router for 10.3.141.0/24"
 echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
 echo "    • log2ram: /var/log in RAM"
 echo "    • MAC randomization: wlan0 at boot"
 echo "    • mDNS reflector: ${ENABLE_AVAHI_REFLECTOR:-0}  (AirPrint/AirPlay/NAS over Tailscale)"
+echo "    • AP schedule: ${ENABLE_AP_SCHEDULE:-0}  (disable 02:00, re-enable 07:00)"
+echo "    • WiFi QR: cat /usr/local/share/travel-router/wifi-qr/wifi-qr.txt"
 echo "    • ntfy.sh: ${NTFY_TOPIC:-not configured (set NTFY_TOPIC in /etc/default/travel-router)}"
 echo ""
 echo "  Next steps:"

@@ -1,0 +1,3 @@
+#!/bin/bash
+# SSH login MOTD — show travel router status on login
+[ -x /usr/local/bin/travel-status.sh ] && /usr/local/bin/travel-status.sh || true

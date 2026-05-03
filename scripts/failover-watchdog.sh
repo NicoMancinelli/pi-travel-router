@@ -74,6 +74,37 @@ promote_iface() {
     fi
 }
 
+# ── Uplink-change state tracking ─────────────────────────────────────────────
+_UPLINK_STATE_DIR="/var/lib/travel-router"
+_UPLINK_STATE_FILE="$_UPLINK_STATE_DIR/uplink.state"
+mkdir -p "$_UPLINK_STATE_DIR"
+
+_uplink_label() {
+    case "$1" in
+        enx*) printf "iPhone USB" ;;
+        rndis0|usb0) printf "Android USB" ;;
+        bnep0) printf "Bluetooth PAN" ;;
+        wlan0) printf "WiFi STA" ;;
+        *) printf "%s" "$1" ;;
+    esac
+}
+
+_notify_uplink_change() {
+    local curr_uplink="$1"
+    local prev_uplink=""
+    [ -f "$_UPLINK_STATE_FILE" ] && prev_uplink=$(cat "$_UPLINK_STATE_FILE")
+    if [ -n "$curr_uplink" ] && [ "$curr_uplink" != "$prev_uplink" ]; then
+        local prev_label curr_label
+        prev_label=$(_uplink_label "${prev_uplink:-none}")
+        curr_label=$(_uplink_label "$curr_uplink")
+        if [ -x /usr/local/bin/notify-router.sh ]; then
+            /usr/local/bin/notify-router.sh "Uplink: ${prev_label} → ${curr_label}" low 2>/dev/null || true
+        fi
+        printf '%s\n' "$curr_uplink" > "$_UPLINK_STATE_FILE"
+    fi
+}
+# ─────────────────────────────────────────────────────────────────────────────
+
 USB_TETHER=$(get_usb_tether_iface)
 ANDROID_TETHER=$(get_android_tether_iface)
 BT_TETHER=$(get_bt_tether_iface)
@@ -85,6 +116,7 @@ if [ -n "$USB_TETHER" ]; then
         [ -n "$ANDROID_TETHER" ] && promote_iface "$ANDROID_TETHER" 200 "Android tether"
         [ -n "$BT_TETHER" ] && promote_iface "$BT_TETHER" 300 "Bluetooth tether"
         [ -n "$WIFI" ] && promote_iface "wlan0" 600 "WiFi"
+        _notify_uplink_change "$USB_TETHER"
         exit 0
     else
         log "USB tether $USB_TETHER is UP but cannot reach internet"
@@ -96,6 +128,7 @@ if [ -n "$ANDROID_TETHER" ]; then
         promote_iface "$ANDROID_TETHER" 100 "Android tether"
         [ -n "$BT_TETHER" ] && promote_iface "$BT_TETHER" 300 "Bluetooth tether"
         [ -n "$WIFI" ] && promote_iface "wlan0" 600 "WiFi"
+        _notify_uplink_change "$ANDROID_TETHER"
         exit 0
     else
         log "Android tether $ANDROID_TETHER is UP but cannot reach internet"
@@ -106,6 +139,7 @@ if [ -n "$BT_TETHER" ]; then
     if can_reach_internet "$BT_TETHER"; then
         promote_iface "$BT_TETHER" 100 "Bluetooth tether"
         [ -n "$WIFI" ] && promote_iface "wlan0" 600 "WiFi"
+        _notify_uplink_change "$BT_TETHER"
         exit 0
     else
         log "Bluetooth tether $BT_TETHER is UP but cannot reach internet"
@@ -115,6 +149,7 @@ fi
 if [ -n "$WIFI" ]; then
     if can_reach_internet "$WIFI"; then
         promote_iface "wlan0" 100 "WiFi"
+        _notify_uplink_change "wlan0"
         exit 0
     fi
 fi

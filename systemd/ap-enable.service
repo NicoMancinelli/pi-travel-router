@@ -1,0 +1,8 @@
+[Unit]
+Description=Re-enable travel router AP
+ConditionPathExists=/usr/local/bin/ap-schedule.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ap-schedule.sh enable
+EnvironmentFile=-/etc/default/travel-router
