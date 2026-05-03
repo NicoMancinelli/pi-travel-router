@@ -38,5 +38,13 @@ ENABLE_AP_SCHEDULE="0"
 AP_DISABLE_TIME="02:00"
 AP_ENABLE_TIME="07:00"
 
+ENABLE_CLIENT_QOS="0"
+AP_CLIENT_BANDWIDTH="unlimited"
+
+ENABLE_PER_DEVICE_VPN="0"
+# Space-separated MAC addresses to route through Tailscale (all others go direct)
+# Example: VPN_DEVICE_MACS="aa:bb:cc:dd:ee:ff 11:22:33:44:55:66"
+VPN_DEVICE_MACS=""
+
 # Safety cap for update-blocklists.sh on memory-constrained Pi Zero hardware.
 MAX_BLOCKLIST_ENTRIES="20000"

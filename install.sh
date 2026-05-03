@@ -58,6 +58,8 @@ _yn ENABLE_AUTO_UPDATES        "Enable automatic OS security updates (unattended
 _yn ENABLE_ADGUARD             "Enable AdGuard Home (DNS ad-blocker + per-client analytics)?"
 _yn ENABLE_AVAHI_REFLECTOR  "Enable mDNS reflector (AirPrint/AirPlay over Tailscale)?"
 _yn ENABLE_AP_SCHEDULE      "Enable scheduled AP disable at night (02:00–07:00)?"
+_yn ENABLE_CLIENT_QOS       "Enable per-client bandwidth fairness (CAKE per-host on uap0)?"
+_yn ENABLE_PER_DEVICE_VPN   "Enable per-device Tailscale routing (specific MACs via VPN)?"
 
 if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
     read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
@@ -70,7 +72,7 @@ fi
 COUNTRY="${COUNTRY^^}"
 [[ "$NTFY_TOPIC" =~ ^[A-Za-z0-9._-]*$ ]] || die "ntfy.sh topic may only contain letters, numbers, dot, underscore, or dash"
 [[ -z "$TS_KEY" || "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN; do
     validate_flag "$flag"
 done
 
@@ -363,7 +365,7 @@ section "Travel router config defaults"
 
 install_file config/travel-router-defaults /etc/default/travel-router 600
 sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-router
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN; do
     sed -i "s/^${flag}=.*/${flag}=\"${!flag:-0}\"/" /etc/default/travel-router
 done
 ok "/etc/default/travel-router written"
@@ -631,6 +633,30 @@ else
     ok "AdGuard Home disabled (set ENABLE_ADGUARD=1 to activate)"
 fi
 
+# ── §. Per-client bandwidth fairness (#21) ───────────────────────────────────
+section "Per-client bandwidth fairness (CAKE per-host)"
+
+if [[ "${ENABLE_CLIENT_QOS:-0}" = "1" ]]; then
+    ok "CAKE per-host enabled on uap0 (cap: ${AP_CLIENT_BANDWIDTH:-unlimited})"
+    ok "Edit AP_CLIENT_BANDWIDTH in /etc/default/travel-router to set a hard cap"
+else
+    ok "Per-client QoS disabled (set ENABLE_CLIENT_QOS=1 to activate)"
+fi
+
+# ── §. Per-device Tailscale routing (#44) ────────────────────────────────────
+section "Per-device Tailscale routing"
+
+if [[ "${ENABLE_PER_DEVICE_VPN:-0}" = "1" ]]; then
+    if [[ -z "${VPN_DEVICE_MACS:-}" ]]; then
+        warn "ENABLE_PER_DEVICE_VPN=1 but VPN_DEVICE_MACS is empty"
+        warn "  Add MACs to VPN_DEVICE_MACS in /etc/default/travel-router"
+    else
+        ok "Per-device VPN routing enabled for: ${VPN_DEVICE_MACS}"
+    fi
+else
+    ok "Per-device VPN routing disabled (set ENABLE_PER_DEVICE_VPN=1 + VPN_DEVICE_MACS)"
+fi
+
 # ── §. MOTD + status command ─────────────────────────────────────────────────
 section "MOTD + status command"
 
@@ -672,6 +698,8 @@ echo "    • Threat intel blocklist: daily timer installed, loading enabled=${E
 echo "    • Auto security updates: ${ENABLE_AUTO_UPDATES:-0}  (unattended-upgrades, reboot 03:30)"
 echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo update-router.sh"
 echo "    • Tailscale watchdog: 5-min peer health check + ntfy alerts"
+echo "    • Per-client QoS: ${ENABLE_CLIENT_QOS:-0}  (CAKE per-host on uap0)"
+echo "    • Per-device VPN: ${ENABLE_PER_DEVICE_VPN:-0}  (set VPN_DEVICE_MACS in /etc/default/travel-router)"
 echo "    • Run 'sudo travel-status' for a one-shot status summary"
 echo "    • Run 'sudo travel-tui' for the interactive management TUI"
 echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"

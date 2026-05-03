@@ -78,6 +78,25 @@ if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
     ipt_add filter FORWARD -i uap0 -j KILL_SWITCH
 fi
 
+ENABLE_PER_DEVICE_VPN="${ENABLE_PER_DEVICE_VPN:-0}"
+VPN_DEVICE_MACS="${VPN_DEVICE_MACS:-}"
+
+if [ "$ENABLE_PER_DEVICE_VPN" = "1" ] && [ -n "$VPN_DEVICE_MACS" ]; then
+    # Flush and rebuild VPN_DEVICES chain
+    iptables -t mangle -N VPN_DEVICES 2>/dev/null || iptables -t mangle -F VPN_DEVICES
+    read -ra _macs <<< "$VPN_DEVICE_MACS"
+    for _mac in "${_macs[@]}"; do
+        iptables -t mangle -A VPN_DEVICES -m mac --mac-source "$_mac" -j MARK --set-mark 0x64
+    done
+    ipt_add mangle PREROUTING -i uap0 -j VPN_DEVICES
+
+    # Routing table 100: default via tailscale0
+    ip route replace default dev tailscale0 table 100 2>/dev/null || true
+    # Add ip rule only if not already present
+    ip rule show | grep -q "fwmark 0x64 lookup 100" || \
+        ip rule add fwmark 0x64 table 100 priority 100 2>/dev/null || true
+fi
+
 if [ "${1:-}" = "--save" ]; then
     save_rules
 fi

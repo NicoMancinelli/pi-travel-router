@@ -51,6 +51,8 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | Tailscale peer watchdog (#35) | 5-min health check; ntfy alert on daemon down, stale handshake, or peer loss |
 | ✅ | AdGuard Home (#18) | DNS ad-blocker + per-client analytics + DoT upstreams; web UI at `:3000`; enable with `ENABLE_ADGUARD=1` |
 | ✅ | Scheduled AP disable (#29) | `ap-disable.timer` / `ap-enable.timer`; disable at 02:00, re-enable at 07:00; enable with `ENABLE_AP_SCHEDULE=1` |
+| ✅ | Per-client bandwidth fairness (#21) | CAKE `per-host` on uap0; prevents one device starving others; set `AP_CLIENT_BANDWIDTH` for hard cap; `ENABLE_CLIENT_QOS=1` |
+| ✅ | Per-device Tailscale routing (#44) | fwmark 0x64 + routing table 100; specified MACs routed through Tailscale, others direct; set `VPN_DEVICE_MACS` + `ENABLE_PER_DEVICE_VPN=1` |
 
 Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 
