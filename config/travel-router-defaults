@@ -46,5 +46,12 @@ ENABLE_PER_DEVICE_VPN="0"
 # Example: VPN_DEVICE_MACS="aa:bb:cc:dd:ee:ff 11:22:33:44:55:66"
 VPN_DEVICE_MACS=""
 
+ENABLE_CAKE_AUTOTUNE="0"
+
+# SSH public key for admin access. If set at install time, password auth is
+# disabled and only this key is accepted. Set during install or add manually:
+# echo '<pubkey>' >> ~/.ssh/authorized_keys
+SSH_ADMIN_KEY=""
+
 # Safety cap for update-blocklists.sh on memory-constrained Pi Zero hardware.
 MAX_BLOCKLIST_ENTRIES="20000"

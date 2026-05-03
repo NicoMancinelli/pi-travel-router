@@ -51,8 +51,27 @@ done
 # Drop hop-by-hop extension headers when the kernel module supports matching.
 ip6t_add mangle POSTROUTING -o wlan0 -m ipv6header --header hop-by-hop -j DROP 2>/dev/null || true
 
-# AP client isolation and admin surface protection.
-ipt_add filter FORWARD -i uap0 -o uap0 -j DROP
+# FORWARD: flush and rebuild each run — guarantees correct rule ordering.
+iptables -F FORWARD
+iptables -P FORWARD DROP
+iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+# AP client isolation: prevent clients from reaching each other or the Pi LAN.
+iptables -A FORWARD -i uap0 -o uap0 -j DROP
+
+if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
+    # Flush and rebuild chain each run so rules are always current.
+    iptables -t filter -N KILL_SWITCH 2>/dev/null || iptables -t filter -F KILL_SWITCH
+    iptables -t filter -A KILL_SWITCH -o tailscale0 -j RETURN
+    iptables -t filter -A KILL_SWITCH -j DROP
+    iptables -A FORWARD -i uap0 -j KILL_SWITCH
+else
+    for _out in wlan0 bnep0 tailscale0 usb0 rndis0 enx+; do
+        iptables -A FORWARD -i uap0 -o "$_out" -j ACCEPT
+    done
+fi
+iptables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
+
+# INPUT: block AP clients from Pi admin interfaces.
 ipt_add filter INPUT -i uap0 -p tcp --dport 22 -j DROP
 ipt_add filter INPUT -i uap0 -p tcp --dport 80 -j DROP
 
@@ -67,15 +86,6 @@ if [ "$ENABLE_TOR_TRANSPARENT" = "1" ]; then
     ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp -d 172.16.0.0/12 -j RETURN
     ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp -d 192.168.0.0/16 -j RETURN
     ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp --syn -j REDIRECT --to-ports 9040
-fi
-
-if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
-    # Flush and rebuild chain each run so rules are always current.
-    iptables -t filter -N KILL_SWITCH 2>/dev/null || iptables -t filter -F KILL_SWITCH
-    iptables -t filter -A KILL_SWITCH -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
-    iptables -t filter -A KILL_SWITCH -o tailscale0 -j RETURN
-    iptables -t filter -A KILL_SWITCH -j DROP
-    ipt_add filter FORWARD -i uap0 -j KILL_SWITCH
 fi
 
 ENABLE_PER_DEVICE_VPN="${ENABLE_PER_DEVICE_VPN:-0}"

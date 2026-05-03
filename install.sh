@@ -45,6 +45,7 @@ read -rsp "  AP passphrase (8+ chars): " AP_PASS;        echo
 read -rp "  WiFi country code [US]: " COUNTRY;           COUNTRY="${COUNTRY:-US}"
 read -rp "  ntfy.sh topic (blank = no notifications): " NTFY_TOPIC; NTFY_TOPIC="${NTFY_TOPIC:-}"
 read -rsp "  Tailscale auth key (tskey-auth-... or blank): " TS_KEY; echo; TS_KEY="${TS_KEY:-}"
+read -rp  "  SSH admin public key (paste ed25519/rsa pubkey, or blank to keep password auth): " SSH_ADMIN_KEY; SSH_ADMIN_KEY="${SSH_ADMIN_KEY:-}"
 
 # Optional features — env-var pre-set wins (allows scripted/non-interactive installs)
 _yn() { local v="${!1:-}"; [[ "$v" =~ ^[01]$ ]] && return; read -rp "  $2 [y/N] " _r; printf -v "$1" '%s' "$([[ "$_r" =~ ^[Yy]$ ]] && echo 1 || echo 0)"; }
@@ -60,6 +61,7 @@ _yn ENABLE_AVAHI_REFLECTOR  "Enable mDNS reflector (AirPrint/AirPlay over Tailsc
 _yn ENABLE_AP_SCHEDULE      "Enable scheduled AP disable at night (02:00–07:00)?"
 _yn ENABLE_CLIENT_QOS       "Enable per-client bandwidth fairness (CAKE per-host on uap0)?"
 _yn ENABLE_PER_DEVICE_VPN   "Enable per-device Tailscale routing (specific MACs via VPN)?"
+_yn ENABLE_CAKE_AUTOTUNE    "Enable automatic CAKE bandwidth tuning (weekly speedtest on wlan0)?"
 
 if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
     read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
@@ -72,7 +74,7 @@ fi
 COUNTRY="${COUNTRY^^}"
 [[ "$NTFY_TOPIC" =~ ^[A-Za-z0-9._-]*$ ]] || die "ntfy.sh topic may only contain letters, numbers, dot, underscore, or dash"
 [[ -z "$TS_KEY" || "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE; do
     validate_flag "$flag"
 done
 
@@ -367,7 +369,7 @@ section "Travel router config defaults"
 
 install_file config/travel-router-defaults /etc/default/travel-router 600
 sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-router
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE; do
     sed -i "s/^${flag}=.*/${flag}=\"${!flag:-0}\"/" /etc/default/travel-router
 done
 ok "/etc/default/travel-router written"
@@ -389,7 +391,8 @@ for unit in \
     ap-disable.service ap-disable.timer \
     ap-enable.service ap-enable.timer \
     daily-digest.service daily-digest.timer \
-    update-router.service update-router.timer; do
+    update-router.service update-router.timer \
+    tune-cake.service tune-cake.timer; do
     install_file "systemd/$unit" "$SYSTEMD_DEST/$unit" 644
     ok "  $unit"
 done
@@ -575,6 +578,21 @@ else
     ok "Auto security updates disabled (set ENABLE_AUTO_UPDATES=1 to activate)"
 fi
 
+# ── §. CAKE bandwidth auto-tuning ─────────────────────────────────────────────
+section "CAKE bandwidth auto-tuning"
+
+install_file scripts/tune-cake.sh /usr/local/bin/tune-cake.sh 755
+
+if [[ "${ENABLE_CAKE_AUTOTUNE:-0}" = "1" ]]; then
+    apt-get install -y speedtest-cli 2>/dev/null || true
+    systemctl enable --now tune-cake.timer 2>/dev/null || true
+    ok "CAKE auto-tune enabled — weekly speedtest adjusts wlan0 CAKE bandwidth"
+    ok "Run manually: sudo tune-cake.sh"
+else
+    systemctl disable tune-cake.timer 2>/dev/null || true
+    ok "CAKE auto-tune disabled (set ENABLE_CAKE_AUTOTUNE=1 to activate)"
+fi
+
 # ── §. WiFi QR code ───────────────────────────────────────────────────────────
 section "WiFi QR code"
 
@@ -699,6 +717,35 @@ else
     ok "Daily digest installed — set NTFY_TOPIC in /etc/default/travel-router to activate"
 fi
 
+# ── §. SSH hardening ─────────────────────────────────────────────────────────
+section "SSH hardening"
+
+install_file config/sshd-travel-router.conf /etc/ssh/sshd_config.d/99-travel-router.conf 644
+
+ADMIN_USER="${SUDO_USER:-}"
+if [[ -z "$ADMIN_USER" ]]; then
+    ADMIN_USER=$(logname 2>/dev/null || echo "pi")
+fi
+
+if [[ -n "${SSH_ADMIN_KEY:-}" ]]; then
+    mkdir -p "/home/$ADMIN_USER/.ssh"
+    chmod 700 "/home/$ADMIN_USER/.ssh"
+    touch "/home/$ADMIN_USER/.ssh/authorized_keys"
+    chmod 600 "/home/$ADMIN_USER/.ssh/authorized_keys"
+    if ! grep -qF "$SSH_ADMIN_KEY" "/home/$ADMIN_USER/.ssh/authorized_keys" 2>/dev/null; then
+        echo "$SSH_ADMIN_KEY" >> "/home/$ADMIN_USER/.ssh/authorized_keys"
+    fi
+    chown -R "$ADMIN_USER:$ADMIN_USER" "/home/$ADMIN_USER/.ssh"
+    echo "PasswordAuthentication no" >> /etc/ssh/sshd_config.d/99-travel-router.conf
+    ok "SSH public key added for $ADMIN_USER; password auth disabled"
+else
+    ok "No SSH key provided — password auth remains enabled"
+    ok "Add later: echo '<pubkey>' >> ~/.ssh/authorized_keys"
+fi
+
+systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+ok "sshd restarted with hardened config"
+
 # ── §. MOTD + status command ─────────────────────────────────────────────────
 section "MOTD + status command"
 
@@ -742,6 +789,7 @@ echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo updat
 echo "    • Tailscale watchdog: 5-min peer health check + ntfy alerts"
 echo "    • Daily digest: 08:00 ntfy push (uptime, uplink, Tailscale, AP clients)"
 echo "    • Per-client QoS: ${ENABLE_CLIENT_QOS:-0}  (CAKE per-host on uap0)"
+echo "    • CAKE auto-tune: ${ENABLE_CAKE_AUTOTUNE:-0}  (weekly speedtest → adjusts wlan0 CAKE bandwidth)"
 echo "    • Per-device VPN: ${ENABLE_PER_DEVICE_VPN:-0}  (set VPN_DEVICE_MACS in /etc/default/travel-router)"
 echo "    • Run 'sudo travel-status' for a one-shot status summary"
 echo "    • Run 'sudo travel-tui' for the interactive management TUI"
@@ -751,6 +799,7 @@ echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
 echo "    • log2ram: /var/log in RAM"
 echo "    • Hardware watchdog: BCM2835 — reboots if kernel locks up (active after reboot)"
 echo "    • Log rotation: daily, 7-day retention for wan-watchdog.log"
+echo "    • SSH hardening: PermitRootLogin no, MaxAuthTries 3${SSH_ADMIN_KEY:+, key auth only (password disabled)}"
 echo "    • MAC randomization: wlan0 at boot"
 echo "    • mDNS reflector: ${ENABLE_AVAHI_REFLECTOR:-0}  (AirPrint/AirPlay/NAS over Tailscale)"
 echo "    • AP schedule: ${ENABLE_AP_SCHEDULE:-0}  (disable 02:00, re-enable 07:00)"

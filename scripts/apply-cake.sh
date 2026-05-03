@@ -16,7 +16,13 @@ apply_cake() {
     fi
 }
 
-apply_cake wlan0 50mbit   # hotel/home WiFi uplink
+# Use auto-tuned bandwidth if available, otherwise fall back to 50mbit.
+_CAKE_BW="50mbit"
+if [[ -f /var/lib/travel-router/cake-bandwidth.txt ]]; then
+    _cached="$(cat /var/lib/travel-router/cake-bandwidth.txt)"
+    [[ "$_cached" =~ ^[0-9]+mbit$ ]] && _CAKE_BW="$_cached"
+fi
+apply_cake wlan0 "$_CAKE_BW"
 # iPhone tether: CAKE applied per-interface by start-tether.sh at 15mbit
 
 # shellcheck source=/dev/null

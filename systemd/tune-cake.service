@@ -1,0 +1,9 @@
+[Unit]
+Description=CAKE bandwidth auto-tune (speedtest)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/tune-cake.sh
+StandardOutput=journal
+StandardError=journal
