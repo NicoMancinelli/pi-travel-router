@@ -8,6 +8,7 @@ non-interactive mode. Stdlib only.
 from __future__ import annotations
 
 import html
+import json
 import os
 import re
 import shlex
@@ -21,6 +22,7 @@ STATE_DIR = "/var/lib/travel-router"
 ENV_FILE = os.path.join(STATE_DIR, "firstboot-env.sh")
 ROOTPW_FILE = os.path.join(STATE_DIR, "firstboot-rootpw")
 DONE_FILE = os.path.join(STATE_DIR, "firstboot-done")
+FAIL_FILE = os.path.join(STATE_DIR, "firstboot-failed")
 LOG_FILE = "/var/log/firstboot-install.log"
 REPO_DIR = "/opt/pi-travel-router"
 INDEX_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
@@ -171,7 +173,8 @@ def _spawn_install() -> None:
         f"{{ [[ -s {rootpw_q} ]] && chpasswd < {rootpw_q} && rm -f {rootpw_q} || true; }} && "
         f"touch {shlex.quote(DONE_FILE)} && "
         f"systemctl disable firstboot.service && "
-        f"reboot"
+        f"reboot || "
+        f"{{ echo $? > {shlex.quote(FAIL_FILE)}; }}"
     )
     subprocess.Popen(
         ["nohup", "bash", "-c", cmd],
@@ -235,6 +238,25 @@ def _error_page(errors: list[str]) -> bytes:
     return body.encode("utf-8")
 
 
+def _failed_page() -> bytes:
+    log_text = _read_log_text() if os.path.exists(LOG_FILE) else ""
+    cleaned = ANSI_RE.sub("", log_text)
+    tail = "\n".join(cleaned.splitlines()[-50:]) if cleaned else "(no log output)"
+    tail_html = html.escape(tail)
+    body = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Travel Router — Installation failed</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>{_BASE_CSS}</style></head>
+<body><div class="wrap">
+<h1 style="color:#f85149">Installation failed</h1>
+<pre>{tail_html}</pre>
+<form method="POST" action="/retry"><button type="submit">Retry setup</button></form>
+<p class="warn">If the error repeats, SSH in as root and check /var/log/firstboot-install.log</p>
+</div></body></html>
+"""
+    return body.encode("utf-8")
+
+
 def parse_sections(text: str) -> list[str]:
     """Extract section names from install.sh log text. ANSI-stripped, in order."""
     cleaned = ANSI_RE.sub("", text)
@@ -271,6 +293,8 @@ def _read_ap_ssid() -> str:
 
 
 def _status_page() -> bytes:
+    if os.path.exists(FAIL_FILE):
+        return _failed_page()
     done = os.path.exists(DONE_FILE)
     log_text = _read_log_text()
     sections = parse_sections(log_text)
@@ -348,6 +372,12 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self._send(HTTPStatus.INTERNAL_SERVER_ERROR, b"index.html missing", "text/plain")
                 return
+            if _preseed:
+                script = '<script>var _ps=' + json.dumps(_preseed) + ';'
+                script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
+                script += 'if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");if(e)e.value=_ps.SSH_ADMIN_KEY;}'
+                script += '</script>'
+                body = body.replace(b'</body>', script.encode() + b'</body>')
             self._send(HTTPStatus.OK, body)
             return
         if self.path == "/status":
@@ -356,9 +386,22 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/setup":
             self._send(HTTPStatus.METHOD_NOT_ALLOWED, b"Use POST.", "text/plain")
             return
+        if self.path == "/retry":
+            self._send(HTTPStatus.METHOD_NOT_ALLOWED, b"Use POST.", "text/plain")
+            return
         self._send(HTTPStatus.NOT_FOUND, b"Not found", "text/plain")
 
     def do_POST(self):  # noqa: N802
+        if self.path == "/retry":
+            for path in (ENV_FILE, FAIL_FILE, ROOTPW_FILE, LOG_FILE):
+                try:
+                    os.remove(path)
+                except FileNotFoundError:
+                    pass
+            self.send_response(302)
+            self.send_header("Location", "/")
+            self.end_headers()
+            return
         if self.path != "/setup":
             self._send(HTTPStatus.NOT_FOUND, b"Not found", "text/plain")
             return
@@ -386,11 +429,64 @@ class Handler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.OK, _running_page())
 
 
+_preseed: dict[str, str] = {}
+
+
+def _load_preseed() -> dict[str, str]:
+    try:
+        firstrun_path = None
+        for candidate in ("/boot/firmware/firstrun.sh", "/boot/firstrun.sh"):
+            if os.path.exists(candidate):
+                firstrun_path = candidate
+                break
+        if firstrun_path is None:
+            return {}
+        with open(firstrun_path, "r", encoding="utf-8", errors="replace") as fh:
+            content = fh.read()
+        result: dict[str, str] = {}
+        # SSH pubkey: look for lines with 'echo 'ssh-' or authorized_keys
+        pubkey = None
+        for line in content.splitlines():
+            if "authorized_keys" in line or ("echo" in line and "ssh-" in line):
+                m = re.search(r"(ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-\S+\s+\S+)", line)
+                if m:
+                    pubkey = m.group(1).strip()
+                    break
+        if pubkey:
+            result["SSH_ADMIN_KEY"] = pubkey
+        # WiFi SSID: nmcli ... ssid "VALUE" or wpa SSID_VALUE style
+        ssid = None
+        m = re.search(r'nmcli.*\bssid\b\s+"([^"]+)"', content)
+        if m:
+            ssid = m.group(1)
+        else:
+            m = re.search(r'\bSSID=(\S+)', content)
+            if m:
+                ssid = m.group(1).strip('"\'')
+        if ssid:
+            result["AP_SSID"] = ssid
+        # Hostname: raspi-config nonint do_hostname VALUE or echo VALUE > /etc/hostname
+        hostname = None
+        m = re.search(r'raspi-config\s+nonint\s+do_hostname\s+(\S+)', content)
+        if m:
+            hostname = m.group(1).strip('"\'')
+        else:
+            m = re.search(r'echo\s+(\S+)\s*>\s*/etc/hostname', content)
+            if m:
+                hostname = m.group(1).strip('"\'')
+        if hostname:
+            result["AP_SSID"] = hostname
+        return result
+    except Exception:
+        return {}
+
+
 def main() -> int:
     os.makedirs(STATE_DIR, exist_ok=True)
     addr = ("0.0.0.0", 80)
     httpd = HTTPServer(addr, Handler)
     sys.stderr.write(f"[firstboot] listening on {addr[0]}:{addr[1]}\n")
+    _preseed.update(_load_preseed())
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

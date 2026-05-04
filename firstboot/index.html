@@ -67,6 +67,7 @@ button.submit:hover{background:#2ea043}
 <div class="pwrow">
   <input id="ap_pass" name="AP_PASS" type="password" minlength="8" maxlength="63" required autocomplete="off">
   <button type="button" id="togglepw" aria-label="Show or hide passphrase">Show</button>
+  <button type="button" id="genpw" aria-label="Generate a random passphrase">Generate</button>
 </div>
 <span class="hint">8-63 characters. Used by clients joining your AP.</span>
 
@@ -162,6 +163,17 @@ button.submit:hover{background:#2ea043}
   btn.addEventListener('click',function(){
     if(pw.type==='password'){pw.type='text';btn.textContent='Hide';}
     else{pw.type='password';btn.textContent='Show';}
+  });
+  var WORDS=['oak','elm','ash','ivy','bay','fog','ice','jet','log','mud','net','orb','pit','rod','sap','tar','urn','wax','yew','arc','bud','cob','dew','fin','gem','hub','imp','jar','keg','lex','mop','nib','ore','pod','rut','sod','tin','vat','wig','yak','zinc','wolf','tide','peak','sand','vine','hawk','moon','coal','flame','river','arrow','blade','cloud','crane','delta','eagle','field','grove','hedge','inlet','jade','kelp','lark','maple','marsh','orbit','palm','ridge','stone','tower','vale','amber','birch','cedar','depth','ember','flint','glade','haven','islet','knoll','ledge','manor','notch','olive','plume','quill','raven','slate','thyme','umbra','wheat','xylem'];
+  function genPass(){
+    var out=[];
+    for(var i=0;i<4;i++){out.push(WORDS[Math.floor(Math.random()*WORDS.length)]);}
+    return out.join('-');
+  }
+  document.getElementById('genpw').addEventListener('click',function(){
+    pw.value=genPass();
+    pw.type='text';
+    btn.textContent='Hide';
   });
   var st=document.getElementById('f_st'), box=document.getElementById('stdomains');
   function sync(){box.classList.toggle('show', st.checked);}

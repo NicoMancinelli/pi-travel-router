@@ -406,6 +406,9 @@ for script in \
     ok "  $script"
 done
 
+install_file scripts/travel-diagnostic.sh /usr/local/bin/travel-diagnostic 755
+ok "  travel-diagnostic.sh → travel-diagnostic"
+
 # Pairing docs
 mkdir -p /usr/local/share/travel-router-docs
 cat > /usr/local/share/travel-router-docs/bluetooth-pair.txt << 'EOF'
