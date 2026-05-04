@@ -1,0 +1,15 @@
+[connection]
+id=usb0-firstboot
+type=ethernet
+interface-name=usb0
+autoconnect=true
+autoconnect-priority=100
+
+[ethernet]
+
+[ipv4]
+method=shared
+address1=192.168.7.1/24
+
+[ipv6]
+method=ignore

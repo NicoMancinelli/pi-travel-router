@@ -55,19 +55,13 @@ Insert the SD card. Connect power to the `PWR` port. Wait ~60 seconds for first 
 
 **4. Open the wizard**
 
-From any device on the same network, browse to:
+Plug the Pi's `USB` port (not `PWR`) into your laptop with a USB-C cable. The image pre-enables USB gadget mode, so the laptop sees a new USB Ethernet device and gets a DHCP lease in `192.168.7.0/24`. Browse to:
 
 ```
-http://travelrouter.local
+http://192.168.7.1
 ```
 
-Or SSH in if you prefer a terminal:
-
-```sh
-ssh root@travelrouter.local   # password: changeme
-```
-
-If `travelrouter.local` doesn't resolve, find the Pi's IP in your router's DHCP table and use that.
+If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (password `changeme`). Windows users may need RNDIS drivers — see [`build/README.md`](build/README.md) for details.
 
 **5. Fill in the form**
 

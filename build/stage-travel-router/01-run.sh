@@ -52,6 +52,37 @@ if id neek >/dev/null 2>&1; then
 fi
 EOF
 
+# Pre-enable USB gadget mode so the firstboot wizard is reachable over USB-C
+# before install.sh has run. Pi Zero 2 W has no Ethernet and no AP yet.
+CONFIG_TXT="${ROOTFS_DIR}/boot/firmware/config.txt"
+if [ ! -f "$CONFIG_TXT" ]; then
+    CONFIG_TXT="${ROOTFS_DIR}/boot/config.txt"
+fi
+if ! grep -q "dtoverlay=dwc2" "$CONFIG_TXT" 2>/dev/null; then
+    {
+        echo ""
+        echo "# pi-travel-router: USB gadget mode for first-boot wizard reachability"
+        echo "[all]"
+        echo "dtoverlay=dwc2,dr_mode=peripheral"
+    } >> "$CONFIG_TXT"
+fi
+
+# Load dwc2 and g_ether at boot.
+mkdir -p "${ROOTFS_DIR}/etc/modules-load.d"
+echo "dwc2" > "${ROOTFS_DIR}/etc/modules-load.d/dwc2.conf"
+echo "g_ether" > "${ROOTFS_DIR}/etc/modules-load.d/g-ether.conf"
+
+# NetworkManager profile for usb0: static 192.168.7.1/24 with shared mode (built-in DHCP for laptop).
+USB0_NM_SRC="${TARGET_DIR}/config/usb0-firstboot.nmconnection"
+USB0_NM_DST="${ROOTFS_DIR}/etc/NetworkManager/system-connections/usb0-firstboot.nmconnection"
+if [ -f "${USB0_NM_SRC}" ]; then
+    install -D -m 0600 "${USB0_NM_SRC}" "${USB0_NM_DST}"
+else
+    echo "WARNING: ${USB0_NM_SRC} not found in repo; usb0 first-boot profile not installed."
+fi
+
+echo "USB gadget mode preloaded -- wizard reachable via http://192.168.7.1 over USB-C"
+
 # Image version stamp.
 cat > "${ROOTFS_DIR}/etc/travel-router-image-version" <<EOF
 git_sha=${GIT_SHA}
