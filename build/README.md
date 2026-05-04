@@ -36,10 +36,17 @@ Replace `/dev/diskN` with your SD card device. Use `lsblk` (Linux) or `diskutil 
 
 ## Default credentials
 
-- Username: `neek`
+- Username: `root`
 - Password: `changeme`
 
-**Change the password immediately after first boot.** The firstboot wizard should also prompt for a new password.
+`root` is the only login account on the image; SSH password login is enabled for `root` so the wizard can be reached without prior key setup. **Change the password immediately after first boot** with:
+
+```sh
+ssh root@travelrouter.local   # password: changeme
+passwd
+```
+
+Once you provide an SSH public key in the firstboot wizard, password authentication is automatically disabled by `install.sh` and only key auth remains.
 
 ## Triggering a build
 

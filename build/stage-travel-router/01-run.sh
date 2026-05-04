@@ -37,6 +37,21 @@ else
     printf '127.0.1.1\ttravelrouter\n' >> "${ROOTFS_DIR}/etc/hosts"
 fi
 
+# Use root as the only login user. Set password to 'changeme' (user must change),
+# enable root SSH login, and remove the throwaway pi-gen FIRST_USER.
+on_chroot << 'EOF'
+echo 'root:changeme' | chpasswd
+mkdir -p /etc/ssh/sshd_config.d
+printf 'PermitRootLogin yes\nPasswordAuthentication yes\n' \
+    > /etc/ssh/sshd_config.d/00-permit-root.conf
+chmod 0644 /etc/ssh/sshd_config.d/00-permit-root.conf
+# Remove the pi-gen first user (FIRST_USER_NAME) — root is the only account.
+if id neek >/dev/null 2>&1; then
+    pkill -u neek 2>/dev/null || true
+    deluser --remove-home neek 2>/dev/null || userdel -r neek 2>/dev/null || true
+fi
+EOF
+
 # Image version stamp.
 cat > "${ROOTFS_DIR}/etc/travel-router-image-version" <<EOF
 git_sha=${GIT_SHA}

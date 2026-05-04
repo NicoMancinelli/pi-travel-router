@@ -942,20 +942,22 @@ install_file config/sshd-travel-router.conf /etc/ssh/sshd_config.d/99-travel-rou
 
 ADMIN_USER="${SUDO_USER:-}"
 if [[ -z "$ADMIN_USER" ]]; then
-    ADMIN_USER=$(logname 2>/dev/null || echo "pi")
+    ADMIN_USER=$(logname 2>/dev/null || echo "${USER:-root}")
 fi
+ADMIN_HOME=$(getent passwd "$ADMIN_USER" 2>/dev/null | cut -d: -f6)
+ADMIN_HOME="${ADMIN_HOME:-/root}"
 
 if [[ -n "${SSH_ADMIN_KEY:-}" ]]; then
-    mkdir -p "/home/$ADMIN_USER/.ssh"
-    chmod 700 "/home/$ADMIN_USER/.ssh"
-    touch "/home/$ADMIN_USER/.ssh/authorized_keys"
-    chmod 600 "/home/$ADMIN_USER/.ssh/authorized_keys"
-    if ! grep -qF "$SSH_ADMIN_KEY" "/home/$ADMIN_USER/.ssh/authorized_keys" 2>/dev/null; then
-        echo "$SSH_ADMIN_KEY" >> "/home/$ADMIN_USER/.ssh/authorized_keys"
+    mkdir -p "$ADMIN_HOME/.ssh"
+    chmod 700 "$ADMIN_HOME/.ssh"
+    touch "$ADMIN_HOME/.ssh/authorized_keys"
+    chmod 600 "$ADMIN_HOME/.ssh/authorized_keys"
+    if ! grep -qF "$SSH_ADMIN_KEY" "$ADMIN_HOME/.ssh/authorized_keys" 2>/dev/null; then
+        echo "$SSH_ADMIN_KEY" >> "$ADMIN_HOME/.ssh/authorized_keys"
     fi
-    chown -R "$ADMIN_USER:$ADMIN_USER" "/home/$ADMIN_USER/.ssh"
+    chown -R "$ADMIN_USER:$ADMIN_USER" "$ADMIN_HOME/.ssh"
     echo "PasswordAuthentication no" >> /etc/ssh/sshd_config.d/99-travel-router.conf
-    ok "SSH public key added for $ADMIN_USER; password auth disabled"
+    ok "SSH public key added for $ADMIN_USER ($ADMIN_HOME); password auth disabled"
 else
     ok "No SSH key provided — password auth remains enabled"
     ok "Add later: echo '<pubkey>' >> ~/.ssh/authorized_keys"
