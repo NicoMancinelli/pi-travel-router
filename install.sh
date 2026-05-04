@@ -46,6 +46,7 @@ read -rp "  WiFi country code [US]: " COUNTRY;           COUNTRY="${COUNTRY:-US}
 read -rp "  ntfy.sh topic (blank = no notifications): " NTFY_TOPIC; NTFY_TOPIC="${NTFY_TOPIC:-}"
 read -rsp "  Tailscale auth key (tskey-auth-... or blank): " TS_KEY; echo; TS_KEY="${TS_KEY:-}"
 read -rp  "  SSH admin public key (paste ed25519/rsa pubkey, or blank to keep password auth): " SSH_ADMIN_KEY; SSH_ADMIN_KEY="${SSH_ADMIN_KEY:-}"
+read -rp  "  Headscale URL (blank = use Tailscale cloud): " HEADSCALE_URL; HEADSCALE_URL="${HEADSCALE_URL:-}"
 
 # Optional features — env-var pre-set wins (allows scripted/non-interactive installs)
 _yn() { local v="${!1:-}"; [[ "$v" =~ ^[01]$ ]] && return; read -rp "  $2 [y/N] " _r; printf -v "$1" '%s' "$([[ "$_r" =~ ^[Yy]$ ]] && echo 1 || echo 0)"; }
@@ -73,7 +74,9 @@ fi
 [[ "$COUNTRY" =~ ^[A-Za-z]{2}$ ]] || die "Country code must be two letters, e.g. US"
 COUNTRY="${COUNTRY^^}"
 [[ "$NTFY_TOPIC" =~ ^[A-Za-z0-9._-]*$ ]] || die "ntfy.sh topic may only contain letters, numbers, dot, underscore, or dash"
-[[ -z "$TS_KEY" || "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
+if [[ -n "$TS_KEY" && -z "$HEADSCALE_URL" ]]; then
+    [[ "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
+fi
 for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE; do
     validate_flag "$flag"
 done
@@ -372,6 +375,7 @@ sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-rout
 for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE; do
     sed -i "s/^${flag}=.*/${flag}=\"${!flag:-0}\"/" /etc/default/travel-router
 done
+[[ -n "$HEADSCALE_URL" ]] && sed -i "s|^HEADSCALE_URL=.*|HEADSCALE_URL=\"${HEADSCALE_URL}\"|" /etc/default/travel-router
 ok "/etc/default/travel-router written"
 
 # ── 13. Systemd units ─────────────────────────────────────────────────────────
@@ -527,8 +531,11 @@ systemctl enable --now tailscaled 2>/dev/null || true
 if [[ -n "$TS_KEY" ]]; then
     # shellcheck disable=SC2206
     TS_ARGS=($TAILSCALE_UP_ARGS)
+    _TS_LOGIN_ARGS=()
+    [[ -n "$HEADSCALE_URL" ]] && _TS_LOGIN_ARGS+=(--login-server="$HEADSCALE_URL")
     if tailscale up \
         --authkey="$TS_KEY" \
+        "${_TS_LOGIN_ARGS[@]}" \
         "${TS_ARGS[@]}" \
         2>/dev/null; then
         ok "Tailscale authenticated and subnet advertised"
@@ -537,7 +544,11 @@ if [[ -n "$TS_KEY" ]]; then
     fi
 else
     warn "No Tailscale key provided. After reboot, run:"
-    warn "  sudo tailscale up $TAILSCALE_UP_ARGS"
+    if [[ -n "$HEADSCALE_URL" ]]; then
+        warn "  sudo tailscale up --login-server=\"$HEADSCALE_URL\" $TAILSCALE_UP_ARGS"
+    else
+        warn "  sudo tailscale up $TAILSCALE_UP_ARGS"
+    fi
 fi
 
 # ── 20. usbmuxd / ipheth ──────────────────────────────────────────────────────
@@ -795,6 +806,7 @@ echo "    • Run 'sudo travel-status' for a one-shot status summary"
 echo "    • Run 'sudo travel-tui' for the interactive management TUI"
 echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"
 echo "    • Tailscale: subnet router for 10.3.141.0/24"
+echo "    • Tailscale control: ${HEADSCALE_URL:-Tailscale cloud (login.tailscale.com)}"
 echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
 echo "    • log2ram: /var/log in RAM"
 echo "    • Hardware watchdog: BCM2835 — reboots if kernel locks up (active after reboot)"

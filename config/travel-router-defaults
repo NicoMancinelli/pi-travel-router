@@ -53,5 +53,11 @@ ENABLE_CAKE_AUTOTUNE="0"
 # echo '<pubkey>' >> ~/.ssh/authorized_keys
 SSH_ADMIN_KEY=""
 
+# Headscale URL — self-hosted Tailscale control server.
+# Leave blank to use Tailscale cloud (login.tailscale.com).
+# Example: HEADSCALE_URL="http://203.0.113.5:8080"
+# Run scripts/setup-headscale.sh on your VPS to get this value.
+HEADSCALE_URL=""
+
 # Safety cap for update-blocklists.sh on memory-constrained Pi Zero hardware.
 MAX_BLOCKLIST_ENTRIES="20000"
