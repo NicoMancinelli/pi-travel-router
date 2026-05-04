@@ -12,9 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - First-boot web wizard served at `travelrouter.local` for guided initial setup
 - Non-interactive install mode via `INSTALL_NONINTERACTIVE=1` env var
 - Root-as-default-user with `changeme` default password (image-only)
+- USB gadget mode pre-enabled in image so wizard is reachable via USB-C at `192.168.7.1` before install runs
+- `travel-diagnostic` command: collects redacted logs, network state, and config into a timestamped tar.gz
+- Wizard error recovery: install failures show last 50 log lines and a Retry button
+- AP passphrase generator button in wizard (4-word random passphrase, no external dependencies)
+- Raspberry Pi Imager pre-seed compatibility: wizard pre-fills hostname and SSH key from `firstrun.sh` if present
 
 ### Changed
 - Image builds ship root-only login flow; password change enforced on first wizard submission
+- `wan-watchdog.sh` recovery steps now use NetworkManager instead of the removed `dhcpcd`
+- `update-router.sh` re-applies firewall rules when `travel-router-firewall.sh` changes in an update
 
 ## [0.7.0] - 2026-05-04
 

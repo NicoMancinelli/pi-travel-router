@@ -5,16 +5,16 @@ set -euo pipefail
 
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 OUTFILE="/tmp/travel-diagnostic-${TIMESTAMP}.tar.gz"
-TMPDIR=$(mktemp -d /tmp/travel-diag-XXXXXX)
+DIAG_DIR=$(mktemp -d /tmp/travel-diag-XXXXXX)
 
 collect() {
     local name="$1"; shift
-    "$@" > "${TMPDIR}/${name}" 2>/dev/null || true
+    "$@" > "${DIAG_DIR}/${name}" 2>/dev/null || true
 }
 
 for svc in wan-watchdog hostapd dnsmasq NetworkManager tailscaled firstboot systemd-networkd; do
     if systemctl is-active --quiet "${svc}" 2>/dev/null; then
-        journalctl -u "${svc}" -n 200 --no-pager > "${TMPDIR}/journal-${svc}.log" 2>/dev/null || true
+        journalctl -u "${svc}" -n 200 --no-pager > "${DIAG_DIR}/journal-${svc}.log" 2>/dev/null || true
     fi
 done
 
@@ -33,10 +33,10 @@ collect image-version.txt        cat /etc/travel-router-image-version
 
 if [[ -f /etc/default/travel-router ]]; then
     sed 's/\(AP_PASS\|TS_KEY\|SSH_ADMIN_KEY\|NTFY_TOPIC\|PASSWORD\|SECRET\|TOKEN\)=.*/\1=REDACTED/' \
-        /etc/default/travel-router > "${TMPDIR}/travel-router-config.txt" 2>/dev/null || true
+        /etc/default/travel-router > "${DIAG_DIR}/travel-router-config.txt" 2>/dev/null || true
 fi
 
-tar -czf "${OUTFILE}" -C "${TMPDIR}" .
-rm -rf "${TMPDIR}"
+tar -czf "${OUTFILE}" -C "${DIAG_DIR}" .
+rm -rf "${DIAG_DIR}"
 
 echo "Diagnostic saved to: ${OUTFILE}"

@@ -102,6 +102,15 @@ apply_update() {
         log "  systemd daemon reloaded"
     fi
 
+    # Re-apply firewall if the firewall script changed (picks up new nftables rules)
+    if ! diff -q "${src}/scripts/travel-router-firewall.sh" /usr/local/bin/travel-router-firewall.sh >/dev/null 2>&1; then
+        if /usr/local/bin/travel-router-firewall.sh --save 2>/dev/null; then
+            log "  firewall rules reloaded"
+        else
+            log "  WARNING: firewall reload failed — rules unchanged"
+        fi
+    fi
+
     # install.sh (for reference; never auto-executed)
     if ! diff -q "${src}/install.sh" /usr/local/share/travel-router/install.sh >/dev/null 2>&1; then
         mkdir -p /usr/local/share/travel-router

@@ -48,18 +48,19 @@ log "WAN unreachable — consecutive failures: $FAILS"
 
 case "$FAILS" in
     1)
-        log "Recovery step 1: reassociating wlan0"
-        wpa_cli -i wlan0 reassociate 2>/dev/null || true
+        log "Recovery step 1: reconnecting wlan0 via NetworkManager"
+        nmcli device disconnect wlan0 2>/dev/null || true
+        nmcli device connect wlan0 2>/dev/null || true
         ;;
     2)
-        log "Recovery step 2: restarting dhcpcd"
-        notify "travel-router: WAN down, restarting dhcpcd" high
-        systemctl restart dhcpcd
+        log "Recovery step 2: restarting NetworkManager"
+        notify "travel-router: WAN down, restarting NetworkManager" high
+        systemctl restart NetworkManager
         ;;
     3)
         log "Recovery step 3: restarting networking services"
         notify "travel-router: WAN down 3x, restarting networking" high
-        systemctl restart dhcpcd wpa_supplicant 2>/dev/null || true
+        systemctl restart NetworkManager
         ;;
     4|5)
         log "Recovery step 4-5: waiting..."

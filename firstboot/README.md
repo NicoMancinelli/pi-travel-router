@@ -9,8 +9,9 @@ A one-shot web wizard that runs on the very first boot of the pre-built SD card 
 3. They fill in a single mobile-friendly form: AP SSID + passphrase, country code, optional Tailscale/SSH/ntfy settings, feature toggles.
 4. Submitting the form writes `/var/lib/travel-router/firstboot-env.sh` (an `export ...` shell file with all values shell-escaped via `shlex.quote`).
 5. The server spawns `install.sh` in the background with `INSTALL_NONINTERACTIVE=1`. Output streams to `/var/log/firstboot-install.log`.
-6. The browser is redirected to `/status`, which auto-refreshes every 5 seconds and shows the last 20 log lines.
-7. When `install.sh` completes successfully it `touch`es `/var/lib/travel-router/firstboot-done`, disables the unit, and reboots.
+6. The browser is redirected to `/status`, which auto-refreshes every 5 seconds and shows the last 30 log lines and a step-progress list parsed from install.sh section headers.
+7. If `install.sh` exits non-zero, `/status` switches to an error view showing the last 50 log lines and a Retry button that resets state and returns to the form.
+8. When `install.sh` completes successfully it `touch`es `/var/lib/travel-router/firstboot-done`, disables the unit, and reboots.
 8. On the next boot, `ConditionPathExists=!/var/lib/travel-router/firstboot-done` keeps the wizard from coming back.
 
 ## Files
