@@ -1,0 +1,26 @@
+# Travel router nftables rules.
+# Installed to /etc/nftables.conf.d/travel-router.nft by install.sh.
+# Handles TTL/hop-limit spoofing and DSCP strip (replaces iptables mangle rules).
+
+table inet travel_mangle {
+    chain postrouting {
+        type filter hook postrouting priority mangle; policy accept;
+
+        # TTL=65 / hop-limit=65: defeats Visible/Verizon tethering DPI.
+        oifname { "uap0", "wlan0", "usb0", "rndis0", "bnep0" } ip ttl set 65
+        oifname { "uap0", "wlan0", "usb0", "rndis0", "bnep0" } ip6 hop-limit set 65
+        oifname "enx*" ip ttl set 65
+        oifname "enx*" ip6 hop-limit set 65
+
+        # Strip DSCP — prevents carrier QoS fingerprinting on uplinks.
+        oifname { "wlan0", "usb0", "rndis0", "bnep0" } ip dscp set cs0
+        oifname "enx*" ip dscp set cs0
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+
+        # Drop IPv6 hop-by-hop extension headers on WiFi uplink.
+        oifname "wlan0" ip6 nexthdr 0 drop
+    }
+}

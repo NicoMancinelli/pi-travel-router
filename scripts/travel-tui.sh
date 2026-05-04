@@ -303,6 +303,8 @@ show_network() {
         printf "  [2] Run speedtest + update CAKE bandwidth (~30s)\n"
         printf "  [3] Clone MAC to wlan0 (captive portal bypass)\n"
         printf "  [4] Restore original wlan0 MAC\n"
+        printf "  [5] Real-time bandwidth (bmon)\n"
+        printf "  [6] Per-connection traffic (iftop on uap0)\n"
         printf "\n  Enter choice, [q] to return: "
         local choice
         read -r choice
@@ -334,6 +336,18 @@ show_network() {
                     printf "  ${G}ok${NC} — original MAC restored\n" || \
                     printf "  ${R}failed${NC}\n"
                 sleep 2 ;;
+            5)
+                if command -v bmon >/dev/null 2>&1; then
+                    bmon
+                else
+                    printf "  bmon not installed\n  Press any key..."; read -rsn1 || true
+                fi ;;
+            6)
+                if command -v iftop >/dev/null 2>&1; then
+                    iftop -i uap0 2>/dev/null || true
+                else
+                    printf "  iftop not installed\n  Press any key..."; read -rsn1 || true
+                fi ;;
             q|Q) return ;;
         esac
     done

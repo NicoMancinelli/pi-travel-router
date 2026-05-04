@@ -34,22 +34,7 @@ save_rules() {
     ip6tables-save > /etc/iptables/rules.v6
 }
 
-# TTL=65 / hop-limit=65: carrier tethering fingerprint mitigation.
-for iface in uap0 wlan0 usb0 eth+ enx+; do
-    ipt_add mangle POSTROUTING -o "$iface" -j TTL --ttl-set 65
-done
-
-for iface in uap0 wlan0 usb0; do
-    ip6t_add mangle POSTROUTING -o "$iface" -j HL --hl-set 65
-done
-
-# DSCP strip on uplinks to avoid leaking host QoS fingerprints.
-for iface in wlan0 usb0 enx+ bnep0; do
-    ipt_add mangle POSTROUTING -o "$iface" -j DSCP --set-dscp 0
-done
-
-# Drop hop-by-hop extension headers when the kernel module supports matching.
-ip6t_add mangle POSTROUTING -o wlan0 -m ipv6header --header hop-by-hop -j DROP 2>/dev/null || true
+# TTL, hop-limit, DSCP, and hop-by-hop rules are in /etc/nftables.conf.d/travel-router.nft
 
 # FORWARD: flush and rebuild each run — guarantees correct rule ordering.
 iptables -F FORWARD

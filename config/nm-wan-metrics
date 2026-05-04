@@ -1,0 +1,17 @@
+#!/bin/bash
+# NetworkManager dispatcher: enforce uplink metric priorities when interfaces come up.
+# Prevents route metric drift when an uplink bounces or DHCP re-assigns.
+# Metrics match failover-watchdog.sh priority order.
+
+IFACE=$1
+EVENT=$2
+
+[[ "$EVENT" = "up" ]] || exit 0
+
+case "$IFACE" in
+    enx*)   ip route change default dev "$IFACE" metric 100 2>/dev/null || true ;;
+    rndis0) ip route change default dev "$IFACE" metric 200 2>/dev/null || true ;;
+    usb0)   ip route change default dev "$IFACE" metric 200 2>/dev/null || true ;;
+    bnep0)  ip route change default dev "$IFACE" metric 300 2>/dev/null || true ;;
+    wlan0)  ip route change default dev "$IFACE" metric 600 2>/dev/null || true ;;
+esac

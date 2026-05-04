@@ -1,0 +1,7 @@
+[Unit]
+Description=Generate HTML bandwidth report from vnStat
+After=vnstat.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/generate-bandwidth-report.sh

@@ -63,6 +63,15 @@ _yn ENABLE_AP_SCHEDULE      "Enable scheduled AP disable at night (02:00–07:00
 _yn ENABLE_CLIENT_QOS       "Enable per-client bandwidth fairness (CAKE per-host on uap0)?"
 _yn ENABLE_PER_DEVICE_VPN   "Enable per-device Tailscale routing (specific MACs via VPN)?"
 _yn ENABLE_CAKE_AUTOTUNE    "Enable automatic CAKE bandwidth tuning (weekly speedtest on wlan0)?"
+_yn ENABLE_SPLIT_TUNNEL     "Enable domain-based split tunnel (route specific domains via Tailscale)?"
+if [[ "${ENABLE_SPLIT_TUNNEL:-0}" = "1" && -z "${SPLIT_TUNNEL_DOMAINS:-}" ]]; then
+    read -rp "  Split tunnel domains (space-separated, e.g. mybank.com work.example.com): " SPLIT_TUNNEL_DOMAINS
+    SPLIT_TUNNEL_DOMAINS="${SPLIT_TUNNEL_DOMAINS:-}"
+fi
+_yn ENABLE_2FA              "Enable SSH two-factor authentication (TOTP)?"
+_yn ENABLE_BANDWIDTH_DASHBOARD "Enable bandwidth analytics dashboard (daily HTML report)?"
+_yn ENABLE_PROMETHEUS_EXPORTER "Enable Prometheus node exporter on :9100?"
+_yn ENABLE_UPS_MONITOR      "Enable PiSugar UPS battery monitor (safe shutdown at low battery)?"
 
 if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
     read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
@@ -77,7 +86,7 @@ COUNTRY="${COUNTRY^^}"
 if [[ -n "$TS_KEY" && -z "$HEADSCALE_URL" ]]; then
     [[ "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
 fi
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR; do
     validate_flag "$flag"
 done
 
@@ -372,9 +381,10 @@ section "Travel router config defaults"
 
 install_file config/travel-router-defaults /etc/default/travel-router 600
 sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-router
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR; do
     sed -i "s/^${flag}=.*/${flag}=\"${!flag:-0}\"/" /etc/default/travel-router
 done
+[[ -n "${SPLIT_TUNNEL_DOMAINS:-}" ]] && sed -i "s|^SPLIT_TUNNEL_DOMAINS=.*|SPLIT_TUNNEL_DOMAINS=\"${SPLIT_TUNNEL_DOMAINS}\"|" /etc/default/travel-router
 [[ -n "$HEADSCALE_URL" ]] && sed -i "s|^HEADSCALE_URL=.*|HEADSCALE_URL=\"${HEADSCALE_URL}\"|" /etc/default/travel-router
 ok "/etc/default/travel-router written"
 
@@ -589,6 +599,51 @@ else
     ok "Auto security updates disabled (set ENABLE_AUTO_UPDATES=1 to activate)"
 fi
 
+# ── §. nftables TTL / DSCP / hop-limit migration ─────────────────────────────
+section "nftables TTL/DSCP rules"
+
+mkdir -p /etc/nftables.conf.d
+install_file config/nftables-travel-router.nft /etc/nftables.conf.d/travel-router.nft 644
+
+# Add include directive to /etc/nftables.conf if not already present
+if ! grep -q "nftables.conf.d" /etc/nftables.conf 2>/dev/null; then
+    printf '\ninclude "/etc/nftables.conf.d/*.nft"\n' >> /etc/nftables.conf
+fi
+
+nft -f /etc/nftables.conf.d/travel-router.nft 2>/dev/null || \
+    warn "nft load failed — rules will apply on next nftables service start"
+systemctl enable nftables 2>/dev/null || true
+ok "nftables TTL/DSCP rules loaded (replaces iptables mangle for TTL + DSCP)"
+
+# ── §. Domain-based split tunnel (#45) ───────────────────────────────────────
+section "Domain-based split tunnel"
+
+install_file scripts/apply-split-tunnel.sh /usr/local/bin/apply-split-tunnel.sh 755
+
+SYSTEMD_DEST_ST="/etc/systemd/system"
+install_file systemd/split-tunnel.service "$SYSTEMD_DEST_ST/split-tunnel.service" 644
+systemctl daemon-reload
+
+if [[ "${ENABLE_SPLIT_TUNNEL:-0}" = "1" ]]; then
+    if [[ -z "${SPLIT_TUNNEL_DOMAINS:-}" ]]; then
+        warn "ENABLE_SPLIT_TUNNEL=1 but SPLIT_TUNNEL_DOMAINS is empty"
+        warn "  Set SPLIT_TUNNEL_DOMAINS in /etc/default/travel-router and run:"
+        warn "  sudo systemctl restart dnsmasq split-tunnel.service"
+    else
+        apt-get install -y ipset 2>/dev/null || true
+        _DOMAIN_PATH=$(printf '%s' "$SPLIT_TUNNEL_DOMAINS" | tr ' ' '/')
+        printf "# Split tunnel domains — generated by install.sh\nipset=/%s/vpn_domains\n" \
+            "$_DOMAIN_PATH" > /etc/dnsmasq.d/split-tunnel.conf
+        systemctl enable --now split-tunnel.service 2>/dev/null || true
+        systemctl restart dnsmasq 2>/dev/null || true
+        ok "Split tunnel enabled — domains via Tailscale: ${SPLIT_TUNNEL_DOMAINS}"
+    fi
+else
+    systemctl disable split-tunnel.service 2>/dev/null || true
+    rm -f /etc/dnsmasq.d/split-tunnel.conf
+    ok "Split tunnel disabled (set ENABLE_SPLIT_TUNNEL=1 + SPLIT_TUNNEL_DOMAINS)"
+fi
+
 # ── §. CAKE bandwidth auto-tuning ─────────────────────────────────────────────
 section "CAKE bandwidth auto-tuning"
 
@@ -602,6 +657,36 @@ if [[ "${ENABLE_CAKE_AUTOTUNE:-0}" = "1" ]]; then
 else
     systemctl disable tune-cake.timer 2>/dev/null || true
     ok "CAKE auto-tune disabled (set ENABLE_CAKE_AUTOTUNE=1 to activate)"
+fi
+
+# ── §. SSH two-factor authentication (#19) ───────────────────────────────────
+section "SSH 2FA (TOTP)"
+
+install_file scripts/setup-2fa.sh /usr/local/bin/setup-2fa.sh 755
+
+if [[ "${ENABLE_2FA:-0}" = "1" ]]; then
+    apt-get install -y libpam-google-authenticator 2>/dev/null || true
+    install_file config/sshd-2fa.conf /etc/ssh/sshd_config.d/98-travel-router-2fa.conf 644
+    # Add pam_google_authenticator to sshd PAM if not already present
+    if ! grep -q "pam_google_authenticator" /etc/pam.d/sshd 2>/dev/null; then
+        printf "auth required pam_google_authenticator.so nullok\n" >> /etc/pam.d/sshd
+    fi
+    systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+    ok "SSH 2FA enabled — run: sudo -u \$(logname) setup-2fa.sh to configure TOTP"
+else
+    ok "SSH 2FA disabled (set ENABLE_2FA=1 then run setup-2fa.sh)"
+fi
+
+# ── §. WAN metric auto-management (#27) ─────────────────────────────────────
+section "WAN metric auto-management"
+
+install_file config/nm-wan-metrics /etc/NetworkManager/dispatcher.d/50-wan-metrics 755
+
+if [[ "${ENABLE_WAN_METRICS:-1}" = "1" ]]; then
+    ok "WAN metric dispatcher installed — enforces enx*=100 rndis0=200 bnep0=300 wlan0=600"
+else
+    rm -f /etc/NetworkManager/dispatcher.d/50-wan-metrics
+    ok "WAN metric dispatcher disabled"
 fi
 
 # ── §. WiFi QR code ───────────────────────────────────────────────────────────
@@ -625,6 +710,59 @@ else
     ok "qrencode not available — WiFi string saved to $WIFI_QR_DIR/wifi-string.txt"
 fi
 
+# ── §. Monitoring — Prometheus node exporter (#33) ───────────────────────────
+section "Prometheus node exporter"
+
+if [[ "${ENABLE_PROMETHEUS_EXPORTER:-0}" = "1" ]]; then
+    apt-get install -y prometheus-node-exporter 2>/dev/null || true
+    systemctl enable --now prometheus-node-exporter 2>/dev/null || true
+    ok "Prometheus node exporter enabled on :9100 (accessible via Tailscale)"
+    ok "Scrape with: http://$(tailscale ip -4 2>/dev/null | head -1):9100/metrics"
+else
+    ok "Prometheus node exporter disabled (set ENABLE_PROMETHEUS_EXPORTER=1 to activate)"
+fi
+
+# ── §. Bandwidth analytics dashboard (#32) ───────────────────────────────────
+section "Bandwidth analytics dashboard"
+
+install_file scripts/generate-bandwidth-report.sh \
+    /usr/local/bin/generate-bandwidth-report.sh 755
+install_file systemd/generate-bandwidth-report.service \
+    "/etc/systemd/system/generate-bandwidth-report.service" 644
+install_file systemd/generate-bandwidth-report.timer \
+    "/etc/systemd/system/generate-bandwidth-report.timer" 644
+install_file systemd/vnstat-push.service \
+    "/etc/systemd/system/vnstat-push.service" 644
+install_file systemd/vnstat-push.timer \
+    "/etc/systemd/system/vnstat-push.timer" 644
+install_file scripts/vnstat-push.sh /usr/local/bin/vnstat-push.sh 755
+systemctl daemon-reload
+
+if [[ "${ENABLE_BANDWIDTH_DASHBOARD:-0}" = "1" ]]; then
+    systemctl enable --now generate-bandwidth-report.timer 2>/dev/null || true
+    /usr/local/bin/generate-bandwidth-report.sh 2>/dev/null || true
+    # Serve via lighttpd: symlink into webroot
+    ln -sf /var/lib/travel-router/bandwidth.html \
+        /var/www/html/bandwidth.html 2>/dev/null || true
+    ok "Bandwidth dashboard: http://10.3.141.1/bandwidth.html"
+    ok "Regenerated daily at 00:05"
+else
+    systemctl disable generate-bandwidth-report.timer 2>/dev/null || true
+    ok "Bandwidth dashboard disabled (set ENABLE_BANDWIDTH_DASHBOARD=1)"
+fi
+
+# Install bmon + iftop for real-time traffic inspection (#34)
+apt-get install -y bmon iftop 2>/dev/null || true
+ok "Real-time traffic: bmon (interfaces) and iftop (per-connection) installed"
+
+# Enable vnStat push if PUSHGW_URL configured
+if [[ -n "${PUSHGW_URL:-}" ]]; then
+    systemctl enable --now vnstat-push.timer 2>/dev/null || true
+    ok "vnStat Prometheus push enabled (hourly) → $PUSHGW_URL"
+else
+    ok "vnStat push disabled (set PUSHGW_URL in /etc/default/travel-router)"
+fi
+
 # ── §. Avahi — mDNS reflector ────────────────────────────────────────────────
 section "Avahi — mDNS reflector"
 
@@ -636,6 +774,24 @@ if [[ "${ENABLE_AVAHI_REFLECTOR:-0}" = "1" ]]; then
 else
     systemctl disable --now avahi-daemon 2>/dev/null || true
     ok "Avahi installed but disabled (set ENABLE_AVAHI_REFLECTOR=1 to activate)"
+fi
+
+# ── §. UPS / PiSugar battery monitor (#50) ───────────────────────────────────
+section "UPS battery monitor (PiSugar 3)"
+
+install_file scripts/ups-monitor.sh /usr/local/bin/ups-monitor.sh 755
+install_file systemd/ups-monitor.service "/etc/systemd/system/ups-monitor.service" 644
+install_file systemd/ups-monitor.timer "/etc/systemd/system/ups-monitor.timer" 644
+systemctl daemon-reload
+
+if [[ "${ENABLE_UPS_MONITOR:-0}" = "1" ]]; then
+    systemctl enable --now ups-monitor.timer 2>/dev/null || true
+    ok "UPS monitor enabled — battery checked every 5 min, shutdown at ${UPS_SHUTDOWN_THRESHOLD:-10}%"
+    ok "PiSugar server (optional): https://github.com/PiSugar/pisugar-power-manager-rs"
+else
+    systemctl disable ups-monitor.timer 2>/dev/null || true
+    ok "UPS monitor disabled (set ENABLE_UPS_MONITOR=1 to activate)"
+    ok "Requires: PiSugar 3 HAT — https://www.pisugar.com"
 fi
 
 # ── §. Scheduled AP disable (#29) ────────────────────────────────────────────
@@ -802,6 +958,12 @@ echo "    • Daily digest: 08:00 ntfy push (uptime, uplink, Tailscale, AP clien
 echo "    • Per-client QoS: ${ENABLE_CLIENT_QOS:-0}  (CAKE per-host on uap0)"
 echo "    • CAKE auto-tune: ${ENABLE_CAKE_AUTOTUNE:-0}  (weekly speedtest → adjusts wlan0 CAKE bandwidth)"
 echo "    • Per-device VPN: ${ENABLE_PER_DEVICE_VPN:-0}  (set VPN_DEVICE_MACS in /etc/default/travel-router)"
+echo "    • Domain split tunnel: ${ENABLE_SPLIT_TUNNEL:-0}  (domains via Tailscale: ${SPLIT_TUNNEL_DOMAINS:-none})"
+echo "    • SSH 2FA (TOTP): ${ENABLE_2FA:-0}  (run: sudo -u \$(logname) setup-2fa.sh to configure)"
+echo "    • WAN metric management: ${ENABLE_WAN_METRICS:-1}  (enx*=100 rndis0=200 bnep0=300 wlan0=600)"
+echo "    • Bandwidth dashboard: ${ENABLE_BANDWIDTH_DASHBOARD:-0}  (http://10.3.141.1/bandwidth.html)"
+echo "    • Prometheus node exporter: ${ENABLE_PROMETHEUS_EXPORTER:-0}  (:9100/metrics via Tailscale)"
+echo "    • UPS monitor (PiSugar): ${ENABLE_UPS_MONITOR:-0}  (shutdown at ${UPS_SHUTDOWN_THRESHOLD:-10}%)"
 echo "    • Run 'sudo travel-status' for a one-shot status summary"
 echo "    • Run 'sudo travel-tui' for the interactive management TUI"
 echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"

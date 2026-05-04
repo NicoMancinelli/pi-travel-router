@@ -56,6 +56,19 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | Hardware watchdog | BCM2835 dtoverlay + systemd `RuntimeWatchdogSec=15`; auto-reboot on kernel lockup (active after reboot) |
 | ✅ | Log rotation | `logrotate.d/travel-router` — daily rotation, 7-day retention, compressed |
 | ✅ | Daily digest notification | 08:00 ntfy push: uptime, active uplink, Tailscale state, AP clients, failed units; fires only when `NTFY_TOPIC` set |
+| ✅ | Stateful FORWARD policy (#7) | `FORWARD DROP`; ESTABLISHED/RELATED fast path; explicit uplink ACCEPTs; KILL_SWITCH before uplink rules |
+| ✅ | SSH hardening | `sshd_config.d/99-travel-router.conf`: PermitRootLogin no, MaxAuthTries 3, no X11/TCP forwarding; optional pubkey-only auth |
+| ✅ | Headscale self-hosted control server (#46) | `setup-headscale.sh` for VPS; `--login-server` arg to tailscale up; HEADSCALE_URL in config |
+| ✅ | nftables TTL/DSCP/hop-limit migration (#1) | Native `inet travel_mangle` table in `/etc/nftables.conf.d/travel-router.nft`; replaces iptables mangle; covers IPv4+IPv6 in one ruleset |
+| ✅ | CAKE bandwidth auto-tuning (#4) | `tune-cake.sh` + weekly timer; runs speedtest-cli, sets 90% upload as wlan0 CAKE bandwidth; enable with `ENABLE_CAKE_AUTOTUNE=1` |
+| ✅ | Domain-based split tunnel (#45) | `apply-split-tunnel.sh`; dnsmasq `ipset=` + fwmark 0x2 + routing table 200 via tailscale0; enable with `ENABLE_SPLIT_TUNNEL=1` + `SPLIT_TUNNEL_DOMAINS` |
+| ✅ | SSH TOTP 2FA (#19) | `setup-2fa.sh` (google-authenticator); PAM `sshd-2fa.conf`; enable with `ENABLE_2FA=1` then run `setup-2fa.sh` as user |
+| ✅ | WAN metric auto-management (#27) | NetworkManager dispatcher `50-wan-metrics`; enforces enx*=100 rndis0=200 bnep0=300 wlan0=600 on every ifup |
+| ✅ | Bandwidth analytics dashboard (#32) | `generate-bandwidth-report.sh` + daily timer; dark HTML report at `/var/lib/travel-router/bandwidth.html`; enable with `ENABLE_BANDWIDTH_DASHBOARD=1` |
+| ✅ | Prometheus node exporter (#33) | `prometheus-node-exporter` on :9100; accessible over Tailscale; enable with `ENABLE_PROMETHEUS_EXPORTER=1` |
+| ✅ | Real-time traffic inspector (#34) | `bmon` (per-interface) + `iftop` (per-connection) installed; accessible from TUI Network submenu |
+| ✅ | vnStat Prometheus push (#48) | `vnstat-push.sh` + hourly timer; pushes rx/tx bytes to `PUSHGW_URL` as Prometheus text metrics |
+| ✅ | PiSugar 3 UPS monitor (#50) | `ups-monitor.sh` + 5-min timer; REST API → sysfs fallback; ntfy alert + safe shutdown at `UPS_SHUTDOWN_THRESHOLD`%; enable with `ENABLE_UPS_MONITOR=1` |
 
 Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 
@@ -65,7 +78,7 @@ Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftabl
 
 ### 🔴 High Priority
 
-#### 1. nftables TTL Migration
+#### ✅ 1. nftables TTL Migration *(deployed)*
 Replace `iptables -t mangle` TTL rules with native nftables, which also handles IPv6 hop-limit in one ruleset. On Pi OS Bookworm, `iptables-nft` already uses the nftables kernel backend, so this is a syntax/management improvement rather than a backend change. Key benefit: single ruleset covers both IPv4 TTL and IPv6 hop-limit.
 
 ```bash
@@ -98,7 +111,7 @@ Current config uses `[HT40][SHORT-GI-20][DSSS_CCK-40]`. The `[SHORT-GI-40]` capa
 
 ### 🟡 Medium Priority
 
-#### 4. CAKE Bandwidth Auto-Tuning
+#### ✅ 4. CAKE Bandwidth Auto-Tuning *(deployed)*
 Current CAKE config uses hardcoded 50mbit/15mbit. Auto-detect actual uplink speed via a periodic `speedtest-cli` or `fast-cli` run and adjust CAKE bandwidth accordingly.
 
 ```bash
@@ -124,7 +137,7 @@ ip route add default via 100.x.x.x dev tailscale0 table 200
 iptables -t mangle -A PREROUTING -s 10.3.141.20 -j MARK --set-mark 0x1  # specific client
 ```
 
-#### 7. iptables FORWARD — Full Stateful Policy
+#### ✅ 7. iptables FORWARD — Full Stateful Policy *(deployed)*
 Current FORWARD policy is ACCEPT (for RaspAP compatibility). A cleaner approach once RaspAP is stable: set `FORWARD DROP`, enumerate allowed flows explicitly.
 
 ```bash
@@ -195,7 +208,7 @@ sudo apt install -y unattended-upgrades
 | 16 | **Encrypted DNS (DoT/DoH)** — stubby or dnscrypt-proxy2 between dnsmasq and upstream; closes the biggest daily privacy gap | Low | `stubby` / `dnscrypt-proxy` |
 | 17 | **VPN Kill Switch** — nftables policy-drop, only VPN traffic passes; fail-safe instead of fail-open when Tailscale drops | Low-Med | wg-killswitch-nft pattern |
 | 18 | **AdGuard Home** — replaces dnsmasq for DNS; per-client query history, 15M+ domain blocklist, DoT/DoH upstream, web UI; GL.iNet flagship feature | Medium | `adguard-home` binary (ARM) |
-| 19 | **Admin TOTP 2FA** — TOTP challenge on RaspAP lighttpd login; protects UI from hostile-network credential attacks | Medium | `libpam-oath` + `oathtool` |
+| ✅ 19 | **SSH TOTP 2FA** *(deployed)* — google-authenticator PAM; enable with `ENABLE_2FA=1` + run `setup-2fa.sh` | Medium | `libpam-google-authenticator` |
 | 20 | **Transparent Tor Proxy** — iptables redirect all TCP through Tor TransPort; clients browse Tor without configuration; for high-risk travel | High | `tor` + iptables redirect rules |
 
 ### Performance
@@ -213,7 +226,7 @@ sudo apt install -y unattended-upgrades
 | 24 | **Android USB Tethering (RNDIS/CDC-ECM)** — udev rules for Android phones; genuine second-carrier redundancy | Low-Med | `rndis_host` kernel module + udev |
 | 25 | **UPS HAT / Safe Shutdown** — Waveshare or PiPower 5 UPS HAT; I2C battery monitor triggers `shutdown` before depletion; eliminates SD corruption risk | Low (sw) | Waveshare UPS HAT + Python |
 | 26 | **Unattended Security Updates** — auto-apply security patches nightly; reboot window + ntfy.sh pre-reboot notification | Low | `unattended-upgrades` |
-| 27 | **WAN Metric Auto-Management (ifmetric)** — enforce consistent interface metrics as uplinks come and go; prevents silent wrong-path routing | Low-Med | `ifmetric` / systemd-networkd |
+| ✅ 27 | **WAN Metric Auto-Management** *(deployed)* — NM dispatcher `50-wan-metrics`; enx*=100 rndis0=200 bnep0=300 wlan0=600 | Low-Med | NetworkManager dispatcher |
 
 ### Usability
 
@@ -228,9 +241,9 @@ sudo apt install -y unattended-upgrades
 
 | # | Feature | Complexity | Package/Tool |
 |---|---|---|---|
-| 32 | **Bandwidth Analytics Dashboard** — vnStat (already installed) + web frontend; per-interface daily/monthly graphs | Low | `vnstati` + simple PHP/HTML page |
-| 33 | **Prometheus + Node Exporter** — scrape router metrics from homelab Grafana over Tailscale; CPU, memory, temp, interface stats | Low | `prometheus-node-exporter` |
-| 34 | **Real-Time Traffic Inspector** — live per-second bandwidth by interface and connection; useful for "what's eating my bandwidth" debugging | Low-Med | `bmon` / `iftop` / `netdata` |
+| ✅ 32 | **Bandwidth Analytics Dashboard** *(deployed)* — dark HTML report at `http://10.3.141.1/bandwidth.html`; enable with `ENABLE_BANDWIDTH_DASHBOARD=1` | Low | `generate-bandwidth-report.sh` |
+| ✅ 33 | **Prometheus + Node Exporter** *(deployed)* — `:9100/metrics` via Tailscale; enable with `ENABLE_PROMETHEUS_EXPORTER=1` | Low | `prometheus-node-exporter` |
+| ✅ 34 | **Real-Time Traffic Inspector** *(deployed)* — `bmon` + `iftop` installed; accessible from TUI Network submenu | Low-Med | `bmon` / `iftop` |
 | 35 | **Tailscale Peer Status + ntfy Enrichment** — parse `tailscale status --json` every 5 min; ntfy alert when tunnel goes stale, peer drops, or handshake fails | Low | `jq` + `curl` (already have both) |
 
 ---
@@ -262,13 +275,13 @@ Research sources: Juraj Bednar bypass-anti-tethering, xiv3r bypass-anti-tetherin
 |---|---|---|---|
 | 43 | **Bluetooth Tethering as Tertiary WAN** — pair iPhone via Bluetooth, use `bnep0` interface as a low-bandwidth 3rd uplink; useful when both WiFi and USB are unavailable | 2–3 hr | `bluez` + `NetworkManager` |
 | 44 | **Per-Device fwmark Split Tunnel** — assign a specific AP client MAC a fwmark, route that device's traffic through Tailscale exit node while others go direct; 20 lines of nftables + `ip rule` | 3–4 hr | `nftables` fwmark + `ip rule` |
-| 45 | **Domain-Based Split Tunnel (dnsmasq ipset)** — specific domains (banking, corporate) resolve into an `ipset`; fwmark routes matching traffic through Tailscale tunnel while all other traffic goes direct | 4–6 hr | `ipset` + dnsmasq `ipset=` directive |
+| ✅ 45 | **Domain-Based Split Tunnel** *(deployed)* — `apply-split-tunnel.sh`; dnsmasq ipset + fwmark 0x2 + table 200; enable with `ENABLE_SPLIT_TUNNEL=1` + `SPLIT_TUNNEL_DOMAINS` | 4–6 hr | `ipset` + dnsmasq `ipset=` directive |
 
 ### VPN & Remote Access
 
 | # | Feature | Effort | Package/Tool |
 |---|---|---|---|
-| 46 | **Headscale (Self-Hosted Tailscale Control Server)** — replace the Tailscale cloud coordination server with self-hosted Headscale on your VPS; full control of your Tailnet topology, no Tailscale account dependency, zero telemetry | 3–4 hr + VPS | `headscale` binary |
+| ✅ 46 | **Headscale** *(deployed)* — `setup-headscale.sh` for VPS; `HEADSCALE_URL` in config; `--login-server` at tailscale up | 3–4 hr + VPS | `headscale` binary |
 
 ### Captive Portal Automation
 
@@ -280,14 +293,14 @@ Research sources: Juraj Bednar bypass-anti-tethering, xiv3r bypass-anti-tetherin
 
 | # | Feature | Effort | Package/Tool |
 |---|---|---|---|
-| 48 | **vnStat + Prometheus Push** — vnStat's per-interface monthly stats pushed to homelab Prometheus via curl push gateway over Tailscale; adds cellular data usage tracking alongside existing CPU/memory metrics | 1–2 hr | `vnstat-json` + `curl` |
+| ✅ 48 | **vnStat + Prometheus Push** *(deployed)* — `vnstat-push.sh` + hourly timer; set `PUSHGW_URL` in config to activate | 1–2 hr | `vnstat-push.sh` + `curl` |
 | 49 | **Lightweight IDS (Sagan log correlator)** — correlate dnsmasq, iptables, and auth logs in real time; alert via ntfy.sh on port-scan patterns or DNS exfil signatures; Sagan runs on Pi-class hardware unlike Suricata | 4–6 hr | `sagan` + existing ntfy.sh |
 
 ### Reliability & Hardware
 
 | # | Feature | Effort | Package/Tool |
 |---|---|---|---|
-| 50 | **PiSugar 3 UPS + Hardware Watchdog + RTC** — I2C battery board attaches to Pi GPIO; monitors charge level, triggers safe shutdown before depletion, adds hardware watchdog (GPIO pin), and provides RTC for accurate time without NTP; definitively solves SD corruption and time drift | 1 hr (sw) + hardware | PiSugar 3 board (~$25) |
+| ✅ 50 | **PiSugar 3 UPS monitor** *(deployed)* — `ups-monitor.sh` + 5-min timer; REST API → sysfs fallback; ntfy + shutdown at threshold; enable with `ENABLE_UPS_MONITOR=1` | 1 hr (sw) + hardware | PiSugar 3 board (~$25) |
 
 ---
 

@@ -1,0 +1,7 @@
+[Unit]
+Description=PiSugar UPS battery monitor
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ups-monitor.sh

@@ -59,5 +59,27 @@ SSH_ADMIN_KEY=""
 # Run scripts/setup-headscale.sh on your VPS to get this value.
 HEADSCALE_URL=""
 
+ENABLE_BANDWIDTH_DASHBOARD="0"
+ENABLE_PROMETHEUS_EXPORTER="0"
+
+# Domain-based split tunnel: route specific domains through Tailscale exit node.
+# Enable with ENABLE_SPLIT_TUNNEL=1, then list domains separated by spaces.
+# Example: SPLIT_TUNNEL_DOMAINS="mybank.com work.example.com linkedin.com"
+ENABLE_SPLIT_TUNNEL="0"
+SPLIT_TUNNEL_DOMAINS=""
+
 # Safety cap for update-blocklists.sh on memory-constrained Pi Zero hardware.
 MAX_BLOCKLIST_ENTRIES="20000"
+
+# SSH two-factor authentication (TOTP). After enabling:
+#   run: sudo -u <user> setup-2fa.sh
+ENABLE_2FA="0"
+
+# WAN metric auto-management: re-enforce uplink route metrics on each ifup.
+ENABLE_WAN_METRICS="1"
+
+# PiSugar 3 / PiSugar 2 UPS monitoring.
+# Enable to check battery every 5 min and shutdown safely when critical.
+# Requires a PiSugar HAT connected to GPIO/I2C.
+ENABLE_UPS_MONITOR="0"
+UPS_SHUTDOWN_THRESHOLD="10"
