@@ -18,7 +18,8 @@ fi
 sleep 3  # wait for driver init (ipheth iOS trust handshake; RNDIS/CDC-ECM enumeration)
 
 logger "start-tether: bringing up $IFACE"
-/sbin/dhclient -v "$IFACE" 2>&1 | logger -t "start-tether"
+# Let NetworkManager handle DHCP; explicit connect as fallback if NM hasn't auto-connected
+nmcli device connect "$IFACE" 2>&1 | logger -t "start-tether" || true
 
 # Apply CAKE qdisc for bufferbloat control on tether uplink
 tc qdisc replace dev "$IFACE" root cake bandwidth 15mbit besteffort 2>/dev/null || true

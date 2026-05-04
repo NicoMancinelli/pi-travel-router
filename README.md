@@ -51,7 +51,7 @@ Imager handles `xz` decompression and writes the SD card. (CLI alternative: `xz 
 
 **3. Boot the Pi**
 
-Insert the SD card. Connect power to the `PWR` port. Wait ~60 seconds for first boot (mDNS, network, and the firstboot wizard need to come up).
+Insert the SD card. Connect power to the `PWR` port. (The `PWR` port is the one closer to the **edge** of the board, labeled `PWR IN`. The `USB` port in the next step is the one in the middle.) Wait ~60 seconds for first boot (mDNS, network, and the firstboot wizard need to come up).
 
 **4. Open the wizard**
 
@@ -61,7 +61,7 @@ Plug the Pi's `USB` port (not `PWR`) into your laptop with a USB-C cable. The im
 http://192.168.7.1
 ```
 
-If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (password `changeme`). Windows users may need RNDIS drivers — see [`build/README.md`](build/README.md) for details.
+If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (password `changeme`). Windows users may need RNDIS drivers. Open **Device Manager**, find the Pi under *Other devices* or *Network adapters*, and install the driver via **Update driver → Browse my computer → Let me pick → Remote NDIS Compatible Device**. Alternatively, enable the "USB RNDIS Gadget" option in Windows Features.
 
 **5. Fill in the form**
 
@@ -92,6 +92,54 @@ passwd
 ```
 
 If you supplied an SSH public key in the wizard, password authentication is automatically disabled by `install.sh` and only key auth remains.
+
+---
+
+## Hotel check-in workflow
+
+On arrival at a hotel or conference WiFi:
+
+**1. Power on the Pi.**
+Plug the `PWR` port into any USB power source. Wait ~30 seconds for boot.
+
+**2. Plug into your laptop via USB-C.**
+The laptop gets a DHCP address in `192.168.7.0/24`. Your devices can now use the Pi's AP — they just have no internet yet.
+
+**3. Connect the Pi to the hotel WiFi.**
+SSH in and run:
+
+```sh
+ssh root@192.168.7.1        # password: changeme (or your set password)
+nmcli dev wifi list          # scan — find the hotel SSID
+nmcli dev wifi connect "Hotel WiFi Name" password "roompassword"
+# For open networks (no password):
+nmcli dev wifi connect "Hotel WiFi Name"
+```
+
+Or use the TUI: `sudo travel-tui` → **[5] Network Tools** → **[7] Connect to hotel/new WiFi**.
+
+**4. Handle the captive portal.**
+If the hotel uses a captive portal (login page), the Pi's wan-watchdog detects it automatically:
+
+- Tailscale pauses (so the portal redirect isn't blocked by the VPN).
+- You get an ntfy push notification (if configured) with a high-priority alert.
+- Open a browser on any device connected to the Pi's AP and browse to any `http://` site — you'll be redirected to the hotel portal.
+- Complete login. The Pi re-probes every 60 seconds and restores Tailscale once internet is clear.
+
+For stubborn portals or re-auth loops:
+
+```sh
+# If the portal only authenticates the Pi's MAC but your laptop was auth'd before:
+sudo travel-tui   # → [5] Network → [3] Clone MAC to wlan0
+# Run captive check manually:
+sudo /usr/local/bin/captive-check.sh
+```
+
+**5. Reconnect periodically.**
+Many hotel portals expire every 4–12 hours. The watchdog detects re-auth and notifies you via ntfy. Tailscale auto-restores after each re-login.
+
+**6. Switch uplinks on the fly.**
+Plug in your iPhone (USB tethering on) or Android phone — the Pi picks up the tether as a higher-priority uplink (metric 100) and drops hotel WiFi automatically. No configuration needed.
 
 ---
 
@@ -330,6 +378,34 @@ Run `clone-mac.sh <your-laptop-mac>` to make wlan0 present the same MAC the port
 **Can't reach AP clients from the Pi (or vice versa)**
 
 That's by design — AP client isolation is in the FORWARD chain and INPUT blocks AP clients from port 22/80. Manage the Pi via the USB gadget (`192.168.7.1`) or Tailscale.
+
+---
+
+## Recovery scenarios
+
+**AP won't start after reboot:**
+
+```sh
+sudo journalctl -u hostapd -n 50
+sudo hostapd -d /etc/hostapd/hostapd.conf   # test config interactively (Ctrl-C to stop)
+```
+
+Common causes: wrong country code, DFS channel (try `channel=6` in `/etc/hostapd/hostapd.conf`), or `wlan0` not associated before hostapd started.
+
+**Lost Tailscale + key-only SSH (locked out):**
+Connect via USB gadget: `ssh root@192.168.7.1`. The USB gadget is always active and bypasses Tailscale. From there, re-auth Tailscale: `sudo tailscale up`.
+
+**WAN watchdog reboot loop:**
+
+```sh
+sudo systemctl stop wan-watchdog.timer   # stop the loop first!
+sudo journalctl -u wan-watchdog -n 30
+# Fix the underlying connectivity issue, then:
+sudo systemctl start wan-watchdog.timer
+```
+
+**Router not accessible at all:**
+The USB gadget interface (`192.168.7.1`) is always available regardless of WiFi/Tailscale state. If even that fails, reflash the SD card using Raspberry Pi Imager with the latest image from Releases.
 
 ---
 

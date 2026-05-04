@@ -149,6 +149,20 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
     [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
 fi
 
+# ── Apply hostname ────────────────────────────────────────────────────────────
+if [[ -n "${ROUTER_HOSTNAME:-}" && "$ROUTER_HOSTNAME" != "travelrouter" ]]; then
+    hostnamectl set-hostname "$ROUTER_HOSTNAME" 2>/dev/null || true
+    sed -i "s/travelrouter/$ROUTER_HOSTNAME/g" /etc/hosts 2>/dev/null || true
+    echo "$ROUTER_HOSTNAME" > /etc/hostname
+    ok "Hostname set to $ROUTER_HOSTNAME"
+fi
+
+# ── Apply timezone ────────────────────────────────────────────────────────────
+if [[ -n "${ROUTER_TIMEZONE:-}" ]]; then
+    timedatectl set-timezone "$ROUTER_TIMEZONE" 2>/dev/null || true
+    ok "Timezone set to $ROUTER_TIMEZONE"
+fi
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 install_file() {
     # install_file <src-in-repo> <dest> [mode]
@@ -164,7 +178,7 @@ section "Installing packages"
 apt-get update -qq
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
     hostapd dnsmasq iptables iptables-persistent netfilter-persistent \
-    dhcpcd5 curl wget git jq \
+    curl wget git jq \
     usbmuxd libimobiledevice6 libimobiledevice-utils ipheth-utils \
     macchanger vnstat \
     privoxy \
@@ -251,19 +265,17 @@ sysctl -p /etc/sysctl.d/99-tailscale.conf &>/dev/null || true
 sysctl -p /etc/sysctl.d/99-disable-ipv6-uplink.conf &>/dev/null || true
 ok "Sysctl configured"
 
-# ── 4. dhcpcd — USB gadget static IP ─────────────────────────────────────────
-section "dhcpcd — usb0 static IP (USB gadget)"
+# ── 4. NetworkManager — usb0 static IP (USB gadget) ─────────────────────────
+section "NetworkManager — usb0 static IP (USB gadget)"
 
-if ! grep -q "interface usb0" /etc/dhcpcd.conf 2>/dev/null; then
-    cat >> /etc/dhcpcd.conf << 'EOF'
-
-# USB gadget interface (g_ether) — Pi as Ethernet device for laptop
-interface usb0
-static ip_address=192.168.7.1/24
-nohook wpa_supplicant
-EOF
+USB0_CONN="/etc/NetworkManager/system-connections/usb0-firstboot.nmconnection"
+if [[ ! -f "$USB0_CONN" ]]; then
+    install_file config/usb0-firstboot.nmconnection "$USB0_CONN" 600
+    nmcli connection reload 2>/dev/null || true
+    ok "usb0 NM profile installed"
+else
+    ok "usb0 NM profile already present"
 fi
-ok "dhcpcd usb0 config added"
 
 # ── 5. NetworkManager — wifi power save off + MAC randomization ───────────────
 section "NetworkManager config"

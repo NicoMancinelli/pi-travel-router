@@ -8,9 +8,8 @@ if [ -z "$IFACE" ]; then
     exit 2
 fi
 
-logger "stop-tether: $IFACE removed, releasing DHCP"
-/sbin/dhclient -r "$IFACE" 2>/dev/null || true
-/sbin/ip link delete "$IFACE" 2>/dev/null || true
+logger "stop-tether: $IFACE removed, disconnecting via NM"
+nmcli device disconnect "$IFACE" 2>/dev/null || true
 logger "stop-tether: done"
 
 /usr/local/bin/notify-router.sh "USB tether disconnected: $IFACE" low

@@ -7,8 +7,9 @@ table inet travel_mangle {
         type filter hook postrouting priority mangle; policy accept;
 
         # TTL=65 / hop-limit=65: defeats Visible/Verizon tethering DPI.
-        oifname { "uap0", "wlan0", "usb0", "rndis0", "bnep0" } ip ttl set 65
-        oifname { "uap0", "wlan0", "usb0", "rndis0", "bnep0" } ip6 hop-limit set 65
+        # Apply only on uplink (carrier-facing) interfaces; uap0 is AP-side (client-facing) and must be excluded.
+        oifname { "wlan0", "usb0", "rndis0", "bnep0" } ip ttl set 65
+        oifname { "wlan0", "usb0", "rndis0", "bnep0" } ip6 hop-limit set 65
         oifname "enx*" ip ttl set 65
         oifname "enx*" ip6 hop-limit set 65
 

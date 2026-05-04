@@ -52,6 +52,8 @@ STRING_FIELDS = [
     "AP_SSID",
     "AP_PASS",
     "COUNTRY",
+    "ROUTER_HOSTNAME",
+    "ROUTER_TIMEZONE",
     "NTFY_TOPIC",
     "TS_KEY",
     "SSH_ADMIN_KEY",
@@ -103,6 +105,17 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     values["SSH_ADMIN_KEY"] = ssh_key
 
     values["SPLIT_TUNNEL_DOMAINS"] = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
+
+    hostname = _first(form, "ROUTER_HOSTNAME", "travelrouter").strip().lower()
+    if hostname and not re.fullmatch(r"[a-z0-9][a-z0-9\-]{0,62}", hostname):
+        errors.append("Hostname must be 1-63 chars: letters, numbers, and hyphens only.")
+    values["ROUTER_HOSTNAME"] = hostname or "travelrouter"
+
+    timezone = _first(form, "ROUTER_TIMEZONE").strip()
+    # Accept empty (keep UTC) or a non-empty string that looks like a TZ name
+    if timezone and not re.fullmatch(r"[A-Za-z][A-Za-z0-9/_\-+]{1,49}", timezone):
+        errors.append("Invalid timezone value.")
+    values["ROUTER_TIMEZONE"] = timezone
 
     for flag in BOOL_FLAGS:
         values[flag] = "1" if _first(form, flag) else "0"

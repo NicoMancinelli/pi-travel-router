@@ -203,11 +203,83 @@ show_features() {
                 sed -i "s/^${target_flag}=.*/${target_flag}=\"${new_val}\"/" \
                     /etc/default/travel-router
                 printf "  ${G}ok${NC} — %s -> %s\n" "$target_flag" "$new_val"
-                if [[ "$target_flag" = "ENABLE_VPN_KILLSWITCH" ]]; then
-                    printf "  Reloading firewall...\n"
-                    /usr/local/bin/travel-router-firewall.sh --save 2>/dev/null || true
-                    printf "  ${G}ok${NC} — firewall reloaded\n"
-                fi
+
+                # Apply the change immediately
+                case "$target_flag" in
+                    ENABLE_VPN_KILLSWITCH|ENABLE_TOR_TRANSPARENT|ENABLE_BLOCKLISTS|ENABLE_PER_DEVICE_VPN)
+                        printf "  Reloading firewall...\n"
+                        /usr/local/bin/travel-router-firewall.sh --save 2>/dev/null \
+                            && printf "  ${G}ok${NC} — firewall reloaded\n" \
+                            || printf "  ${R}warn${NC} — firewall reload failed\n"
+                        if [[ "$target_flag" = "ENABLE_BLOCKLISTS" && "$new_val" = "1" ]]; then
+                            printf "  Triggering blocklist update...\n"
+                            systemctl start update-blocklists.service 2>/dev/null || true
+                        fi
+                        ;;
+                    ENABLE_DOT)
+                        if [[ "$new_val" = "1" ]]; then
+                            systemctl restart stubby 2>/dev/null || true
+                        else
+                            systemctl stop stubby 2>/dev/null || true
+                        fi
+                        systemctl reload-or-restart dnsmasq 2>/dev/null || true
+                        printf "  ${G}ok${NC} — DoT %s\n" "$([[ $new_val = 1 ]] && echo enabled || echo disabled)"
+                        ;;
+                    ENABLE_ADGUARD)
+                        if [[ "$new_val" = "1" ]]; then
+                            systemctl restart adguard-home 2>/dev/null || true
+                        else
+                            systemctl stop adguard-home 2>/dev/null || true
+                        fi
+                        systemctl reload-or-restart dnsmasq 2>/dev/null || true
+                        printf "  ${G}ok${NC} — AdGuard Home %s\n" "$([[ $new_val = 1 ]] && echo enabled || echo disabled)"
+                        ;;
+                    ENABLE_AVAHI_REFLECTOR)
+                        systemctl reload-or-restart avahi-daemon 2>/dev/null || true
+                        printf "  ${G}ok${NC} — avahi-daemon restarted\n"
+                        ;;
+                    ENABLE_HTTP_UA_REWRITE)
+                        if [[ "$new_val" = "1" ]]; then
+                            systemctl restart privoxy 2>/dev/null || true
+                        else
+                            systemctl stop privoxy 2>/dev/null || true
+                        fi
+                        printf "  ${G}ok${NC} — privoxy %s\n" "$([[ $new_val = 1 ]] && echo started || echo stopped)"
+                        ;;
+                    ENABLE_AP_SCHEDULE)
+                        if [[ "$new_val" = "1" ]]; then
+                            systemctl enable --now ap-disable.timer ap-enable.timer 2>/dev/null || true
+                            printf "  ${G}ok${NC} — AP schedule timers enabled\n"
+                        else
+                            systemctl disable --now ap-disable.timer ap-enable.timer 2>/dev/null || true
+                            printf "  ${G}ok${NC} — AP schedule timers disabled\n"
+                        fi
+                        ;;
+                    ENABLE_CAKE_AUTOTUNE)
+                        if [[ "$new_val" = "1" ]]; then
+                            systemctl enable --now tune-cake.timer 2>/dev/null || true
+                            printf "  ${G}ok${NC} — CAKE autotune timer enabled\n"
+                        else
+                            systemctl disable --now tune-cake.timer 2>/dev/null || true
+                            printf "  ${G}ok${NC} — CAKE autotune timer disabled\n"
+                        fi
+                        ;;
+                    ENABLE_CLIENT_QOS)
+                        /usr/local/bin/apply-cake.sh 2>/dev/null || true
+                        printf "  ${G}ok${NC} — CAKE qdisc re-applied\n"
+                        ;;
+                    ENABLE_AUTO_UPDATES)
+                        if [[ "$new_val" = "1" ]]; then
+                            systemctl enable unattended-upgrades 2>/dev/null || true
+                        else
+                            systemctl disable unattended-upgrades 2>/dev/null || true
+                        fi
+                        printf "  ${G}ok${NC} — unattended-upgrades %s\n" "$([[ $new_val = 1 ]] && echo enabled || echo disabled)"
+                        ;;
+                    *)
+                        printf "  ${DIM}note${NC} — flag written; restart affected service manually if needed\n"
+                        ;;
+                esac
                 sleep 2
             fi
             ;;
@@ -305,6 +377,7 @@ show_network() {
         printf "  [4] Restore original wlan0 MAC\n"
         printf "  [5] Real-time bandwidth (bmon)\n"
         printf "  [6] Per-connection traffic (iftop on uap0)\n"
+        printf "  [7] Connect to hotel/new WiFi network\n"
         printf "\n  Enter choice, [q] to return: "
         local choice
         read -r choice
@@ -348,6 +421,27 @@ show_network() {
                 else
                     printf "  iftop not installed\n  Press any key..."; read -rsn1 || true
                 fi ;;
+            7)
+                clear; printf "${W}Connect to WiFi${NC}\n"
+                printf "  Scanning...\n"
+                nmcli --fields SSID,SIGNAL,SECURITY device wifi list 2>/dev/null | head -20 || true
+                printf "\n  SSID to connect to: "
+                local wifi_ssid
+                read -r wifi_ssid
+                [[ -z "$wifi_ssid" ]] && break
+                printf "  Password (blank for open network): "
+                local wifi_pass
+                read -rs wifi_pass; printf "\n"
+                if [[ -n "$wifi_pass" ]]; then
+                    nmcli device wifi connect "$wifi_ssid" password "$wifi_pass" ifname wlan0 2>&1 \
+                        && printf "  ${G}ok${NC} — connected to %s\n" "$wifi_ssid" \
+                        || printf "  ${R}failed${NC} — check SSID/password and try again\n"
+                else
+                    nmcli device wifi connect "$wifi_ssid" ifname wlan0 2>&1 \
+                        && printf "  ${G}ok${NC} — connected to %s\n" "$wifi_ssid" \
+                        || printf "  ${R}failed${NC} — could not connect\n"
+                fi
+                sleep 3 ;;
             q|Q) return ;;
         esac
     done

@@ -70,12 +70,16 @@ download_release() {
 
 apply_update() {
     local src="$1"   # extracted repo root
-    local changed=0
 
     # Scripts → /usr/local/bin/
     for script in "${src}"/scripts/*.sh; do
         name=$(basename "$script")
-        dest="/usr/local/bin/${name}"
+        # travel-diagnostic is installed without the .sh extension
+        if [[ "$name" = "travel-diagnostic.sh" ]]; then
+            dest="/usr/local/bin/travel-diagnostic"
+        else
+            dest="/usr/local/bin/${name}"
+        fi
         if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
             cp "$script" "$dest"
             chmod 755 "$dest"
@@ -120,7 +124,7 @@ apply_update() {
         changed=1
     fi
 
-    return $changed
+    return 0
 }
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -154,7 +158,9 @@ if ! download_release "$latest" "$tmpdir"; then
     exit 1
 fi
 
-if apply_update "$tmpdir"; then
+changed=0
+apply_update "$tmpdir"
+if [[ "$changed" = "1" ]]; then
     echo "$latest" > "$VERSION_FILE"
     log "Update complete: $current → $latest"
     notify "Router updated: $current → $latest" low
