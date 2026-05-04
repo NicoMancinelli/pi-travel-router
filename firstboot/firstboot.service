@@ -1,0 +1,16 @@
+[Unit]
+Description=Travel Router first-boot setup wizard
+After=network.target avahi-daemon.service
+ConditionPathExists=!/var/lib/travel-router/firstboot-done
+
+[Service]
+Type=simple
+ExecStartPre=/bin/mkdir -p /var/lib/travel-router
+ExecStart=/usr/bin/python3 /opt/pi-travel-router/firstboot/server.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

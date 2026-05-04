@@ -40,42 +40,90 @@ echo ""
 # ── Config prompts ────────────────────────────────────────────────────────────
 section "Configuration"
 
-read -rp "  AP SSID [TravelRouter]: " AP_SSID;          AP_SSID="${AP_SSID:-TravelRouter}"
-read -rsp "  AP passphrase (8+ chars): " AP_PASS;        echo
-read -rp "  WiFi country code [US]: " COUNTRY;           COUNTRY="${COUNTRY:-US}"
-read -rp "  ntfy.sh topic (blank = no notifications): " NTFY_TOPIC; NTFY_TOPIC="${NTFY_TOPIC:-}"
-read -rsp "  Tailscale auth key (tskey-auth-... or blank): " TS_KEY; echo; TS_KEY="${TS_KEY:-}"
-read -rp  "  SSH admin public key (paste ed25519/rsa pubkey, or blank to keep password auth): " SSH_ADMIN_KEY; SSH_ADMIN_KEY="${SSH_ADMIN_KEY:-}"
-read -rp  "  Headscale URL (blank = use Tailscale cloud): " HEADSCALE_URL; HEADSCALE_URL="${HEADSCALE_URL:-}"
-
 # Optional features — env-var pre-set wins (allows scripted/non-interactive installs)
-_yn() { local v="${!1:-}"; [[ "$v" =~ ^[01]$ ]] && return; read -rp "  $2 [y/N] " _r; printf -v "$1" '%s' "$([[ "$_r" =~ ^[Yy]$ ]] && echo 1 || echo 0)"; }
-_yn ENABLE_BLOCKLISTS          "Enable threat-intel blocklist (Firehol L1)?"
-_yn ENABLE_TOR_TRANSPARENT     "Enable Tor transparent proxy?"
-_yn ENABLE_HTTP_UA_REWRITE     "Enable HTTP User-Agent normalization (privoxy)?"
-_yn ENABLE_OPEN_WIFI_FALLBACK  "Enable open WiFi fallback (join any open network)?"
-_yn ENABLE_DOT                 "Enable DNS-over-TLS (stubby → Cloudflare + Quad9)?"
-_yn ENABLE_VPN_KILLSWITCH      "Enable VPN kill switch (block AP traffic if Tailscale drops)?"
-_yn ENABLE_AUTO_UPDATES        "Enable automatic OS security updates (unattended-upgrades)?"
-_yn ENABLE_ADGUARD             "Enable AdGuard Home (DNS ad-blocker + per-client analytics)?"
-_yn ENABLE_AVAHI_REFLECTOR  "Enable mDNS reflector (AirPrint/AirPlay over Tailscale)?"
-_yn ENABLE_AP_SCHEDULE      "Enable scheduled AP disable at night (02:00–07:00)?"
-_yn ENABLE_CLIENT_QOS       "Enable per-client bandwidth fairness (CAKE per-host on uap0)?"
-_yn ENABLE_PER_DEVICE_VPN   "Enable per-device Tailscale routing (specific MACs via VPN)?"
-_yn ENABLE_CAKE_AUTOTUNE    "Enable automatic CAKE bandwidth tuning (weekly speedtest on wlan0)?"
-_yn ENABLE_SPLIT_TUNNEL     "Enable domain-based split tunnel (route specific domains via Tailscale)?"
-if [[ "${ENABLE_SPLIT_TUNNEL:-0}" = "1" && -z "${SPLIT_TUNNEL_DOMAINS:-}" ]]; then
-    read -rp "  Split tunnel domains (space-separated, e.g. mybank.com work.example.com): " SPLIT_TUNNEL_DOMAINS
-    SPLIT_TUNNEL_DOMAINS="${SPLIT_TUNNEL_DOMAINS:-}"
-fi
-_yn ENABLE_2FA              "Enable SSH two-factor authentication (TOTP)?"
-_yn ENABLE_BANDWIDTH_DASHBOARD "Enable bandwidth analytics dashboard (daily HTML report)?"
-_yn ENABLE_PROMETHEUS_EXPORTER "Enable Prometheus node exporter on :9100?"
-_yn ENABLE_UPS_MONITOR      "Enable PiSugar UPS battery monitor (safe shutdown at low battery)?"
+# In non-interactive mode (INSTALL_NONINTERACTIVE=1), _yn defaults the flag to 0 instead of prompting.
+_yn() {
+    local v="${!1:-}"
+    [[ "$v" =~ ^[01]$ ]] && return
+    if [[ "${INSTALL_NONINTERACTIVE:-0}" == "1" ]]; then
+        printf -v "$1" '%s' "0"
+        return
+    fi
+    read -rp "  $2 [y/N] " _r
+    printf -v "$1" '%s' "$([[ "$_r" =~ ^[Yy]$ ]] && echo 1 || echo 0)"
+}
 
-if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
-    read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
-    [[ ${#TOR_AP_PASS} -ge 8 ]] || die "Tor AP passphrase must be 8+ characters"
+if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
+    read -rp "  AP SSID [TravelRouter]: " AP_SSID;          AP_SSID="${AP_SSID:-TravelRouter}"
+    read -rsp "  AP passphrase (8+ chars): " AP_PASS;        echo
+    read -rp "  WiFi country code [US]: " COUNTRY;           COUNTRY="${COUNTRY:-US}"
+    read -rp "  ntfy.sh topic (blank = no notifications): " NTFY_TOPIC; NTFY_TOPIC="${NTFY_TOPIC:-}"
+    read -rsp "  Tailscale auth key (tskey-auth-... or blank): " TS_KEY; echo; TS_KEY="${TS_KEY:-}"
+    read -rp  "  SSH admin public key (paste ed25519/rsa pubkey, or blank to keep password auth): " SSH_ADMIN_KEY; SSH_ADMIN_KEY="${SSH_ADMIN_KEY:-}"
+    read -rp  "  Headscale URL (blank = use Tailscale cloud): " HEADSCALE_URL; HEADSCALE_URL="${HEADSCALE_URL:-}"
+
+    _yn ENABLE_BLOCKLISTS          "Enable threat-intel blocklist (Firehol L1)?"
+    _yn ENABLE_TOR_TRANSPARENT     "Enable Tor transparent proxy?"
+    _yn ENABLE_HTTP_UA_REWRITE     "Enable HTTP User-Agent normalization (privoxy)?"
+    _yn ENABLE_OPEN_WIFI_FALLBACK  "Enable open WiFi fallback (join any open network)?"
+    _yn ENABLE_DOT                 "Enable DNS-over-TLS (stubby → Cloudflare + Quad9)?"
+    _yn ENABLE_VPN_KILLSWITCH      "Enable VPN kill switch (block AP traffic if Tailscale drops)?"
+    _yn ENABLE_AUTO_UPDATES        "Enable automatic OS security updates (unattended-upgrades)?"
+    _yn ENABLE_ADGUARD             "Enable AdGuard Home (DNS ad-blocker + per-client analytics)?"
+    _yn ENABLE_AVAHI_REFLECTOR  "Enable mDNS reflector (AirPrint/AirPlay over Tailscale)?"
+    _yn ENABLE_AP_SCHEDULE      "Enable scheduled AP disable at night (02:00–07:00)?"
+    _yn ENABLE_CLIENT_QOS       "Enable per-client bandwidth fairness (CAKE per-host on uap0)?"
+    _yn ENABLE_PER_DEVICE_VPN   "Enable per-device Tailscale routing (specific MACs via VPN)?"
+    _yn ENABLE_CAKE_AUTOTUNE    "Enable automatic CAKE bandwidth tuning (weekly speedtest on wlan0)?"
+    _yn ENABLE_SPLIT_TUNNEL     "Enable domain-based split tunnel (route specific domains via Tailscale)?"
+    if [[ "${ENABLE_SPLIT_TUNNEL:-0}" = "1" && -z "${SPLIT_TUNNEL_DOMAINS:-}" ]]; then
+        read -rp "  Split tunnel domains (space-separated, e.g. mybank.com work.example.com): " SPLIT_TUNNEL_DOMAINS
+        SPLIT_TUNNEL_DOMAINS="${SPLIT_TUNNEL_DOMAINS:-}"
+    fi
+    _yn ENABLE_2FA              "Enable SSH two-factor authentication (TOTP)?"
+    _yn ENABLE_BANDWIDTH_DASHBOARD "Enable bandwidth analytics dashboard (daily HTML report)?"
+    _yn ENABLE_PROMETHEUS_EXPORTER "Enable Prometheus node exporter on :9100?"
+    _yn ENABLE_UPS_MONITOR      "Enable PiSugar UPS battery monitor (safe shutdown at low battery)?"
+
+    if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
+        read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
+        [[ ${#TOR_AP_PASS} -ge 8 ]] || die "Tor AP passphrase must be 8+ characters"
+    fi
+fi
+
+# Defaults for both interactive and non-interactive paths.
+AP_SSID="${AP_SSID:-TravelRouter}"
+COUNTRY="${COUNTRY:-US}"
+NTFY_TOPIC="${NTFY_TOPIC:-}"
+TS_KEY="${TS_KEY:-}"
+SSH_ADMIN_KEY="${SSH_ADMIN_KEY:-}"
+HEADSCALE_URL="${HEADSCALE_URL:-}"
+SPLIT_TUNNEL_DOMAINS="${SPLIT_TUNNEL_DOMAINS:-}"
+TOR_AP_PASS="${TOR_AP_PASS:-}"
+
+if [[ "${INSTALL_NONINTERACTIVE:-0}" == "1" ]]; then
+    [[ -n "${AP_PASS:-}" ]] || die "Set AP_PASS in environment for non-interactive install"
+    : "${ENABLE_BLOCKLISTS:=0}"
+    : "${ENABLE_TOR_TRANSPARENT:=0}"
+    : "${ENABLE_HTTP_UA_REWRITE:=0}"
+    : "${ENABLE_OPEN_WIFI_FALLBACK:=0}"
+    : "${ENABLE_DOT:=0}"
+    : "${ENABLE_VPN_KILLSWITCH:=0}"
+    : "${ENABLE_AUTO_UPDATES:=0}"
+    : "${ENABLE_ADGUARD:=0}"
+    : "${ENABLE_AVAHI_REFLECTOR:=0}"
+    : "${ENABLE_AP_SCHEDULE:=0}"
+    : "${ENABLE_CLIENT_QOS:=0}"
+    : "${ENABLE_PER_DEVICE_VPN:=0}"
+    : "${ENABLE_CAKE_AUTOTUNE:=0}"
+    : "${ENABLE_SPLIT_TUNNEL:=0}"
+    : "${ENABLE_2FA:=0}"
+    : "${ENABLE_BANDWIDTH_DASHBOARD:=0}"
+    : "${ENABLE_PROMETHEUS_EXPORTER:=0}"
+    : "${ENABLE_UPS_MONITOR:=0}"
+    if [[ "${ENABLE_TOR_TRANSPARENT}" == "1" ]]; then
+        [[ ${#TOR_AP_PASS} -ge 8 ]] || die "Set TOR_AP_PASS (8+ chars) in environment when ENABLE_TOR_TRANSPARENT=1"
+    fi
 fi
 
 [[ -n "$AP_SSID" && ${#AP_SSID} -le 32 ]] || die "SSID must be 1-32 characters"
@@ -96,8 +144,10 @@ info "Country:   $COUNTRY"
 info "ntfy:      ${NTFY_TOPIC:-disabled}"
 info "Tailscale: ${TS_KEY:+key provided}${TS_KEY:-will auth manually after install}"
 echo ""
-read -rp "  Proceed? [y/N] " CONFIRM
-[[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
+if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
+    read -rp "  Proceed? [y/N] " CONFIRM
+    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
+fi
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 install_file() {

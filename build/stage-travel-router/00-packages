@@ -1,0 +1,4 @@
+git
+curl
+ca-certificates
+avahi-daemon

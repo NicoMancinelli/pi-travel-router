@@ -4,3 +4,5 @@
 AGENTS.local.md
 .env.local
 .env.*.local
+__pycache__/
+*.pyc

@@ -1,0 +1,93 @@
+name: Build Pi Image
+
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build travelrouter image with pi-gen
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout pi-travel-router
+        uses: actions/checkout@v4
+        with:
+          path: pi-travel-router
+          fetch-depth: 0
+
+      - name: Checkout pi-gen
+        uses: actions/checkout@v4
+        with:
+          repository: RPi-Distro/pi-gen
+          ref: arm64
+          path: pi-gen
+
+      - name: Install pi-gen build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            coreutils quilt parted qemu-user-static debootstrap zerofree zip \
+            dosfstools libarchive-tools libcap2-bin grep rsync xz-utils file \
+            git curl bc qemu-utils kpartx gpg pigz arch-test
+
+      - name: Cache pi-gen apt downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            pi-gen/work/*/aptcache
+          key: pi-gen-aptcache-${{ runner.os }}-bookworm-${{ hashFiles('pi-travel-router/build/stage-travel-router/00-packages') }}
+          restore-keys: |
+            pi-gen-aptcache-${{ runner.os }}-bookworm-
+
+      - name: Stage custom config and stage into pi-gen
+        run: |
+          set -euxo pipefail
+          cp pi-travel-router/build/config pi-gen/config
+          ln -snf "$GITHUB_WORKSPACE/pi-travel-router/build/stage-travel-router" pi-gen/stage-travel-router
+          # Skip stages we don't need to export (we only export our custom stage).
+          touch pi-gen/stage2/SKIP_IMAGES pi-gen/stage2/SKIP_NOOBS || true
+
+      - name: Build image
+        env:
+          REPO_URL: https://github.com/${{ github.repository }}.git
+          GIT_REF: ${{ github.sha }}
+        run: |
+          set -euxo pipefail
+          cd pi-gen
+          sudo -E ./build.sh
+
+      - name: Locate built image
+        id: locate
+        run: |
+          set -euxo pipefail
+          IMG_PATH="$(find pi-gen/deploy -maxdepth 2 -name '*.img.xz' | head -n1)"
+          if [ -z "${IMG_PATH}" ]; then
+            echo "No .img.xz found under pi-gen/deploy" >&2
+            ls -laR pi-gen/deploy || true
+            exit 1
+          fi
+          echo "img_path=${IMG_PATH}" >> "$GITHUB_OUTPUT"
+          echo "img_name=$(basename "${IMG_PATH}")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload image as workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: travelrouter-image
+          path: ${{ steps.locate.outputs.img_path }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.locate.outputs.img_path }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
