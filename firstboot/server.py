@@ -19,10 +19,14 @@ from urllib.parse import parse_qs
 
 STATE_DIR = "/var/lib/travel-router"
 ENV_FILE = os.path.join(STATE_DIR, "firstboot-env.sh")
+ROOTPW_FILE = os.path.join(STATE_DIR, "firstboot-rootpw")
 DONE_FILE = os.path.join(STATE_DIR, "firstboot-done")
 LOG_FILE = "/var/log/firstboot-install.log"
 REPO_DIR = "/opt/pi-travel-router"
 INDEX_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+SECTION_RE = re.compile(r"━━\s*(.+?)\s*━━")
 
 BOOL_FLAGS = [
     "ENABLE_VPN_KILLSWITCH",
@@ -59,7 +63,8 @@ def _first(form: dict, key: str, default: str = "") -> str:
     return v[0] if v else default
 
 
-def _validate(form: dict) -> tuple[dict, list[str]]:
+def _validate(form: dict) -> tuple[dict, list[str], str]:
+    """Return (values, errors, new_root_password)."""
     errors: list[str] = []
     values: dict[str, str] = {}
 
@@ -103,7 +108,19 @@ def _validate(form: dict) -> tuple[dict, list[str]]:
     if values["ENABLE_SPLIT_TUNNEL"] == "1" and not values["SPLIT_TUNNEL_DOMAINS"]:
         errors.append("Split tunnel enabled but no domains supplied.")
 
-    return values, errors
+    # New root password (optional). Don't strip — passwords may legitimately
+    # contain leading/trailing spaces, though rare; use as-is.
+    new_root_pw = _first(form, "new_root_password")
+    new_root_pw_confirm = _first(form, "new_root_password_confirm")
+    if new_root_pw:
+        if len(new_root_pw) < 8:
+            errors.append("New root password must be at least 8 characters.")
+        if new_root_pw != new_root_pw_confirm:
+            errors.append("Root password and confirmation do not match.")
+        if "\n" in new_root_pw or "\r" in new_root_pw:
+            errors.append("Root password may not contain newline characters.")
+
+    return values, errors, new_root_pw
 
 
 def _write_env_file(values: dict[str, str]) -> None:
@@ -115,17 +132,43 @@ def _write_env_file(values: dict[str, str]) -> None:
     lines.append("export INSTALL_NONINTERACTIVE='1'")
     lines.append("")
     tmp = ENV_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write("\n".join(lines))
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, ENV_FILE)
+    old_umask = os.umask(0o077)
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines))
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, ENV_FILE)
+    finally:
+        os.umask(old_umask)
+
+
+def _write_rootpw_file(new_root_pw: str) -> None:
+    """Write 'root:<password>' to ROOTPW_FILE with mode 0600. Empty input removes the file."""
+    if not new_root_pw:
+        try:
+            os.remove(ROOTPW_FILE)
+        except FileNotFoundError:
+            pass
+        return
+    os.makedirs(STATE_DIR, exist_ok=True)
+    tmp = ROOTPW_FILE + ".tmp"
+    old_umask = os.umask(0o077)
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(f"root:{new_root_pw}\n")
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, ROOTPW_FILE)
+    finally:
+        os.umask(old_umask)
 
 
 def _spawn_install() -> None:
+    rootpw_q = shlex.quote(ROOTPW_FILE)
     cmd = (
         f"source {shlex.quote(ENV_FILE)} && "
         f"cd {shlex.quote(REPO_DIR)} && "
         f"bash install.sh > {shlex.quote(LOG_FILE)} 2>&1 && "
+        f"{{ [[ -s {rootpw_q} ]] && chpasswd < {rootpw_q} && rm -f {rootpw_q} || true; }} && "
         f"touch {shlex.quote(DONE_FILE)} && "
         f"systemctl disable firstboot.service && "
         f"reboot"
@@ -139,19 +182,39 @@ def _spawn_install() -> None:
     )
 
 
+_BASE_CSS = """
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:1rem;line-height:1.45}
+.wrap{max-width:760px;margin:0 auto}
+h1{color:#58a6ff;margin:.25rem 0 1rem;font-size:1.5rem}
+h2{color:#c9d1d9;font-size:1.05rem;margin:1.25rem 0 .5rem}
+p{margin:.5rem 0}
+a{color:#58a6ff}
+pre{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:1rem;overflow:auto;font-size:.8rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.4;white-space:pre-wrap;word-break:break-word}
+.spin{display:inline-block;width:1em;height:1em;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:s 1s linear infinite;vertical-align:middle;margin-right:.5rem}
+@keyframes s{to{transform:rotate(360deg)}}
+.steps{list-style:none;padding:0;margin:.5rem 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem}
+.steps li{padding:.2rem 0;color:#8b949e}
+.steps li.done{color:#3fb950}
+.steps li.current{color:#58a6ff;font-weight:600}
+.success{background:#0f2a14;border:1px solid #238636;border-radius:8px;padding:1.25rem;color:#aff5b4}
+.success .check{display:inline-block;width:2rem;height:2rem;line-height:2rem;text-align:center;border-radius:50%;background:#238636;color:#fff;font-weight:700;margin-right:.5rem;vertical-align:middle}
+.warn{background:#341a1a;border:1px solid #f85149;border-radius:6px;padding:.65rem .85rem;color:#ffa198;font-size:.9rem;margin:1rem 0}
+"""
+
+
 def _running_page() -> bytes:
-    body = """<!doctype html>
+    body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Travel Router — Setting up</title>
 <meta http-equiv="refresh" content="5; url=/status">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{font-family:system-ui,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:2rem;max-width:640px;margin:auto}
-h1{color:#58a6ff}.spin{display:inline-block;width:1em;height:1em;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:s 1s linear infinite;vertical-align:middle;margin-right:.5rem}
-@keyframes s{to{transform:rotate(360deg)}}</style></head>
-<body><h1><span class="spin"></span>Setting up…</h1>
-<p>This page will refresh every 5 seconds. Setup typically takes 5-10 minutes.</p>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>{_BASE_CSS}</style></head>
+<body><div class="wrap"><h1><span class="spin"></span>Setting up…</h1>
+<p>Redirecting to the live status page in 5 seconds. Setup typically takes 5-10 minutes.</p>
 <p>The Pi will reboot automatically when finished. Reconnect to your new SSID afterward.</p>
-<p><a href="/status" style="color:#58a6ff">Check status now</a></p>
-</body></html>
+<p><a href="/status">Check status now &rarr;</a></p>
+</div></body></html>
 """
     return body.encode("utf-8")
 
@@ -160,40 +223,105 @@ def _error_page(errors: list[str]) -> bytes:
     items = "".join(f"<li>{html.escape(e)}</li>" for e in errors)
     body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Travel Router — Errors</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{{font-family:system-ui,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:2rem;max-width:640px;margin:auto}}
-h1{{color:#f85149}}a{{color:#58a6ff}}</style></head>
-<body><h1>Configuration errors</h1><ul>{items}</ul>
-<p><a href="/">Back to setup</a></p></body></html>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>{_BASE_CSS}
+.errbox{{background:#341a1a;border:1px solid #f85149;border-radius:8px;padding:1rem;color:#ffa198}}
+.errbox ul{{margin:.5rem 0 0 1.2rem;padding:0}}
+</style></head>
+<body><div class="wrap"><h1 style="color:#f85149">Configuration errors</h1>
+<div class="errbox"><ul>{items}</ul></div>
+<p><a href="/">&larr; Back to setup</a></p></div></body></html>
 """
     return body.encode("utf-8")
 
 
-def _status_page() -> bytes:
-    done = os.path.exists(DONE_FILE)
-    tail = ""
+def parse_sections(text: str) -> list[str]:
+    """Extract section names from install.sh log text. ANSI-stripped, in order."""
+    cleaned = ANSI_RE.sub("", text)
+    sections: list[str] = []
+    for line in cleaned.splitlines():
+        m = SECTION_RE.search(line)
+        if m:
+            sections.append(m.group(1).strip())
+    return sections
+
+
+def _read_log_text() -> str:
     try:
         with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as fh:
-            lines = fh.readlines()[-20:]
-            tail = "".join(lines)
+            return fh.read()
     except FileNotFoundError:
-        tail = "(install log not yet created)\n"
-    tail_html = html.escape(tail)
+        return ""
+
+
+def _read_ap_ssid() -> str:
+    try:
+        with open(ENV_FILE, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = re.match(r"export\s+AP_SSID=(.+)$", line.strip())
+                if m:
+                    raw = m.group(1)
+                    # strip surrounding single quotes added by shlex.quote
+                    if raw.startswith("'") and raw.endswith("'"):
+                        return raw[1:-1].replace("'\\''", "'")
+                    return raw
+    except FileNotFoundError:
+        pass
+    return ""
+
+
+def _status_page() -> bytes:
+    done = os.path.exists(DONE_FILE)
+    log_text = _read_log_text()
+    sections = parse_sections(log_text)
+
     if done:
-        header = "<h1>Setup complete — rebooting</h1><p>Reconnect to your new Wi-Fi SSID. This page will not respond after the reboot.</p>"
-        refresh = ""
+        ssid = _read_ap_ssid() or "your new"
+        body = f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Travel Router — Setup complete</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>{_BASE_CSS}</style></head>
+<body><div class="wrap">
+<div class="success"><span class="check">&#10003;</span><strong>Setup complete.</strong>
+<p style="margin:.75rem 0 0">The Pi is rebooting. Reconnect to your new SSID <strong>{html.escape(ssid)}</strong> to use the router.</p>
+<p style="margin:.5rem 0 0;color:#8b949e">This page will not respond after the reboot.</p>
+</div>
+</div></body></html>
+"""
+        return body.encode("utf-8")
+
+    # Build steps list
+    if sections:
+        current = sections[-1]
+        done_steps = sections[:-1]
+        steps_html_parts = []
+        for s in done_steps:
+            steps_html_parts.append(f'<li class="done">[X] {html.escape(s)}</li>')
+        steps_html_parts.append(f'<li class="current">[&gt;] {html.escape(current)}</li>')
+        steps_html = "<ul class=\"steps\">" + "".join(steps_html_parts) + "</ul>"
+        current_label = html.escape(current)
     else:
-        header = '<h1><span class="spin"></span>Still installing…</h1><p>Last 20 lines of the installer log:</p>'
-        refresh = '<meta http-equiv="refresh" content="5; url=/status">'
+        steps_html = '<ul class="steps"><li class="current">[&gt;] Starting…</li></ul>'
+        current_label = "Starting…"
+
+    cleaned_log = ANSI_RE.sub("", log_text)
+    tail = "\n".join(cleaned_log.splitlines()[-30:]) if cleaned_log else "(install log not yet created)"
+    tail_html = html.escape(tail)
+
     body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Travel Router — Status</title>
-{refresh}
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>body{{font-family:system-ui,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:2rem;max-width:760px;margin:auto}}
-h1{{color:#58a6ff}}pre{{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:1rem;overflow:auto;font-size:.85em}}
-.spin{{display:inline-block;width:1em;height:1em;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:s 1s linear infinite;vertical-align:middle;margin-right:.5rem}}
-@keyframes s{{to{{transform:rotate(360deg)}}}}</style></head>
-<body>{header}<pre>{tail_html}</pre></body></html>
+<meta http-equiv="refresh" content="5; url=/status">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>{_BASE_CSS}</style></head>
+<body><div class="wrap">
+<h1><span class="spin"></span>Installing…</h1>
+<p>Currently: <strong>{current_label}</strong></p>
+<h2>Progress</h2>
+{steps_html}
+<h2>Recent log output</h2>
+<pre>{tail_html}</pre>
+<p style="color:#8b949e;font-size:.85rem">This page refreshes every 5 seconds.</p>
+</div></body></html>
 """
     return body.encode("utf-8")
 
@@ -240,12 +368,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         raw = self.rfile.read(length).decode("utf-8", errors="replace")
         form = parse_qs(raw, keep_blank_values=True)
-        values, errors = _validate(form)
+        values, errors, new_root_pw = _validate(form)
         if errors:
             self._send(HTTPStatus.BAD_REQUEST, _error_page(errors))
             return
         try:
             _write_env_file(values)
+            _write_rootpw_file(new_root_pw)
         except OSError as exc:
             self._send(
                 HTTPStatus.INTERNAL_SERVER_ERROR,

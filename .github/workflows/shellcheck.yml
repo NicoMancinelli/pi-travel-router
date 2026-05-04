@@ -5,10 +5,14 @@ on:
     paths:
       - 'scripts/**'
       - 'install.sh'
+      - 'build/**'
+      - 'firstboot/**'
   pull_request:
     paths:
       - 'scripts/**'
       - 'install.sh'
+      - 'build/**'
+      - 'firstboot/**'
 
 jobs:
   shellcheck:
@@ -27,3 +31,16 @@ jobs:
         with:
           additional_files: 'install.sh'
           severity: warning
+
+      - name: Shellcheck build stage scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './build/stage-travel-router'
+          severity: warning
+
+      - name: Shellcheck firstboot scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './firstboot'
+          severity: warning
+        continue-on-error: true

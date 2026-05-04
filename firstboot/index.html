@@ -2,25 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Travel Router — Setup</title>
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:1rem;line-height:1.45}
+html,body{overflow-x:hidden}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:1rem;line-height:1.45;font-size:16px}
 .wrap{max-width:560px;margin:0 auto}
 h1{color:#58a6ff;margin:.5rem 0 .25rem;font-size:1.5rem}
 .sub{color:#8b949e;margin:0 0 1.25rem;font-size:.9rem}
-fieldset{border:1px solid #30363d;border-radius:8px;padding:1rem;margin:0 0 1rem;background:#161b22}
+fieldset{border:1px solid #30363d;border-radius:8px;padding:1rem;margin:0 0 1rem;background:#161b22;min-width:0}
 legend{color:#58a6ff;padding:0 .5rem;font-weight:600}
 label{display:block;margin:.75rem 0 .25rem;font-weight:500}
-.hint{color:#8b949e;font-size:.8rem;margin-top:.15rem;display:block}
-input[type=text],input[type=password],textarea{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:.5rem .65rem;font-size:1rem;font-family:inherit}
+label .req{color:#f85149;margin-left:.2rem}
+label.optional{color:#8b949e;font-weight:400}
+.hint{color:#8b949e;font-size:.8rem;margin-top:.15rem;display:block;word-wrap:break-word}
+input[type=text],input[type=password],textarea{width:100%;max-width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:.55rem .65rem;font-size:1rem;font-family:inherit}
 input:focus,textarea:focus{outline:none;border-color:#58a6ff;box-shadow:0 0 0 2px rgba(88,166,255,.25)}
 textarea{min-height:4.5rem;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85rem}
 .pwrow{display:flex;gap:.5rem;align-items:stretch}
-.pwrow input{flex:1}
-.pwrow button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:0 .8rem;font-size:.85rem;cursor:pointer}
+.pwrow input{flex:1;min-width:0}
+.pwrow button{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:0 .8rem;font-size:.85rem;cursor:pointer;flex-shrink:0}
 .pwrow button:hover{background:#30363d}
 .flag{display:flex;align-items:flex-start;gap:.6rem;margin:.55rem 0;padding:.4rem;border-radius:6px}
 .flag:hover{background:#1f242c}
@@ -31,58 +34,81 @@ details{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.5
 details[open]{padding-bottom:1rem}
 summary{cursor:pointer;color:#58a6ff;font-weight:600;padding:.5rem 0}
 .warn{background:#341a1a;border:1px solid #f85149;border-radius:6px;padding:.65rem .85rem;color:#ffa198;font-size:.9rem;margin:1rem 0}
-button.submit{width:100%;background:#238636;color:#fff;border:0;border-radius:8px;padding:.9rem;font-size:1.05rem;font-weight:600;cursor:pointer;margin-top:.5rem}
+.errors{background:#341a1a;border:1px solid #f85149;border-radius:6px;padding:.65rem .85rem;color:#ffa198;font-size:.9rem;margin:0 0 1rem;display:none}
+.errors.show{display:block}
+.errors ul{margin:.25rem 0 0 1.2rem;padding:0}
+button.submit{width:100%;background:#238636;color:#fff;border:0;border-radius:8px;padding:.95rem;font-size:1.05rem;font-weight:600;cursor:pointer;margin-top:.5rem}
 button.submit:hover{background:#2ea043}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
-@media(max-width:420px){.row2{grid-template-columns:1fr}}
+@media(max-width:480px){.row2{grid-template-columns:1fr}body{padding:.75rem}}
 .split-domains{margin-left:1.7rem;margin-top:.25rem;display:none}
 .split-domains.show{display:block}
+.optgroup{padding:.5rem 0;border-top:1px dashed #30363d;margin-top:.5rem}
+.optgroup:first-of-type{border-top:0;margin-top:0;padding-top:0}
 </style>
 </head>
 <body>
 <div class="wrap">
 <h1>Travel Router Setup</h1>
-<p class="sub">First-time configuration. Fill in the basics, tweak features, then hit configure.</p>
+<p class="sub">First-time configuration. Fields marked <span style="color:#f85149">*</span> are required; everything else is optional.</p>
 
-<form method="POST" action="/setup" autocomplete="off">
+<div class="errors" id="errsum" role="alert"><strong>Please fix the following:</strong><ul id="errlist"></ul></div>
+
+<form method="POST" action="/setup" autocomplete="off" id="setupform">
 
 <fieldset>
 <legend>Wi-Fi access point</legend>
 
-<label for="ap_ssid">AP SSID</label>
-<input id="ap_ssid" name="AP_SSID" type="text" value="TravelRouter" maxlength="32" required>
+<label for="ap_ssid">AP SSID<span class="req">*</span></label>
+<input id="ap_ssid" name="AP_SSID" type="text" value="TravelRouter" maxlength="32" required autocomplete="off">
 <span class="hint">1-32 characters. The Wi-Fi network name your devices will connect to.</span>
 
-<label for="ap_pass">AP passphrase</label>
+<label for="ap_pass">AP passphrase<span class="req">*</span></label>
 <div class="pwrow">
-  <input id="ap_pass" name="AP_PASS" type="password" minlength="8" maxlength="63" required autocomplete="new-password">
-  <button type="button" id="togglepw">Show</button>
+  <input id="ap_pass" name="AP_PASS" type="password" minlength="8" maxlength="63" required autocomplete="off">
+  <button type="button" id="togglepw" aria-label="Show or hide passphrase">Show</button>
 </div>
 <span class="hint">8-63 characters. Used by clients joining your AP.</span>
 
-<label for="country">Wi-Fi country code</label>
-<input id="country" name="COUNTRY" type="text" value="US" maxlength="2" pattern="[A-Za-z]{2}" required>
+<label for="country">Wi-Fi country code<span class="req">*</span></label>
+<input id="country" name="COUNTRY" type="text" value="US" maxlength="2" pattern="[A-Za-z]{2}" required autocomplete="off">
 <span class="hint">Two-letter ISO code (US, GB, DE, etc.). Required for regulatory compliance.</span>
 </fieldset>
 
 <details>
 <summary>Advanced (optional)</summary>
 
-<label for="ntfy">ntfy.sh topic</label>
-<input id="ntfy" name="NTFY_TOPIC" type="text" placeholder="e.g. my-router-alerts">
+<div class="optgroup">
+<label for="ntfy" class="optional">ntfy.sh topic</label>
+<input id="ntfy" name="NTFY_TOPIC" type="text" placeholder="e.g. my-router-alerts" autocomplete="off">
 <span class="hint">Push notifications for WAN/VPN events. Leave blank to disable.</span>
+</div>
 
-<label for="tskey">Tailscale auth key</label>
+<div class="optgroup">
+<label for="tskey" class="optional">Tailscale auth key</label>
 <input id="tskey" name="TS_KEY" type="password" placeholder="tskey-auth-..." autocomplete="off">
 <span class="hint">Pre-authorize the Pi onto your tailnet. Leave blank to authenticate manually later.</span>
 
-<label for="hsurl">Headscale URL</label>
-<input id="hsurl" name="HEADSCALE_URL" type="text" placeholder="https://headscale.example.com">
+<label for="hsurl" class="optional">Headscale URL</label>
+<input id="hsurl" name="HEADSCALE_URL" type="text" placeholder="https://headscale.example.com" autocomplete="off">
 <span class="hint">If using self-hosted Headscale instead of Tailscale cloud.</span>
+</div>
 
-<label for="sshkey">SSH admin public key</label>
-<textarea id="sshkey" name="SSH_ADMIN_KEY" placeholder="ssh-ed25519 AAAA..."></textarea>
+<div class="optgroup">
+<label for="sshkey" class="optional">SSH admin public key</label>
+<textarea id="sshkey" name="SSH_ADMIN_KEY" placeholder="ssh-ed25519 AAAA..." autocomplete="off"></textarea>
 <span class="hint">Paste your ed25519/rsa public key. Leave blank to keep password authentication.</span>
+</div>
+
+<div class="optgroup">
+<label for="rootpw" class="optional">New root password</label>
+<input id="rootpw" name="new_root_password" type="password" minlength="0" autocomplete="new-password" placeholder="Leave blank to keep default">
+<span class="hint">Image ships with <code>root</code>/<code>changeme</code>. Set a new password (8+ chars) to change it now, or leave blank.</span>
+
+<label for="rootpw2" class="optional">Confirm new root password</label>
+<input id="rootpw2" name="new_root_password_confirm" type="password" autocomplete="new-password" placeholder="Re-enter to confirm">
+<span class="hint">Must match the password above.</span>
+</div>
 </details>
 
 <fieldset>
@@ -119,7 +145,7 @@ button.submit:hover{background:#2ea043}
 <div class="flag"><input type="checkbox" id="f_st" name="ENABLE_SPLIT_TUNNEL" value="1"><label class="label" for="f_st">Domain split tunnel<span class="desc">Route specific domains via Tailscale instead of direct.</span></label></div>
 <div class="split-domains" id="stdomains">
   <label for="stinp" style="margin-top:0">Split tunnel domains</label>
-  <input id="stinp" name="SPLIT_TUNNEL_DOMAINS" type="text" placeholder="mybank.com work.example.com">
+  <input id="stinp" name="SPLIT_TUNNEL_DOMAINS" type="text" placeholder="mybank.com work.example.com" autocomplete="off">
   <span class="hint">Space-separated list. Required when split tunnel is enabled.</span>
 </div>
 </fieldset>
@@ -140,6 +166,32 @@ button.submit:hover{background:#2ea043}
   var st=document.getElementById('f_st'), box=document.getElementById('stdomains');
   function sync(){box.classList.toggle('show', st.checked);}
   st.addEventListener('change',sync); sync();
+
+  var form=document.getElementById('setupform');
+  var errsum=document.getElementById('errsum');
+  var errlist=document.getElementById('errlist');
+  form.addEventListener('submit',function(ev){
+    var errs=[];
+    var rp=document.getElementById('rootpw').value;
+    var rp2=document.getElementById('rootpw2').value;
+    if(rp.length>0){
+      if(rp.length<8){errs.push('New root password must be at least 8 characters.');}
+      if(rp!==rp2){errs.push('Root password and confirmation do not match.');}
+    }
+    var stinp=document.getElementById('stinp');
+    if(document.getElementById('f_st').checked && !stinp.value.trim()){
+      errs.push('Split tunnel is enabled but no domains were supplied.');
+    }
+    if(errs.length){
+      ev.preventDefault();
+      errlist.innerHTML='';
+      for(var i=0;i<errs.length;i++){
+        var li=document.createElement('li'); li.textContent=errs[i]; errlist.appendChild(li);
+      }
+      errsum.classList.add('show');
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
+  });
 })();
 </script>
 </body>

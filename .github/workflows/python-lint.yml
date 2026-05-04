@@ -1,0 +1,29 @@
+name: Python Lint
+
+on:
+  push:
+    paths:
+      - 'firstboot/**'
+  pull_request:
+    paths:
+      - 'firstboot/**'
+
+jobs:
+  python-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install pyflakes
+        run: pip install pyflakes
+
+      - name: Compile check
+        run: python -m py_compile firstboot/server.py
+
+      - name: Pyflakes
+        run: python -m pyflakes firstboot/server.py
