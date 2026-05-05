@@ -126,6 +126,101 @@ fi
 
 echo "USB gadget mode preloaded -- wizard reachable via http://192.168.7.1 over USB-C"
 
+# Install imager-compat.service — neutralise Raspberry Pi Imager's firstrun.sh
+# so it doesn't create a non-root user, break AP mode, or trigger a premature
+# reboot. The service runs before firstboot.service and:
+#   1. Extracts any SSH public key from firstrun.sh and writes it to /root/.ssh/authorized_keys
+#   2. Rewrites firstrun.sh to a minimal safe stub that only removes the
+#      systemd.run=... entries from cmdline.txt (standard Imager self-cleanup).
+cat > "${ROOTFS_DIR}/etc/systemd/system/imager-compat.service" << 'UNIT'
+[Unit]
+Description=Raspberry Pi Imager firstrun.sh compatibility shim
+Documentation=https://github.com/NicoMancinelli/pi-travel-router
+After=local-fs.target
+Before=firstboot.service
+ConditionPathExists=|/boot/firmware/firstrun.sh
+ConditionPathExists=|/boot/firstrun.sh
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/imager-compat.sh
+
+[Install]
+WantedBy=sysinit.target
+UNIT
+chmod 0644 "${ROOTFS_DIR}/etc/systemd/system/imager-compat.service"
+
+cat > "${ROOTFS_DIR}/usr/local/sbin/imager-compat.sh" << 'SCRIPT'
+#!/bin/bash
+# imager-compat.sh — neutralise Raspberry Pi Imager firstrun.sh
+set -euo pipefail
+
+FIRSTRUN=""
+for candidate in /boot/firmware/firstrun.sh /boot/firstrun.sh; do
+    if [ -f "$candidate" ]; then
+        FIRSTRUN="$candidate"
+        break
+    fi
+done
+
+[ -z "$FIRSTRUN" ] && exit 0
+
+# Only act if this looks like an Imager-generated script.
+if ! grep -qE 'systemd\.run|raspi-config|authorized_keys' "$FIRSTRUN" 2>/dev/null; then
+    exit 0
+fi
+
+# Extract SSH public key(s) and write to /root/.ssh/authorized_keys.
+PUBKEY=""
+while IFS= read -r line; do
+    if echo "$line" | grep -qE '(authorized_keys|echo.*ssh-)'; then
+        KEY=$(echo "$line" | grep -oE '(ssh-(rsa|ed25519|dss)|ecdsa-sha2-[^ ]+) [A-Za-z0-9+/=]+ ?[^ ]*' | head -1)
+        if [ -n "$KEY" ]; then
+            PUBKEY="$KEY"
+            break
+        fi
+    fi
+done < "$FIRSTRUN"
+
+if [ -n "$PUBKEY" ]; then
+    mkdir -p /root/.ssh
+    chmod 0700 /root/.ssh
+    AK=/root/.ssh/authorized_keys
+    touch "$AK"
+    if ! grep -qF "$PUBKEY" "$AK" 2>/dev/null; then
+        echo "$PUBKEY" >> "$AK"
+    fi
+    chmod 0600 "$AK"
+    chown -R root:root /root/.ssh
+fi
+
+# Rewrite firstrun.sh to a minimal safe stub — only the cmdline.txt cleanup
+# that the systemd.run= boot mechanism expects.
+cat > "$FIRSTRUN" << 'STUB'
+#!/bin/bash
+# Neutralised by pi-travel-router imager-compat: SSH key already applied to root.
+# Remove systemd.run entries from cmdline.txt so this doesn't re-run.
+if [ -f /boot/firmware/cmdline.txt ]; then
+    sed -i 's| systemd\.run=[^ ]*||g; s| systemd\.run_success_action=[^ ]*||g; s| systemd\.unit=kernel-command-line\.target||g' /boot/firmware/cmdline.txt
+fi
+if [ -f /boot/cmdline.txt ]; then
+    sed -i 's| systemd\.run=[^ ]*||g; s| systemd\.run_success_action=[^ ]*||g; s| systemd\.unit=kernel-command-line\.target||g' /boot/cmdline.txt
+fi
+STUB
+chmod 0755 "$FIRSTRUN"
+
+exit 0
+SCRIPT
+chmod 0755 "${ROOTFS_DIR}/usr/local/sbin/imager-compat.sh"
+
+on_chroot << 'EOF'
+systemctl enable imager-compat.service
+EOF
+
+echo "imager-compat.service installed and enabled"
+
 # Image version stamp.
 cat > "${ROOTFS_DIR}/etc/travel-router-image-version" <<EOF
 git_sha=${GIT_SHA}

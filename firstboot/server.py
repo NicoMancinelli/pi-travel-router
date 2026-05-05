@@ -488,6 +488,19 @@ def _load_preseed() -> dict[str, str]:
                     break
         if pubkey:
             result["SSH_ADMIN_KEY"] = pubkey
+            try:
+                os.makedirs("/root/.ssh", mode=0o700, exist_ok=True)
+                ak_path = "/root/.ssh/authorized_keys"
+                existing = ""
+                if os.path.exists(ak_path):
+                    with open(ak_path) as f:
+                        existing = f.read()
+                if pubkey not in existing:
+                    with open(ak_path, "a") as f:
+                        f.write(pubkey + "\n")
+                os.chmod(ak_path, 0o600)
+            except Exception:
+                pass
         # WiFi SSID: nmcli ... ssid "VALUE" or wpa SSID_VALUE style
         ssid = None
         m = re.search(r'nmcli.*\bssid\b\s+"([^"]+)"', content)
