@@ -104,6 +104,17 @@ mkdir -p "${ROOTFS_DIR}/etc/modules-load.d"
 echo "dwc2" > "${ROOTFS_DIR}/etc/modules-load.d/dwc2.conf"
 echo "g_ether" > "${ROOTFS_DIR}/etc/modules-load.d/g-ether.conf"
 
+# cmdline.txt: modules-load ensures dwc2+g_ether init during early kernel boot,
+# before userspace, so the host enumerates the gadget immediately on plug-in.
+CMDLINE_TXT="${ROOTFS_DIR}/boot/firmware/cmdline.txt"
+if [ ! -f "$CMDLINE_TXT" ]; then
+    CMDLINE_TXT="${ROOTFS_DIR}/boot/cmdline.txt"
+fi
+if [ -f "$CMDLINE_TXT" ] && ! grep -q "modules-load=dwc2" "$CMDLINE_TXT"; then
+    sed -i '1s/$/ modules-load=dwc2,g_ether/' "$CMDLINE_TXT"
+    echo "cmdline.txt: appended modules-load=dwc2,g_ether"
+fi
+
 # NetworkManager profile for usb0: static 192.168.7.1/24 with shared mode (built-in DHCP for laptop).
 USB0_NM_SRC="${TARGET_DIR}/config/usb0-firstboot.nmconnection"
 USB0_NM_DST="${ROOTFS_DIR}/etc/NetworkManager/system-connections/usb0-firstboot.nmconnection"
