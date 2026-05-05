@@ -46,6 +46,10 @@ BOOL_FLAGS = [
     "ENABLE_2FA",
     "ENABLE_SPLIT_TUNNEL",
     "ENABLE_WAN_METRICS",
+    "ENABLE_TOR_TRANSPARENT",
+    "ENABLE_HTTP_UA_REWRITE",
+    "ENABLE_OPEN_WIFI_FALLBACK",
+    "ENABLE_PER_DEVICE_VPN",
 ]
 
 STRING_FIELDS = [
@@ -59,6 +63,8 @@ STRING_FIELDS = [
     "SSH_ADMIN_KEY",
     "HEADSCALE_URL",
     "SPLIT_TUNNEL_DOMAINS",
+    "TOR_AP_PASS",
+    "VPN_DEVICE_MACS",
 ]
 
 
@@ -122,6 +128,20 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
 
     if values["ENABLE_SPLIT_TUNNEL"] == "1" and not values["SPLIT_TUNNEL_DOMAINS"]:
         errors.append("Split tunnel enabled but no domains supplied.")
+
+    tor_ap_pass = _first(form, "TOR_AP_PASS")
+    if values["ENABLE_TOR_TRANSPARENT"] == "1" and len(tor_ap_pass) < 8:
+        errors.append("Tor AP passphrase must be 8+ characters.")
+    values["TOR_AP_PASS"] = tor_ap_pass
+
+    vpn_device_macs = _first(form, "VPN_DEVICE_MACS").strip()
+    if vpn_device_macs:
+        mac_re = re.compile(r"^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$")
+        for token in vpn_device_macs.split():
+            if not mac_re.match(token):
+                errors.append(f"Invalid MAC address in VPN device MACs: {token!r}")
+                break
+    values["VPN_DEVICE_MACS"] = vpn_device_macs
 
     # New root password (optional). Don't strip — passwords may legitimately
     # contain leading/trailing spaces, though rare; use as-is.
@@ -389,6 +409,7 @@ class Handler(BaseHTTPRequestHandler):
                 script = '<script>var _ps=' + json.dumps(_preseed) + ';'
                 script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
                 script += 'if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");if(e)e.value=_ps.SSH_ADMIN_KEY;}'
+                script += 'if(_ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=_ps.AP_PASS;}'
                 script += '</script>'
                 body = body.replace(b'</body>', script.encode() + b'</body>')
             self._send(HTTPStatus.OK, body)
@@ -489,6 +510,12 @@ def _load_preseed() -> dict[str, str]:
                 hostname = m.group(1).strip('"\'')
         if hostname:
             result["AP_SSID"] = hostname
+        # AP_PASS: explicitly pre-seeded by the user in firstrun.sh
+        m = re.search(r'\bAP_PASS=(["\']?)([^"\'\s]+)\1', content)
+        if m:
+            ap_pass_val = m.group(2)
+            if len(ap_pass_val) >= 8:
+                result["AP_PASS"] = ap_pass_val
         return result
     except Exception:
         return {}

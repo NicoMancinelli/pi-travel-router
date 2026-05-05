@@ -52,6 +52,38 @@ if id neek >/dev/null 2>&1; then
 fi
 EOF
 
+# Install a login-shell banner that warns the user the router is not yet configured.
+# The banner is suppressed once firstboot-done sentinel exists.
+on_chroot << 'EOF'
+cat > /etc/profile.d/00-firstboot-warning.sh << 'WARN'
+#!/bin/sh
+# Sourced by every interactive login shell via /etc/profile.d/
+[ -f /var/lib/travel-router/firstboot-done ] && return 0
+RED='\033[1;31m'
+YEL='\033[1;33m'
+BLD='\033[1m'
+RST='\033[0m'
+printf "\n"
+printf "${RED}##################################################################${RST}\n"
+printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${YEL}WARNING: THIS ROUTER IS NOT CONFIGURED YET${RST}               ${RED}##${RST}\n"
+printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}Root password is the factory default:${RST}                    ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}  changeme${RST}                                               ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}Change it NOW or run the setup wizard first.${RST}             ${RED}##${RST}\n"
+printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}Run the setup wizard:${RST}                                    ${RED}##${RST}\n"
+printf "${RED}##${RST}    http://192.168.7.1          (USB gadget)                  ${RED}##${RST}\n"
+printf "${RED}##${RST}    http://travelrouter.local   (Wi-Fi / mDNS)               ${RED}##${RST}\n"
+printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}SSH:${RST} 192.168.7.1 (USB) or travelrouter.local (Wi-Fi)    ${RED}##${RST}\n"
+printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
+printf "${RED}##################################################################${RST}\n"
+printf "\n"
+WARN
+chmod 0644 /etc/profile.d/00-firstboot-warning.sh
+EOF
+
 # Pre-enable USB gadget mode so the firstboot wizard is reachable over USB-C
 # before install.sh has run. Pi Zero 2 W has no Ethernet and no AP yet.
 CONFIG_TXT="${ROOTFS_DIR}/boot/firmware/config.txt"

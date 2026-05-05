@@ -58,12 +58,22 @@ case "$FAILS" in
         systemctl restart NetworkManager
         ;;
     3)
-        log "Recovery step 3: restarting networking services"
-        notify "travel-router: WAN down 3x, restarting networking" high
-        systemctl restart NetworkManager
+        log "Recovery step 3: cycling wlan0 link + restarting hostapd"
+        notify "travel-router: WAN down 3x, cycling WiFi link" high
+        ip link set wlan0 down 2>/dev/null || true
+        sleep 3
+        ip link set wlan0 up 2>/dev/null || true
+        systemctl restart hostapd 2>/dev/null || true
         ;;
-    4|5)
-        log "Recovery step 4-5: waiting..."
+    4)
+        log "Recovery step 4: full NetworkManager + dnsmasq restart"
+        systemctl restart NetworkManager
+        sleep 5
+        systemctl restart dnsmasq 2>/dev/null || true
+        ;;
+    5)
+        log "Recovery step 5: waiting before final reboot"
+        notify "travel-router: WAN down 5x, will reboot next cycle" urgent
         ;;
     *)
         log "Recovery step final: rebooting after $FAILS consecutive failures"

@@ -53,6 +53,16 @@ jobs:
           # Skip stages we don't need to export (we only export our custom stage).
           touch pi-gen/stage2/SKIP_IMAGES pi-gen/stage2/SKIP_NOOBS || true
 
+      - name: Smoke-test key scripts (syntax check)
+        run: |
+          set -euo pipefail
+          bash -n pi-travel-router/install.sh
+          bash -n pi-travel-router/build/stage-travel-router/01-run.sh
+          bash -n pi-travel-router/scripts/wan-watchdog.sh
+          bash -n pi-travel-router/scripts/captive-check.sh
+          bash -n pi-travel-router/scripts/travel-tui.sh
+          echo "All syntax checks passed"
+
       - name: Build image
         env:
           REPO_URL: https://github.com/${{ github.repository }}.git

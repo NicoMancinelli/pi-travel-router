@@ -1,10 +1,22 @@
 #!/bin/bash
+# Collect a redacted diagnostic bundle for bug reports.
+# Usage: sudo travel-diagnostic [output-dir]
+#   output-dir  Optional directory to write the .tar.gz into (default: /tmp)
 set -euo pipefail
+
+if [[ "${1:-}" = "--help" || "${1:-}" = "-h" ]]; then
+    printf 'Usage: sudo travel-diagnostic [output-dir]\n'
+    printf '  Collects logs, network state, and config into a timestamped tar.gz.\n'
+    printf '  Secrets are redacted. Share the archive when reporting issues.\n'
+    exit 0
+fi
 
 [[ $EUID -ne 0 ]] && { echo "Run as root: sudo travel-diagnostic" >&2; exit 1; }
 
+OUTPUT_DIR="${1:-/tmp}"
+
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-OUTFILE="/tmp/travel-diagnostic-${TIMESTAMP}.tar.gz"
+OUTFILE="${OUTPUT_DIR}/travel-diagnostic-${TIMESTAMP}.tar.gz"
 DIAG_DIR=$(mktemp -d /tmp/travel-diag-XXXXXX)
 
 collect() {

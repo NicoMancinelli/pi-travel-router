@@ -148,10 +148,25 @@ install.sh          # Full installer for fresh Pi OS Bookworm
 README.md           # Architecture, features, usage
 IMPROVEMENTS.md     # Feature roadmap (deployed ✅ + roadmap items #1-50)
 GL-MT3000.md        # GL-MT3000 synergy guide (8 deployment scenarios)
-scripts/            # All /usr/local/bin/ scripts
+scripts/            # All /usr/local/bin/ scripts (run on the Pi)
 config/             # All config file templates
 systemd/            # All .service and .timer units
+tools/              # Helper scripts for external infrastructure (not the Pi itself)
+                    #   setup-headscale.sh — run on a public VPS to install Headscale
 ```
+
+## TUI Coverage Rule
+
+`scripts/travel-tui.sh` is the primary management interface. Every new feature **must** be reflected there:
+
+| What you add | Where in TUI |
+|---|---|
+| New `ENABLE_*` flag in `config/travel-router-defaults` | Add to `flag_list` array in `show_features()` + add a `case` handler for service restart |
+| New config variable in `config/travel-router-defaults` | Add to `show_settings()` with a display line and a `case` handler calling `_cfg_edit` |
+| New user-triggerable script in `scripts/` | Add to `show_system()` (maintenance scripts) or `show_network()` (connectivity scripts) |
+| New systemd service worth monitoring | Add to `show_services()` service list |
+
+After adding to the TUI, run `bash -n scripts/travel-tui.sh` to verify syntax.
 
 ## Important Notes
 

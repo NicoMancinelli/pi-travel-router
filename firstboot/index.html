@@ -195,6 +195,24 @@ button.submit:hover{background:#2ea043}
   <input id="stinp" name="SPLIT_TUNNEL_DOMAINS" type="text" placeholder="mybank.com work.example.com" autocomplete="off">
   <span class="hint">Space-separated list. Required when split tunnel is enabled.</span>
 </div>
+
+<div class="flag"><input type="checkbox" id="f_tor" name="ENABLE_TOR_TRANSPARENT" value="1"><label class="label" for="f_tor">Tor transparent proxy<span class="desc">Route a second "TorAP" SSID through Tor. Requires uap1 virtual interface support.</span></label></div>
+<div class="split-domains" id="tor_pass_row">
+  <label for="tor_ap_pass" style="margin-top:0">Tor AP passphrase<span class="req">*</span></label>
+  <input id="tor_ap_pass" name="TOR_AP_PASS" type="password" minlength="8" autocomplete="off" placeholder="8+ chars for the TorAP network">
+  <span class="hint">Passphrase for the separate Tor AP SSID. Required when Tor proxy is enabled.</span>
+</div>
+
+<div class="flag"><input type="checkbox" id="f_ua" name="ENABLE_HTTP_UA_REWRITE" value="1"><label class="label" for="f_ua">HTTP User-Agent normalization<span class="desc">Privoxy rewrites User-Agent headers to reduce device fingerprinting.</span></label></div>
+
+<div class="flag"><input type="checkbox" id="f_owf" name="ENABLE_OPEN_WIFI_FALLBACK" value="1"><label class="label" for="f_owf">Open WiFi fallback<span class="desc">Temporarily disable VPN kill switch on captive portal networks to allow login.</span></label></div>
+
+<div class="flag"><input type="checkbox" id="f_pdv" name="ENABLE_PER_DEVICE_VPN" value="1"><label class="label" for="f_pdv">Per-device VPN routing<span class="desc">Route only specific devices through Tailscale; others go direct.</span></label></div>
+<div class="split-domains" id="vpn_macs_row">
+  <label for="vpn_macs" style="margin-top:0">VPN device MACs</label>
+  <input id="vpn_macs" name="VPN_DEVICE_MACS" type="text" autocomplete="off" placeholder="aa:bb:cc:dd:ee:ff 11:22:33:44:55:66">
+  <span class="hint">Space-separated MAC addresses to route through Tailscale. Leave blank = all devices.</span>
+</div>
 </fieldset>
 
 <div class="warn">Setup takes about 5-10 minutes. The Pi will reboot automatically when finished — reconnect to your new SSID afterward.</div>
@@ -225,6 +243,14 @@ button.submit:hover{background:#2ea043}
   function sync(){box.classList.toggle('show', st.checked);}
   st.addEventListener('change',sync); sync();
 
+  var ftor=document.getElementById('f_tor'), torprow=document.getElementById('tor_pass_row');
+  function syncTor(){torprow.classList.toggle('show', ftor.checked);}
+  ftor.addEventListener('change',syncTor); syncTor();
+
+  var fpdv=document.getElementById('f_pdv'), macsrow=document.getElementById('vpn_macs_row');
+  function syncPdv(){macsrow.classList.toggle('show', fpdv.checked);}
+  fpdv.addEventListener('change',syncPdv); syncPdv();
+
   var form=document.getElementById('setupform');
   var errsum=document.getElementById('errsum');
   var errlist=document.getElementById('errlist');
@@ -239,6 +265,10 @@ button.submit:hover{background:#2ea043}
     var stinp=document.getElementById('stinp');
     if(document.getElementById('f_st').checked && !stinp.value.trim()){
       errs.push('Split tunnel is enabled but no domains were supplied.');
+    }
+    var torpass=document.getElementById('tor_ap_pass');
+    if(document.getElementById('f_tor').checked && torpass.value.length < 8){
+      errs.push('Tor AP passphrase must be 8+ characters.');
     }
     var twofa = document.getElementById('f_2fa');
     var sshk = document.getElementById('sshkey');

@@ -177,6 +177,27 @@ Single config file: `/etc/default/travel-router`. The TUI's Features screen togg
 
 ---
 
+## Managing the router
+
+Once installed, everything is managed through the interactive TUI dashboard:
+
+```sh
+sudo travel-tui
+```
+
+The TUI gives you:
+- **Dashboard** — live uplink status, Tailscale state, bandwidth counters, AP clients, system health
+- **Features** — toggle any `ENABLE_*` flag with an immediate service restart
+- **Settings** — edit all config vars (AP credentials, Bluetooth MAC, ntfy topic, Tailscale args, etc.)
+- **Network** — start/stop uplinks, Bluetooth tether, view routing table
+- **Services** — status of all router services at a glance
+- **Logs** — tail key logs (WAN watchdog, Tailscale, hostapd, failover)
+- **System** — reboot, update, run diagnostics, configure 2FA
+
+All changes write directly to `/etc/default/travel-router` and take effect immediately. No need to edit config files manually.
+
+---
+
 ## Updates
 
 Updates are git-pull based, not image-based:
@@ -255,7 +276,7 @@ A NetworkManager dispatcher (`50-wan-metrics`) re-applies the metric ordering on
 
 **Tailscale**
 
-Runs as a subnet router advertising `10.3.141.0/24`. AP clients reach your tailnet via the Pi without a Tailscale install. Optional Headscale support points `tailscale up --login-server` at your own VPS.
+Runs as a subnet router advertising `10.3.141.0/24`. AP clients reach your tailnet via the Pi without a Tailscale install. Optional Headscale support points `tailscale up --login-server` at your own VPS. To automate Headscale installation on a public VPS, run `tools/setup-headscale.sh` on that server — the `HEADSCALE_URL` it outputs is then passed to the installer (via the wizard or `install.sh`).
 
 **Firewall**
 

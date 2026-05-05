@@ -134,6 +134,7 @@ COUNTRY="${COUNTRY^^}"
 if [[ -n "$TS_KEY" && -z "$HEADSCALE_URL" ]]; then
     [[ "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
 fi
+ENABLE_WAN_METRICS="${ENABLE_WAN_METRICS:-1}"
 for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR; do
     validate_flag "$flag"
 done
@@ -420,6 +421,10 @@ done
 
 install_file scripts/travel-diagnostic.sh /usr/local/bin/travel-diagnostic 755
 ok "  travel-diagnostic.sh → travel-diagnostic"
+
+# Captive portal per-SSID hooks directory
+mkdir -p /etc/travel-router/portals
+chmod 755 /etc/travel-router/portals
 
 # Pairing docs
 mkdir -p /usr/local/share/travel-router-docs

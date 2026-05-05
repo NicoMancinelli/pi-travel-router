@@ -57,6 +57,26 @@ Boolean flags (`0`/`1`, default `0` in non-interactive mode if unset):
 
 If `ENABLE_TOR_TRANSPARENT=1`, `TOR_AP_PASS` (8+ chars) must also be set.
 
+## Raspberry Pi Imager pre-seed
+
+When a `firstrun.sh` file written by Raspberry Pi Imager is present on the boot partition (`/boot/firmware/firstrun.sh` or `/boot/firstrun.sh`), the wizard reads it at startup and pre-fills the following fields automatically:
+
+- **Hostname → AP SSID** — the hostname set in Imager becomes the default AP SSID.
+- **SSH public key** — if Imager added an authorized key, it is pre-filled in the SSH admin key field.
+- **AP passphrase** — if `AP_PASS` is present in `firstrun.sh`, it is pre-filled and the user can submit the wizard without typing a passphrase at all.
+
+To pre-seed the AP passphrase via Imager, add the following line anywhere in `firstrun.sh` (or in the Imager "Advanced options" custom script field):
+
+```
+AP_PASS="your-passphrase-here"
+```
+
+The value must be at least 8 characters; shorter values are silently ignored and the field remains blank.
+
+If `AP_PASS` is not present in `firstrun.sh`, the wizard will still require it to be entered interactively in the browser — the form will not submit without it.
+
+**Security note:** `AP_PASS` stored in `firstrun.sh` is plaintext on the FAT boot partition, readable by anyone with physical access to the SD card. This is acceptable for personal/home use. Do not use this pre-seed mechanism on SD cards that will be shared or used in public environments; enter the passphrase interactively instead.
+
 ## Security notes
 
 - Form fields are shell-escaped with `shlex.quote` before being written to the env file. Inputs that look like shell metacharacters can't break out.
