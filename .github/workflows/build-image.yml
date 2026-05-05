@@ -32,9 +32,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            coreutils quilt parted qemu-user qemu-user-binfmt debootstrap zerofree zip \
+            coreutils quilt parted qemu-user-static debootstrap zerofree zip \
             dosfstools libarchive-tools libcap2-bin grep rsync xz-utils file \
             git curl bc qemu-utils kpartx gpg pigz arch-test
+          sudo ln -sf /usr/bin/qemu-arm-static /usr/local/bin/qemu-arm
+          sudo ln -sf /usr/bin/qemu-aarch64-static /usr/local/bin/qemu-aarch64
+          sudo modprobe binfmt_misc || true
 
       - name: Cache pi-gen apt downloads
         uses: actions/cache@v4
