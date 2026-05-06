@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-05-06
+
+### Fixed
+- USB gadget enumeration: added `modules-load=dwc2,g_ether` to `cmdline.txt` so the gadget interface comes up reliably on first boot
+- Raspberry Pi Imager compatibility: neutralise `firstrun.sh` after consuming it and apply the SSH public key to the root account
+
+## [0.8.1] - 2026-05-06
+
+### Fixed
+- CI image build: pinned pi-gen to `bookworm-arm64` branch to match `RELEASE=bookworm`
+- CI image build: install `qemu-user-binfmt` alongside `qemu-user` (resolves package conflict with `qemu-user-static`)
+- CI image build: add `qemu-arm` symlink for pi-gen binfmt check
+
 ## [0.8.0] - 2026-05-05
 
 ### Added
