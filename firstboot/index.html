@@ -18,7 +18,7 @@ label{display:block;margin:.75rem 0 .25rem;font-weight:500}
 label .req{color:#f85149;margin-left:.2rem}
 label.optional{color:#8b949e;font-weight:400}
 .hint{color:#8b949e;font-size:.8rem;margin-top:.15rem;display:block;word-wrap:break-word}
-input[type=text],input[type=password],textarea{width:100%;max-width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:.55rem .65rem;font-size:1rem;font-family:inherit}
+input[type=text],input[type=password],input[type=time],textarea{width:100%;max-width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:.55rem .65rem;font-size:1rem;font-family:inherit}
 input:focus,textarea:focus{outline:none;border-color:#58a6ff;box-shadow:0 0 0 2px rgba(88,166,255,.25)}
 select{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;padding:.55rem .65rem;font-size:1rem;font-family:inherit;appearance:none}
 select:focus{outline:none;border-color:#58a6ff;box-shadow:0 0 0 2px rgba(88,166,255,.25)}
@@ -188,10 +188,17 @@ button.submit:hover{background:#2ea043}
 <label for="rootpw" class="optional">New root password</label>
 <input id="rootpw" name="new_root_password" type="password" minlength="0" autocomplete="new-password" placeholder="Leave blank to keep default">
 <span class="hint">Image ships with <code>root</code>/<code>changeme</code>. Set a new password (8+ chars) to change it now, or leave blank.</span>
+<span class="hint" style="color:#ffa198">Strongly recommended — the default password is 'changeme'</span>
 
 <label for="rootpw2" class="optional">Confirm new root password</label>
 <input id="rootpw2" name="new_root_password_confirm" type="password" autocomplete="new-password" placeholder="Re-enter to confirm">
 <span class="hint">Must match the password above.</span>
+</div>
+
+<div class="optgroup">
+<label for="iphone_bt_mac" class="optional">iPhone Bluetooth MAC (optional)</label>
+<input id="iphone_bt_mac" name="IPHONE_BT_MAC" type="text" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" autocorrect="off" autocapitalize="none">
+<span class="hint">Find in iOS Settings → General → About → Bluetooth. Format: AA:BB:CC:DD:EE:FF</span>
 </div>
 </details>
 
@@ -213,8 +220,26 @@ button.submit:hover{background:#2ea043}
 <div class="flag"><input type="checkbox" id="f_ag" name="ENABLE_ADGUARD" value="1"><label class="label" for="f_ag">AdGuard Home<span class="desc">DNS ad-blocker with per-client analytics.</span></label></div>
 
 <div class="flag"><input type="checkbox" id="f_aps" name="ENABLE_AP_SCHEDULE" value="1"><label class="label" for="f_aps">Scheduled AP shutdown<span class="desc">Disable the AP from 02:00 to 07:00 to save power.</span></label></div>
+<div class="split-domains" id="ap_schedule_row">
+  <div class="row2">
+    <div>
+      <label for="ap_disable_time" style="margin-top:0">AP off at</label>
+      <input id="ap_disable_time" name="AP_DISABLE_TIME" type="time" value="02:00" autocomplete="off">
+    </div>
+    <div>
+      <label for="ap_enable_time" style="margin-top:0">AP on at</label>
+      <input id="ap_enable_time" name="AP_ENABLE_TIME" type="time" value="07:00" autocomplete="off">
+    </div>
+  </div>
+  <span class="hint">Times are in router local time (set timezone above).</span>
+</div>
 
 <div class="flag"><input type="checkbox" id="f_qos" name="ENABLE_CLIENT_QOS" value="1"><label class="label" for="f_qos">Per-client QoS<span class="desc">CAKE per-host fairness on the AP interface.</span></label></div>
+<div class="split-domains" id="qos_bw_row">
+  <label for="ap_client_bw" style="margin-top:0">Per-client bandwidth cap</label>
+  <input id="ap_client_bw" name="AP_CLIENT_BANDWIDTH" type="text" value="unlimited" autocomplete="off" placeholder="e.g. 50mbit, 10mbit, unlimited">
+  <span class="hint">e.g. 50mbit, 10mbit, unlimited</span>
+</div>
 
 <div class="flag"><input type="checkbox" id="f_cake" name="ENABLE_CAKE_AUTOTUNE" value="1"><label class="label" for="f_cake">CAKE autotune<span class="desc">Weekly speedtest auto-tunes shaper bandwidth.</span></label></div>
 
@@ -288,6 +313,14 @@ button.submit:hover{background:#2ea043}
   function syncPdv(){macsrow.classList.toggle('show', fpdv.checked);}
   fpdv.addEventListener('change',syncPdv); syncPdv();
 
+  var faps=document.getElementById('f_aps'), apsrow=document.getElementById('ap_schedule_row');
+  function syncAps(){apsrow.classList.toggle('show', faps.checked);}
+  faps.addEventListener('change',syncAps); syncAps();
+
+  var fqos=document.getElementById('f_qos'), qosbwrow=document.getElementById('qos_bw_row');
+  function syncQos(){qosbwrow.classList.toggle('show', fqos.checked);}
+  fqos.addEventListener('change',syncQos); syncQos();
+
   var form=document.getElementById('setupform');
   var errsum=document.getElementById('errsum');
   var errlist=document.getElementById('errlist');
@@ -320,6 +353,16 @@ button.submit:hover{background:#2ea043}
       }
       errsum.classList.add('show');
       window.scrollTo({top:0,behavior:'smooth'});
+      return;
+    }
+    if(!rp){
+      ev.preventDefault();
+      var ok=window.confirm("You haven't set a new password. The default 'changeme' password is a security risk. Are you sure you want to continue?");
+      if(!ok){
+        document.getElementById('rootpw').focus();
+      } else {
+        form.submit();
+      }
     }
   });
 })();

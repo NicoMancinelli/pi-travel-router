@@ -65,6 +65,10 @@ STRING_FIELDS = [
     "SPLIT_TUNNEL_DOMAINS",
     "TOR_AP_PASS",
     "VPN_DEVICE_MACS",
+    "IPHONE_BT_MAC",
+    "AP_CLIENT_BANDWIDTH",
+    "AP_DISABLE_TIME",
+    "AP_ENABLE_TIME",
 ]
 
 
@@ -142,6 +146,26 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
                 errors.append(f"Invalid MAC address in VPN device MACs: {token!r}")
                 break
     values["VPN_DEVICE_MACS"] = vpn_device_macs
+
+    iphone_bt_mac = _first(form, "IPHONE_BT_MAC").strip()
+    if iphone_bt_mac and not re.fullmatch(r"[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}", iphone_bt_mac):
+        errors.append("iPhone Bluetooth MAC must be in AA:BB:CC:DD:EE:FF format.")
+    values["IPHONE_BT_MAC"] = iphone_bt_mac
+
+    ap_client_bandwidth = _first(form, "AP_CLIENT_BANDWIDTH", "unlimited").strip()
+    if ap_client_bandwidth and not re.fullmatch(r"[0-9]+(k|m|g)?bit|unlimited", ap_client_bandwidth, re.IGNORECASE):
+        errors.append("Per-client bandwidth cap must be e.g. 50mbit, 10mbit, unlimited.")
+    values["AP_CLIENT_BANDWIDTH"] = ap_client_bandwidth or "unlimited"
+
+    ap_disable_time = _first(form, "AP_DISABLE_TIME", "02:00").strip()
+    if ap_disable_time and not re.fullmatch(r"[0-2][0-9]:[0-5][0-9]", ap_disable_time):
+        errors.append("AP off time must be in HH:MM format.")
+    values["AP_DISABLE_TIME"] = ap_disable_time or "02:00"
+
+    ap_enable_time = _first(form, "AP_ENABLE_TIME", "07:00").strip()
+    if ap_enable_time and not re.fullmatch(r"[0-2][0-9]:[0-5][0-9]", ap_enable_time):
+        errors.append("AP on time must be in HH:MM format.")
+    values["AP_ENABLE_TIME"] = ap_enable_time or "07:00"
 
     # New root password (optional). Don't strip — passwords may legitimately
     # contain leading/trailing spaces, though rare; use as-is.
