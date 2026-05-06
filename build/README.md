@@ -29,6 +29,7 @@ Manual flash on Linux/macOS:
 
 ```sh
 xz -d travelrouter-*.img.xz
+diskutil unmountDisk /dev/diskN  # macOS: required before dd
 sudo dd if=travelrouter-*.img of=/dev/diskN bs=4M status=progress conv=fsync
 ```
 
@@ -36,13 +37,13 @@ Replace `/dev/diskN` with your SD card device. Use `lsblk` (Linux) or `diskutil 
 
 ## Reaching the first-boot wizard
 
-A fresh Pi Zero 2 W has no Ethernet, no Wi-Fi STA configured, and no AP up yet (the AP is created by `install.sh`, which the wizard hasn't run). The image pre-enables USB gadget mode (`dwc2` + `g_ether`) and a NetworkManager profile that gives `usb0` the static address `192.168.7.1/24` with `method=shared`, so the Pi runs a built-in DHCP server on the USB link. Three ways to reach the wizard, in order of reliability:
+A fresh Pi Zero 2 W has no Ethernet, no Wi-Fi STA configured, and no AP up yet (the AP is created by `install.sh`, which the wizard hasn't run). The image pre-enables USB gadget mode (`dwc2` + `g_ncm`) and a NetworkManager profile that gives `usb0` the static address `192.168.7.1/24` with `method=shared`, so the Pi runs a built-in DHCP server on the USB link. Three ways to reach the wizard, in order of reliability:
 
-1. **USB-C cable to a laptop (recommended).** Plug the Pi's `USB` port (not `PWR`) into your laptop. The laptop sees a new USB Ethernet (RNDIS/CDC) device and grabs an IP in `192.168.7.0/24` via DHCP. Browse to `http://192.168.7.1`.
+1. **USB-C cable to a laptop (recommended).** Plug the Pi's `USB` port (not `PWR`) into your laptop. The laptop sees a new USB Ethernet (CDC NCM) device and grabs an IP in `192.168.7.0/24` via DHCP. Browse to `http://192.168.7.1`.
 
    - macOS: `ifconfig | grep -A3 192.168.7` to confirm the interface picked up an address.
    - Linux: `ip addr | grep -A3 192.168.7`.
-   - Windows: may need RNDIS drivers; see [Microsoft's RNDIS overview](https://learn.microsoft.com/en-us/windows-hardware/drivers/network/overview-of-remote-ndis--rndis-).
+   - Windows 10/11: uses CDC NCM — inbox driver, no installation needed. The device may take 10–15 seconds to enumerate on first use.
 
 2. **Same Wi-Fi or LAN network.** If you have another way to put the Pi on a network (e.g. Ethernet via a powered USB hub, or by pre-seeding Wi-Fi credentials in the boot partition's `userconf`/`wpa_supplicant.conf`), browse to `http://travelrouter.local` (mDNS via avahi). If `travelrouter.local` doesn't resolve, find the Pi's IP in your router's DHCP table and use it directly.
 
@@ -73,14 +74,17 @@ Each build embeds the triggering commit SHA into `/opt/pi-travel-router` and `/e
 
 ## Local testing
 
-pi-gen requires Linux with binfmt + qemu-user-static. macOS is not supported for native pi-gen runs (Docker workarounds exist but are slow and finicky). On a Linux host:
+pi-gen requires Linux with binfmt + `qemu-user-static`. macOS is not supported for native pi-gen runs (Docker workarounds exist but are slow and finicky). On a Linux host:
 
 ```sh
-git clone https://github.com/RPi-Distro/pi-gen
+git clone --branch bookworm-arm64 https://github.com/RPi-Distro/pi-gen
 cd pi-gen
 sudo apt install -y coreutils quilt parted qemu-user-static debootstrap zerofree zip \
     dosfstools libarchive-tools libcap2-bin grep rsync xz-utils file git curl bc \
     qemu-utils kpartx gpg pigz arch-test
+# Register binfmt handlers and add the qemu-arm symlink expected by pi-gen
+sudo systemctl start systemd-binfmt 2>/dev/null || sudo update-binfmts --enable
+sudo ln -sf /usr/bin/qemu-aarch64-static /usr/bin/qemu-arm 2>/dev/null || true
 cp /path/to/pi-travel-router/build/config ./config
 ln -s /path/to/pi-travel-router/build/stage-travel-router ./stage-travel-router
 touch stage2/SKIP_IMAGES

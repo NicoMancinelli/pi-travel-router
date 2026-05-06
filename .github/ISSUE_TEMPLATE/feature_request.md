@@ -28,11 +28,11 @@ assignees: ''
 
 The Pi Zero 2 W is a constrained device:
 
-- **CPU:** single-core ARM Cortex-A53 @ 1 GHz
+- **CPU:** quad-core Cortex-A53 @ 1 GHz
 - **RAM:** 512 MB (shared with GPU)
 - **Storage:** microSD (slow random I/O)
 - **USB:** one Micro-USB port, shared between power delivery (PWR) and USB gadget/OTG (USB)
-- **Networking:** single 2.4 GHz 802.11n radio — the same physical radio is split into `wlan0` (STA/uplink) and `uap0` (AP) via `mac80211_hwsim` bridging; both halves share the same channel and throughput budget
+- **Networking:** single 2.4 GHz 802.11n radio — AP/STA concurrent mode uses `iw dev wlan0 interface add uap0 type __ap` (a virtual interface on the same brcmfmac radio — NOT mac80211_hwsim); both halves share the same channel and throughput budget
 
 Proposals that require a second USB port, significant RAM headroom (>50 MB sustained), or a 5 GHz radio should note the dependency explicitly.
 

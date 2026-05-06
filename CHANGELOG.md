@@ -7,10 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-05-06
+
+### Fixed
+- Captive-portal failover-watchdog now uses a dual-endpoint HTTP probe instead of ICMP ping for reliable detection behind hotel NAT
+- Wizard now includes fields for Bluetooth MAC address, bandwidth cap, and AP schedule times
+- Wizard displays a weak-password warning when the AP passphrase is too short or common
+- Per-SSID captive-portal script templates: drop a `.sh` named after the hotel SSID into `/etc/travel-router/portals/` for automatic re-authentication
+- `travel-status` and TUI dashboard now display Wi-Fi RSSI when the active uplink is hotel/open WiFi
+- TUI dashboard now shows AP client IP addresses alongside client count
+
+## [0.9.0] - 2026-05-06
+
+### Added
+- Community health files: CONTRIBUTING, SECURITY policy, bug-report and feature-request issue templates, PR template
+- Wi-Fi country selector added to the first-boot wizard
+- CI build badge added to README
+- Windows 10/11 CDC NCM USB note: inbox driver, no installation needed
+- GitHub repository topics and description updated
+
+## [0.8.3] - 2026-05-06
+
+### Fixed
+- Raspberry Pi Imager compatibility hardening: robust fingerprint detection, improved SSH key extraction, corrected file permissions
+- USB gadget switched from `g_ether` to `g_ncm` for Windows 10/11 plug-and-play (inbox CDC NCM driver, no installation needed)
+- CHANGELOG versioned: `[Unreleased]` split into `[0.8.0]`, `[0.8.1]`, and `[0.8.2]` sections
+
 ## [0.8.2] - 2026-05-06
 
 ### Fixed
-- USB gadget enumeration: added `modules-load=dwc2,g_ether` to `cmdline.txt` so the gadget interface comes up reliably on first boot
+- USB gadget enumeration: added `modules-load=dwc2,g_ncm` to `cmdline.txt` so the gadget interface comes up reliably on first boot
 - Raspberry Pi Imager compatibility: neutralise `firstrun.sh` after consuming it and apply the SSH public key to the root account
 
 ## [0.8.1] - 2026-05-06
