@@ -48,22 +48,28 @@ Open [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
 - **Choose Storage** -> select your SD card
 - **Write**
 
-Imager handles `xz` decompression and writes the SD card. (CLI alternative: `xz -d travelrouter-*.img.xz && sudo dd if=travelrouter-*.img of=/dev/diskN bs=4M status=progress conv=fsync`.)
+Imager handles `xz` decompression and writes the SD card. (CLI alternative:
+```bash
+xz -d travelrouter-*.img.xz
+diskutil unmountDisk /dev/diskN  # macOS: required before dd
+sudo dd if=travelrouter-*.img of=/dev/diskN bs=4M status=progress conv=fsync
+```
+Replace `/dev/diskN` with your SD card device — use `diskutil list` on macOS or `lsblk` on Linux to identify it.)
 
 **3. Boot the Pi**
 
-Insert the SD card. Connect power to the `PWR` port. (The `PWR` port is the one closer to the **edge** of the board, labeled `PWR IN`. The `USB` port in the next step is the one in the middle.) Wait ~60 seconds for first boot (mDNS, network, and the firstboot wizard need to come up).
+Insert the SD card. Connect power to the `PWR` port. (The `PWR` port is the one closer to the **edge** of the board, labeled `PWR IN`. The `USB` port in the next step is the one in the middle.) Wait ~90 seconds for first boot (mDNS, network, and the firstboot wizard need to come up). Wait for the USB Ethernet adapter to appear on your laptop before opening a browser.
 
 **4. Open the wizard**
 
-Plug the Pi's `USB` port (not `PWR`) into your laptop with a USB-C cable. The image pre-enables USB gadget mode (CDC NCM), so the laptop sees a new USB Ethernet device and gets a DHCP lease in `192.168.7.0/24`. Browse to:
+Plug the Pi's `USB` port (not `PWR`) into your laptop with a USB-C cable. The image pre-enables USB gadget mode (CDC NCM / `g_ncm`), so the laptop sees a new USB Ethernet device and gets a DHCP lease in `192.168.7.0/24`. Browse to:
 
 ```
 http://192.168.7.1
 ```
 
 - **Linux / macOS**: the USB device appears automatically; DHCP lease arrives within a few seconds.
-- **Windows 10/11**: uses CDC NCM (inbox driver, no installation needed). The device may take 10–15 seconds to enumerate on first use.
+- **Windows 10/11**: uses CDC NCM — inbox driver, no installation needed. The device may take 10–15 seconds to enumerate on first use.
 
 If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (password `changeme`).
 
@@ -122,6 +128,8 @@ nmcli dev wifi connect "Hotel WiFi Name"
 
 Or use the TUI: `sudo travel-tui` → **[5] Network Tools** → **[7] Connect to hotel/new WiFi**.
 
+> **Note:** The Pi Zero 2 W has a single 2.4 GHz radio. Switching hotel networks shifts the AP channel, briefly disconnecting AP clients — they reconnect automatically within a few seconds.
+
 **4. Handle the captive portal.**
 If the hotel uses a captive portal (login page), the Pi's wan-watchdog detects it automatically:
 
@@ -169,7 +177,7 @@ A condensed view of what you get after the install completes. Full feature list 
 
 ---
 
-## Day-2 management
+## Management
 
 ```sh
 sudo travel-tui          # interactive dashboard: uplink, AP clients, feature toggles, logs
@@ -179,18 +187,8 @@ sudo update-router.sh    # pull latest from GitHub and re-run changed install st
 
 Single config file: `/etc/default/travel-router`. The TUI's Features screen toggles any `ENABLE_*` flag live, reloading the firewall when the change requires it.
 
----
-
-## Managing the router
-
-Once installed, everything is managed through the interactive TUI dashboard:
-
-```sh
-sudo travel-tui
-```
-
 The TUI gives you:
-- **Dashboard** — live uplink status, Tailscale state, bandwidth counters, AP clients, system health
+- **Dashboard** — live uplink status, Tailscale state, bandwidth counters, AP clients (with IPs), system health, Wi-Fi RSSI when on hotel WiFi uplink
 - **Features** — toggle any `ENABLE_*` flag with an immediate service restart
 - **Settings** — edit all config vars (AP credentials, Bluetooth MAC, ntfy topic, Tailscale args, etc.)
 - **Network** — start/stop uplinks, Bluetooth tether, view routing table
@@ -199,6 +197,8 @@ The TUI gives you:
 - **System** — reboot, update, run diagnostics, configure 2FA
 
 All changes write directly to `/etc/default/travel-router` and take effect immediately. No need to edit config files manually.
+
+**RaspAP** web UI is available at `http://10.3.141.1` (credentials: `admin` / `secret`). It provides a graphical interface for hostapd/dnsmasq configuration. The `travel-tui` covers most management tasks, but RaspAP can be useful for advanced WiFi tuning.
 
 ---
 
@@ -216,22 +216,34 @@ A weekly systemd timer (Sun 03:00) does the same thing automatically when `ENABL
 
 ---
 
+## Advanced features
+
+### Per-SSID portal scripts
+
+Place a shell script at `/etc/travel-router/portals/<SSID>.sh` to run custom captive-portal login logic automatically when the Pi connects to that SSID. The script is invoked by `captive-check.sh` after portal detection. See `scripts/portals/` for example scripts (accept-terms, credential submit) and `scripts/portals/README.md` for the hook contract.
+
+### Wi-Fi RSSI
+
+When the active uplink is hotel/open WiFi (`wlan0`), the signal level (RSSI in dBm) is shown inline in the `travel-tui` dashboard and in the output of `travel-status`.
+
+### AP client IPs
+
+The TUI dashboard shows connected AP clients alongside their IP addresses (not just a count), making it easy to identify devices and check DHCP leases at a glance.
+
+---
+
 ## Advanced / Manual install
 
 For developers, or to install on an existing Pi OS Lite Bookworm system without re-flashing.
 
 **1. Flash Pi OS Lite Bookworm (64-bit)**
 
-Use Raspberry Pi Imager, select "Raspberry Pi OS Lite (64-bit)". Enable SSH before first boot by creating an empty `ssh` file in the `bootfs` partition:
-
-```sh
-touch /Volumes/bootfs/ssh
-```
+Use Raspberry Pi Imager, select "Raspberry Pi OS Lite (64-bit)". Before writing, click the **OS Customisation** (⚙) button to set your username, password, and SSH public key — this is required because Bookworm has no default `pi` user. Enable SSH in the Services tab. Write the card.
 
 **2. SSH in**
 
 ```sh
-ssh pi@raspberrypi.local   # default password: raspberry — change immediately
+ssh <your-username>@<hostname>.local   # use the username and hostname you set in Imager
 ```
 
 **3. Clone and install**
@@ -251,7 +263,7 @@ For scripted installs, set `INSTALL_NONINTERACTIVE=1` plus the env vars listed i
 sudo reboot
 ```
 
-`dwc2`/`g_ether` USB gadget mode only activates after a reboot. After it's back, plug the Pi's `USB` port into your laptop and SSH at `192.168.7.1`.
+After reboot, plug the Pi's `USB` port into your laptop — the USB gadget (CDC NCM / g_ncm) will be active. SSH at `192.168.7.1`.
 
 ---
 
@@ -262,7 +274,7 @@ sudo reboot
 | Interface | Role | Subnet | Metric |
 |---|---|---|---|
 | `uap0` | Wi-Fi AP (hostapd) | 10.3.141.0/24 | — |
-| `usb0` | USB Ethernet gadget (g_ether) | 192.168.7.0/24 | — |
+| `usb0` | USB Ethernet gadget (CDC NCM / g_ncm) | 192.168.7.0/24 | — |
 | `enx*` | iPhone USB tether | DHCP | 100 |
 | `rndis0` / `usb0` | Android USB tether | DHCP | 200 |
 | `bnep0` | Bluetooth PAN tether | DHCP | 300 |
@@ -325,6 +337,7 @@ ENABLE_2FA="0"
 ENABLE_BANDWIDTH_DASHBOARD="0"
 ENABLE_PROMETHEUS_EXPORTER="0"
 ENABLE_UPS_MONITOR="0"
+ENABLE_WAN_METRICS="1"         # Per-interface RX/TX accounting via vnstat. Default: 1 (on).
 
 AP_DISABLE_TIME="02:00"
 AP_ENABLE_TIME="07:00"

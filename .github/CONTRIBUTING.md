@@ -16,7 +16,7 @@ Include:
 
 ## Suggesting a feature
 
-Use the [Feature request](.github/ISSUE_TEMPLATE/feature_request.md) issue template. Ground the request in a real use case, and note the hardware constraints: Pi Zero 2 W has a single-core 1 GHz ARM CPU, 512 MB RAM, and one USB port shared between power delivery and gadget mode.
+Use the [Feature request](.github/ISSUE_TEMPLATE/feature_request.md) issue template. Ground the request in a real use case, and note the hardware constraints: Pi Zero 2 W has a quad-core Cortex-A53 @ 1 GHz CPU, 512 MB RAM, and one USB port shared between power delivery and gadget mode.
 
 ---
 
@@ -61,7 +61,7 @@ shellcheck scripts/my-script.sh
 shellcheck scripts/*.sh install.sh
 ```
 
-The CI `shellcheck.yml` workflow runs shellcheck on every push. Fix all warnings before opening a PR — the hook will block the merge otherwise.
+The CI `shellcheck.yml` workflow runs shellcheck on every push. Fix all warnings before opening a PR — the CI shellcheck workflow runs on every PR; branch protection may enforce passing checks before merge.
 
 **Live on-device test:**
 
@@ -114,7 +114,7 @@ sudo bash install.sh
 
 - Shell scripts use `set -euo pipefail`. New scripts should too.
 - Avoid bashisms that shellcheck flags. Target `bash` (not `sh`) since the shebang is `#!/bin/bash` throughout.
-- Python (firstboot wizard) must pass `flake8` and `pylint` as enforced by `python-lint.yml`.
+- Python (firstboot wizard) must pass `pyflakes` as enforced by `python-lint.yml`.
 
 ---
 
