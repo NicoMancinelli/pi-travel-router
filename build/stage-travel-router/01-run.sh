@@ -7,12 +7,19 @@ set -euo pipefail
 REPO_URL="${REPO_URL:-https://github.com/NicoMancinelli/pi-travel-router.git}"
 GIT_REF="${GIT_REF:-main}"
 TARGET_DIR="${ROOTFS_DIR}/opt/pi-travel-router"
+REPO_STAGE_DIR="$(dirname "$0")"
 
 echo "Cloning ${REPO_URL} @ ${GIT_REF} into ${TARGET_DIR}"
 rm -rf "${TARGET_DIR}"
 mkdir -p "${TARGET_DIR}"
-git clone "${REPO_URL}" "${TARGET_DIR}"
-git -C "${TARGET_DIR}" checkout "${GIT_REF}"
+# C12: use --depth=50 for faster clones; retry checkout loop handles CDN propagation delays.
+git clone --depth=50 "${REPO_URL}" "${TARGET_DIR}"
+for attempt in 1 2 3 4 5; do
+    git -C "${TARGET_DIR}" fetch --depth=1 origin "${GIT_REF}" 2>/dev/null && \
+    git -C "${TARGET_DIR}" checkout FETCH_HEAD && break
+    [ "$attempt" -lt 5 ] && { echo "Checkout attempt $attempt failed, retrying in 15s..."; sleep 15; } || \
+    { echo "ERROR: Could not checkout ${GIT_REF} after 5 attempts" >&2; exit 1; }
+done
 
 GIT_SHA="$(git -C "${TARGET_DIR}" rev-parse --short HEAD)"
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -90,13 +97,15 @@ CONFIG_TXT="${ROOTFS_DIR}/boot/firmware/config.txt"
 if [ ! -f "$CONFIG_TXT" ]; then
     CONFIG_TXT="${ROOTFS_DIR}/boot/config.txt"
 fi
+# H25: insert dtoverlay under existing [all] section rather than appending a new one.
 if ! grep -q "dtoverlay=dwc2" "$CONFIG_TXT" 2>/dev/null; then
-    {
-        echo ""
-        echo "# pi-travel-router: USB gadget mode for first-boot wizard reachability"
-        echo "[all]"
-        echo "dtoverlay=dwc2,dr_mode=peripheral"
-    } >> "$CONFIG_TXT"
+    # Insert after existing [all] line, or append if none
+    if grep -q "^\[all\]" "$CONFIG_TXT"; then
+        sed -i '/^\[all\]/{n;s/$/\ndtoverlay=dwc2,dr_mode=peripheral/}' "$CONFIG_TXT" || \
+        echo "dtoverlay=dwc2,dr_mode=peripheral" >> "$CONFIG_TXT"
+    else
+        printf '\n[all]\ndtoverlay=dwc2,dr_mode=peripheral\n' >> "$CONFIG_TXT"
+    fi
 fi
 
 # Load dwc2 and g_ncm at boot.
@@ -155,92 +164,8 @@ WantedBy=sysinit.target
 UNIT
 chmod 0644 "${ROOTFS_DIR}/etc/systemd/system/imager-compat.service"
 
-cat > "${ROOTFS_DIR}/usr/local/sbin/imager-compat.sh" << 'SCRIPT'
-#!/bin/bash
-# imager-compat.sh — neutralise Raspberry Pi Imager firstrun.sh
-set -euo pipefail
-
-FIRSTRUN=""
-for candidate in /boot/firmware/firstrun.sh /boot/firstrun.sh; do
-    if [ -f "$candidate" ]; then
-        FIRSTRUN="$candidate"
-        break
-    fi
-done
-
-[ -z "$FIRSTRUN" ] && exit 0
-
-# Fingerprint: the Imager mechanism works by adding systemd.run=<path> to
-# cmdline.txt.  That entry is the canonical indicator that firstrun.sh was
-# placed by Imager — not the content of firstrun.sh itself, which varies
-# significantly across Imager versions (some omit raspi-config entirely and
-# use nmcli; some don't set an SSH key at all).  Checking cmdline.txt is
-# more robust than grepping firstrun.sh for raspi-config/authorized_keys.
-CMDLINE=""
-for cl in /boot/firmware/cmdline.txt /boot/cmdline.txt; do
-    if [ -f "$cl" ]; then
-        CMDLINE="$cl"
-        break
-    fi
-done
-
-if [ -z "$CMDLINE" ] || ! grep -qE 'systemd\.run=' "$CMDLINE" 2>/dev/null; then
-    # No Imager cmdline marker — not an Imager firstrun.sh; leave it alone.
-    exit 0
-fi
-
-# Extract SSH public key(s) and write to /root/.ssh/authorized_keys.
-# Scan every line of firstrun.sh for a valid OpenSSH public-key token.
-# Imager encodes the key in different ways across versions:
-#   - echo 'ssh-ed25519 AAAA...' >> /root/.ssh/authorized_keys
-#   - SSHPUBKEY="ssh-ed25519 AAAA..."
-#   - install -m 0600 /dev/stdin /root/.ssh/authorized_keys <<< "ssh-rsa AAAA..."
-# The regex below matches the key type + base64 blob + optional comment
-# regardless of surrounding shell syntax.
-PUBKEY=""
-while IFS= read -r line; do
-    KEY=$(printf '%s\n' "$line" | grep -oE '(ssh-(rsa|ed25519|dss|xmss)|ecdsa-sha2-[A-Za-z0-9]+) [A-Za-z0-9+/]+=* ?[^"'"'"'\n]*' | head -1)
-    if [ -n "$KEY" ]; then
-        PUBKEY="$KEY"
-        break
-    fi
-done < "$FIRSTRUN"
-
-if [ -n "$PUBKEY" ]; then
-    mkdir -p /root/.ssh
-    chmod 0700 /root/.ssh
-    chown root:root /root/.ssh
-    AK=/root/.ssh/authorized_keys
-    # Create the file with correct permissions atomically: touch with explicit
-    # mode so we never have a window where the file exists world-readable.
-    if [ ! -f "$AK" ]; then
-        install -m 0600 -o root -g root /dev/null "$AK"
-    fi
-    if ! grep -qF "$PUBKEY" "$AK" 2>/dev/null; then
-        echo "$PUBKEY" >> "$AK"
-    fi
-    chmod 0600 "$AK"
-    chown root:root "$AK"
-fi
-
-# Rewrite firstrun.sh to a minimal safe stub — only the cmdline.txt cleanup
-# that the systemd.run= boot mechanism expects.
-cat > "$FIRSTRUN" << 'STUB'
-#!/bin/bash
-# Neutralised by pi-travel-router imager-compat: SSH key already applied to root.
-# Remove systemd.run entries from cmdline.txt so this doesn't re-run.
-if [ -f /boot/firmware/cmdline.txt ]; then
-    sed -i 's| systemd\.run=[^ ]*||g; s| systemd\.run_success_action=[^ ]*||g; s| systemd\.unit=kernel-command-line\.target||g' /boot/firmware/cmdline.txt
-fi
-if [ -f /boot/cmdline.txt ]; then
-    sed -i 's| systemd\.run=[^ ]*||g; s| systemd\.run_success_action=[^ ]*||g; s| systemd\.unit=kernel-command-line\.target||g' /boot/cmdline.txt
-fi
-STUB
-chmod 0755 "$FIRSTRUN"
-
-exit 0
-SCRIPT
-chmod 0755 "${ROOTFS_DIR}/usr/local/sbin/imager-compat.sh"
+# H26: install imager-compat.sh from the committed file rather than an inline heredoc.
+install -m 0755 "${REPO_STAGE_DIR}/files/imager-compat.sh" "${ROOTFS_DIR}/usr/local/sbin/imager-compat.sh"
 
 on_chroot << 'EOF'
 systemctl enable imager-compat.service
@@ -263,7 +188,8 @@ install -d -m 0755 "${PORTALS_EXAMPLES_DIR}"
 if [ -d "${PORTALS_SRC}" ]; then
     for f in "${PORTALS_SRC}"/*.sh; do
         [ -f "$f" ] || continue
-        install -m 0644 "$f" "${PORTALS_EXAMPLES_DIR}/"
+        # H29: install portal example scripts as executable (0755, not 0644).
+        install -m 0755 "$f" "${PORTALS_EXAMPLES_DIR}/"
     done
     echo "Portal example scripts installed to ${PORTALS_EXAMPLES_DIR}"
 else

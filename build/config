@@ -4,6 +4,10 @@ DEPLOY_COMPRESSION='xz'
 LOCALE_DEFAULT='en_US.UTF-8'
 TARGET_HOSTNAME='travelrouter'
 TIMEZONE_DEFAULT='Etc/UTC'
+# SECURITY: The 'pi' user is created by pi-gen then immediately deleted in
+# 01-run.sh (on_chroot deluser). If that deletion ever fails, the pi user
+# survives with the FIRST_USER_PASS below and SSH password login is enabled.
+# Verify deletion succeeded when debugging image builds.
 FIRST_USER_NAME='pi'
 FIRST_USER_PASS='changeme'
 DISABLE_FIRST_BOOT_USER_RENAME=1

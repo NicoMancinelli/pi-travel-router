@@ -20,27 +20,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
       - name: Shellcheck scripts
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: './scripts'
           severity: warning
 
+      # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
       - name: Shellcheck install.sh
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@2.0.0
         with:
           additional_files: 'install.sh'
           severity: warning
 
+      # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
       - name: Shellcheck build stage scripts
-        uses: ludeeus/action-shellcheck@master
+        uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: './build/stage-travel-router'
           severity: warning
 
+      # M37: scope to .sh files only so non-shell files in firstboot don't cause false failures.
+      # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
       - name: Shellcheck firstboot scripts
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: './firstboot'
-          severity: warning
-        continue-on-error: true
+        run: find firstboot -name "*.sh" -exec shellcheck {} +

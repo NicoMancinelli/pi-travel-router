@@ -23,7 +23,7 @@ jobs:
         run: pip install pyflakes
 
       - name: Compile check
-        run: python -m py_compile firstboot/server.py
+        run: find firstboot -name "*.py" -exec python -m py_compile {} +
 
       - name: Pyflakes
-        run: python -m pyflakes firstboot/server.py
+        run: find firstboot -name "*.py" | xargs python -m pyflakes

@@ -2,3 +2,5 @@ git
 curl
 ca-certificates
 avahi-daemon
+python3
+network-manager
