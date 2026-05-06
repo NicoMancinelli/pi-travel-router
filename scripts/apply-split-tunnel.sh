@@ -8,7 +8,29 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
-[[ "${ENABLE_SPLIT_TUNNEL:-0}" = "1" ]] || exit 0
+# H15: best-effort load of the ip_set kernel module; harmless if already loaded
+modprobe ip_set 2>/dev/null || true
+
+# H15: graceful exit if ipset is not available (ipset/iptables-legacy may not be installed)
+if ! command -v ipset >/dev/null 2>&1; then
+    logger -t split-tunnel "ipset not available — split tunnel cannot be applied; skipping"
+    exit 0
+fi
+
+# H16: teardown helper — removes routing rules and flushes table 200
+teardown_split_tunnel() {
+    ip rule del fwmark 1 table 200 2>/dev/null || true
+    ip route flush table 200 2>/dev/null || true
+    ipset destroy travel-split 2>/dev/null || true
+    logger -t split-tunnel "Split tunnel torn down"
+}
+
+# H16: if split tunnel is disabled, teardown any leftover state and exit
+if [ "${ENABLE_SPLIT_TUNNEL:-0}" != "1" ]; then
+    teardown_split_tunnel
+    exit 0
+fi
+
 [[ -n "${SPLIT_TUNNEL_DOMAINS:-}" ]] || { logger "split-tunnel: SPLIT_TUNNEL_DOMAINS empty — skipping"; exit 0; }
 
 LOG_TAG="split-tunnel"

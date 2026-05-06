@@ -6,7 +6,7 @@
 LOGFILE="/var/log/wan-watchdog.log"
 STATE_FILE="/tmp/captive-portal-active"
 # shellcheck source=/dev/null
-source /etc/default/travel-router 2>/dev/null
+source /etc/default/travel-router 2>/dev/null || true
 
 if command -v flock >/dev/null 2>&1; then
     exec 9>/run/lock/captive-check.lock
@@ -37,7 +37,8 @@ attempt_portal_login() {
 
     # Per-SSID hook: /etc/travel-router/portals/<SSID>.sh  (create for known hotel chains)
     local ssid_slug
-    ssid_slug=$(printf '%s' "$current_ssid" | tr ' /' '__')
+    # M2: strip any character that is not alphanumeric, dot, dash, or underscore
+    ssid_slug=$(printf '%s' "$current_ssid" | tr -cs 'a-zA-Z0-9._-' '_' | cut -c1-64)
     local ssid_script="/etc/travel-router/portals/${ssid_slug}.sh"
     if [ -x "$ssid_script" ]; then
         log "Running SSID portal script: $ssid_script"
@@ -51,11 +52,21 @@ attempt_portal_login() {
     # Generic: GET portal page, find <form action>, POST generic accept-terms fields
     [ -z "$redirect_url" ] && { log "No redirect URL — cannot attempt auto-login"; return 1; }
 
+    # C3: use a private per-invocation cookie jar; clean up on exit from this function
+    local COOKIE_JAR
+    COOKIE_JAR=$(mktemp /tmp/portal-cookies.XXXXXX)
+    # shellcheck disable=SC2064
+    trap "rm -f '$COOKIE_JAR'" EXIT
+
     local portal_html form_action base_url
     portal_html=$(curl -s --max-time 10 --interface wlan0 \
-        -L -c /tmp/portal-cookies.txt "$redirect_url" 2>/dev/null)
+        -L -c "$COOKIE_JAR" "$redirect_url" 2>/dev/null)
 
-    form_action=$(printf '%s' "$portal_html" | grep -oi 'action="[^"]*"' | head -1 | cut -d'"' -f2)
+    # M1: handle single-quoted and unquoted action attributes
+    form_action=$(printf '%s' "$portal_html" \
+        | grep -oiE 'action=["\x27]?[^"\x27 >]+' \
+        | head -1 \
+        | sed "s/action=[\"']//;s/[\"']$//")
     if [ -z "$form_action" ]; then
         log "No form action found — manual login required"
         return 1
@@ -65,7 +76,7 @@ attempt_portal_login() {
     [[ "$form_action" != http* ]] && form_action="${base_url}${form_action}"
 
     curl -s -o /dev/null --max-time 10 --interface wlan0 \
-        -b /tmp/portal-cookies.txt -c /tmp/portal-cookies.txt \
+        -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
         -X POST "$form_action" \
         -d "accept=true&terms=1&submit=Connect&button=Connect" 2>/dev/null
 
@@ -177,8 +188,9 @@ else
     # Captive portal detected
     if [ ! -f "$STATE_FILE" ]; then
         log "Captive portal detected (redirect='${REDIRECT_URL:-none}') — pausing Tailscale"
-        tailscale down 2>/dev/null
+        # C2: write state file BEFORE tailscale down so an interrupted run is recoverable
         touch "$STATE_FILE"
+        tailscale down 2>/dev/null
         if attempt_portal_login "$REDIRECT_URL"; then
             notify "Captive portal: auto-login succeeded" low
         else

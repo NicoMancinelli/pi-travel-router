@@ -8,6 +8,14 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOGFILE"
 }
 
+# H1: prevent concurrent instances from racing
+exec 9>/run/lock/failover-watchdog.lock
+flock -n 9 || exit 0
+
+# L1: cap log size when logrotate is not managing this file
+truncate_log() { tail -n 10000 "$LOGFILE" > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE" || true; }
+truncate_log
+
 # Find active iPhone USB tether interface (enx*)
 get_usb_tether_iface() {
     ip -br link | awk '/^enx/ && /UP/ {print $1}' | head -1
@@ -37,15 +45,16 @@ get_wifi_iface() {
 }
 
 # Get the gateway for a given interface from the default route
+# H2: use awk -v variable + string equality to avoid unescaped $iface in regex
 get_gateway() {
     local iface=$1
-    ip route | awk "/default.*via.*$iface/{print \$3}" | head -1
+    ip route | awk -v iface="$iface" '/default/{for(i=1;i<=NF;i++){if($i=="dev" && $(i+1)==iface){for(j=1;j<=NF;j++){if($j=="via"){print $(j+1);exit}}}}}' | head -1
 }
 
 # Get the current metric for a default route on an interface
 get_metric() {
     local iface=$1
-    ip route | awk "/default.*$iface/{for(i=1;i<=NF;i++){if(\$i==\"metric\"){print \$(i+1);exit}}}" | head -1
+    ip route | awk -v iface="$iface" '/default/{for(i=1;i<=NF;i++){if($i=="dev" && $(i+1)==iface){for(j=1;j<=NF;j++){if($j=="metric"){print $(j+1);exit}}}}}' | head -1
 }
 
 # Re-add a default route preserving its gateway, with a new metric
@@ -130,7 +139,8 @@ _notify_uplink_change() {
     local curr_uplink="$1"
     local prev_uplink=""
     [ -f "$_UPLINK_STATE_FILE" ] && prev_uplink=$(cat "$_UPLINK_STATE_FILE")
-    if [ -n "$curr_uplink" ] && [ "$curr_uplink" != "$prev_uplink" ]; then
+    # M4: skip notification on first boot when prev_uplink is empty
+    if [ -n "$curr_uplink" ] && [ -n "$prev_uplink" ] && [ "$curr_uplink" != "$prev_uplink" ]; then
         local prev_label curr_label
         prev_label=$(_uplink_label "${prev_uplink:-none}")
         curr_label=$(_uplink_label "$curr_uplink")

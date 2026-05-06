@@ -11,9 +11,17 @@ source /etc/default/travel-router 2>/dev/null || true
 # Uptime
 uptime_str=$(uptime -p 2>/dev/null | sed 's/up //' || printf "unknown")
 
-# Active uplink
-uplink=$(ip route get 1.1.1.1 2>/dev/null \
-    | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' || printf "none")
+# M5/M29: read uplink state file first; fall back to routing table if absent
+uplink=""
+if [ -f /var/lib/travel-router/uplink.state ]; then
+    uplink=$(cat /var/lib/travel-router/uplink.state 2>/dev/null || true)
+fi
+if [ -z "$uplink" ]; then
+    uplink=$(ip route show default 2>/dev/null \
+        | awk '/default/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' \
+        | head -1 || printf "none")
+fi
+[ -z "$uplink" ] && uplink="none"
 case "$uplink" in
     enx*) utype="iPhone USB" ;; rndis0|usb0) utype="Android USB" ;;
     bnep0) utype="BT PAN" ;; wlan0) utype="WiFi" ;;

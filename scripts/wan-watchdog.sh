@@ -13,10 +13,16 @@ fi
 
 WAN_PING_TARGETS="${WAN_PING_TARGETS:-1.1.1.1 8.8.8.8}"
 LOGFILE="/var/log/wan-watchdog.log"
-STATE_FILE="/tmp/wan-watchdog-fails"
+# C1: persist fail count across reboots — /tmp is wiped on each boot
+mkdir -p /var/lib/travel-router
+STATE_FILE="/var/lib/travel-router/wan-watchdog-fails"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOGFILE"; }
 notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || true; }
+
+# L1: cap log size when logrotate is not managing this file
+truncate_log() { tail -n 10000 "$LOGFILE" > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE" || true; }
+truncate_log
 
 can_reach_wan() {
     local target
@@ -39,9 +45,22 @@ if can_reach_wan; then
         notify "travel-router: WAN restored" low
     fi
     echo 0 > "$STATE_FILE"
-    # Pings succeed even behind a captive portal (the gateway responds).
-    # Always run the captive-check so portal state is kept up-to-date.
-    /usr/local/bin/captive-check.sh
+    # H17: only run captive-check when wlan0 is the active uplink.
+    # Tether interfaces give direct internet — no portal to handle.
+    _active_uplink=""
+    [ -f /var/lib/travel-router/uplink.state ] && \
+        _active_uplink=$(cat /var/lib/travel-router/uplink.state)
+    # Fall back to routing table if state file absent
+    if [ -z "$_active_uplink" ]; then
+        _active_uplink=$(ip route show default 2>/dev/null \
+            | awk '/default/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' \
+            | head -1)
+    fi
+    if [ "$_active_uplink" = "wlan0" ] || [ -z "$_active_uplink" ]; then
+        # Pings succeed even behind a captive portal (the gateway responds).
+        # Run the captive-check so portal state is kept up-to-date.
+        /usr/local/bin/captive-check.sh
+    fi
     exit 0
 fi
 
@@ -63,10 +82,12 @@ case "$FAILS" in
     3)
         log "Recovery step 3: cycling wlan0 link + restarting hostapd"
         notify "travel-router: WAN down 3x, cycling WiFi link" high
+        # M3: stop hostapd before taking wlan0 down to avoid crashing uap0
+        systemctl stop hostapd 2>/dev/null || true
         ip link set wlan0 down 2>/dev/null || true
         sleep 3
         ip link set wlan0 up 2>/dev/null || true
-        systemctl restart hostapd 2>/dev/null || true
+        systemctl start hostapd 2>/dev/null || true
         ;;
     4)
         log "Recovery step 4: full NetworkManager + dnsmasq restart"
@@ -86,5 +107,15 @@ case "$FAILS" in
         ;;
 esac
 
-# Check for captive portal on each run
-/usr/local/bin/captive-check.sh
+# H17: only run captive-check when wlan0 is the active uplink
+_active_uplink_fail=""
+[ -f /var/lib/travel-router/uplink.state ] && \
+    _active_uplink_fail=$(cat /var/lib/travel-router/uplink.state)
+if [ -z "$_active_uplink_fail" ]; then
+    _active_uplink_fail=$(ip route show default 2>/dev/null \
+        | awk '/default/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' \
+        | head -1)
+fi
+if [ "$_active_uplink_fail" = "wlan0" ] || [ -z "$_active_uplink_fail" ]; then
+    /usr/local/bin/captive-check.sh
+fi

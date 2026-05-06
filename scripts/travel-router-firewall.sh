@@ -37,8 +37,9 @@ save_rules() {
 # TTL, hop-limit, DSCP, and hop-by-hop rules are in /etc/nftables.conf.d/travel-router.nft
 
 # FORWARD: flush and rebuild each run — guarantees correct rule ordering.
+# C4: flush first, install all ACCEPT rules, THEN set DROP policy to eliminate
+#     the blackhole window where traffic is dropped before rules are in place.
 iptables -F FORWARD
-iptables -P FORWARD DROP
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # AP client isolation: prevent clients from reaching each other or the Pi LAN.
 iptables -A FORWARD -i uap0 -o uap0 -j DROP
@@ -55,6 +56,8 @@ else
     done
 fi
 iptables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
+# Set DROP as default policy only after all ACCEPT rules are installed
+iptables -P FORWARD DROP
 
 # INPUT: block AP clients from Pi admin interfaces.
 ipt_add filter INPUT -i uap0 -p tcp --dport 22 -j DROP
