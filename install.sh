@@ -358,6 +358,16 @@ dtim_period=1
 EOF
 ok "hostapd configured: SSID=$AP_SSID"
 
+# Apply regulatory domain immediately (takes effect without reboot).
+# hostapd also enforces country_code= at startup, so this is belt-and-braces.
+if command -v iw &>/dev/null; then
+    if iw reg set "$COUNTRY"; then
+        ok "iw: regulatory domain set to $COUNTRY"
+    else
+        warn "iw reg set $COUNTRY failed (non-fatal; hostapd will enforce it at boot)"
+    fi
+fi
+
 # ── 9. dnsmasq ────────────────────────────────────────────────────────────────
 section "dnsmasq config"
 

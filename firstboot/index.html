@@ -73,9 +73,46 @@ button.submit:hover{background:#2ea043}
 </div>
 <span class="hint">8-63 characters. Used by clients joining your AP.</span>
 
-<label for="country">Wi-Fi country code<span class="req">*</span></label>
-<input id="country" name="COUNTRY" type="text" value="US" maxlength="2" pattern="[A-Za-z]{2}" required autocomplete="off">
-<span class="hint">Two-letter ISO code (US, GB, DE, etc.). Required for regulatory compliance.</span>
+<label for="country">Wi-Fi country (sets regulatory domain for your AP)<span class="req">*</span></label>
+<select id="country" name="COUNTRY" autocomplete="off">
+<optgroup label="North America">
+  <option value="US" selected>US — United States</option>
+  <option value="CA">CA — Canada</option>
+  <option value="MX">MX — Mexico</option>
+</optgroup>
+<optgroup label="South America">
+  <option value="BR">BR — Brazil</option>
+</optgroup>
+<optgroup label="Europe">
+  <option value="AT">AT — Austria</option>
+  <option value="CH">CH — Switzerland</option>
+  <option value="DE">DE — Germany</option>
+  <option value="DK">DK — Denmark</option>
+  <option value="ES">ES — Spain</option>
+  <option value="FI">FI — Finland</option>
+  <option value="FR">FR — France</option>
+  <option value="GB">GB — United Kingdom</option>
+  <option value="IT">IT — Italy</option>
+  <option value="NL">NL — Netherlands</option>
+  <option value="NO">NO — Norway</option>
+  <option value="SE">SE — Sweden</option>
+</optgroup>
+<optgroup label="Middle East &amp; Africa">
+  <option value="AE">AE — UAE</option>
+  <option value="ZA">ZA — South Africa</option>
+</optgroup>
+<optgroup label="Asia Pacific">
+  <option value="AU">AU — Australia</option>
+  <option value="HK">HK — Hong Kong</option>
+  <option value="IN">IN — India</option>
+  <option value="JP">JP — Japan</option>
+  <option value="KR">KR — South Korea</option>
+  <option value="NZ">NZ — New Zealand</option>
+  <option value="SG">SG — Singapore</option>
+  <option value="TW">TW — Taiwan</option>
+</optgroup>
+</select>
+<span class="hint">Sets the Wi-Fi regulatory domain (allowed channels and power levels). Choose the country where the router is used.</span>
 
 <label for="tz" class="optional">Timezone</label>
 <select id="tz" name="ROUTER_TIMEZONE" autocomplete="off">
