@@ -1,6 +1,11 @@
 [Unit]
 Description=Travel Router first-boot setup wizard
-After=network.target avahi-daemon.service
+# imager-compat.service must complete before we start: it neutralises
+# firstrun.sh and writes the SSH key from Raspberry Pi Imager.  The
+# Before= in imager-compat.service is not enough on its own when
+# firstboot.service lives in multi-user.target — make the ordering
+# explicit here too so systemd enforces it regardless of target changes.
+After=network.target avahi-daemon.service imager-compat.service
 ConditionPathExists=!/var/lib/travel-router/firstboot-done
 
 [Service]
