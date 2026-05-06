@@ -99,20 +99,23 @@ if ! grep -q "dtoverlay=dwc2" "$CONFIG_TXT" 2>/dev/null; then
     } >> "$CONFIG_TXT"
 fi
 
-# Load dwc2 and g_ether at boot.
+# Load dwc2 and g_ncm at boot.
+# g_ncm (CDC NCM) is used instead of g_ether (CDC ECM) because Windows 10/11
+# ships inbox NCM drivers and enumerates the gadget natively; ECM requires
+# manual RNDIS driver installation on Windows.
 mkdir -p "${ROOTFS_DIR}/etc/modules-load.d"
 echo "dwc2" > "${ROOTFS_DIR}/etc/modules-load.d/dwc2.conf"
-echo "g_ether" > "${ROOTFS_DIR}/etc/modules-load.d/g-ether.conf"
+echo "g_ncm" > "${ROOTFS_DIR}/etc/modules-load.d/g-ncm.conf"
 
-# cmdline.txt: modules-load ensures dwc2+g_ether init during early kernel boot,
+# cmdline.txt: modules-load ensures dwc2+g_ncm init during early kernel boot,
 # before userspace, so the host enumerates the gadget immediately on plug-in.
 CMDLINE_TXT="${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 if [ ! -f "$CMDLINE_TXT" ]; then
     CMDLINE_TXT="${ROOTFS_DIR}/boot/cmdline.txt"
 fi
 if [ -f "$CMDLINE_TXT" ] && ! grep -q "modules-load=dwc2" "$CMDLINE_TXT"; then
-    sed -i '1s/$/ modules-load=dwc2,g_ether/' "$CMDLINE_TXT"
-    echo "cmdline.txt: appended modules-load=dwc2,g_ether"
+    sed -i '1s/$/ modules-load=dwc2,g_ncm/' "$CMDLINE_TXT"
+    echo "cmdline.txt: appended modules-load=dwc2,g_ncm"
 fi
 
 # NetworkManager profile for usb0: static 192.168.7.1/24 with shared mode (built-in DHCP for laptop).
