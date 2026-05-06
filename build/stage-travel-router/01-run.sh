@@ -45,10 +45,10 @@ mkdir -p /etc/ssh/sshd_config.d
 printf 'PermitRootLogin yes\nPasswordAuthentication yes\n' \
     > /etc/ssh/sshd_config.d/00-permit-root.conf
 chmod 0644 /etc/ssh/sshd_config.d/00-permit-root.conf
-# Remove the pi-gen first user (FIRST_USER_NAME) — root is the only account.
-if id neek >/dev/null 2>&1; then
-    pkill -u neek 2>/dev/null || true
-    deluser --remove-home neek 2>/dev/null || userdel -r neek 2>/dev/null || true
+# Remove the pi-gen first user (FIRST_USER_NAME=pi) — root is the only account.
+if id pi >/dev/null 2>&1; then
+    pkill -u pi 2>/dev/null || true
+    deluser --remove-home pi 2>/dev/null || userdel -r pi 2>/dev/null || true
 fi
 EOF
 
