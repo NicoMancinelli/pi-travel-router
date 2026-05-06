@@ -165,8 +165,22 @@ draw_dashboard() {
     _box_sep
 
     # ── Uplink ────────────────────────────────────────────────────────────────
-    uplink=$(ip route get 1.1.1.1 2>/dev/null \
-        | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' || true)
+    # Prefer failover state file; fall back to routing table (captive-portal safe)
+    local _uplink_state_file="/var/lib/travel-router/uplink.state"
+    if [[ -f "$_uplink_state_file" ]]; then
+        uplink=$(cat "$_uplink_state_file")
+    else
+        uplink=$(ip route get 1.1.1.1 2>/dev/null \
+            | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' || true)
+        if [[ -z "${uplink:-}" ]]; then
+            uplink=$(ip route show default 2>/dev/null \
+                | awk 'BEGIN{m=99999;iface=""} /^default/{
+                    for(i=1;i<=NF;i++){if($i=="dev")d=$(i+1); if($i=="metric")mt=$(i+1)}
+                    if(mt=="")mt=0
+                    if(mt<m){m=mt;iface=d}}
+                  END{print iface}' || true)
+        fi
+    fi
     src_ip=$(ip route get 1.1.1.1 2>/dev/null \
         | awk '/src/{for(i=1;i<=NF;i++){if($i=="src"){print $(i+1);exit}}}' || true)
     case "${uplink:-}" in
@@ -180,7 +194,10 @@ draw_dashboard() {
 
     bw_up=$(_bw_delta "${uplink:-lo}" tx)
     bw_dn=$(_bw_delta "${uplink:-lo}" rx)
-    signal=$(iw dev wlan0 link 2>/dev/null | awk '/signal/{print $2, $3}' || true)
+    # RSSI only meaningful when uplink is wlan0
+    signal=""
+    [[ "${uplink:-}" = "wlan0" ]] && \
+        signal=$(iw dev wlan0 link 2>/dev/null | awk '/signal/{print $2, $3}' || true)
 
     local up_dot up_color
     if [[ -n "${uplink:-}" ]]; then
@@ -189,8 +206,16 @@ draw_dashboard() {
         up_dot="${R}○${NC}"; up_color="$R"
     fi
 
-    _cl "  ${W}UPLINK${NC}    ${up_dot} ${up_color}${utype}${NC}  ${DIM}${uplink:-none}${NC}  ${DIM}src ${src_ip:-?}${NC}"
-    _cl "            ${DIM}↑${NC} $(_fmt_bps "$bw_up")  ${DIM}↓${NC} $(_fmt_bps "$bw_dn")${signal:+   ${DIM}WiFi ${signal}${NC}}"
+    # Build uplink label — append RSSI when on WiFi STA
+    local utype_disp="$utype"
+    [[ -n "$signal" ]] && utype_disp="${utype} · ${signal} dBm"
+
+    # Captive portal inline flag
+    local cp_flag=""
+    [ -f /tmp/captive-portal-active ] && cp_flag="  ${R}${BOLD}⚠ CAPTIVE PORTAL${NC}"
+
+    _cl "  ${W}UPLINK${NC}    ${up_dot} ${up_color}${utype_disp}${NC}  ${DIM}${uplink:-none}${NC}  ${DIM}src ${src_ip:-?}${NC}${cp_flag}"
+    _cl "            ${DIM}↑${NC} $(_fmt_bps "$bw_up")  ${DIM}↓${NC} $(_fmt_bps "$bw_dn")"
     _box_sep
 
     # ── Tailscale ─────────────────────────────────────────────────────────────
@@ -206,10 +231,31 @@ draw_dashboard() {
     # ── Access Point ──────────────────────────────────────────────────────────
     ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || printf "?")
     ap_clients=$(iw dev uap0 station dump 2>/dev/null | grep -c "^Station" || printf "0")
-    client_ips=$(ip neigh show dev uap0 2>/dev/null | awk '{printf "%s ", $1}' | head -c 36 || true)
+    # Build comma-separated IP list by cross-referencing station MACs against
+    # ip neigh (primary) then /proc/net/arp (fallback).
+    client_ips=""
+    if [[ "${ap_clients:-0}" -gt 0 ]]; then
+        local _neigh_table _arp_table _mac_list _ip_list _ip _m
+        _neigh_table=$(ip neigh show 2>/dev/null || true)
+        _arp_table=$(awk 'NR>1{print $4, $1}' /proc/net/arp 2>/dev/null || true)
+        _mac_list=$(iw dev uap0 station dump 2>/dev/null \
+            | awk '/^Station/{print $2}' || true)
+        _ip_list=""
+        while IFS= read -r _m; do
+            [[ -z "$_m" ]] && continue
+            _ip=$(printf '%s' "$_neigh_table" \
+                | awk -v m="$_m" 'tolower($5)==tolower(m){print $1; exit}')
+            if [[ -z "$_ip" ]]; then
+                _ip=$(printf '%s' "$_arp_table" \
+                    | awk -v m="$_m" 'tolower($1)==tolower(m){print $2; exit}')
+            fi
+            [[ -n "$_ip" ]] && _ip_list="${_ip_list:+${_ip_list}, }${_ip}"
+        done <<< "$_mac_list"
+        client_ips="$_ip_list"
+    fi
     systemctl is-active --quiet hostapd 2>/dev/null \
         && ap_dot="${G}●${NC}" || ap_dot="${R}○${NC}"
-    _cl "  ${W}AP${NC}        ${ap_dot} ${G}${ap_ssid}${NC}  ${DIM}${ap_clients} client$( [[ "${ap_clients:-0}" = "1" ]] && echo '' || echo 's' )${NC}${client_ips:+   ${DIM}(${client_ips%% })${NC}}"
+    _cl "  ${W}AP${NC}        ${ap_dot} ${G}${ap_ssid}${NC}  ${DIM}${ap_clients} client$( [[ "${ap_clients:-0}" = "1" ]] && echo '' || echo 's' )${NC}${client_ips:+  ${DIM}(${client_ips})${NC}}"
     _box_sep
 
     # ── Feature flags ─────────────────────────────────────────────────────────

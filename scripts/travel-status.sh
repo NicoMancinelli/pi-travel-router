@@ -3,13 +3,29 @@
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
-C='\033[0;36m'; G='\033[0;32m'; NC='\033[0m'; W='\033[1;37m'; DIM='\033[2m'
+C='\033[0;36m'; G='\033[0;32m'; Y='\033[0;33m'; NC='\033[0m'; W='\033[1;37m'; DIM='\033[2m'; BOLD='\033[1m'
 _flag() { [[ "${!1:-0}" = "1" ]] && printf "${G}on${NC}" || printf "${DIM}off${NC}"; }
 
 printf "${C}━━ Travel Router ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
-# Active uplink (derive from default route)
-uplink=$(ip route get 1.1.1.1 2>/dev/null | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}')
+# Active uplink — prefer failover state file, fall back to routing table
+_UPLINK_STATE_FILE="/var/lib/travel-router/uplink.state"
+if [[ -f "$_UPLINK_STATE_FILE" ]]; then
+    uplink=$(cat "$_UPLINK_STATE_FILE")
+else
+    uplink=$(ip route get 1.1.1.1 2>/dev/null \
+        | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}')
+    # Behind a captive portal ip route get 1.1.1.1 may return nothing; fall
+    # back to the lowest-metric default route.
+    if [[ -z "$uplink" ]]; then
+        uplink=$(ip route show default 2>/dev/null \
+            | awk 'BEGIN{m=99999;iface=""} /^default/{
+                for(i=1;i<=NF;i++){if($i=="dev")d=$(i+1); if($i=="metric")mt=$(i+1)}
+                if(mt=="")mt=0
+                if(mt<m){m=mt;iface=d}}
+              END{print iface}')
+    fi
+fi
 src_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/{for(i=1;i<=NF;i++){if($i=="src"){print $(i+1);exit}}}')
 case "$uplink" in
     enx*) utype="iPhone USB" ;; rndis0|usb0) utype="Android USB" ;;
@@ -17,6 +33,11 @@ case "$uplink" in
     tailscale0) utype="Tailscale" ;; *) utype="${uplink:-none}" ;;
 esac
 printf "  ${W}Uplink${NC}:   ${G}%s${NC} (%s)  src: %s\n" "${uplink:-none}" "$utype" "${src_ip:-?}"
+
+# Captive portal status
+if [ -f /tmp/captive-portal-active ]; then
+    printf "  ${Y}${BOLD}⚠ Captive portal active${NC} — authenticate via a browser, then re-check\n"
+fi
 
 # Tailscale
 ts_status=$(tailscale status --self 2>/dev/null | head -1 || printf "unavailable")
