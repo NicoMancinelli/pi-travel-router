@@ -7,7 +7,7 @@
 #
 # Usage: sudo bash install.sh
 # Run from the cloned repo root on a fresh Pi OS Lite Bookworm install.
-# A reboot is required at the end to activate dwc2/g_ether USB gadget mode.
+# A reboot is required at the end to activate dwc2/g_ncm USB gadget mode.
 
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -221,7 +221,7 @@ else
 fi
 
 # ── 2. Boot config (USB gadget mode) ─────────────────────────────────────────
-section "Boot config — USB gadget mode (dwc2/g_ether)"
+section "Boot config — USB gadget mode (dwc2/g_ncm)"
 
 CONFIG_TXT="/boot/firmware/config.txt"
 [[ -f "$CONFIG_TXT" ]] || CONFIG_TXT="/boot/config.txt"
@@ -233,8 +233,9 @@ else
     ok "dwc2 overlay already present"
 fi
 
-echo "dwc2"    > /etc/modules-load.d/dwc2.conf
-echo "g_ether" > /etc/modules-load.d/g-ether.conf
+echo "dwc2"  > /etc/modules-load.d/dwc2.conf
+# g_ncm (CDC NCM) used instead of g_ether (CDC ECM): Windows 10/11 inbox NCM driver
+echo "g_ncm" > /etc/modules-load.d/g-ncm.conf
 echo "tcp_bbr" > /etc/modules-load.d/tcp_bbr.conf
 echo "bcm2835_wdt" > /etc/modules-load.d/watchdog.conf
 ok "Module load configs written"
