@@ -5,6 +5,7 @@ A self-contained travel router built on a Raspberry Pi Zero 2 W that shares any 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Platform: Pi Zero 2W](https://img.shields.io/badge/platform-Pi%20Zero%202W-c51a4a.svg)
 ![OS: Pi OS Bookworm](https://img.shields.io/badge/OS-Pi%20OS%20Bookworm-green.svg)
+[![Build Pi Image](https://github.com/NicoMancinelli/pi-travel-router/actions/workflows/build-image.yml/badge.svg)](https://github.com/NicoMancinelli/pi-travel-router/actions/workflows/build-image.yml)
 
 Plug it into your laptop via USB-C and it appears as both a USB Ethernet adapter (192.168.7.1) and a Wi-Fi AP, routing connected devices through whatever uplink is available. Re-flashable, reproducible, scripted from a single repo.
 
@@ -55,13 +56,16 @@ Insert the SD card. Connect power to the `PWR` port. (The `PWR` port is the one 
 
 **4. Open the wizard**
 
-Plug the Pi's `USB` port (not `PWR`) into your laptop with a USB-C cable. The image pre-enables USB gadget mode, so the laptop sees a new USB Ethernet device and gets a DHCP lease in `192.168.7.0/24`. Browse to:
+Plug the Pi's `USB` port (not `PWR`) into your laptop with a USB-C cable. The image pre-enables USB gadget mode (CDC NCM), so the laptop sees a new USB Ethernet device and gets a DHCP lease in `192.168.7.0/24`. Browse to:
 
 ```
 http://192.168.7.1
 ```
 
-If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (password `changeme`). Windows users may need RNDIS drivers. Open **Device Manager**, find the Pi under *Other devices* or *Network adapters*, and install the driver via **Update driver → Browse my computer → Let me pick → Remote NDIS Compatible Device**. Alternatively, enable the "USB RNDIS Gadget" option in Windows Features.
+- **Linux / macOS**: the USB device appears automatically; DHCP lease arrives within a few seconds.
+- **Windows 10/11**: uses CDC NCM (inbox driver, no installation needed). The device may take 10–15 seconds to enumerate on first use.
+
+If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (password `changeme`).
 
 **5. Fill in the form**
 
