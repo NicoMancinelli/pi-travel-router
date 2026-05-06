@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-06
+
+### Fixed — Security & Correctness (27 fixes)
+- `captive-check.sh`: STATE_FILE touch moved before `tailscale down`; cookie jar uses `mktemp` with EXIT trap; SSID slug sanitised to `[a-zA-Z0-9._-]` capped at 64 chars; form `action=` extraction handles single-quoted and bare attributes; `|| true` on portal script source
+- `travel-router-firewall.sh`: `iptables -P FORWARD DROP` moved after all ACCEPT rules to eliminate traffic blackhole window during startup
+- `failover-watchdog.sh`: flock guard prevents overlapping runs; `get_gateway`/`get_metric` use awk string equality; boot-notification suppressed when no previous uplink; ICMP ping replaced with dual HTTP probe (gstatic + detectportal)
+- `firstboot/server.py`: 409 on double-submit; `/retry` endpoint; CSRF token; `X-Frame-Options`, `X-Content-Type-Options`, `Content-Security-Policy` headers; content-type validation (415); strict UTF-8 decode (400 on error); hostname and time regex hardened; headscale URL validated; ntfy topic capped at 64 chars; spawn exit code captured explicitly
+- `install.sh`: hostapd.conf `ssid=` and `wpa_passphrase=` written via Python (safe for `#` and spaces); all config substitutions use `_safe_write_conf` Python helper; Tor passphrase guard; hostname substitution via Python
+- `apply-split-tunnel.sh`: `modprobe ip_set` guard; `teardown_split_tunnel()` when disabled
+- `update-router.sh`: atomic `mv` for all script writes; tarball integrity check via `tar -tjf`; portal examples synced
+- `build/stage-travel-router/01-run.sh`: `git clone --depth=50` with 5-attempt retry; `dtoverlay=dwc2` inserted under existing `[all]`; `imager-compat.sh` extracted from heredoc to `files/`
+
+### Fixed — Hard Reliability (18 fixes)
+- `travel-tui.sh`: `_cfg_edit` rewritten with Python heredoc (safe for `|`, `\`, newlines); `show_clients` converted from tail-recursion to `while true` loop; re-source config after SSH key edit
+- `failover-watchdog.sh`: HTTP probe for internet reachability
+- `notify-router.sh`: `--max-time 10`; NTFY_TOPIC URL-encoded via `urllib.parse.quote`
+- `start-bt-tether.sh`: bt-pan PID saved to `/run/bt-pan.pid`; duplicate-start guard; `nmcli` DHCP with `dhcpcd` fallback
+- `clone-mac.sh`: `--restore` uses `macchanger -p` (permanent hardware MAC, not random)
+- `update-blocklists.sh`: `mv` before `nft -f` for correct persistence order
+- `tailscale-watchdog.sh`: `command -v jq` guard
+- `ups-monitor.sh`: sleep before shutdown increased to 20 s
+- `stop-bt-tether.sh`: `set -euo pipefail`; calls `failover-watchdog.sh` on exit
+- `build/stage-travel-router/00-packages`: added `python3`, `network-manager`
+- `firstboot/firstboot.service`: `After=network-online.target`; `TimeoutStartSec=infinity`; `RequiresMountsFor=/opt`
+
+### Fixed — Medium Priority (25 fixes)
+- `travel-tui.sh`: dynamic flag index bounds check; `_bw_delta` uses elapsed time from timestamp file; WiFi password masked in QR flow; batched `systemctl is-active`; `AP_IFACE` variable; `_cpu_usage` reads `/proc/stat` twice
+- `failover-watchdog.sh`: `_notify_uplink_change` requires non-empty previous uplink; `truncate_log` helper
+- `wan-watchdog.sh`: STATE_FILE moved to `/var/lib/travel-router/`; captive-check only on wlan0; recovery restarts hostapd; `truncate_log` helper
+- `firstboot/server.py`: `_load_preseed` sets `ROUTER_HOSTNAME`; `UPS_SHUTDOWN_THRESHOLD`/`PUSHGW_URL`/`TAILSCALE_UP_ARGS` in STRING_FIELDS; exceptions logged with traceback
+- `firstboot/index.html`: `crypto.getRandomValues()` passphrase; country selector with 28 destinations; new advanced fields
+- `install.sh`: AP schedule timer drop-ins interpolate `$AP_DISABLE_TIME`/`$AP_ENABLE_TIME`; CAKE service install; all new config keys persisted
+- `generate-bandwidth-report.sh`: `shopt -s nullglob`; all tether interfaces reported (no early break)
+- `start-tether.sh`: polling loop for `state UP` replaces `sleep 3`
+- `ap-schedule.sh`: `systemctl is-active --quiet hostapd` guard
+- `setup-2fa.sh`: TOTP secret print wrapped in `[ -t 1 ]` TTY check
+- `tune-cake.sh`: reads uplink state file; passes `--interface` to speedtest-cli
+- `travel-diagnostic.sh`: case-insensitive redaction; collects `/etc/travel-router-version`
+- `vnstat-push.sh`: awk JSON replaced with Python
+
+### Fixed — Low Priority / CI (14 fixes)
+- `captive-check.sh`: hardened SSID slug
+- `stop-bt-tether.sh`: strict mode
+- `portals/example-credentials.sh`: `jq` dependency check with Python alternative note
+- `log2ram` JOURNALD_AWARE update made idempotent
+- `firstboot/server.py`: CSRF token validation; security headers
+- `.github/workflows/shellcheck.yml`: pinned to `@2.0.0`; `continue-on-error` removed; firstboot step added
+- `.github/workflows/python-lint.yml`: glob for `.py` files
+- `build/stage-travel-router/files/imager-compat.sh`: extracted to standalone file for CI syntax checking
+- `CODE_OF_CONDUCT.md`: added
+- `CONTRIBUTING.md`: updated
+
 ## [0.9.1] - 2026-05-06
 
 ### Fixed
