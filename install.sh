@@ -433,9 +433,26 @@ done
 install_file scripts/travel-diagnostic.sh /usr/local/bin/travel-diagnostic 755
 ok "  travel-diagnostic.sh → travel-diagnostic"
 
-# Captive portal per-SSID hooks directory
-mkdir -p /etc/travel-router/portals
+# Captive portal per-SSID hooks directory.
+# Drop a script named after your hotel SSID (spaces/slashes → _) here to
+# automate captive portal login for that network.  Example:
+#   sudo cp /etc/travel-router/portals/examples/example-accept-terms.sh \
+#       /etc/travel-router/portals/MyHotelSSID.sh
+#   sudo chmod +x /etc/travel-router/portals/MyHotelSSID.sh
+# See /etc/travel-router/portals/examples/ and scripts/portals/README.md for details.
+mkdir -p /etc/travel-router/portals/examples
 chmod 755 /etc/travel-router/portals
+chmod 755 /etc/travel-router/portals/examples
+
+# Copy example portal scripts for reference (not auto-loaded — examples only)
+if [[ -d "$REPO/scripts/portals" ]]; then
+    for f in "$REPO"/scripts/portals/*.sh; do
+        [[ -f "$f" ]] || continue
+        cp "$f" /etc/travel-router/portals/examples/
+        chmod 644 /etc/travel-router/portals/examples/"$(basename "$f")"
+    done
+    ok "Portal example scripts installed to /etc/travel-router/portals/examples/"
+fi
 
 # Pairing docs
 mkdir -p /usr/local/share/travel-router-docs
