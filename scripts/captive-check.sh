@@ -81,13 +81,85 @@ attempt_portal_login() {
     return 1
 }
 
-# Probe connectivity check endpoint (returns 204 if clear internet, redirect if captive portal)
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-    --max-time 5 \
-    --interface wlan0 \
-    "http://connectivitycheck.gstatic.com/generate_204" 2>/dev/null)
+# Probe connectivity — try two independent endpoints to avoid false positives
+# when a single provider is blocked.  We capture both the HTTP status code and
+# the redirect URL in one curl call to avoid a second racy round-trip.
+#
+# Endpoint A: Google generate_204  (returns 204 on clear internet)
+# Endpoint B: Mozilla detectportal (returns "success\n" body with 200 on clear internet)
+# Endpoint C: Ubuntu connectivity  (returns "NetworkManager is online\n" body with 200)
+#
+# Decision matrix:
+#   204             → clear internet
+#   200 + expected body → clear internet
+#   000             → no layer-3 connectivity (wlan0 not associated), skip
+#   anything else   → captive portal (redirect or 200+wrong body)
 
-if [ "$HTTP_CODE" = "204" ]; then
+_probe() {
+    local url="$1" expected_body="$2"
+    # Write body to a temp file so we can check it without a second request
+    local tmp; tmp=$(mktemp /tmp/captive-probe.XXXXXX)
+    local code redirect_url
+    code=$(curl -s -w "%{http_code}\n%{redirect_url}" \
+        --max-time 6 --interface wlan0 \
+        -o "$tmp" "$url" 2>/dev/null)
+    redirect_url=$(printf '%s' "$code" | tail -n1)
+    code=$(printf '%s' "$code" | head -n1)
+    local body; body=$(cat "$tmp" 2>/dev/null); rm -f "$tmp"
+
+    if [ "$code" = "204" ]; then
+        echo "clear"; return
+    elif [ "$code" = "000" ]; then
+        echo "noconn"; return
+    elif [ "$code" = "200" ] && [ -n "$expected_body" ]; then
+        # Body-match check (strip trailing newline for comparison)
+        local trimmed; trimmed=$(printf '%s' "$body" | tr -d '\r\n')
+        if [ "$trimmed" = "$expected_body" ]; then
+            echo "clear"; return
+        fi
+    fi
+    # Any redirect or unexpected body → portal
+    printf '%s\n' "portal ${redirect_url}"
+}
+
+# Try endpoint A first
+RESULT_A=$(_probe "http://connectivitycheck.gstatic.com/generate_204" "")
+
+case "$RESULT_A" in
+    clear)
+        PORTAL_RESULT="clear"
+        REDIRECT_URL=""
+        ;;
+    noconn)
+        PORTAL_RESULT="noconn"
+        REDIRECT_URL=""
+        ;;
+    *)
+        # Ambiguous — try endpoint B before declaring portal
+        RESULT_B=$(_probe "http://detectportal.firefox.com/success.txt" "success")
+        case "$RESULT_B" in
+            clear)
+                PORTAL_RESULT="clear"
+                REDIRECT_URL=""
+                ;;
+            noconn)
+                # Both endpoints unreachable: no layer-3 connectivity
+                PORTAL_RESULT="noconn"
+                REDIRECT_URL=""
+                ;;
+            *)
+                # Both probes agree: portal present
+                PORTAL_RESULT="portal"
+                # Prefer the redirect URL from whichever probe captured one
+                REDIRECT_URL=$(printf '%s' "$RESULT_A" | cut -d' ' -f2-)
+                [ -z "$REDIRECT_URL" ] && \
+                    REDIRECT_URL=$(printf '%s' "$RESULT_B" | cut -d' ' -f2-)
+                ;;
+        esac
+        ;;
+esac
+
+if [ "$PORTAL_RESULT" = "clear" ]; then
     # Clear internet — re-enable Tailscale if we paused it
     if [ -f "$STATE_FILE" ]; then
         log "Captive portal cleared — re-enabling Tailscale"
@@ -99,16 +171,12 @@ if [ "$HTTP_CODE" = "204" ]; then
             notify "Internet clear, but Tailscale restore failed" high
         fi
     fi
-elif [ "$HTTP_CODE" = "000" ]; then
-    log "No connectivity (HTTP 000) — skipping captive portal check"
+elif [ "$PORTAL_RESULT" = "noconn" ]; then
+    log "No layer-3 connectivity on wlan0 — skipping captive portal check"
 else
-    # Redirect detected — capture the redirect URL for auto-login
-    REDIRECT_URL=$(curl -s -o /dev/null -w "%{redirect_url}" \
-        --max-time 5 --interface wlan0 \
-        "http://connectivitycheck.gstatic.com/generate_204" 2>/dev/null)
-
+    # Captive portal detected
     if [ ! -f "$STATE_FILE" ]; then
-        log "Captive portal detected (HTTP $HTTP_CODE) — pausing Tailscale"
+        log "Captive portal detected (redirect='${REDIRECT_URL:-none}') — pausing Tailscale"
         tailscale down 2>/dev/null
         touch "$STATE_FILE"
         if attempt_portal_login "$REDIRECT_URL"; then

@@ -225,6 +225,13 @@ draw_dashboard() {
     _cl "  ${DIM}CPU${NC} ${cpu}  ${DIM}Temp${NC} ${temp}  ${DIM}RAM${NC} ${ram_info}  ${DIM}Disk${NC} ${disk_info}  ${DIM}Up${NC} ${up_str}"
     _box_sep
 
+    # ── Captive portal warning ────────────────────────────────────────────────
+    if [ -f /tmp/captive-portal-active ]; then
+        _cl "  ${R}${BOLD}⚠  CAPTIVE PORTAL ACTIVE${NC}  ${DIM}Open a browser on your device to log in,${NC}"
+        _cl "  ${DIM}then run Network → [h] Re-check portal  (or wait ~60s for auto-check)${NC}"
+        _box_sep
+    fi
+
     # ── Navigation ────────────────────────────────────────────────────────────
     _bl "  [1] Services  [2] Features  [3] Logs  [4] Clients  [5] Network"
     _bl "  [6] Settings  [7] System                              [q] Quit"
@@ -575,6 +582,7 @@ show_network() {
         _bl "  [7] Connect to hotel / new WiFi network"
         _cl "  [8] Start Bluetooth tethering  ${DIM}${bt_hint}${NC}"
         _bl "  [9] Stop Bluetooth tethering"
+        _bl "  [h] Re-check captive portal now"
         _box_sep
         _bl "  Enter choice, [q] to return: "
         _box_bot
@@ -627,16 +635,30 @@ show_network() {
                [[ -z "$wifi_ssid" ]] && continue
                printf "  Password (Enter for open network): "
                local wifi_pass; read -rs wifi_pass; printf "\n"
+               local _connect_ok=0
                if [[ -n "$wifi_pass" ]]; then
                    nmcli device wifi connect "$wifi_ssid" password "$wifi_pass" ifname wlan0 2>&1 \
-                       && printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid" \
+                       && { printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid"; _connect_ok=1; } \
                        || printf "  ${R}✗ failed — check SSID/password${NC}\n"
                else
                    nmcli device wifi connect "$wifi_ssid" ifname wlan0 2>&1 \
-                       && printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid" \
+                       && { printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid"; _connect_ok=1; } \
                        || printf "  ${R}✗ could not connect${NC}\n"
                fi
-               sleep 3 ;;
+               if [[ "$_connect_ok" -eq 1 ]]; then
+                   printf "  ${DIM}Waiting for DHCP...${NC}\n"
+                   sleep 4
+                   printf "  Checking for captive portal...\n"
+                   /usr/local/bin/captive-check.sh 2>/dev/null || true
+                   if [ -f /tmp/captive-portal-active ]; then
+                       printf "  ${R}${BOLD}⚠  Captive portal detected!${NC}\n"
+                       printf "  ${W}Open a browser on your laptop/phone and log in to the hotel WiFi,${NC}\n"
+                       printf "  ${W}then return here and press [h] to re-check.${NC}\n"
+                   else
+                       printf "  ${G}✓ Internet clear — no captive portal${NC}\n"
+                   fi
+               fi
+               printf "\n  Press any key..."; read -rsn1 || true ;;
             8) if [[ -z "$bt_mac" ]]; then
                    printf "  ${R}IPHONE_BT_MAC not set — go to Settings → [1]${NC}\n"
                    sleep 2
@@ -652,6 +674,14 @@ show_network() {
                    && printf "  ${G}✓ BT tethering stopped${NC}\n" \
                    || printf "  ${R}✗ stop failed${NC}\n"
                sleep 2 ;;
+            h|H) printf "  Running captive portal check...\n"
+               /usr/local/bin/captive-check.sh 2>/dev/null || true
+               if [ -f /tmp/captive-portal-active ]; then
+                   printf "  ${R}⚠  Portal still active — authenticate via your browser first${NC}\n"
+               else
+                   printf "  ${G}✓ Internet clear — no captive portal${NC}\n"
+               fi
+               sleep 3 ;;
             q|Q) return ;;
         esac
     done

@@ -39,6 +39,9 @@ if can_reach_wan; then
         notify "travel-router: WAN restored" low
     fi
     echo 0 > "$STATE_FILE"
+    # Pings succeed even behind a captive portal (the gateway responds).
+    # Always run the captive-check so portal state is kept up-to-date.
+    /usr/local/bin/captive-check.sh
     exit 0
 fi
 
