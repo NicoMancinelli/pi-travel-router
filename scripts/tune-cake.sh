@@ -15,8 +15,22 @@ fi
 
 mkdir -p /var/lib/travel-router
 
-logger -t "$LOG_TAG" "Running upload speedtest on wlan0..."
-UPLOAD_MBIT=$(speedtest-cli --simple --no-download 2>/dev/null \
+# M16: bind speedtest to the active uplink interface so measurements reflect
+# the correct path, not whatever route the kernel picks by default.
+UPLINK_IFACE="wlan0"
+UPLINK_STATE="/var/lib/travel-router/uplink.state"
+if [ -f "$UPLINK_STATE" ]; then
+    _candidate=$(cat "$UPLINK_STATE" 2>/dev/null | tr -d '[:space:]')
+    if [ -n "$_candidate" ] && ip link show "$_candidate" >/dev/null 2>&1; then
+        UPLINK_IFACE="$_candidate"
+    fi
+fi
+if [ "$UPLINK_IFACE" != "wlan0" ]; then
+    logger -t "$LOG_TAG" "Active uplink is $UPLINK_IFACE (not wlan0); speedtest will use $UPLINK_IFACE"
+fi
+
+logger -t "$LOG_TAG" "Running upload speedtest on $UPLINK_IFACE..."
+UPLOAD_MBIT=$(speedtest-cli --simple --no-download --interface "$UPLINK_IFACE" 2>/dev/null \
     | awk '/Upload/{printf "%d", int($2 * 0.9)}') || true
 
 if [[ -z "$UPLOAD_MBIT" || "$UPLOAD_MBIT" -lt 1 ]]; then

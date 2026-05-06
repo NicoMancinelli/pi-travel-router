@@ -48,8 +48,10 @@ logger -t "$LOG_TAG" "Battery: ${LEVEL}%  (shutdown threshold: ${THRESHOLD}%)"
 
 if [[ "$LEVEL" -le "$THRESHOLD" ]]; then
     logger -t "$LOG_TAG" "CRITICAL: battery ${LEVEL}% <= threshold ${THRESHOLD}% — shutting down"
+    # H12: synchronous notify (no &) so the message is sent before shutdown;
+    # sleep 20 gives the notification time to reach the server.
     /usr/local/bin/notify-router.sh \
         "UPS battery critical: ${LEVEL}% — safe shutdown initiated" 2>/dev/null || true
-    sleep 5
+    sleep 20
     shutdown -h now "UPS battery critical (${LEVEL}%)"
 fi

@@ -49,7 +49,7 @@ latest_version() {
 
 download_release() {
     local version="$1" tmpdir="$2"
-    local url
+    local url tarball="${tmpdir}/release.tar.gz"
 
     # Try release tarball first; fall back to branch archive for commit-based versions
     if [[ "$version" =~ ^v?[0-9] ]]; then
@@ -59,11 +59,19 @@ download_release() {
     fi
 
     log "Downloading $url"
-    curl -sfL --max-time 120 "$url" -o "${tmpdir}/release.tar.gz" || {
+    curl -sfL --max-time 120 "$url" -o "$tarball" || {
         log "Download failed"
         return 1
     }
-    tar -xzf "${tmpdir}/release.tar.gz" -C "$tmpdir" --strip-components=1
+
+    # H6: integrity check — verify the tarball is a valid tar archive
+    tar -tjf "$tarball" >/dev/null 2>&1 || {
+        log "Downloaded tarball is corrupt"
+        return 1
+    }
+    log "Tarball integrity OK"
+
+    tar -xzf "$tarball" -C "$tmpdir" --strip-components=1
 }
 
 # ── Apply update ─────────────────────────────────────────────────────────────
@@ -81,12 +89,30 @@ apply_update() {
             dest="/usr/local/bin/${name}"
         fi
         if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
-            cp "$script" "$dest"
+            # C5: atomic write — copy to .tmp then rename so running scripts are not
+            # overwritten in-place while executing
+            cp "$script" "${dest}.tmp" && mv "${dest}.tmp" "$dest"
             chmod 755 "$dest"
             log "  updated script: $name"
             changed=1
         fi
     done
+
+    # H7: portal example scripts → /etc/travel-router/portals/examples/
+    if [ -d "${src}/scripts/portals" ]; then
+        mkdir -p /etc/travel-router/portals/examples
+        for portal in "${src}"/scripts/portals/*.sh; do
+            [ -f "$portal" ] || continue
+            pname=$(basename "$portal")
+            pdest="/etc/travel-router/portals/examples/${pname}"
+            if ! diff -q "$portal" "$pdest" >/dev/null 2>&1; then
+                cp "$portal" "${pdest}.tmp" && mv "${pdest}.tmp" "$pdest"
+                chmod 755 "$pdest"
+                log "  updated portal example: $pname"
+                changed=1
+            fi
+        done
+    fi
 
     # Systemd units (service + timer files)
     local reload_needed=0
@@ -94,7 +120,7 @@ apply_update() {
         name=$(basename "$unit")
         dest="/etc/systemd/system/${name}"
         if ! diff -q "$unit" "$dest" >/dev/null 2>&1; then
-            cp "$unit" "$dest"
+            cp "$unit" "${dest}.tmp" && mv "${dest}.tmp" "$dest"
             log "  updated unit: $name"
             reload_needed=1
             changed=1
@@ -118,7 +144,9 @@ apply_update() {
     # install.sh (for reference; never auto-executed)
     if ! diff -q "${src}/install.sh" /usr/local/share/travel-router/install.sh >/dev/null 2>&1; then
         mkdir -p /usr/local/share/travel-router
-        cp "${src}/install.sh" /usr/local/share/travel-router/install.sh
+        cp "${src}/install.sh" /usr/local/share/travel-router/install.sh.tmp \
+            && mv /usr/local/share/travel-router/install.sh.tmp \
+                  /usr/local/share/travel-router/install.sh
         chmod 755 /usr/local/share/travel-router/install.sh
         log "  updated install.sh (at /usr/local/share/travel-router/install.sh — not auto-run)"
         changed=1

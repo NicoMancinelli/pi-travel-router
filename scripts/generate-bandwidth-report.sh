@@ -27,14 +27,18 @@ printf '<h2>uap0 — AP Client Usage</h2><pre>\n'
 vnstat -i uap0 2>/dev/null || printf '(no data)\n'
 printf '</pre>\n'
 # Include any active USB tether interface
+# M6: nullglob prevents enx* from being treated as a literal string when no
+#      interface matches the glob pattern.
+shopt -s nullglob
+# M7: no break — report all active tether interfaces, not just the first one.
 for _iface in enx* rndis0 bnep0; do
     if ip link show "$_iface" >/dev/null 2>&1 && vnstat -i "$_iface" >/dev/null 2>&1; then
         printf '<h2>%s — Tether Uplink</h2><pre>\n' "$_iface"
         vnstat -i "$_iface" 2>/dev/null || true
         printf '</pre>\n'
-        break
     fi
 done
+shopt -u nullglob
 printf '</body></html>\n'
 } > "$OUT"
 

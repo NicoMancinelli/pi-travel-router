@@ -28,6 +28,13 @@
 
 set -euo pipefail
 
+# M21: jq is used below for URL-encoding credentials; fail fast if missing.
+# Alternative without jq: python3 -c "import urllib.parse; print(urllib.parse.quote('...'))"
+command -v jq >/dev/null 2>&1 || {
+    echo "jq required for URL encoding — install with: apt-get install jq" >&2
+    exit 1
+}
+
 REDIRECT_URL="${1:-}"
 COOKIE_JAR="/tmp/portal-cookies-$$.txt"
 CONNECT_CHECK="http://connectivitycheck.gstatic.com/generate_204"
@@ -50,6 +57,7 @@ if [ -z "$PORTAL_USER" ] || [ -z "$PORTAL_PASS" ]; then
 fi
 # ─────────────────────────────────────────────────────────────────────────────
 
+# shellcheck disable=SC2329
 cleanup() { rm -f "$COOKIE_JAR"; }
 trap cleanup EXIT
 

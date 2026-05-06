@@ -87,12 +87,13 @@ nft -c -f "$NFT_NEW" || {
     exit 1
 }
 
-if nft -f "$NFT_NEW"; then
-    mv "$NFT_NEW" "$NFT_FILE"
+# H8: persist to disk FIRST so a reboot always loads the new file,
+# then load from the now-persisted path.
+mv "$NFT_NEW" "$NFT_FILE"
+if nft -f "$NFT_FILE"; then
     echo "Blocklist loaded: $COUNT entries (max $MAX_BLOCKLIST_ENTRIES)"
 else
-    echo "nft load failed — previous in-kernel rules remain active"
-    rm -f "$NFT_NEW"
+    echo "nft load failed — file persisted to disk but in-kernel rules may be stale"
     exit 1
 fi
 

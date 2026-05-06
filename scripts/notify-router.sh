@@ -16,10 +16,14 @@ if [ -z "$NTFY_TOPIC" ]; then
     exit 0
 fi
 
-curl -s \
+# H9: URL-encode the topic to handle special characters safely
+topic_enc=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" \
+    "$NTFY_TOPIC" 2>/dev/null || printf '%s' "$NTFY_TOPIC")
+
+curl -s --max-time 10 \
     -H "Priority: $PRIORITY" \
     -H "Title: Travel Router" \
     -d "$MSG" \
-    "https://ntfy.sh/$NTFY_TOPIC" > /dev/null 2>&1
+    "https://ntfy.sh/${topic_enc}" > /dev/null 2>&1
 
 logger "notify-router: sent '$MSG'"

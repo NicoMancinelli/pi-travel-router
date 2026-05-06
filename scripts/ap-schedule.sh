@@ -7,6 +7,13 @@ set -euo pipefail
 source /etc/default/travel-router 2>/dev/null || true
 
 ACTION="${1:-}"
+
+# M19: verify hostapd is running before issuing cli commands
+systemctl is-active --quiet hostapd || {
+    /usr/local/bin/notify-router.sh "AP schedule: hostapd not running" high 2>/dev/null || true
+    exit 1
+}
+
 case "$ACTION" in
     disable)
         hostapd_cli -p /var/run/hostapd disable 2>/dev/null || true

@@ -15,7 +15,12 @@ if ! ip link show "$IFACE" >/dev/null 2>&1; then
     exit 1
 fi
 
-sleep 3  # wait for driver init (ipheth iOS trust handshake; RNDIS/CDC-ECM enumeration)
+# M18: poll for the interface to become UP instead of unconditional sleep
+for _ in $(seq 1 15); do
+    ip link show "$IFACE" 2>/dev/null | grep -q "state UP" && break
+    sleep 1
+done
+# (interface may still not be UP if the driver is slow — NM will handle DHCP regardless)
 
 logger "start-tether: bringing up $IFACE"
 # Let NetworkManager handle DHCP; explicit connect as fallback if NM hasn't auto-connected

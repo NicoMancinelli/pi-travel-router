@@ -1,5 +1,6 @@
 #!/bin/bash
 # Apply CAKE qdisc to uplink interfaces for bufferbloat control
+set -euo pipefail
 # CAKE handles egress queue fairness; TCP BBR handles sender-side congestion
 # Run at boot via cake-qdisc.service; also called by start-tether.sh per tether
 #

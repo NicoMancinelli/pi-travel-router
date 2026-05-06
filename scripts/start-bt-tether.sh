@@ -16,7 +16,14 @@ if [ -z "$BT_MAC" ]; then
 fi
 
 logger -t bt-tether "Connecting Bluetooth PAN to $BT_MAC"
-bt-pan --dbus client "$BT_MAC" &
+
+# H10: check if bt-pan is already running before starting a new instance
+if [ -f /run/bt-pan.pid ] && kill -0 "$(cat /run/bt-pan.pid)" 2>/dev/null; then
+    logger -t bt-tether "bt-pan already running"
+else
+    bt-pan --dbus client "$BT_MAC" &
+    echo $! > /run/bt-pan.pid
+fi
 
 for _ in $(seq 1 15); do
     ip link show bnep0 >/dev/null 2>&1 && break
@@ -28,7 +35,8 @@ if ! ip link show bnep0 >/dev/null 2>&1; then
     exit 1
 fi
 
-dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether || true
+# H10: Bookworm uses nmcli/dhcpcd; dhclient is not present
+nmcli device connect bnep0 2>/dev/null || dhcpcd bnep0 2>/dev/null || true
 
 ip route del default dev bnep0 2>/dev/null || true
 GW=$(ip route show dev bnep0 | awk '/via/{print $3}' | head -1)

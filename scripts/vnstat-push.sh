@@ -14,18 +14,40 @@ LOG_TAG="vnstat-push"
 _push_iface() {
     local iface=$1
     local json rx_today tx_today rx_month tx_month
-    json=$(vnstat --json d 1 -i "$iface" 2>/dev/null) || return 0
 
-    rx_today=$(printf '%s' "$json" \
-        | awk -F'"rx":' 'NR==1{split($2,a,","); print a[1]+0}')
-    tx_today=$(printf '%s' "$json" \
-        | awk -F'"tx":' 'NR==1{split($2,a,","); print a[1]+0}')
+    # M17: use Python JSON parsing (same approach as vnstat-metrics.sh) to avoid
+    # brittle awk field-splitting on vnstat's JSON output structure.
+    json=$(vnstat --json d 1 -i "$iface" 2>/dev/null) || return 0
+    rx_today=$(printf '%s' "$json" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+ifaces=d.get('interfaces',[])
+days=ifaces[0].get('traffic',{}).get('day',[]) if ifaces else []
+print(days[-1].get('rx',0) if days else 0)
+" 2>/dev/null) || rx_today=0
+    tx_today=$(printf '%s' "$json" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+ifaces=d.get('interfaces',[])
+days=ifaces[0].get('traffic',{}).get('day',[]) if ifaces else []
+print(days[-1].get('tx',0) if days else 0)
+" 2>/dev/null) || tx_today=0
 
     json=$(vnstat --json m 1 -i "$iface" 2>/dev/null) || return 0
-    rx_month=$(printf '%s' "$json" \
-        | awk -F'"rx":' 'NR==1{split($2,a,","); print a[1]+0}')
-    tx_month=$(printf '%s' "$json" \
-        | awk -F'"tx":' 'NR==1{split($2,a,","); print a[1]+0}')
+    rx_month=$(printf '%s' "$json" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+ifaces=d.get('interfaces',[])
+months=ifaces[0].get('traffic',{}).get('month',[]) if ifaces else []
+print(months[-1].get('rx',0) if months else 0)
+" 2>/dev/null) || rx_month=0
+    tx_month=$(printf '%s' "$json" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+ifaces=d.get('interfaces',[])
+months=ifaces[0].get('traffic',{}).get('month',[]) if ifaces else []
+print(months[-1].get('tx',0) if months else 0)
+" 2>/dev/null) || tx_month=0
 
     local metrics
     metrics=$(printf \

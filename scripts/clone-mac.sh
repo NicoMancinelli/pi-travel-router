@@ -4,7 +4,7 @@
 #
 # Usage:
 #   sudo clone-mac.sh <XX:XX:XX:XX:XX:XX>   # clone specific MAC
-#   sudo clone-mac.sh --restore              # restore randomised MAC
+#   sudo clone-mac.sh --restore              # restore permanent/hardware MAC
 #   sudo clone-mac.sh --show                 # print current wlan0 MAC
 #
 # Typical workflow:
@@ -38,12 +38,14 @@ show_mac() {
 }
 
 restore_mac() {
-    log "Restoring randomised MAC on $IFACE"
+    # H13: use -p to restore the permanent/hardware-burned MAC address,
+    # not -r which would assign a new random MAC.
+    log "Restoring permanent (hardware) MAC on $IFACE"
     ip link set "$IFACE" down
-    macchanger -r "$IFACE"
+    macchanger -p "$IFACE"
     ip link set "$IFACE" up
-    log "MAC restored (random)"
-    notify "wlan0 MAC restored to random" low
+    log "MAC restored (permanent/hardware)"
+    notify "wlan0 MAC restored to permanent hardware address" low
 }
 
 clone_mac() {

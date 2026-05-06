@@ -116,7 +116,8 @@ echo "  1. Open Google Authenticator, Authy, or any TOTP app on your phone."
 echo "  2. Tap 'Add account' → 'Scan QR code' and scan the code above."
 echo "     (Or tap 'Enter setup key' and paste the URI if you can't scan.)"
 echo ""
-echo -e "  ${Y}Secret key (for manual entry):${NC} ${TOTP_SECRET}"
+# M20: only print the raw secret when running interactively (stdout is a TTY)
+[ -t 1 ] && echo -e "  ${Y}Secret key (for manual entry):${NC} ${TOTP_SECRET}"
 echo ""
 
 # ── 11 & 12. Verification guidance (no programmatic check) ───────────────────
@@ -167,7 +168,7 @@ fi
 echo ""
 echo -e "${G}━━ Summary ━━${NC}"
 echo ""
-ok "TOTP secret:     ${TOTP_SECRET}"
+[ -t 1 ] && ok "TOTP secret:     ${TOTP_SECRET}"
 ok "Config file:     ${GA_FILE}"
 ok "PAM config:      ${PAM_SSHD}"
 if grep -q "nullok" "$PAM_SSHD" 2>/dev/null; then
