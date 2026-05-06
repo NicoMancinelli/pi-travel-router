@@ -478,26 +478,49 @@ def _load_preseed() -> dict[str, str]:
         with open(firstrun_path, "r", encoding="utf-8", errors="replace") as fh:
             content = fh.read()
         result: dict[str, str] = {}
-        # SSH pubkey: look for lines with 'echo 'ssh-' or authorized_keys
+        # SSH pubkey: scan every line for an OpenSSH public-key token.
+        # Imager encodes the key differently across versions:
+        #   echo 'ssh-ed25519 AAAA...' >> authorized_keys
+        #   SSHPUBKEY="ssh-ed25519 AAAA..."
+        #   install ... <<< "ssh-rsa AAAA..."
+        # Scanning every line (not just ones with "echo" or "authorized_keys")
+        # is more robust across Imager versions.
         pubkey = None
         for line in content.splitlines():
-            if "authorized_keys" in line or ("echo" in line and "ssh-" in line):
-                m = re.search(r"(ssh-(?:rsa|ed25519|dss)|ecdsa-sha2-\S+\s+\S+)", line)
-                if m:
-                    pubkey = m.group(1).strip()
-                    break
+            m = re.search(
+                r"(ssh-(?:rsa|ed25519|dss|xmss)|ecdsa-sha2-[A-Za-z0-9]+)"
+                r"\s+([A-Za-z0-9+/]+=*)"
+                r"(\s+\S+)?",
+                line,
+            )
+            if m:
+                # Reconstruct key: type + blob + optional comment
+                pubkey = m.group(1) + " " + m.group(2)
+                if m.group(3):
+                    pubkey += m.group(3)
+                pubkey = pubkey.strip()
+                break
         if pubkey:
             result["SSH_ADMIN_KEY"] = pubkey
             try:
                 os.makedirs("/root/.ssh", mode=0o700, exist_ok=True)
+                os.chmod("/root/.ssh", 0o700)
                 ak_path = "/root/.ssh/authorized_keys"
                 existing = ""
                 if os.path.exists(ak_path):
-                    with open(ak_path) as f:
+                    # Read before checking — imager-compat.sh may have already
+                    # written the key; avoid creating a duplicate line.
+                    with open(ak_path, "r", encoding="utf-8", errors="replace") as f:
                         existing = f.read()
                 if pubkey not in existing:
-                    with open(ak_path, "a") as f:
-                        f.write(pubkey + "\n")
+                    # Open with O_CREAT | O_APPEND and explicit 0o600 so the
+                    # file is never created world-readable (open("a") is
+                    # umask-dependent and can produce 0o644).
+                    fd = os.open(ak_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+                    try:
+                        os.write(fd, (pubkey + "\n").encode("utf-8"))
+                    finally:
+                        os.close(fd)
                 os.chmod(ak_path, 0o600)
             except Exception:
                 pass
