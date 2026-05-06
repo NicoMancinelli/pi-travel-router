@@ -42,9 +42,10 @@ collect free.txt                 free -h
 collect systemctl-failed.txt     systemctl list-units --state=failed --no-pager
 collect os-release.txt           cat /etc/os-release
 collect image-version.txt        cat /etc/travel-router-image-version
+collect runtime-version.txt     cat /etc/travel-router-version
 
 if [[ -f /etc/default/travel-router ]]; then
-    sed 's/\(AP_PASS\|TS_KEY\|SSH_ADMIN_KEY\|NTFY_TOPIC\|PASSWORD\|SECRET\|TOKEN\)=.*/\1=REDACTED/' \
+    sed -E 's/(AP_PASS|TS_KEY|SSH_ADMIN_KEY|NTFY_TOPIC|PASSWORD|SECRET|TOKEN|PASS|KEY)=[^ ]*/\1=REDACTED/gI' \
         /etc/default/travel-router > "${DIAG_DIR}/travel-router-config.txt" 2>/dev/null || true
 fi
 
