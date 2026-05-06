@@ -153,7 +153,12 @@ fi
 # ── Apply hostname ────────────────────────────────────────────────────────────
 if [[ -n "${ROUTER_HOSTNAME:-}" && "$ROUTER_HOSTNAME" != "travelrouter" ]]; then
     hostnamectl set-hostname "$ROUTER_HOSTNAME" 2>/dev/null || true
-    sed -i "s/travelrouter/$ROUTER_HOSTNAME/g" /etc/hosts 2>/dev/null || true
+    # L11: use Python for safe hostname substitution (avoids regex metacharacter issues)
+    python3 -c "
+import sys
+with open('/etc/hosts') as f: content = f.read()
+with open('/etc/hosts', 'w') as f: f.write(content.replace('travelrouter', sys.argv[1]))
+" "$ROUTER_HOSTNAME" 2>/dev/null || true
     echo "$ROUTER_HOSTNAME" > /etc/hostname
     ok "Hostname set to $ROUTER_HOSTNAME"
 fi
@@ -339,10 +344,11 @@ ctrl_interface_group=0
 beacon_int=100
 auth_algs=1
 wpa_key_mgmt=WPA-PSK
-ssid=$AP_SSID
+ssid=PLACEHOLDER_SSID
 channel=6
+# TODO: 5GHz support requires hw_mode=a and channel=36+ — add WIFI_CHANNEL and WIFI_HW_MODE config vars
 hw_mode=g
-wpa_passphrase=$AP_PASS
+wpa_passphrase=PLACEHOLDER_PASS
 interface=uap0
 wpa=2
 wpa_pairwise=CCMP
@@ -356,6 +362,17 @@ ht_capab=[HT40][SHORT-GI-20][DSSS_CCK-40]
 # DTIM=1: iOS wakes every beacon, halves interactive latency
 dtim_period=1
 EOF
+# C6: write SSID and passphrase safely via Python to avoid shell quoting issues
+python3 -c "
+import sys
+with open('/etc/hostapd/hostapd.conf') as f: lines = f.readlines()
+out = []
+for l in lines:
+    if l.startswith('ssid='): out.append('ssid=' + sys.argv[1] + '\n')
+    elif l.startswith('wpa_passphrase='): out.append('wpa_passphrase=' + sys.argv[2] + '\n')
+    else: out.append(l)
+with open('/etc/hostapd/hostapd.conf','w') as f: f.writelines(out)
+" "$AP_SSID" "$AP_PASS"
 ok "hostapd configured: SSID=$AP_SSID"
 
 # Apply regulatory domain immediately (takes effect without reboot).
@@ -478,13 +495,43 @@ EOF
 section "Travel router config defaults"
 
 install_file config/travel-router-defaults /etc/default/travel-router 600
-sed -i "s/^NTFY_TOPIC=.*/NTFY_TOPIC=\"${NTFY_TOPIC}\"/" /etc/default/travel-router
+
+# Helper: safely rewrite a key=value line in a file using Python (C11).
+# Handles values containing |, \, ", and other shell metacharacters.
+_safe_write_conf() {
+    local key="$1" val="$2" path="$3"
+    python3 -c "
+import sys, re
+key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f: lines = f.readlines()
+pat = re.compile(r'^' + re.escape(key) + r'=')
+new = key + '=\"' + val.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"') + '\"\n'
+lines = [new if pat.match(l) else l for l in lines]
+with open(path, 'w') as f: f.writelines(lines)
+" "$key" "$val" "$path"
+}
+
+DEFAULTS_FILE="/etc/default/travel-router"
 ENABLE_WAN_METRICS="${ENABLE_WAN_METRICS:-1}"
+
+# Write boolean flags (values are always 0 or 1 — safe with sed too, but use helper for consistency)
 for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR; do
-    sed -i "s/^${flag}=.*/${flag}=\"${!flag:-0}\"/" /etc/default/travel-router
+    _safe_write_conf "$flag" "${!flag:-0}" "$DEFAULTS_FILE"
 done
-[[ -n "${SPLIT_TUNNEL_DOMAINS:-}" ]] && sed -i "s|^SPLIT_TUNNEL_DOMAINS=.*|SPLIT_TUNNEL_DOMAINS=\"${SPLIT_TUNNEL_DOMAINS}\"|" /etc/default/travel-router
-[[ -n "$HEADSCALE_URL" ]] && sed -i "s|^HEADSCALE_URL=.*|HEADSCALE_URL=\"${HEADSCALE_URL}\"|" /etc/default/travel-router
+
+# Write string values safely (C11/H22)
+_safe_write_conf "NTFY_TOPIC"            "${NTFY_TOPIC:-}"               "$DEFAULTS_FILE"
+_safe_write_conf "HEADSCALE_URL"         "${HEADSCALE_URL:-}"            "$DEFAULTS_FILE"
+_safe_write_conf "SPLIT_TUNNEL_DOMAINS"  "${SPLIT_TUNNEL_DOMAINS:-}"     "$DEFAULTS_FILE"
+_safe_write_conf "IPHONE_BT_MAC"         "${IPHONE_BT_MAC:-}"            "$DEFAULTS_FILE"
+_safe_write_conf "SSH_ADMIN_KEY"         "${SSH_ADMIN_KEY:-}"            "$DEFAULTS_FILE"
+_safe_write_conf "AP_CLIENT_BANDWIDTH"   "${AP_CLIENT_BANDWIDTH:-unlimited}" "$DEFAULTS_FILE"
+_safe_write_conf "AP_DISABLE_TIME"       "${AP_DISABLE_TIME:-02:00}"     "$DEFAULTS_FILE"
+_safe_write_conf "AP_ENABLE_TIME"        "${AP_ENABLE_TIME:-07:00}"      "$DEFAULTS_FILE"
+_safe_write_conf "VPN_DEVICE_MACS"       "${VPN_DEVICE_MACS:-}"          "$DEFAULTS_FILE"
+# TOR_AP_PASS: store empty placeholder to avoid writing plaintext passphrase
+_safe_write_conf "TOR_AP_PASS"           ""                              "$DEFAULTS_FILE" 2>/dev/null || true
+
 ok "/etc/default/travel-router written"
 
 # ── 13. Systemd units ─────────────────────────────────────────────────────────
@@ -549,9 +596,17 @@ section "log2ram"
 
 if [[ -f /etc/log2ram.conf ]]; then
     sed -i 's/^SIZE=.*/SIZE=128M/' /etc/log2ram.conf
-    grep -q "JOURNALD_AWARE" /etc/log2ram.conf && \
-        sed -i 's/^JOURNALD_AWARE=.*/JOURNALD_AWARE=true/' /etc/log2ram.conf || \
-        echo "JOURNALD_AWARE=true" >> /etc/log2ram.conf
+    # L12: idempotent JOURNALD_AWARE update
+    python3 -c "
+import sys, re
+path = sys.argv[1]
+with open(path) as f: content = f.read()
+if 'JOURNALD_AWARE' not in content:
+    content += '\nJOURNALD_AWARE=true\n'
+else:
+    content = re.sub(r'JOURNALD_AWARE=\w+', 'JOURNALD_AWARE=true', content)
+with open(path, 'w') as f: f.write(content)
+" /etc/log2ram.conf
     ok "log2ram: SIZE=128M, JOURNALD_AWARE=true"
 fi
 
@@ -595,18 +650,33 @@ if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" ]]; then
     if iw dev wlan0 interface add uap1 type __ap 2>/dev/null; then
         iw dev uap1 del 2>/dev/null || true
 
+        # C7: TOR_AP_PASS must be set (guarded earlier), no fallback to 'changeme'
+        [[ -n "$TOR_AP_PASS" ]] || die "TOR_AP_PASS is empty"
         # Second BSS in hostapd.conf (uses same radio, separate SSID)
         if ! grep -q "^bss=uap1" /etc/hostapd/hostapd.conf; then
-            cat >> /etc/hostapd/hostapd.conf << EOF
+            cat >> /etc/hostapd/hostapd.conf << 'TOREOF'
 
 # Tor transparent-proxy AP (all traffic routed through Tor)
 bss=uap1
 ssid=TorAP
 wpa=2
-wpa_passphrase=${TOR_AP_PASS:-changeme}
+wpa_passphrase=PLACEHOLDER_TOR_PASS
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=CCMP
-EOF
+TOREOF
+            # C6/C7: write Tor passphrase safely via Python
+            python3 -c "
+import sys
+with open('/etc/hostapd/hostapd.conf') as f: lines = f.readlines()
+out = []
+in_tor_bss = False
+for l in lines:
+    if l.strip() == 'bss=uap1': in_tor_bss = True
+    if in_tor_bss and l.startswith('wpa_passphrase=PLACEHOLDER_TOR_PASS'):
+        out.append('wpa_passphrase=' + sys.argv[1] + '\n')
+    else: out.append(l)
+with open('/etc/hostapd/hostapd.conf','w') as f: f.writelines(out)
+" "$TOR_AP_PASS"
         fi
 
         install_file config/dnsmasq-tor-ap.conf /etc/dnsmasq.d/tor-ap.conf
@@ -897,9 +967,22 @@ fi
 section "Scheduled AP disable"
 
 if [[ "${ENABLE_AP_SCHEDULE:-0}" = "1" ]]; then
+    # H20: write drop-in overrides with user-supplied times
+    mkdir -p /etc/systemd/system/ap-disable.timer.d
+    cat > /etc/systemd/system/ap-disable.timer.d/time.conf << EOF
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* ${AP_DISABLE_TIME:-02:00}:00
+EOF
+    mkdir -p /etc/systemd/system/ap-enable.timer.d
+    cat > /etc/systemd/system/ap-enable.timer.d/time.conf << EOF
+[Timer]
+OnCalendar=
+OnCalendar=*-*-* ${AP_ENABLE_TIME:-07:00}:00
+EOF
+    systemctl daemon-reload
     systemctl enable ap-disable.timer ap-enable.timer 2>/dev/null || true
-    ok "AP schedule enabled: disable at 02:00, re-enable at 07:00"
-    ok "Customise: edit /etc/systemd/system/ap-disable.timer (OnCalendar=)"
+    ok "AP schedule enabled: disable at ${AP_DISABLE_TIME:-02:00}, re-enable at ${AP_ENABLE_TIME:-07:00}"
 else
     systemctl disable ap-disable.timer ap-enable.timer 2>/dev/null || true
     ok "AP schedule disabled (set ENABLE_AP_SCHEDULE=1 to activate)"
@@ -954,9 +1037,27 @@ ok "Log rotation configured (daily, 7-day retention, compressed)"
 section "Per-client bandwidth fairness (CAKE per-host)"
 
 if [[ "${ENABLE_CLIENT_QOS:-0}" = "1" ]]; then
+    # H21: actually apply CAKE and create a boot service
+    _safe_write_conf "AP_CLIENT_BANDWIDTH" "${AP_CLIENT_BANDWIDTH:-unlimited}" "$DEFAULTS_FILE"
+    if [[ -x /usr/local/bin/apply-cake.sh ]]; then
+        /usr/local/bin/apply-cake.sh 2>&1 | tee -a "$LOG" || warn "CAKE apply failed (will retry at boot)"
+    fi
+    cat > /etc/systemd/system/apply-cake.service << 'EOF'
+[Unit]
+Description=Apply CAKE qdisc on AP interface
+After=hostapd.service
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/apply-cake.sh
+[Install]
+WantedBy=multi-user.target
+EOF
+    systemctl daemon-reload
+    systemctl enable apply-cake.service 2>/dev/null || true
     ok "CAKE per-host enabled on uap0 (cap: ${AP_CLIENT_BANDWIDTH:-unlimited})"
-    ok "Edit AP_CLIENT_BANDWIDTH in /etc/default/travel-router to set a hard cap"
+    ok "apply-cake.service enabled for boot-time activation"
 else
+    systemctl disable apply-cake.service 2>/dev/null || true
     ok "Per-client QoS disabled (set ENABLE_CLIENT_QOS=1 to activate)"
 fi
 

@@ -11,6 +11,7 @@ import html
 import json
 import os
 import re
+import secrets
 import shlex
 import subprocess
 import sys
@@ -69,7 +70,20 @@ STRING_FIELDS = [
     "AP_CLIENT_BANDWIDTH",
     "AP_DISABLE_TIME",
     "AP_ENABLE_TIME",
+    "UPS_SHUTDOWN_THRESHOLD",
+    "PUSHGW_URL",
+    "TAILSCALE_UP_ARGS",
 ]
+
+# Module-level flag to prevent double-submit
+_installing = False
+
+# CSRF token generated at startup
+_csrf_token = secrets.token_hex(16)
+
+
+def _log(msg: str) -> None:
+    sys.stderr.write("[firstboot] " + msg.rstrip("\n") + "\n")
 
 
 def _first(form: dict, key: str, default: str = "") -> str:
@@ -100,12 +114,19 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     ntfy = _first(form, "NTFY_TOPIC").strip()
     if ntfy and not re.fullmatch(r"[A-Za-z0-9._-]+", ntfy):
         errors.append("ntfy.sh topic may only contain letters, numbers, dot, underscore, dash.")
+    if len(ntfy) > 64:
+        errors.append("ntfy.sh topic must be 64 characters or fewer")
     values["NTFY_TOPIC"] = ntfy
 
     ts_key = _first(form, "TS_KEY").strip()
     headscale_url = _first(form, "HEADSCALE_URL").strip()
     if ts_key and not headscale_url and not ts_key.startswith("tskey-auth-"):
         errors.append("Tailscale auth key must start with tskey-auth-.")
+    if headscale_url:
+        import urllib.parse
+        parsed = urllib.parse.urlparse(headscale_url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            errors.append("Headscale URL must be a valid http:// or https:// URL")
     values["TS_KEY"] = ts_key
     values["HEADSCALE_URL"] = headscale_url
 
@@ -117,8 +138,8 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     values["SPLIT_TUNNEL_DOMAINS"] = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
 
     hostname = _first(form, "ROUTER_HOSTNAME", "travelrouter").strip().lower()
-    if hostname and not re.fullmatch(r"[a-z0-9][a-z0-9\-]{0,62}", hostname):
-        errors.append("Hostname must be 1-63 chars: letters, numbers, and hyphens only.")
+    if hostname and not re.fullmatch(r"[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?", hostname):
+        errors.append("Hostname must be 1-63 chars: letters, numbers, and hyphens only (no leading/trailing hyphens).")
     values["ROUTER_HOSTNAME"] = hostname or "travelrouter"
 
     timezone = _first(form, "ROUTER_TIMEZONE").strip()
@@ -153,19 +174,27 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     values["IPHONE_BT_MAC"] = iphone_bt_mac
 
     ap_client_bandwidth = _first(form, "AP_CLIENT_BANDWIDTH", "unlimited").strip()
-    if ap_client_bandwidth and not re.fullmatch(r"[0-9]+(k|m|g)?bit|unlimited", ap_client_bandwidth, re.IGNORECASE):
+    if ap_client_bandwidth and not re.fullmatch(r"([0-9]+(k|m|g)?bit|unlimited)", ap_client_bandwidth, re.IGNORECASE):
         errors.append("Per-client bandwidth cap must be e.g. 50mbit, 10mbit, unlimited.")
     values["AP_CLIENT_BANDWIDTH"] = ap_client_bandwidth or "unlimited"
 
     ap_disable_time = _first(form, "AP_DISABLE_TIME", "02:00").strip()
-    if ap_disable_time and not re.fullmatch(r"[0-2][0-9]:[0-5][0-9]", ap_disable_time):
-        errors.append("AP off time must be in HH:MM format.")
+    if ap_disable_time and not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", ap_disable_time):
+        errors.append("AP off time must be in HH:MM format (00:00-23:59).")
     values["AP_DISABLE_TIME"] = ap_disable_time or "02:00"
 
     ap_enable_time = _first(form, "AP_ENABLE_TIME", "07:00").strip()
-    if ap_enable_time and not re.fullmatch(r"[0-2][0-9]:[0-5][0-9]", ap_enable_time):
-        errors.append("AP on time must be in HH:MM format.")
+    if ap_enable_time and not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", ap_enable_time):
+        errors.append("AP on time must be in HH:MM format (00:00-23:59).")
     values["AP_ENABLE_TIME"] = ap_enable_time or "07:00"
+
+    ups_threshold = _first(form, "UPS_SHUTDOWN_THRESHOLD", "10").strip()
+    if ups_threshold and not re.fullmatch(r"[0-9]{1,3}", ups_threshold):
+        errors.append("UPS shutdown threshold must be a number (percent).")
+    values["UPS_SHUTDOWN_THRESHOLD"] = ups_threshold or "10"
+
+    values["PUSHGW_URL"] = _first(form, "PUSHGW_URL").strip()
+    values["TAILSCALE_UP_ARGS"] = _first(form, "TAILSCALE_UP_ARGS").strip()
 
     # New root password (optional). Don't strip — passwords may legitimately
     # contain leading/trailing spaces, though rare; use as-is.
@@ -226,12 +255,14 @@ def _spawn_install() -> None:
     cmd = (
         f"source {shlex.quote(ENV_FILE)} && "
         f"cd {shlex.quote(REPO_DIR)} && "
-        f"bash install.sh > {shlex.quote(LOG_FILE)} 2>&1 && "
+        f"bash install.sh > {shlex.quote(LOG_FILE)} 2>&1; "
+        f"_rc=$?; "
+        f"if [ $_rc -eq 0 ]; then "
         f"{{ [[ -s {rootpw_q} ]] && chpasswd < {rootpw_q} && rm -f {rootpw_q} || true; }} && "
         f"touch {shlex.quote(DONE_FILE)} && "
         f"systemctl disable firstboot.service && "
-        f"reboot || "
-        f"{{ echo $? > {shlex.quote(FAIL_FILE)}; }}"
+        f"reboot; "
+        f"else echo $_rc > {shlex.quote(FAIL_FILE)}; fi"
     )
     subprocess.Popen(
         ["nohup", "bash", "-c", cmd],
@@ -418,8 +449,15 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_json(self, data: dict, code: int = 200) -> None:
+        body = json.dumps(data).encode("utf-8")
+        self._send(code, body, "application/json")
 
     def do_GET(self):  # noqa: N802
         if self.path == "/" or self.path.startswith("/?"):
@@ -429,9 +467,15 @@ class Handler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self._send(HTTPStatus.INTERNAL_SERVER_ERROR, b"index.html missing", "text/plain")
                 return
+            # Inject CSRF token
+            body = body.replace(
+                b"{{CSRF_TOKEN}}",
+                _csrf_token.encode("ascii"),
+            )
             if _preseed:
                 script = '<script>var _ps=' + json.dumps(_preseed) + ';'
                 script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
+                script += 'if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");if(e)e.value=_ps.ROUTER_HOSTNAME;}'
                 script += 'if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");if(e)e.value=_ps.SSH_ADMIN_KEY;}'
                 script += 'if(_ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=_ps.AP_PASS;}'
                 script += '</script>'
@@ -450,10 +494,12 @@ class Handler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.NOT_FOUND, b"Not found", "text/plain")
 
     def do_POST(self):  # noqa: N802
+        global _installing
         if self.path == "/retry":
-            for path in (ENV_FILE, FAIL_FILE, ROOTPW_FILE, LOG_FILE):
+            _installing = False
+            for path in (ENV_FILE, FAIL_FILE, ROOTPW_FILE, LOG_FILE, DONE_FILE):
                 try:
-                    os.remove(path)
+                    os.unlink(path)
                 except FileNotFoundError:
                     pass
             self.send_response(302)
@@ -463,20 +509,42 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/setup":
             self._send(HTTPStatus.NOT_FOUND, b"Not found", "text/plain")
             return
+        # L9: Content-Type validation
+        ct = self.headers.get("Content-Type", "")
+        if not ct.startswith("application/x-www-form-urlencoded"):
+            self._send_json({"error": "Expected application/x-www-form-urlencoded"}, code=415)
+            return
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length <= 0 or length > 1_000_000:
             self._send(HTTPStatus.BAD_REQUEST, b"Bad request", "text/plain")
             return
-        raw = self.rfile.read(length).decode("utf-8", errors="replace")
+        body_bytes = self.rfile.read(length)
+        # H23: strict UTF-8 decode
+        try:
+            raw = body_bytes.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            self._send_json({"error": "Invalid UTF-8 in request body"}, code=400)
+            return
         form = parse_qs(raw, keep_blank_values=True)
+        # L7: CSRF check
+        submitted_token = _first(form, "_csrf_token")
+        if not secrets.compare_digest(submitted_token, _csrf_token):
+            self._send_json({"error": "Invalid or missing CSRF token"}, code=403)
+            return
         values, errors, new_root_pw = _validate(form)
         if errors:
             self._send(HTTPStatus.BAD_REQUEST, _error_page(errors))
             return
+        # C9: double-submit guard
+        if _installing:
+            self._send_json({"error": "Installation already in progress"}, code=409)
+            return
+        _installing = True
         try:
             _write_env_file(values)
             _write_rootpw_file(new_root_pw)
         except OSError as exc:
+            _installing = False
             self._send(
                 HTTPStatus.INTERNAL_SERVER_ERROR,
                 f"Failed to write config: {exc}".encode("utf-8"),
@@ -546,8 +614,9 @@ def _load_preseed() -> dict[str, str]:
                     finally:
                         os.close(fd)
                 os.chmod(ak_path, 0o600)
-            except Exception:
-                pass
+            except Exception as _e:
+                import traceback
+                _log(f"SSH key write error: {_e}\n{traceback.format_exc()}")
         # WiFi SSID: nmcli ... ssid "VALUE" or wpa SSID_VALUE style
         ssid = None
         m = re.search(r'nmcli.*\bssid\b\s+"([^"]+)"', content)
@@ -569,7 +638,7 @@ def _load_preseed() -> dict[str, str]:
             if m:
                 hostname = m.group(1).strip('"\'')
         if hostname:
-            result["AP_SSID"] = hostname
+            result["ROUTER_HOSTNAME"] = hostname
         # AP_PASS: explicitly pre-seeded by the user in firstrun.sh
         m = re.search(r'\bAP_PASS=(["\']?)([^"\'\s]+)\1', content)
         if m:
@@ -577,7 +646,9 @@ def _load_preseed() -> dict[str, str]:
             if len(ap_pass_val) >= 8:
                 result["AP_PASS"] = ap_pass_val
         return result
-    except Exception:
+    except Exception as e:
+        import traceback
+        _log(f"preseed error: {e}\n{traceback.format_exc()}")
         return {}
 
 

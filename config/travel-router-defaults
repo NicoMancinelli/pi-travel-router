@@ -83,3 +83,6 @@ ENABLE_WAN_METRICS="1"
 # Requires a PiSugar HAT connected to GPIO/I2C.
 ENABLE_UPS_MONITOR="0"
 UPS_SHUTDOWN_THRESHOLD="10"
+
+# Tor AP passphrase (set during install; stored empty here to avoid plaintext).
+TOR_AP_PASS=""

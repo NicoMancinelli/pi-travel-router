@@ -5,7 +5,9 @@ Description=Travel Router first-boot setup wizard
 # Before= in imager-compat.service is not enough on its own when
 # firstboot.service lives in multi-user.target — make the ordering
 # explicit here too so systemd enforces it regardless of target changes.
-After=network.target avahi-daemon.service imager-compat.service
+After=network.target network-online.target avahi-daemon.service imager-compat.service
+Wants=network-online.target
+RequiresMountsFor=/opt
 ConditionPathExists=!/var/lib/travel-router/firstboot-done
 
 [Service]
@@ -14,6 +16,7 @@ ExecStartPre=/bin/mkdir -p /var/lib/travel-router
 ExecStart=/usr/bin/python3 /opt/pi-travel-router/firstboot/server.py
 Restart=on-failure
 RestartSec=5
+TimeoutStartSec=infinity
 StandardOutput=journal
 StandardError=journal
 

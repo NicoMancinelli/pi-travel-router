@@ -57,6 +57,7 @@ button.submit:hover{background:#2ea043}
 <div class="errors" id="errsum" role="alert"><strong>Please fix the following:</strong><ul id="errlist"></ul></div>
 
 <form method="POST" action="/setup" autocomplete="off" id="setupform">
+<input type="hidden" name="_csrf_token" value="{{CSRF_TOKEN}}">
 
 <fieldset>
 <legend>Wi-Fi access point</legend>
@@ -200,6 +201,22 @@ button.submit:hover{background:#2ea043}
 <input id="iphone_bt_mac" name="IPHONE_BT_MAC" type="text" placeholder="AA:BB:CC:DD:EE:FF" autocomplete="off" autocorrect="off" autocapitalize="none">
 <span class="hint">Find in iOS Settings → General → About → Bluetooth. Format: AA:BB:CC:DD:EE:FF</span>
 </div>
+
+<div class="optgroup">
+<label for="tailscale_up_args" class="optional">Tailscale up args</label>
+<input id="tailscale_up_args" name="TAILSCALE_UP_ARGS" type="text" value="--advertise-routes=10.3.141.0/24 --accept-dns=false" autocomplete="off" autocorrect="off" autocapitalize="none">
+<span class="hint">Extra arguments passed to <code>tailscale up</code>. Common additions: <code>--exit-node=</code>, <code>--ssh</code>.</span>
+</div>
+
+<div class="optgroup">
+<label for="pushgw_url" class="optional">Prometheus push gateway URL</label>
+<input id="pushgw_url" name="PUSHGW_URL" type="text" placeholder="http://pushgateway:9091" autocomplete="off" inputmode="url">
+<span class="hint">Optional. Pushes vnStat metrics to a Prometheus push gateway. Leave blank to disable.</span>
+
+<label for="ups_shutdown_threshold" class="optional">UPS shutdown threshold (%)</label>
+<input id="ups_shutdown_threshold" name="UPS_SHUTDOWN_THRESHOLD" type="number" value="10" min="1" max="99" autocomplete="off">
+<span class="hint">Battery percentage at which the Pi safely shuts down (PiSugar boards only). Default: 10%.</span>
+</div>
 </details>
 
 <fieldset>
@@ -291,9 +308,14 @@ button.submit:hover{background:#2ea043}
     else{pw.type='password';btn.textContent='Show';}
   });
   var WORDS=['oak','elm','ash','ivy','bay','fog','ice','jet','log','mud','net','orb','pit','rod','sap','tar','urn','wax','yew','arc','bud','cob','dew','fin','gem','hub','imp','jar','keg','lex','mop','nib','ore','pod','rut','sod','tin','vat','wig','yak','zinc','wolf','tide','peak','sand','vine','hawk','moon','coal','flame','river','arrow','blade','cloud','crane','delta','eagle','field','grove','hedge','inlet','jade','kelp','lark','maple','marsh','orbit','palm','ridge','stone','tower','vale','amber','birch','cedar','depth','ember','flint','glade','haven','islet','knoll','ledge','manor','notch','olive','plume','quill','raven','slate','thyme','umbra','wheat','xylem'];
+  function randWord(){
+    var arr=new Uint32Array(1);
+    crypto.getRandomValues(arr);
+    return WORDS[Math.floor((arr[0]/(0xFFFFFFFF+1))*WORDS.length)];
+  }
   function genPass(){
     var out=[];
-    for(var i=0;i<4;i++){out.push(WORDS[Math.floor(Math.random()*WORDS.length)]);}
+    for(var i=0;i<4;i++){out.push(randWord());}
     return out.join('-');
   }
   document.getElementById('genpw').addEventListener('click',function(){
