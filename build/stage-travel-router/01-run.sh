@@ -248,6 +248,28 @@ EOF
 
 echo "imager-compat.service installed and enabled"
 
+# Create the captive portal hooks directory and install example scripts.
+# Scripts in the live directory (/etc/travel-router/portals/) are auto-loaded
+# by captive-check.sh when their name matches the current SSID slug.
+# Examples are installed to the examples/ subdirectory — they are NOT loaded
+# automatically; users copy and customise them for specific hotel networks.
+PORTALS_DIR="${ROOTFS_DIR}/etc/travel-router/portals"
+PORTALS_EXAMPLES_DIR="${PORTALS_DIR}/examples"
+PORTALS_SRC="${TARGET_DIR}/scripts/portals"
+
+install -d -m 0755 "${PORTALS_DIR}"
+install -d -m 0755 "${PORTALS_EXAMPLES_DIR}"
+
+if [ -d "${PORTALS_SRC}" ]; then
+    for f in "${PORTALS_SRC}"/*.sh; do
+        [ -f "$f" ] || continue
+        install -m 0644 "$f" "${PORTALS_EXAMPLES_DIR}/"
+    done
+    echo "Portal example scripts installed to ${PORTALS_EXAMPLES_DIR}"
+else
+    echo "WARNING: ${PORTALS_SRC} not found in repo; portal examples not installed."
+fi
+
 # Image version stamp.
 cat > "${ROOTFS_DIR}/etc/travel-router-image-version" <<EOF
 git_sha=${GIT_SHA}
