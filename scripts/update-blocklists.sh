@@ -16,6 +16,7 @@ fi
 BLOCKLIST_URL="https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset"
 TMP_FILE=$(mktemp /tmp/firehol_XXXXXX.netset)
 NFT_FILE="/etc/nftables.d/blocklists.nft"
+mkdir -p /etc/nftables.d
 NFT_NEW=$(mktemp /etc/nftables.d/blocklists_XXXXXX.nft)
 trap 'rm -f "$TMP_FILE" "$NFT_NEW"' EXIT
 MAX_BLOCKLIST_ENTRIES="${MAX_BLOCKLIST_ENTRIES:-20000}"
@@ -30,8 +31,6 @@ if [ "$MAX_BLOCKLIST_ENTRIES" -lt 1 ]; then
     echo "MAX_BLOCKLIST_ENTRIES must be greater than 0"
     exit 1
 fi
-
-mkdir -p /etc/nftables.d
 
 echo "Fetching Firehol Level 1 blocklist..."
 curl -sf --max-time 60 -o "$TMP_FILE" "$BLOCKLIST_URL" || {

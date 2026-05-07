@@ -783,10 +783,11 @@ wpa_passphrase=PLACEHOLDER_TOR_PASS
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=CCMP
 TOREOF
-            # C6/C7: write Tor passphrase safely via Python
+            # C6/C7: write Tor passphrase safely via Python (atomic mktemp+replace)
             python3 -c "
-import sys
-with open('/etc/hostapd/hostapd.conf') as f: lines = f.readlines()
+import sys, os, tempfile
+path = '/etc/hostapd/hostapd.conf'
+with open(path) as f: lines = f.readlines()
 out = []
 in_tor_bss = False
 for l in lines:
@@ -794,7 +795,13 @@ for l in lines:
     if in_tor_bss and l.startswith('wpa_passphrase=PLACEHOLDER_TOR_PASS'):
         out.append('wpa_passphrase=' + sys.argv[1] + '\n')
     else: out.append(l)
-with open('/etc/hostapd/hostapd.conf','w') as f: f.writelines(out)
+fd, tmp = tempfile.mkstemp(dir='/etc/hostapd', prefix='hostapd.conf.')
+try:
+    with os.fdopen(fd, 'w') as fh: fh.writelines(out)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+except:
+    os.unlink(tmp); raise
 " "$TOR_AP_PASS"
         fi
 

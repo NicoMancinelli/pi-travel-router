@@ -153,6 +153,12 @@ with open(tmp, 'w') as fh:
     fh.writelines(lines)
 os.replace(tmp, path)
 PY
+    # shellcheck disable=SC2181
+    if [[ $? -ne 0 ]]; then
+        printf "  ${R}✗ Failed to save — is /etc/default/travel-router writable?${NC}\n"
+        sleep 2
+        return
+    fi
     printf "  ${G}✓ Saved${NC}\n"
 }
 
@@ -988,20 +994,36 @@ show_settings() {
                 "AP Disable Time  (HH:MM, requires ENABLE_AP_SCHEDULE=1)"
                 # shellcheck source=/dev/null
                 source /etc/default/travel-router 2>/dev/null || true
-                mkdir -p /etc/systemd/system/ap-disable.timer.d
-                printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
-                    "${AP_DISABLE_TIME:-02:00}" > /etc/systemd/system/ap-disable.timer.d/time.conf
-                systemctl daemon-reload 2>/dev/null || true
-                sleep 1 ;;
+                if [[ ! "${AP_DISABLE_TIME:-02:00}" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+                    printf "  ${R}✗ Invalid time format — drop-in not written${NC}\n"
+                    sleep 2
+                else
+                    mkdir -p /etc/systemd/system/ap-disable.timer.d
+                    _dropin_tmp=$(mktemp /etc/systemd/system/ap-disable.timer.d/time.conf.XXXXXX)
+                    printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
+                        "${AP_DISABLE_TIME:-02:00}" > "$_dropin_tmp" \
+                        && mv "$_dropin_tmp" /etc/systemd/system/ap-disable.timer.d/time.conf \
+                        || rm -f "$_dropin_tmp"
+                    systemctl daemon-reload 2>/dev/null || true
+                    sleep 1
+                fi ;;
             e|E) _cfg_edit AP_ENABLE_TIME \
                 "AP Enable Time  (HH:MM, requires ENABLE_AP_SCHEDULE=1)"
                 # shellcheck source=/dev/null
                 source /etc/default/travel-router 2>/dev/null || true
-                mkdir -p /etc/systemd/system/ap-enable.timer.d
-                printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
-                    "${AP_ENABLE_TIME:-07:00}" > /etc/systemd/system/ap-enable.timer.d/time.conf
-                systemctl daemon-reload 2>/dev/null || true
-                sleep 1 ;;
+                if [[ ! "${AP_ENABLE_TIME:-07:00}" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+                    printf "  ${R}✗ Invalid time format — drop-in not written${NC}\n"
+                    sleep 2
+                else
+                    mkdir -p /etc/systemd/system/ap-enable.timer.d
+                    _dropin_tmp=$(mktemp /etc/systemd/system/ap-enable.timer.d/time.conf.XXXXXX)
+                    printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
+                        "${AP_ENABLE_TIME:-07:00}" > "$_dropin_tmp" \
+                        && mv "$_dropin_tmp" /etc/systemd/system/ap-enable.timer.d/time.conf \
+                        || rm -f "$_dropin_tmp"
+                    systemctl daemon-reload 2>/dev/null || true
+                    sleep 1
+                fi ;;
             f|F) _cfg_edit UPS_SHUTDOWN_THRESHOLD \
                 "UPS Shutdown Threshold  (battery % to trigger safe shutdown)"; sleep 1 ;;
             g|G) _cfg_edit PUSHGW_URL \

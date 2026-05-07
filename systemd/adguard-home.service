@@ -1,6 +1,7 @@
 [Unit]
 Description=AdGuard Home DNS ad-blocker
-After=network.target
+After=network.target rc-local.service
+Wants=rc-local.service
 
 [Service]
 Type=simple

@@ -627,6 +627,9 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self._send(HTTPStatus.BAD_REQUEST, b"Expected application/x-www-form-urlencoded", "text/plain")
                 return
+            if _installing:
+                self._send(HTTPStatus.CONFLICT, b"Install still in progress", "text/plain")
+                return
             _installing = False
             for path in (ENV_FILE, FAIL_FILE, ROOTPW_FILE, LOG_FILE, DONE_FILE):
                 try:
@@ -779,7 +782,7 @@ def _load_preseed() -> dict[str, str]:
                 pubkey = m.group(1) + " " + m.group(2)
                 if m.group(3):
                     pubkey += m.group(3)
-                pubkey = pubkey.strip()
+                pubkey = pubkey.strip().rstrip("\"'")
                 break
         if pubkey:
             result["SSH_ADMIN_KEY"] = pubkey
