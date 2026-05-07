@@ -17,6 +17,8 @@ fi
 
 logger -t bt-tether "Connecting Bluetooth PAN to $BT_MAC"
 bt-pan --dbus client "$BT_MAC" &
+BT_PAN_PID=$!
+trap 'kill "$BT_PAN_PID" 2>/dev/null || true' EXIT
 
 for _ in $(seq 1 15); do
     ip link show bnep0 >/dev/null 2>&1 && break
@@ -33,7 +35,7 @@ dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether || true
 ip route del default dev bnep0 2>/dev/null || true
 GW=""
 for _ in $(seq 1 10); do
-    GW=$(ip route show dev bnep0 | awk '/via/{print $3; exit}')
+    GW=$(ip route show default dev bnep0 | awk '{for(i=1;i<=NF;i++){if($i=="via"){print $(i+1);exit}}}')
     [ -n "$GW" ] && break
     sleep 1
 done
@@ -47,5 +49,6 @@ tc qdisc replace dev bnep0 root cake bandwidth 3mbit besteffort 2>/dev/null || t
 
 /usr/local/bin/failover-watchdog.sh 2>/dev/null || true
 
+trap - EXIT  # bt-pan stays running intentionally; clear failure trap on success path
 logger -t bt-tether "BT PAN up: bnep0 via ${GW:-unknown} metric 300"
 /usr/local/bin/notify-router.sh "Bluetooth tether connected: bnep0" 2>/dev/null || true

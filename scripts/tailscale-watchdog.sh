@@ -11,6 +11,9 @@ STATE_DIR="/var/lib/travel-router"
 STATE_FILE="$STATE_DIR/ts-peers.json"
 mkdir -p "$STATE_DIR"
 
+exec 9>/run/lock/tailscale-watchdog.lock
+flock -n 9 || exit 0
+
 _notify() {
     local msg="$1" priority="${2:-normal}"
     if [ -n "$NTFY_TOPIC" ] && [ -x /usr/local/bin/notify-router.sh ]; then
@@ -59,4 +62,9 @@ if [ -f "$STATE_FILE" ]; then
         _notify "Tailscale peer lost: $lost" normal
     fi
 fi
-printf '%s\n' "$current_peers" > "$STATE_FILE"
+_tmp=$(mktemp "${STATE_DIR}/ts-peers.XXXXXX")
+if printf '%s\n' "$current_peers" > "$_tmp"; then
+    mv "$_tmp" "$STATE_FILE"
+else
+    rm -f "$_tmp"
+fi

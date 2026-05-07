@@ -10,6 +10,11 @@ if [ -z "$IFACE" ]; then
     exit 2
 fi
 
+if [[ ! "$IFACE" =~ ^(enx[0-9a-f]+|rndis0|usb0)$ ]]; then
+    logger -t start-tether "Unexpected interface: $IFACE"
+    exit 2
+fi
+
 if ! ip link show "$IFACE" >/dev/null 2>&1; then
     logger -t start-tether "Interface $IFACE not found"
     exit 1

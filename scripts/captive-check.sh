@@ -124,6 +124,7 @@ _probe() {
     local url="$1" expected_body="$2"
     # Write body to a temp file so we can check it without a second request
     local tmp; tmp=$(mktemp /tmp/captive-probe.XXXXXX)
+    trap 'rm -f "$tmp"' RETURN
     local code redirect_url
     code=$(curl -s -w "%{http_code}\n%{redirect_url}" \
         --max-time 6 --interface wlan0 \
@@ -205,7 +206,7 @@ else
         log "Captive portal detected (redirect='${REDIRECT_URL:-none}') — pausing Tailscale"
         # C2: write state file BEFORE tailscale down so an interrupted run is recoverable
         touch "$STATE_FILE"
-        tailscale down 2>/dev/null
+        tailscale down 2>/dev/null || true
         if attempt_portal_login "$REDIRECT_URL"; then
             log "Portal auto-login succeeded — restoring Tailscale"
             # N-H11: restore Tailscale immediately after successful portal login

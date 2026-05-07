@@ -39,9 +39,10 @@ save_rules() {
 
 # TTL, hop-limit, DSCP, and hop-by-hop rules are in /etc/nftables.conf.d/travel-router.nft
 
-# FORWARD: flush and rebuild each run — guarantees correct rule ordering.
-iptables -F FORWARD
+# FORWARD: set DROP policy BEFORE flush so there is never an open window
+# between the flush and the first ACCEPT rule being added.
 iptables -P FORWARD DROP
+iptables -F FORWARD
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # AP client isolation: prevent clients from reaching each other or the Pi LAN.
 iptables -A FORWARD -i uap0 -o uap0 -j DROP

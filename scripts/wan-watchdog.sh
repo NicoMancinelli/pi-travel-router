@@ -36,7 +36,8 @@ can_reach_wan() {
     # N-H4: primary check via ping; if all pings fail, confirm with dual HTTP probe
     # before declaring WAN down — avoids false reboot when ICMP is blocked.
     local target
-    for target in $WAN_PING_TARGETS; do
+    read -ra _ping_targets <<< "$WAN_PING_TARGETS"
+    for target in "${_ping_targets[@]}"; do
         ping -c 2 -W 3 "$target" > /dev/null 2>&1 && return 0
     done
     # All pings failed — try HTTP probes before concluding WAN is down
@@ -78,7 +79,8 @@ if can_reach_wan; then
     if [ "$_active_uplink" = "wlan0" ] || [ -z "$_active_uplink" ]; then
         # Pings succeed even behind a captive portal (the gateway responds).
         # Run the captive-check so portal state is kept up-to-date.
-        /usr/local/bin/captive-check.sh
+        /usr/local/bin/captive-check.sh 2>/dev/null || \
+            logger -t wan-watchdog "captive-check.sh exited non-zero ($?)"
     fi
     exit 0
 fi
@@ -139,5 +141,6 @@ if [ -z "$_active_uplink_fail" ]; then
         | head -1)
 fi
 if [ "$_active_uplink_fail" = "wlan0" ] || [ -z "$_active_uplink_fail" ]; then
-    /usr/local/bin/captive-check.sh
+    /usr/local/bin/captive-check.sh 2>/dev/null || \
+        logger -t wan-watchdog "captive-check.sh exited non-zero ($?)"
 fi

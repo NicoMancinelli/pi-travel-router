@@ -8,10 +8,10 @@ source /etc/default/travel-router 2>/dev/null || true
 
 ACTION="${1:-}"
 
-# Wait for hostapd control socket (up to 10s)
+# Wait for hostapd to respond to a ping (up to 10s)
 _wait_hostapd() {
     for _ in $(seq 1 10); do
-        [ -S /var/run/hostapd ] || [ -d /var/run/hostapd ] && return 0
+        hostapd_cli -p /var/run/hostapd ping 2>/dev/null | grep -q PONG && return 0
         sleep 1
     done
     return 1

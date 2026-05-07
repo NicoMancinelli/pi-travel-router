@@ -8,8 +8,6 @@
 
 set -u
 
-command -v python3 >/dev/null 2>&1 || { logger -t notify-router "python3 not found, skipping notification"; exit 0; }
-
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
@@ -19,6 +17,11 @@ PRIORITY="${2:-default}"
 
 if [ -z "$NTFY_TOPIC" ]; then
     logger "notify-router: NTFY_TOPIC not set in /etc/default/travel-router"
+    exit 0
+fi
+
+if [[ ! "$NTFY_TOPIC" =~ ^[A-Za-z0-9_-]+$ ]]; then
+    logger -t notify-router "NTFY_TOPIC contains invalid characters, skipping"
     exit 0
 fi
 

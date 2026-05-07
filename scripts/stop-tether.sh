@@ -8,6 +8,11 @@ if [ -z "$IFACE" ]; then
     exit 2
 fi
 
+if [[ ! "$IFACE" =~ ^(enx[0-9a-f]+|rndis0|usb0)$ ]]; then
+    logger -t stop-tether "Unexpected interface: $IFACE"
+    exit 2
+fi
+
 logger "stop-tether: $IFACE removed, disconnecting via NM"
 nmcli device disconnect "$IFACE" 2>/dev/null || true
 logger "stop-tether: done"

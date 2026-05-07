@@ -11,7 +11,12 @@ source /etc/default/travel-router 2>/dev/null || true
 [[ "${ENABLE_UPS_MONITOR:-0}" = "1" ]] || exit 0
 
 LOG_TAG="ups-monitor"
-THRESHOLD="${UPS_SHUTDOWN_THRESHOLD:-10}"
+if ! [[ "${UPS_SHUTDOWN_THRESHOLD:-}" =~ ^[0-9]+$ ]]; then
+    logger -t ups-monitor "UPS_SHUTDOWN_THRESHOLD invalid, using default 10"
+    THRESHOLD=10
+else
+    THRESHOLD="$UPS_SHUTDOWN_THRESHOLD"
+fi
 
 _get_battery_pct() {
     # Try PiSugar server REST API first
