@@ -112,6 +112,11 @@ TOR_AP_PASS="${TOR_AP_PASS:-}"
 
 if [[ "${INSTALL_NONINTERACTIVE:-0}" == "1" ]]; then
     [[ -n "${AP_PASS:-}" ]] || die "Set AP_PASS in environment for non-interactive install"
+    # Strip newlines from CLI-supplied passwords to prevent config-file injection
+    AP_PASS="${AP_PASS//$'\n'/}"
+    AP_PASS="${AP_PASS//$'\r'/}"
+    TOR_AP_PASS="${TOR_AP_PASS//$'\n'/}"
+    TOR_AP_PASS="${TOR_AP_PASS//$'\r'/}"
     : "${ENABLE_BLOCKLISTS:=0}"
     : "${ENABLE_TOR_TRANSPARENT:=0}"
     : "${ENABLE_HTTP_UA_REWRITE:=0}"
@@ -149,9 +154,10 @@ for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPAR
 done
 
 # Validate ROUTER_HOSTNAME when supplied via environment (direct-run path)
+# Regex requires alphanumeric start AND end, disallowing trailing hyphens (RFC 952).
 if [[ -n "${ROUTER_HOSTNAME:-}" ]]; then
-    [[ "$ROUTER_HOSTNAME" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || \
-        die "ROUTER_HOSTNAME '${ROUTER_HOSTNAME}' is invalid — use only lowercase letters, numbers, and hyphens"
+    [[ "$ROUTER_HOSTNAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$ ]] || \
+        die "ROUTER_HOSTNAME '${ROUTER_HOSTNAME}' is invalid — use only letters, numbers, and hyphens; must not start or end with a hyphen"
 fi
 
 echo ""
@@ -1212,12 +1218,15 @@ ADMIN_HOME=$(getent passwd "$ADMIN_USER" 2>/dev/null | cut -d: -f6)
 ADMIN_HOME="${ADMIN_HOME:-/root}"
 
 if [[ -n "${SSH_ADMIN_KEY:-}" ]]; then
+    # Strip embedded newlines that could inject extra lines into authorized_keys
+    SSH_ADMIN_KEY="$(printf '%s' "$SSH_ADMIN_KEY" | tr -d '\n\r')"
+    [[ "$SSH_ADMIN_KEY" =~ ^(ssh-|ecdsa-|sk-) ]] || die "Invalid SSH key format: SSH_ADMIN_KEY must start with ssh-, ecdsa-, or sk-"
     mkdir -p "$ADMIN_HOME/.ssh"
     chmod 700 "$ADMIN_HOME/.ssh"
     touch "$ADMIN_HOME/.ssh/authorized_keys"
     chmod 600 "$ADMIN_HOME/.ssh/authorized_keys"
     if ! grep -qF "$SSH_ADMIN_KEY" "$ADMIN_HOME/.ssh/authorized_keys" 2>/dev/null; then
-        echo "$SSH_ADMIN_KEY" >> "$ADMIN_HOME/.ssh/authorized_keys"
+        printf '%s\n' "$SSH_ADMIN_KEY" >> "$ADMIN_HOME/.ssh/authorized_keys"
     fi
     chown -R "$ADMIN_USER:$ADMIN_USER" "$ADMIN_HOME/.ssh"
     echo "PasswordAuthentication no" >> /etc/ssh/sshd_config.d/99-travel-router.conf

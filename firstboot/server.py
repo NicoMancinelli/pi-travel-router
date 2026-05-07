@@ -41,7 +41,8 @@ _ALLOWED_HOSTS = {
     "::1",
 }
 _BARE_IP_RE = re.compile(
-    r"^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$"
+    r"^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])\.){3}"
+    r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9][0-9]|[0-9])(?::\d+)?$"
     r"|^\[?[0-9a-fA-F:]+\]?(?::\d+)?$"
 )
 SECTION_RE = re.compile(r"━━\s*(.+?)\s*━━")
@@ -149,9 +150,15 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     values["TS_KEY"] = ts_key
     values["HEADSCALE_URL"] = headscale_url
 
-    ssh_key = _first(form, "SSH_ADMIN_KEY").strip()
-    if ssh_key and not re.match(r"^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-)", ssh_key):
-        errors.append("SSH admin public key must be a valid OpenSSH public key.")
+    ssh_key_raw = _first(form, "SSH_ADMIN_KEY").strip()
+    # Reject multi-line values — newlines in an SSH key field indicate injection.
+    if "\n" in ssh_key_raw or "\r" in ssh_key_raw:
+        errors.append("SSH admin public key must be a single line (no embedded newlines).")
+        ssh_key = ""
+    else:
+        ssh_key = ssh_key_raw
+    if ssh_key and not re.match(r"^(ssh-|ecdsa-|sk-)", ssh_key):
+        errors.append("SSH admin public key must start with ssh-, ecdsa-, or sk- (valid OpenSSH public key).")
     values["SSH_ADMIN_KEY"] = ssh_key
 
     stdomains = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
@@ -423,11 +430,17 @@ def _read_ap_ssid() -> str:
             for line in fh:
                 m = re.match(r"export\s+AP_SSID=(.+)$", line.strip())
                 if m:
-                    raw = m.group(1)
-                    # strip surrounding single quotes added by shlex.quote
-                    if raw.startswith("'") and raw.endswith("'"):
-                        return raw[1:-1].replace("'\\''", "'")
-                    return raw
+                    raw = m.group(1).strip()
+                    # Use shlex.split to correctly unescape all shell quoting
+                    # (including single quotes inside the value, e.g. SSID="It's").
+                    try:
+                        parts = shlex.split(raw)
+                        return parts[0] if parts else ""
+                    except ValueError:
+                        # Malformed quoting — fall back to stripping outer quotes
+                        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+                            return raw[1:-1]
+                        return raw
     except FileNotFoundError:
         pass
     return ""
