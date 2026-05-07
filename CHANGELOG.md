@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-05-07
+
+### Fixed — Critical / Security
+- `scripts/travel-router-firewall.sh`: removed unconditional `iptables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT` that sat outside both kill-switch branches; both branches already add this rule, the extra copy accumulated a duplicate on every script restart and caused IPv4/IPv6 FORWARD chains to diverge
+- `scripts/travel-router-firewall.sh`: added `enx+` to IPv6 non-kill-switch uplink FORWARD loop (was missing vs the IPv4 loop); IPv6 AP clients had broken forwarding on iPhone USB-Ethernet tether (enxXXXXXX) while IPv4 worked fine
+- `scripts/travel-router-firewall.sh`: added `ip6tables INPUT -i uap0 -p tcp --dport 22/80 DROP` rules mirroring IPv4 INPUT rules; IPv6 AP clients could previously reach Pi admin ports (SSH, firstboot HTTP) directly
+- `scripts/apply-split-tunnel.sh`: moved `tailscale0` existence check to before the `ip rule add fwmark 0x2 lookup 200` block; previously the rule was installed first, then exit 1 fired if tailscale0 was absent — leaving a blackhole routing rule in the kernel that silently dropped all domain-matched split-tunnel traffic
+- `scripts/ups-monitor.sh`: added guard for API-reported `0%` as a parse artifact — when PiSugar API returns `null` in the `data` field, awk collapses it to `0`, which passed all numeric guards and triggered immediate shutdown; API-sourced `0%` now clears `pct` and falls through to sysfs (sysfs-reported `0%` is still a legitimate shutdown trigger)
+- `build/config`: removed `WPA_COUNTRY=''` which caused `stage2/02-net-tweaks/01-run.sh` to call `raspi-config nonint do_wifi_country ""` inside the chroot — an empty country code is not in `iso3166.tab`, so `raspi-config` returned exit 1 silently under `bash -e`, causing every Build Pi Image CI run to fail with no visible error output
+
+### Fixed — Reliability / Correctness
+- `scripts/tailscale-watchdog.sh`: added `| select(. != null)` to peer-hostname jq filter; null hostnames (peers with no HostName field) previously entered the comparison list and generated spurious "Tailscale peer lost: null" alerts
+- `scripts/update-blocklists.sh`: replaced deprecated `datetime.datetime.utcnow()` with `datetime.datetime.now(datetime.timezone.utc)` for Python 3.12+ compatibility
+- `firstboot/server.py`: wrapped `int(Content-Length)` in `try/except ValueError` → returns 400; a malformed `Content-Length` header previously raised an unhandled exception that closed the connection without an HTTP response (denial-of-service)
+- `firstboot/server.py`: SSH key deduplication changed from substring match (`pubkey in existing`) to line-exact match; a key whose blob appeared as a substring of another key was incorrectly suppressed and never added to `authorized_keys`
+- `firstboot/server.py`: broadened `ANSI_RE` from `\x1b\[[0-9;]*m` to `\x1b\[[0-9;]*[A-Za-z]` to strip all CSI escape sequences (cursor movement, erase, etc.), not just SGR colour codes
+- `install.sh`: `/etc/hosts` hostname substitution now uses `tempfile.mkstemp` + `os.replace` atomic write; the previous `open('/etc/hosts','w')` truncated the file before writing, risking an empty `/etc/hosts` on power loss during setup
+- `scripts/travel-tui.sh`: replaced `chpasswd <<< "root:$pw"` here-string with `printf 'root:%s\n' "$pw" | chpasswd` pipe; here-strings create an FD-backed temp file visible in `/proc/<pid>/fd/` for the duration of the call
+- `scripts/travel-tui.sh`: changed `cut -d= -f2` → `cut -d= -f2-` throughout config-value parsing; SSIDs or passphrases containing `=` characters were silently truncated at the first `=`
+- `scripts/travel-tui.sh`: AP schedule timer units now restarted (`systemctl try-restart`) after `daemon-reload` when editing disable/enable times; previously the new `OnCalendar=` time only took effect after a reboot
+- `scripts/travel-tui.sh`: version display now reads `/etc/travel-router-image-version` (the path written by `01-run.sh`) instead of `/etc/travel-router-version`; the version always showed "unknown" on images built from v1.0.0 onward
+
+### Fixed — Configuration / Systemd
+- `config/AdGuardHome.yaml`: reduced `upstream_timeout` from 10s → 5s (faster captive-portal detection); set `cache_ttl_min: 60` (prevents re-querying TTL-0 CDN records on every lookup); added DoH fallback (`https://cloudflare-dns.com/dns-query`) for hotel/corporate networks that block port 853
+- `config/sshd-travel-router.conf`: added `AuthenticationMethods publickey`, `ClientAliveInterval 120`, `ClientAliveCountMax 3`, `AllowStreamLocalForwarding no`, `AllowUsers root` for defence-in-depth hardening
+- `systemd/ap-disable.timer`, `systemd/ap-enable.timer`: changed `Persistent=true` → `Persistent=false`; `Persistent=true` caused a missed 02:00 disable-timer to fire immediately on next boot, cutting AP access during the morning
+- `systemd/failover-watchdog.timer`: changed `AccuracySec=1s` → `AccuracySec=5s` to allow systemd timer coalescing and reduce unnecessary wake-ups on the Pi Zero 2 W
+- `.github/workflows`: bumped all GitHub Actions to latest major versions (checkout v6, cache v5, setup-python v6, upload-artifact v7); supersedes Dependabot PRs #1–#4
+- `.github/workflows/build-image.yml`: added `Validate build/config` step that fails fast with a clear error if `WPA_COUNTRY=''` ever reappears (empty string causes silent pi-gen stage2 failure)
+
 ## [1.10.0] - 2026-05-06
 
 ### Fixed — Critical / Security
