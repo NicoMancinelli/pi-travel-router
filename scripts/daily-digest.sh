@@ -5,6 +5,8 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
+AP_IFACE="${AP_IFACE:-uap0}"
+
 [ -n "${NTFY_TOPIC:-}" ] || exit 0
 [ -x /usr/local/bin/notify-router.sh ] || exit 0
 
@@ -31,8 +33,26 @@ esac
 # Tailscale state
 ts_state=$(tailscale status --self 2>/dev/null | awk 'NR==1{print $1}' || printf "unknown")
 
-# Data transferred today (vnstat)
-data_today=$(vnstat -i wlan0 --oneline 2>/dev/null | cut -d';' -f11 || printf "n/a")
+# Data transferred today (vnstat) — parse JSON to avoid version-dependent field indices
+data_today=$(python3 -c "
+import json, subprocess, sys
+try:
+    d = json.loads(subprocess.check_output(['vnstat', '--json', 'd', '1', '-i', 'wlan0']))
+    t = d['interfaces'][0]['traffic']['day']
+    rx = t[-1]['rx'] if t else 0
+    tx = t[-1]['tx'] if t else 0
+    def fmt(b):
+        if b >= 1073741824:
+            return '%.1f GiB' % (b / 1073741824)
+        elif b >= 1048576:
+            return '%.1f MiB' % (b / 1048576)
+        elif b >= 1024:
+            return '%d KiB' % (b // 1024)
+        return '%d B' % b
+    print('rx %s / tx %s' % (fmt(rx), fmt(tx)))
+except Exception:
+    print('n/a')
+" 2>/dev/null || printf "n/a")
 
 # Failed systemd units
 failed=$(systemctl list-units --state=failed --no-legend 2>/dev/null \
@@ -40,7 +60,7 @@ failed=$(systemctl list-units --state=failed --no-legend 2>/dev/null \
 [ -z "$failed" ] && failed="none"
 
 # AP clients right now
-clients=$(iw dev uap0 station dump 2>/dev/null | grep -c "^Station" || printf "0")
+clients=$(iw dev "${AP_IFACE}" station dump 2>/dev/null | grep -c "^Station" || printf "0")
 
 msg="Daily digest | Up: ${uptime_str} | WAN: ${utype} | TS: ${ts_state} | AP clients: ${clients} | Data: ${data_today} | Failed units: ${failed}"
 

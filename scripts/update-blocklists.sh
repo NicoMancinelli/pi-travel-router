@@ -40,6 +40,11 @@ curl -s --max-time 60 -o "$TMP_FILE" "$BLOCKLIST_URL" || {
 
 COUNT=$(grep -c -v '^#' "$TMP_FILE" 2>/dev/null || echo 0)
 echo "Fetched $COUNT entries"
+if [[ "$COUNT" -lt 100 ]]; then
+    logger -t update-blocklists "ERROR: blocklist has only $COUNT entries — suspiciously small, aborting"
+    echo "ERROR: blocklist has only $COUNT entries — suspiciously small, aborting"
+    exit 1
+fi
 
 # Use Python for RAM-safe file generation (avoids bash tr/sed on large strings)
 python3 - "$TMP_FILE" "$NFT_NEW" "$MAX_BLOCKLIST_ENTRIES" << 'PYEOF'
@@ -87,13 +92,22 @@ nft -c -f "$NFT_NEW" || {
     exit 1
 }
 
+# N-H13: back up current ruleset before replacing it so we can restore on failure.
+cp "$NFT_FILE" "${NFT_FILE}.prev" 2>/dev/null || true
+
 # H8: persist to disk FIRST so a reboot always loads the new file,
 # then load from the now-persisted path.
 mv "$NFT_NEW" "$NFT_FILE"
 if nft -f "$NFT_FILE"; then
     echo "Blocklist loaded: $COUNT entries (max $MAX_BLOCKLIST_ENTRIES)"
 else
-    echo "nft load failed — file persisted to disk but in-kernel rules may be stale"
+    echo "nft load failed — attempting to restore previous ruleset"
+    if mv "${NFT_FILE}.prev" "$NFT_FILE" && nft -f "$NFT_FILE"; then
+        logger -t update-blocklists "restored previous ruleset after load failure"
+        echo "Previous ruleset restored successfully"
+    else
+        echo "nft load failed and restore also failed — in-kernel rules may be stale"
+    fi
     exit 1
 fi
 

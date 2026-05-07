@@ -3,6 +3,8 @@
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
+AP_IFACE="${AP_IFACE:-uap0}"
+
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[0;33m'; NC='\033[0m'; W='\033[1;37m'; DIM='\033[2m'; BOLD='\033[1m'
 _flag() { [[ "${!1:-0}" = "1" ]] && printf "${G}on${NC}" || printf "${DIM}off${NC}"; }
 
@@ -46,7 +48,7 @@ printf "  ${W}Tailscale${NC}: %s  %s\n" "$ts_status" "${ts_ip:-}"
 
 # AP clients
 ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || printf "unknown")
-ap_clients=$(iw dev uap0 station dump 2>/dev/null | grep -c "^Station" || printf "0")
+ap_clients=$(iw dev "${AP_IFACE}" station dump 2>/dev/null | grep -c "^Station" || printf "0")
 printf "  ${W}AP${NC}:       %s  clients: %s\n" "$ap_ssid" "$ap_clients"
 
 printf "  ${W}Features${NC}: DoT=$(_flag ENABLE_DOT) Blocklist=$(_flag ENABLE_BLOCKLISTS) KillSwitch=$(_flag ENABLE_VPN_KILLSWITCH) AdGuard=$(_flag ENABLE_ADGUARD) Avahi=$(_flag ENABLE_AVAHI_REFLECTOR)\n"
@@ -55,8 +57,13 @@ printf "${C}━━ System ━━━━━━━━━━━━━━━━━━
 
 temp=$(awk '{printf "%.0f°C", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null || printf "?")
 uptime_str=$(uptime -p 2>/dev/null | sed 's/up //' || printf "?")
-cpu=$(top -bn1 2>/dev/null | awk '/^%Cpu/{printf "%.0f%%", 100-$8}' || printf "?")
-printf "  CPU: %s  Temp: %s  Up: %s\n" "$cpu" "$temp" "$uptime_str"
+_cpu1=$(awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8, $5}' /proc/stat)
+sleep 0.2
+_cpu2=$(awk '/^cpu /{print $2+$3+$4+$5+$6+$7+$8, $5}' /proc/stat)
+_total=$(( $(printf '%s' "$_cpu2" | cut -d' ' -f1) - $(printf '%s' "$_cpu1" | cut -d' ' -f1) ))
+_idle=$(( $(printf '%s' "$_cpu2" | cut -d' ' -f2) - $(printf '%s' "$_cpu1" | cut -d' ' -f2) ))
+CPU_PCT=$(( _total > 0 ? (100 * (_total - _idle)) / _total : 0 ))
+printf "  CPU: %d%%  Temp: %s  Up: %s\n" "$CPU_PCT" "$temp" "$uptime_str"
 free -m 2>/dev/null | awk '/^Mem/{printf "  RAM: %dM used / %dM total\n", $3, $2}'
 df -h / 2>/dev/null | awk 'NR==2{printf "  Disk: %s/%s (%s used)\n", $3, $2, $5}'
 printf "  Version: %s\n" "$(cat /etc/travel-router-version 2>/dev/null || printf "unknown")"

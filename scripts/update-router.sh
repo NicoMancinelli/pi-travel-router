@@ -79,9 +79,31 @@ download_release() {
 apply_update() {
     local src="$1"   # extracted repo root
 
+    # T-H8: explicit allowlist — only install scripts whose names are known-good.
+    # This prevents a compromised tarball from installing arbitrary executables.
+    SCRIPT_ALLOWLIST=(
+        failover-watchdog.sh wan-watchdog.sh captive-check.sh travel-router-firewall.sh
+        apply-split-tunnel.sh start-tether.sh start-bt-tether.sh stop-bt-tether.sh
+        clone-mac.sh ap-schedule.sh tailscale-watchdog.sh ups-monitor.sh notify-router.sh
+        travel-tui.sh travel-status.sh travel-diagnostic.sh generate-bandwidth-report.sh
+        vnstat-push.sh tune-cake.sh daily-digest.sh update-router.sh update-blocklists.sh
+        setup-2fa.sh install-adguard.sh apply-cake.sh
+    )
+
     # Scripts → /usr/local/bin/
     for script in "${src}"/scripts/*.sh; do
         name=$(basename "$script")
+
+        # Skip any script not in the allowlist
+        local _allowed=0
+        for _a in "${SCRIPT_ALLOWLIST[@]}"; do
+            [[ "$_a" = "$name" ]] && { _allowed=1; break; }
+        done
+        if [[ "$_allowed" -eq 0 ]]; then
+            log "  SKIP (not in allowlist): $name"
+            continue
+        fi
+
         # travel-diagnostic is installed without the .sh extension
         if [[ "$name" = "travel-diagnostic.sh" ]]; then
             dest="/usr/local/bin/travel-diagnostic"

@@ -12,7 +12,12 @@ source /etc/default/travel-router 2>/dev/null || true
 R='\033[0;31m'; G='\033[0;32m'; C='\033[0;36m'
 NC='\033[0m'; W='\033[1;37m'; DIM='\033[2m'; BOLD='\033[1m'
 
-_cleanup() { tput cnorm 2>/dev/null || true; clear; exit 0; }
+_EXIT_NORMAL=0
+_cleanup() {
+    tput cnorm 2>/dev/null || true
+    [[ "$_EXIT_NORMAL" = "1" ]] && clear
+    exit 0
+}
 trap _cleanup INT TERM
 
 # AP interface — override with AP_IFACE env var if needed
@@ -83,8 +88,9 @@ _fmt_bps() {
 
 _bw_delta() {
     local iface="$1" dir="$2" cur prev _elapsed
-    local prev_file="/tmp/tui_${dir}_${iface}"
-    local time_file="/tmp/tui_time_${dir}_${iface}"
+    mkdir -p /run/travel-router
+    local prev_file="/run/travel-router/tui_${dir}_${iface}"
+    local time_file="/run/travel-router/tui_time_${dir}_${iface}"
     cur=$(cat "/sys/class/net/${iface}/statistics/${dir}_bytes" 2>/dev/null || echo 0)
     cur=$(( cur + 0 ))
     prev=$(cat "$prev_file" 2>/dev/null || echo "$cur")
@@ -95,7 +101,9 @@ _bw_delta() {
     (( _elapsed < 1 )) && _elapsed=1
     echo "$cur"  > "$prev_file"
     echo "$_now" > "$time_file"
-    echo $(( cur > prev ? (cur - prev) / _elapsed : 0 ))
+    local delta=$(( cur - prev ))
+    if (( delta < 0 )); then delta=$(( 4294967296 - prev + cur )); fi
+    echo $(( delta / _elapsed ))
 }
 
 # ── Config editing helpers ────────────────────────────────────────────────────
@@ -120,7 +128,7 @@ _cfg_edit() {
     fi
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
     python3 - "$varname" "$new_val" "/etc/default/travel-router" << 'PY'
-import sys, re
+import sys, re, tempfile, os
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f:
     lines = f.readlines()
@@ -134,8 +142,10 @@ for i, line in enumerate(lines):
         break
 if not replaced:
     lines.append(new_line)
-with open(path, 'w') as f:
-    f.writelines(lines)
+tmp = path + '.tmp'
+with open(tmp, 'w') as fh:
+    fh.writelines(lines)
+os.replace(tmp, path)
 PY
     printf "  ${G}✓ Saved${NC}\n"
 }
@@ -146,7 +156,26 @@ _ap_edit_ssid() {
     printf "\n  ${W}AP Network Name (SSID)${NC}\n  Current: ${DIM}%s${NC}\n  New value (Enter to keep): " "${cur:-(unknown)}"
     read -r new_val
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
-    sed -i "s/^ssid=.*/ssid=${new_val}/" /etc/hostapd/hostapd.conf
+    python3 - "ssid" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
+import sys, re, os
+key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+pattern = re.compile(r'^' + re.escape(key) + r'=')
+new_line = f'{key}={val}\n'
+replaced = False
+for i, line in enumerate(lines):
+    if pattern.match(line):
+        lines[i] = new_line
+        replaced = True
+        break
+if not replaced:
+    lines.append(new_line)
+tmp = path + '.tmp'
+with open(tmp, 'w') as fh:
+    fh.writelines(lines)
+os.replace(tmp, path)
+PY
     printf "  ${G}✓ Saved${NC} — restarting hostapd...\n"
     systemctl restart hostapd 2>/dev/null \
         && printf "  ${G}✓ hostapd restarted — AP is now %s${NC}\n" "$new_val" \
@@ -167,7 +196,26 @@ _ap_edit_pass() {
         printf "  ${R}✗ Password must be 8–63 characters${NC}\n"
         return
     fi
-    sed -i "s/^wpa_passphrase=.*/wpa_passphrase=${new_val}/" /etc/hostapd/hostapd.conf
+    python3 - "wpa_passphrase" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
+import sys, re, os
+key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+pattern = re.compile(r'^' + re.escape(key) + r'=')
+new_line = f'{key}={val}\n'
+replaced = False
+for i, line in enumerate(lines):
+    if pattern.match(line):
+        lines[i] = new_line
+        replaced = True
+        break
+if not replaced:
+    lines.append(new_line)
+tmp = path + '.tmp'
+with open(tmp, 'w') as fh:
+    fh.writelines(lines)
+os.replace(tmp, path)
+PY
     printf "  ${G}✓ Saved${NC} — restarting hostapd...\n"
     systemctl restart hostapd 2>/dev/null \
         && printf "  ${G}✓ hostapd restarted${NC}\n" \
@@ -439,16 +487,20 @@ show_features() {
                             fi
                             ;;
                         ENABLE_DOT)
-                            [[ "$new_val" = "1" ]] \
-                                && systemctl restart stubby 2>/dev/null || true \
-                                || systemctl stop stubby 2>/dev/null || true
+                            if [[ "$new_val" = "1" ]]; then
+                                systemctl restart stubby 2>/dev/null || true
+                            else
+                                systemctl stop stubby 2>/dev/null || true
+                            fi
                             systemctl reload-or-restart dnsmasq 2>/dev/null || true
                             printf "  ${G}✓ DoT %s${NC}\n" "$([[ $new_val = 1 ]] && echo enabled || echo disabled)"
                             ;;
                         ENABLE_ADGUARD)
-                            [[ "$new_val" = "1" ]] \
-                                && systemctl restart adguard-home 2>/dev/null || true \
-                                || systemctl stop adguard-home 2>/dev/null || true
+                            if [[ "$new_val" = "1" ]]; then
+                                systemctl restart adguard-home 2>/dev/null || true
+                            else
+                                systemctl stop adguard-home 2>/dev/null || true
+                            fi
                             systemctl reload-or-restart dnsmasq 2>/dev/null || true
                             printf "  ${G}✓ AdGuard Home %s${NC}\n" "$([[ $new_val = 1 ]] && echo enabled || echo disabled)"
                             ;;
@@ -457,9 +509,11 @@ show_features() {
                             printf "  ${G}✓ avahi-daemon restarted${NC}\n"
                             ;;
                         ENABLE_HTTP_UA_REWRITE)
-                            [[ "$new_val" = "1" ]] \
-                                && systemctl restart privoxy 2>/dev/null || true \
-                                || systemctl stop privoxy 2>/dev/null || true
+                            if [[ "$new_val" = "1" ]]; then
+                                systemctl restart privoxy 2>/dev/null || true
+                            else
+                                systemctl stop privoxy 2>/dev/null || true
+                            fi
                             printf "  ${G}✓ privoxy %s${NC}\n" "$([[ $new_val = 1 ]] && echo started || echo stopped)"
                             ;;
                         ENABLE_AP_SCHEDULE)
@@ -926,7 +980,7 @@ show_system() {
                elif [[ ${#_pw1} -lt 8 ]]; then
                    printf "  ${R}✗ Must be at least 8 characters${NC}\n"
                else
-                   printf '%s:%s' "root" "$_pw1" | chpasswd 2>/dev/null \
+                   chpasswd <<< "root:${_pw1}" 2>/dev/null \
                        && printf "  ${G}✓ Root password updated${NC}\n" \
                        || printf "  ${R}✗ chpasswd failed${NC}\n"
                fi
@@ -963,7 +1017,15 @@ while true; do
     source /etc/default/travel-router 2>/dev/null || true
     draw_dashboard
     key=""
-    read -rsn1 -t 5 key || true
+    read -rsn1 -t 5 key; _rc=$?
+    if [[ $_rc -gt 128 ]]; then
+        # timed out — redraw
+        continue
+    elif [[ $_rc -ne 0 ]]; then
+        # stdin closed or other error
+        sleep 0.1
+        continue
+    fi
     case "$key" in
         1) show_services  ;;
         2) show_features  ;;
@@ -972,6 +1034,6 @@ while true; do
         5) show_network   ;;
         6) show_settings  ;;
         7) show_system    ;;
-        q|Q) _cleanup     ;;
+        q|Q) _EXIT_NORMAL=1; _cleanup ;;
     esac
 done

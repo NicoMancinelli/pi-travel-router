@@ -30,8 +30,8 @@ if [ "$UPLINK_IFACE" != "wlan0" ]; then
 fi
 
 logger -t "$LOG_TAG" "Running upload speedtest on $UPLINK_IFACE..."
-UPLOAD_MBIT=$(speedtest-cli --simple --no-download --interface "$UPLINK_IFACE" 2>/dev/null \
-    | awk '/Upload/{printf "%d", int($2 * 0.9)}') || true
+UPLOAD_MBIT=$(LC_ALL=C speedtest-cli --simple --no-download --interface "$UPLINK_IFACE" 2>/dev/null \
+    | awk '/[Uu]pload/{printf "%d", int($2 * 0.9)}') || true
 
 if [[ -z "$UPLOAD_MBIT" || "$UPLOAD_MBIT" -lt 1 ]]; then
     logger -t "$LOG_TAG" "Speedtest failed or returned zero — retaining existing CAKE config"
@@ -42,7 +42,7 @@ BANDWIDTH="${UPLOAD_MBIT}mbit"
 echo "$BANDWIDTH" > "$STATE_FILE"
 logger -t "$LOG_TAG" "Measured upload: ${UPLOAD_MBIT} Mbit/s → CAKE bandwidth = $BANDWIDTH"
 
-if ip link show wlan0 >/dev/null 2>&1; then
-    tc qdisc replace dev wlan0 root cake bandwidth "$BANDWIDTH" besteffort
-    logger -t "$LOG_TAG" "Applied $BANDWIDTH to wlan0"
+if ip link show "$UPLINK_IFACE" >/dev/null 2>&1; then
+    tc qdisc replace dev "$UPLINK_IFACE" root cake bandwidth "$BANDWIDTH" besteffort
+    logger -t "$LOG_TAG" "Applied $BANDWIDTH to $UPLINK_IFACE"
 fi
