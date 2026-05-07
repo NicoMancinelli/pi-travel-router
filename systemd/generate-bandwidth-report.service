@@ -5,3 +5,5 @@ After=vnstat.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/generate-bandwidth-report.sh
+StandardOutput=journal
+StandardError=journal

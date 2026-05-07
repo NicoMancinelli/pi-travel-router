@@ -115,16 +115,17 @@ jobs:
           IMG_PATH="${{ steps.locate.outputs.img_path }}"
           # Decompress to a temp file for kpartx
           TMPIMG="$(mktemp --suffix=.img)"
+          MOUNTPOINT="$(mktemp -d)"
+          trap 'sudo umount "${MOUNTPOINT}" 2>/dev/null || true; sudo kpartx -dv "${TMPIMG}" 2>/dev/null || true; rm -f "${TMPIMG}"' EXIT
           xz -dk "${IMG_PATH}" --stdout > "${TMPIMG}"
           # Map partitions
           sudo kpartx -av "${TMPIMG}"
           LOOPDEV="$(sudo kpartx -l "${TMPIMG}" | awk 'NR==2{print $1}')"
-          MOUNTPOINT="$(mktemp -d)"
           sudo mount "/dev/mapper/${LOOPDEV}" "${MOUNTPOINT}"
           echo "--- Smoke test: checking image contents ---"
           test -f "${MOUNTPOINT}/etc/systemd/system/firstboot.service"   || { echo "FAIL: firstboot.service missing"; exit 1; }
           test -f "${MOUNTPOINT}/usr/local/sbin/imager-compat.sh"        || { echo "FAIL: imager-compat.sh missing"; exit 1; }
-          HOSTNAME="$(cat "${MOUNTPOINT}/etc/hostname" | tr -d '[:space:]')"
+          HOSTNAME="$(tr -d '[:space:]' < "${MOUNTPOINT}/etc/hostname")"
           [ "${HOSTNAME}" = "travelrouter" ]                             || { echo "FAIL: hostname is '${HOSTNAME}', expected 'travelrouter'"; exit 1; }
           test -f "${MOUNTPOINT}/etc/travel-router-image-version"        || { echo "FAIL: travel-router-image-version missing"; exit 1; }
           echo "--- All smoke tests passed ---"
@@ -137,10 +138,11 @@ jobs:
           set -euo pipefail
           IMG_PATH="${{ steps.locate.outputs.img_path }}"
           TMPIMG="$(mktemp --suffix=.img)"
+          MOUNTPOINT="$(mktemp -d)"
+          trap 'sudo umount "${MOUNTPOINT}" 2>/dev/null || true; sudo kpartx -dv "${TMPIMG}" 2>/dev/null || true; rm -f "${TMPIMG}"' EXIT
           xz -dk "${IMG_PATH}" --stdout > "${TMPIMG}"
           sudo kpartx -av "${TMPIMG}"
           LOOPDEV="$(sudo kpartx -l "${TMPIMG}" | awk 'NR==2{print $1}')"
-          MOUNTPOINT="$(mktemp -d)"
           sudo mount "/dev/mapper/${LOOPDEV}" "${MOUNTPOINT}"
           # Generate SBOM using dpkg-query via chroot
           sudo chroot "${MOUNTPOINT}" dpkg-query -W --showformat='${Package}\t${Version}\n' > sbom.txt

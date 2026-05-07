@@ -47,7 +47,7 @@ collect image-version.txt        cat /etc/travel-router-image-version
 collect runtime-version.txt     cat /etc/travel-router-version
 
 if [[ -f /etc/default/travel-router ]]; then
-    sed -E 's/(AP_PASS|TS_KEY|SSH_ADMIN_KEY|NTFY_TOPIC|PASSWORD|SECRET|TOKEN|PASS|KEY|HEADSCALE_URL|TOR_AP_PASS|PUSHGW_URL|IPHONE_BT_MAC)=[^ ]*/\1=REDACTED/gI' \
+    sed -E 's/(AP_PASS|TS_KEY|SSH_ADMIN_KEY|NTFY_TOPIC|PASSWORD|SECRET|TOKEN|PASS|KEY|HEADSCALE_URL|TOR_AP_PASS|PUSHGW_URL|IPHONE_BT_MAC)=.*/\1=REDACTED/gI' \
         /etc/default/travel-router > "${DIAG_DIR}/travel-router-config.txt" 2>/dev/null || true
 fi
 
