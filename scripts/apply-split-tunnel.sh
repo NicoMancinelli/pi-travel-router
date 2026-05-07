@@ -21,9 +21,10 @@ fi
 teardown_split_tunnel() {
     ip rule del fwmark 0x2 table 200 2>/dev/null || true
     ip route flush table 200 2>/dev/null || true
-    # N-H7: use consistent ipset name (vpn_domains, matching setup function)
-    ipset destroy vpn_domains 2>/dev/null || true
+    # N-H7: delete iptables rule first, then destroy ipset (kernel refuses to destroy
+    # an ipset still referenced by an iptables rule)
     iptables -t mangle -D PREROUTING -m set --match-set vpn_domains dst -j MARK --set-mark 0x2 2>/dev/null || true
+    ipset destroy vpn_domains 2>/dev/null || true
     logger -t split-tunnel "Split tunnel torn down"
 }
 

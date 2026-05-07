@@ -30,7 +30,7 @@ if [[ ! "$NTFY_TOPIC" =~ ^[A-Za-z0-9_-]+$ ]]; then
     exit 0
 fi
 
-curl -s \
+curl -s --max-time 10 --connect-timeout 5 \
     -H "Priority: $PRIORITY" \
     -H "Title: Travel Router" \
     -d "$MSG" \
