@@ -68,11 +68,11 @@ attempt_portal_login() {
         return 1
     fi
 
-    # M1: handle single-quoted and unquoted action attributes
+    # M1: handle single-quoted, double-quoted, and unquoted action attributes
     form_action=$(printf '%s' "$portal_html" \
-        | grep -oiE 'action=["\x27]?[^"\x27 >]+' \
+        | grep -oiE 'action=["\x27]?[^"'\'' &gt;]+' \
         | head -1 \
-        | sed "s/action=[\"']//;s/[\"']$//")
+        | sed "s/^action=[\"']\{0,1\}//;s/[\"']\{0,1\}$//")
     if [ -z "$form_action" ]; then
         log "No form action found — manual login required"
         rm -f "$COOKIE_JAR"

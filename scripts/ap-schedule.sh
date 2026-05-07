@@ -20,7 +20,7 @@ _wait_hostapd() {
 case "$ACTION" in
     disable)
         _wait_hostapd || { logger -t ap-schedule "hostapd socket not ready, skipping disable"; exit 0; }
-        hostapd_cli -p /var/run/hostapd disable 2>/dev/null || true
+        hostapd_cli -p /var/run/hostapd -i uap0 disable 2>/dev/null || true
         if [ -x /usr/local/bin/notify-router.sh ]; then
             /usr/local/bin/notify-router.sh "AP disabled for the night (${AP_DISABLE_TIME:-02:00}–${AP_ENABLE_TIME:-07:00})" low 2>/dev/null || true
         fi

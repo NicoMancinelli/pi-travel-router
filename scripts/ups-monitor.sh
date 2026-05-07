@@ -54,6 +54,11 @@ if [[ ! "$LEVEL" =~ ^[0-9]+$ ]]; then
     exit 0
 fi
 
+if [[ -z "$LEVEL" || "$LEVEL" -eq 0 ]]; then
+    logger -t "$LOG_TAG" "Battery reported 0% (likely API parse artifact) — skipping shutdown check"
+    exit 0
+fi
+
 logger -t "$LOG_TAG" "Battery: ${LEVEL}%  (shutdown threshold: ${THRESHOLD}%)"
 
 if [[ "$LEVEL" -le "$THRESHOLD" ]]; then

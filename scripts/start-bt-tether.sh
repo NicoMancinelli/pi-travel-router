@@ -35,7 +35,11 @@ if ! ip link show bnep0 >/dev/null 2>&1; then
     exit 1
 fi
 
-dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether || true
+dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether
+DHCP_RC=${PIPESTATUS[0]}
+if [[ "$DHCP_RC" -ne 0 ]]; then
+    logger -t bt-tether "dhclient exited $DHCP_RC on bnep0 — lease acquisition failed"
+fi
 
 GW=$(ip route show default dev bnep0 | awk '{for(i=1;i<=NF;i++){if($i=="via"){print $(i+1);exit}}}')
 ip route del default dev bnep0 2>/dev/null || true

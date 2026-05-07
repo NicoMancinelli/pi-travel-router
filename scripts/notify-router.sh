@@ -30,10 +30,12 @@ if [[ ! "$NTFY_TOPIC" =~ ^[A-Za-z0-9_-]+$ ]]; then
     exit 0
 fi
 
-curl -s --max-time 10 --connect-timeout 5 \
+if ! curl -s --max-time 10 --connect-timeout 5 \
     -H "Priority: $PRIORITY" \
     -H "Title: Travel Router" \
     -d "$MSG" \
-    "https://ntfy.sh/$NTFY_TOPIC" > /dev/null 2>&1
-
+    "https://ntfy.sh/$NTFY_TOPIC" > /dev/null 2>&1; then
+    logger "notify-router: curl failed for '$MSG'"
+    exit 1
+fi
 logger "notify-router: sent '$MSG'"
