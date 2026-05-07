@@ -31,10 +31,12 @@ save_rules() {
     if command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save; then
         return 0
     fi
-
     mkdir -p /etc/iptables
-    iptables-save > /etc/iptables/rules.v4
-    ip6tables-save > /etc/iptables/rules.v6
+    local _tmp
+    _tmp=$(mktemp /etc/iptables/rules.v4.XXXXXX)
+    iptables-save > "$_tmp" && mv "$_tmp" /etc/iptables/rules.v4 || rm -f "$_tmp"
+    _tmp=$(mktemp /etc/iptables/rules.v6.XXXXXX)
+    ip6tables-save > "$_tmp" && mv "$_tmp" /etc/iptables/rules.v6 || rm -f "$_tmp"
 }
 
 # TTL, hop-limit, DSCP, and hop-by-hop rules are in /etc/nftables.conf.d/travel-router.nft
@@ -46,6 +48,13 @@ iptables -F FORWARD
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # AP client isolation: prevent clients from reaching each other or the Pi LAN.
 iptables -A FORWARD -i uap0 -o uap0 -j DROP
+
+# IPv6 FORWARD: mirror the IPv4 policy so AP clients cannot bypass the VPN
+# kill-switch via IPv6 (default ip6tables FORWARD policy is ACCEPT).
+ip6tables -P FORWARD DROP
+ip6tables -F FORWARD
+ip6tables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+ip6tables -A FORWARD -i uap0 -o uap0 -j DROP
 
 if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
     # Flush and rebuild chain each run so rules are always current.

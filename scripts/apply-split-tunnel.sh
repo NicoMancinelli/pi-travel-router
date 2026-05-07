@@ -50,7 +50,7 @@ if ! iptables -t mangle -C PREROUTING -m set --match-set vpn_domains dst -j MARK
 fi
 
 # Routing table 200: default via tailscale0
-if ! ip rule show | grep -q "fwmark 0x2 lookup 200"; then
+if ! ip rule show | grep -qE 'fwmark 0x2[[:space:]]+lookup[[:space:]]+200([^0-9]|$)'; then
     ip rule add fwmark 0x2 lookup 200 priority 200 2>/dev/null || true
 fi
 # N-M7: warn if tailscale0 is absent before attempting route add

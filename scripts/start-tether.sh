@@ -33,4 +33,4 @@ systemd-run --no-block --unit="failover-watchdog-$$" /usr/local/bin/failover-wat
     /usr/local/bin/failover-watchdog.sh 2>/dev/null || true
 
 logger "start-tether: $IFACE configured"
-/usr/local/bin/notify-router.sh "USB tether connected: $IFACE" low
+/usr/local/bin/notify-router.sh "USB tether connected: $IFACE" low 2>/dev/null || true

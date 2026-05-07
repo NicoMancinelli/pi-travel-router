@@ -19,6 +19,7 @@ _notify_safe() {
 }
 
 # H1: prevent concurrent instances from racing
+mkdir -p /run/lock
 exec 9>/run/lock/failover-watchdog.lock
 flock -n 9 || exit 0
 
