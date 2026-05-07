@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-05-06
+
+### Fixed — Critical / Security
+- `scripts/travel-router-firewall.sh`: added `ip6tables -P FORWARD DROP` + base IPv6 FORWARD rules (CRITICAL: ip6tables FORWARD default policy was ACCEPT, allowing AP clients with IPv6 addresses to bypass the VPN kill-switch and reach the WAN directly)
+- `scripts/ups-monitor.sh`: PiSugar API `null` response now parsed as 0, which is guarded before the shutdown threshold check; avoids spurious `shutdown -h now` every 5 minutes during transient API init/charging-state blips (CRITICAL)
+- `config/AdGuardHome.yaml`: bind `http.address` to `10.3.141.1:3000` instead of `0.0.0.0:3000`; the admin UI (unauthenticated on first boot) was reachable from hotel WiFi / WAN interfaces
+- `systemd/adguard-home.service`: added `ProtectHome=yes`; AdGuard Home ran as root without home-directory sandboxing, giving it read access to `/root/.ssh/authorized_keys` and private keys
+- `build/stage-travel-router/files/imager-compat.sh`: SSH public-key comment regex fixed — POSIX ERE `[^\\\n]` does NOT match a newline; it excludes the literal letter `n`, truncating comments like `nico@host` or `admin@router` and causing duplicate entries in `authorized_keys` when `server.py` re-adds the full-comment version (HIGH)
+
+### Fixed — Reliability / Correctness
+- `scripts/tailscale-watchdog.sh`: strip fractional seconds (`gsub("\\.[0-9]+Z$"; "Z")`) before `fromdateiso8601`; Tailscale emits RFC 3339 Nano timestamps (e.g. `2024-01-15T10:30:45.123456789Z`); jq's `fromdateiso8601` silently errored on them, meaning stale-handshake detection never fired in practice (HIGH)
+- `scripts/travel-router-firewall.sh`: `save_rules()` now writes via `mktemp`+`mv` atomic pattern; direct `iptables-save >` could leave a truncated/corrupt rules file on power loss
+- `scripts/apply-split-tunnel.sh`: `ip rule` idempotency grep anchored with `([^0-9]|$)` to prevent false match on `lookup 2001`, `lookup 2002`, etc.
+- `scripts/captive-check.sh`: form action extraction now handles unquoted `action=/path` attributes (previously required quote chars immediately after `action=`)
+- `scripts/notify-router.sh`: curl exit code now checked; failure is logged and exits 1 instead of silently swallowing delivery errors
+- `scripts/start-bt-tether.sh`: `dhclient` exit code captured via `PIPESTATUS` and logged separately so lease-failure root cause is preserved through the pipe to `logger`
+- `install.sh`: `hostapd.conf` SSID/passphrase substitution and `_safe_write_conf` (called ~15 times for `/etc/default/travel-router`) now use `tempfile.mkstemp` + `os.replace` atomic pattern; direct `open(path,'w')` truncated the file before writing, risking complete config loss on power loss
+- `install.sh`: `AP_DISABLE_TIME` and `AP_ENABLE_TIME` validated as `HH:MM` in the direct-run path; wizard path already validated; direct invocation had no guard against newline injection into systemd drop-in files
+
+### Fixed — Configuration / TUI
+- `scripts/travel-tui.sh`: editing AP Disable/Enable Time in the Settings menu now regenerates the systemd timer drop-in (`/etc/systemd/system/ap-{disable,enable}.timer.d/time.conf`) and calls `systemctl daemon-reload`; previously the change was saved to `/etc/default/travel-router` but the running timer continued firing at the original time
+- `scripts/travel-tui.sh`: `_ap_edit_ssid` now rejects SSID values containing `#`; hostapd parses `#` as a comment delimiter, silently truncating the broadcasted SSID
+- `scripts/travel-tui.sh`: `_bw_delta` negative-delta guard changed from `2^32` wrap compensation to `0`-on-reset; Pi Zero 2 W runs arm64 with 64-bit (`u64`) byte counters that never wrap at `2^32`; the old formula produced a momentary fake ~4 GB/s spike in the dashboard on interface restart
+- `scripts/failover-watchdog.sh`: `mkdir -p /run/lock` added before `exec 9>` flock; without it, if `/run/lock` does not exist the fd open fails silently and `flock -n 9 || exit 0` exits the entire watchdog
+- `scripts/start-tether.sh`: `notify-router.sh` call guarded with `2>/dev/null || true` to prevent udev handler failure when ntfy server is unreachable
+- `scripts/ap-schedule.sh`: added `-i uap0` to the `disable` branch of `hostapd_cli` for symmetry with the `enable` branch
+
 ## [1.8.0] - 2026-05-06
 
 ### Fixed — Critical / Security
