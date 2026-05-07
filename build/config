@@ -11,6 +11,9 @@ TIMEZONE_DEFAULT='Etc/UTC'
 FIRST_USER_NAME='pi'
 FIRST_USER_PASS='__deleted_by_01run__'
 DISABLE_FIRST_BOOT_USER_RENAME=1
-WPA_COUNTRY=''
+# WPA_COUNTRY intentionally unset — no Wi-Fi country set at build time.
+# raspi-config nonint do_wifi_country "" fails silently with bash -e when
+# WPA_COUNTRY is set to an empty string (empty code not in iso3166.tab).
+# Country is configured at runtime via the firstboot setup wizard.
 ENABLE_SSH=1
 STAGE_LIST='stage0 stage1 stage2 ./stage-travel-router'

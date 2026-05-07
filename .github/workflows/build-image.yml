@@ -76,6 +76,20 @@ jobs:
           # Skip stages we don't need to export (we only export our custom stage).
           touch pi-gen/stage2/SKIP_IMAGES pi-gen/stage2/SKIP_NOOBS || true
 
+      - name: Validate build/config
+        run: |
+          set -euo pipefail
+          # WPA_COUNTRY must be unset or a valid 2-letter ISO code.
+          # An empty string causes raspi-config nonint do_wifi_country "" to fail
+          # silently with bash -e inside the stage2/02-net-tweaks chroot.
+          if grep -qE "^WPA_COUNTRY=''" pi-travel-router/build/config; then
+            echo "ERROR: build/config sets WPA_COUNTRY='' (empty string)."
+            echo "       Remove the line entirely — pi-gen's [ -v WPA_COUNTRY ] guard"
+            echo "       fires on empty strings, then raspi-config fails non-interactively."
+            exit 1
+          fi
+          echo "build/config validation passed"
+
       - name: Smoke-test key scripts (syntax check)
         run: |
           set -euo pipefail
