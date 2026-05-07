@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-05-06
+
+### Fixed — Critical / Security
+- `scripts/travel-router-firewall.sh`: VPN kill-switch chain used `-j RETURN` for `tailscale0` traffic, which fell back to the FORWARD chain's DROP policy and silently killed all new Tailscale connections; changed to `-j ACCEPT`
+- `firstboot/firstboot.service`: **regression fix** — `ProtectHome=yes` added in v1.6.0 made `/root` inaccessible, silently preventing SSH key writes to `/root/.ssh/authorized_keys` during wizard setup; replaced with `ProtectHome=read-only` + `ReadWritePaths=/root/.ssh`
+
+### Fixed — Reliability / Correctness
+- `scripts/tailscale-watchdog.sh`: `LastHandshake` field is an RFC 3339 string, not a Unix epoch; the previous jq arithmetic `$now - .LastHandshake` always emitted a type error (silently swallowed), meaning stale-handshake alerts were never sent; fixed with `fromdateiso8601`
+- `scripts/captive-check.sh`: `restore_tailscale && rm -f STATE_FILE` aborted script via `set -e` on Tailscale auth expiry, losing success notifications; replaced with explicit if/else; protocol-relative form action URLs (`//host/path`) now handled correctly
+- `scripts/failover-watchdog.sh`: `_tmp` in `_notify_uplink_change` declared `local` to prevent global scope leak
+- `scripts/update-router.sh`: firewall-reload `diff` check compared the already-installed file against itself (always identical after the copy loop); replaced with `_fw_changed` flag set during the install loop so the firewall is actually reloaded when `travel-router-firewall.sh` changes
+- `scripts/travel-tui.sh`: `_cpu_usage` denominator now includes `iowait`, `irq`, `softirq`, and `steal` ticks; previously the inflated denominator showed higher-than-actual CPU% on I/O-bound workloads; `MAX_BLOCKLIST_ENTRIES` display fallback corrected to `20000` (was `500000`)
+- `install.sh`: forbidden-flag validation for `TAILSCALE_UP_ARGS` (`--authkey`, `--reset`, `--force-reauth`) added to direct-run path, matching the protection already in `server.py`
+
+### Fixed — Configuration / Systemd / CI
+- `config/91-android-tether.rules`: `DEVPATH!="*/gadget*"` guard added to `usb0` rules; the Pi's own `g_ncm` gadget interface has no `idVendor` in its sysfs parent chain so the `idVendor!=` guards were ineffective against it, causing `start-tether.sh` to fire on every boot
+- `config/99-disable-ipv6-uplink.conf`: `net.ipv6.conf.default.disable_ipv6 = 1` removed; it was disabling IPv6 on all dynamically-created interfaces including `tailscale0`, breaking IPv6 subnet routing; per-interface lines for `wlan0`/`eth0` already handle uplink suppression
+- `config/avahi-daemon.conf`: replaced invalid `nprocess-time-max=300` with `rlimit-nproc=10`; the former key is not recognised by avahi and was silently ignored
+- `systemd/wlan-mac-random.service`: `ConditionPathExists=/sys/class/net/wlan0` added; service now skips gracefully on hardware without a `wlan0` interface
+- `build/stage-travel-router/01-run.sh`: removed redundant `cleanup-rootpw.conf` drop-in; `firstboot.service` already carries the identical `ExecStartPost=` shred directive
+- `.github/workflows/shellcheck.yml`: `config/rc.local` and `config/nm-wan-metrics` added to shellcheck coverage; `config/**` added to PR path trigger
+
 ## [1.6.0] - 2026-05-06
 
 ### Fixed — Critical / Security
