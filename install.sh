@@ -189,9 +189,16 @@ if [[ -n "${ROUTER_HOSTNAME:-}" && "$ROUTER_HOSTNAME" != "travelrouter" ]]; then
     hostnamectl set-hostname "$ROUTER_HOSTNAME" 2>/dev/null || true
     # L11: use Python for safe hostname substitution (avoids regex metacharacter issues)
     python3 -c "
-import sys
+import sys, tempfile, os
 with open('/etc/hosts') as f: content = f.read()
-with open('/etc/hosts', 'w') as f: f.write(content.replace('travelrouter', sys.argv[1]))
+new = content.replace('travelrouter', sys.argv[1])
+fd, tmp = tempfile.mkstemp(dir='/etc')
+try:
+    with os.fdopen(fd, 'w') as f: f.write(new)
+    os.replace(tmp, '/etc/hosts')
+except:
+    os.unlink(tmp)
+    raise
 " "$ROUTER_HOSTNAME" 2>/dev/null || true
     echo "$ROUTER_HOSTNAME" > /etc/hostname
     ok "Hostname set to $ROUTER_HOSTNAME"

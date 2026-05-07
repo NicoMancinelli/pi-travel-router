@@ -28,7 +28,7 @@ LOG_FILE = "/var/log/firstboot-install.log"
 REPO_DIR = "/opt/pi-travel-router"
 INDEX_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 # Allowlisted Host header values (bare hostname or host:port, case-insensitive)
 _ALLOWED_HOSTS = {
@@ -626,7 +626,11 @@ class Handler(BaseHTTPRequestHandler):
             # CSRF check for /retry
             ct = self.headers.get("Content-Type", "")
             if ct.startswith("application/x-www-form-urlencoded"):
-                length = int(self.headers.get("Content-Length", "0") or 0)
+                try:
+                    length = int(self.headers.get("Content-Length", "0") or 0)
+                except ValueError:
+                    self.send_error(400, "Bad Content-Length")
+                    return
                 if 0 < length <= 8_192:
                     body_bytes = self.rfile.read(length)
                     try:
@@ -666,7 +670,11 @@ class Handler(BaseHTTPRequestHandler):
         if not ct.startswith("application/x-www-form-urlencoded"):
             self._send_json({"error": "Expected application/x-www-form-urlencoded"}, code=415)
             return
-        length = int(self.headers.get("Content-Length", "0") or 0)
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+        except ValueError:
+            self.send_error(400, "Bad Content-Length")
+            return
         if length <= 0 or length > 32_768:
             self._send(HTTPStatus.BAD_REQUEST, b"Bad request", "text/plain")
             return
@@ -818,7 +826,8 @@ def _load_preseed() -> dict[str, str]:
                     # written the key; avoid creating a duplicate line.
                     with open(ak_path, "r", encoding="utf-8", errors="replace") as f:
                         existing = f.read()
-                if pubkey not in existing:
+                existing_lines = existing.splitlines()
+                if pubkey.strip() not in (line.strip() for line in existing_lines):
                     # Open with O_CREAT | O_APPEND and explicit 0o600 so the
                     # file is never created world-readable (open("a") is
                     # umask-dependent and can produce 0o644).

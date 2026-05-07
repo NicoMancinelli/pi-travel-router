@@ -164,7 +164,7 @@ PY
 
 _ap_edit_ssid() {
     local cur new_val
-    cur=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || echo "")
+    cur=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo "")
     printf "\n  ${W}AP Network Name (SSID)${NC}\n  Current: ${DIM}%s${NC}\n  New value (Enter to keep): " "${cur:-(unknown)}"
     read -r new_val || true
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
@@ -205,7 +205,7 @@ PY
 
 _ap_edit_pass() {
     local cur new_val
-    cur=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || echo "")
+    cur=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo "")
     printf "\n  ${W}AP Password${NC}\n"
     [[ -n "$cur" ]] \
         && printf "  Current: ${DIM}(set — %d chars)${NC}\n" "${#cur}" \
@@ -255,7 +255,7 @@ draw_dashboard() {
     local ap_ssid ap_clients client_ips ap_dot
     local bw_up bw_dn signal temp cpu ram_info disk_info up_str
 
-    ver=$(cat /etc/travel-router-version 2>/dev/null || printf "unknown")
+    ver=$(cat /etc/travel-router-image-version 2>/dev/null || printf "unknown")
 
     _box_top
     local date_str lv pad
@@ -333,7 +333,7 @@ draw_dashboard() {
     _box_sep
 
     # ── Access Point ──────────────────────────────────────────────────────────
-    ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || printf "?")
+    ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || printf "?")
     ap_clients=$(iw dev "${AP_IFACE}" station dump 2>/dev/null | grep -c "^Station" || printf "0")
     # Build comma-separated IP list by cross-referencing station MACs against
     # ip neigh (primary) then /proc/net/arp (fallback).
@@ -798,8 +798,8 @@ show_network() {
         case "$choice" in
             1) clear; printf "${W}WiFi QR Code:${NC}\n\n"
                local _ssid _pass _auth
-               _ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2)
-               _pass=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2)
+               _ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2-)
+               _pass=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2-)
                _auth="WPA"
                [[ -z "$_pass" ]] && _auth="nopass"
                # MECARD escaping for special characters in SSID and password
@@ -915,9 +915,9 @@ show_settings() {
         source /etc/default/travel-router 2>/dev/null || true
 
         local ap_ssid ap_pass_display ts_args_disp
-        ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || echo "?")
+        ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo "?")
         local ap_raw_pass
-        ap_raw_pass=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || echo "")
+        ap_raw_pass=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo "")
         [[ -n "$ap_raw_pass" ]] \
             && ap_pass_display="(set — ${#ap_raw_pass} chars)" \
             || ap_pass_display="(empty)"
@@ -1005,6 +1005,7 @@ show_settings() {
                         && mv "$_dropin_tmp" /etc/systemd/system/ap-disable.timer.d/time.conf \
                         || rm -f "$_dropin_tmp"
                     systemctl daemon-reload 2>/dev/null || true
+                    systemctl try-restart ap-disable.timer 2>/dev/null || true
                     sleep 1
                 fi ;;
             e|E) _cfg_edit AP_ENABLE_TIME \
@@ -1022,6 +1023,7 @@ show_settings() {
                         && mv "$_dropin_tmp" /etc/systemd/system/ap-enable.timer.d/time.conf \
                         || rm -f "$_dropin_tmp"
                     systemctl daemon-reload 2>/dev/null || true
+                    systemctl try-restart ap-enable.timer 2>/dev/null || true
                     sleep 1
                 fi ;;
             f|F) _cfg_edit UPS_SHUTDOWN_THRESHOLD \
@@ -1091,7 +1093,7 @@ show_system() {
                elif [[ ${#_pw1} -lt 8 ]]; then
                    printf "  ${R}✗ Must be at least 8 characters${NC}\n"
                else
-                   chpasswd <<< "root:${_pw1}" 2>/dev/null \
+                   printf 'root:%s\n' "${_pw1}" | chpasswd 2>/dev/null \
                        && printf "  ${G}✓ Root password updated${NC}\n" \
                        || printf "  ${R}✗ chpasswd failed${NC}\n"
                fi
