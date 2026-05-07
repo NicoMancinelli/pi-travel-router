@@ -3,7 +3,7 @@ Description=Re-enable travel router AP in the morning
 
 [Timer]
 OnCalendar=*-*-* 07:00:00
-Persistent=true
+Persistent=false
 
 [Install]
 WantedBy=timers.target

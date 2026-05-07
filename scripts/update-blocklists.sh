@@ -63,7 +63,7 @@ with open(src) as source:
 
 with open(dst, 'w') as f:
     f.write("#!/usr/sbin/nft -f\n")
-    f.write(f"# Firehol Level 1 — {datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}\n\n")
+    f.write(f"# Firehol Level 1 — {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n\n")
     f.write("table inet blocklists {\n")
     f.write("    set firehol_l1 {\n")
     f.write("        type ipv4_addr\n")

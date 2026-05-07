@@ -23,6 +23,10 @@ _get_battery_pct() {
     local pct
     pct=$(curl -sf --max-time 2 "http://localhost:8421/get_battery_percentage" 2>/dev/null \
         | awk -F'"data":' 'NF>1{gsub(/[^0-9.]/,"",$2); printf "%.0f", $2+0}') || true
+    if [[ "$pct" == "0" ]]; then
+        logger -t "$LOG_TAG" "WARN: API returned 0% — likely parse artifact, trying sysfs"
+        pct=""
+    fi
     [[ -n "$pct" ]] && { printf '%s' "$pct"; return; }
 
     # Fallback: sysfs power_supply

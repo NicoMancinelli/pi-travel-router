@@ -23,13 +23,14 @@ dns:
     - tls://1.0.0.1
     - tls://9.9.9.9
     - tls://149.112.112.112
+    - https://cloudflare-dns.com/dns-query
   bootstrap_dns:
     - 1.1.1.1:53
     - 9.9.9.9:53
   cache_size: 4194304
-  cache_ttl_min: 0
+  cache_ttl_min: 60
   cache_ttl_max: 0
-  upstream_timeout: 10s
+  upstream_timeout: 5s
 
 log:
   file: ""

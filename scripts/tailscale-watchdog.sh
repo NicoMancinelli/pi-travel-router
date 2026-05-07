@@ -52,7 +52,7 @@ fi
 
 # 4. Peer loss: compare to last known peer list
 # shellcheck disable=SC2016
-current_peers=$(printf '%s' "$ts_json" | jq -c '[.Peer // {} | to_entries[] | .value.HostName] | sort' 2>/dev/null || printf '%s' "[]")
+current_peers=$(printf '%s' "$ts_json" | jq -c '[.Peer // {} | to_entries[] | .value.HostName | select(. != null)] | sort' 2>/dev/null || printf '%s' "[]")
 prev_peers=$(cat "$STATE_FILE" 2>/dev/null || echo "[]")
 if ! printf '%s' "$prev_peers" | jq empty 2>/dev/null; then
     logger -t tailscale-watchdog "Corrupt state file — resetting baseline"
