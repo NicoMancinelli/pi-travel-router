@@ -56,7 +56,15 @@ _yn() {
 
 if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
     read -rp "  AP SSID [TravelRouter]: " AP_SSID;          AP_SSID="${AP_SSID:-TravelRouter}"
+    # Reject control characters in SSID (ord < 0x20)
+    if printf '%s' "$AP_SSID" | LC_ALL=C grep -qP '[\x00-\x1f]'; then
+        die "AP SSID may not contain control characters"
+    fi
     read -rsp "  AP passphrase (8+ chars): " AP_PASS;        echo
+    # Reject control characters (including newlines) in passphrase
+    if printf '%s' "$AP_PASS" | LC_ALL=C grep -qP '[\x00-\x1f\x7f-\xff]'; then
+        die "AP passphrase must use printable ASCII only (no control characters)"
+    fi
     read -rp "  WiFi country code [US]: " COUNTRY;           COUNTRY="${COUNTRY:-US}"
     read -rp "  ntfy.sh topic (blank = no notifications): " NTFY_TOPIC; NTFY_TOPIC="${NTFY_TOPIC:-}"
     read -rsp "  Tailscale auth key (tskey-auth-... or blank): " TS_KEY; echo; TS_KEY="${TS_KEY:-}"
@@ -139,6 +147,12 @@ ENABLE_WAN_METRICS="${ENABLE_WAN_METRICS:-1}"
 for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR; do
     validate_flag "$flag"
 done
+
+# Validate ROUTER_HOSTNAME when supplied via environment (direct-run path)
+if [[ -n "${ROUTER_HOSTNAME:-}" ]]; then
+    [[ "$ROUTER_HOSTNAME" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || \
+        die "ROUTER_HOSTNAME '${ROUTER_HOSTNAME}' is invalid — use only lowercase letters, numbers, and hyphens"
+fi
 
 echo ""
 info "SSID:      $AP_SSID"

@@ -154,7 +154,10 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
         errors.append("SSH admin public key must be a valid OpenSSH public key.")
     values["SSH_ADMIN_KEY"] = ssh_key
 
-    values["SPLIT_TUNNEL_DOMAINS"] = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
+    stdomains = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
+    if stdomains and not re.fullmatch(r'[A-Za-z0-9._\- ]+', stdomains):
+        errors.append("Split tunnel domains may only contain letters, numbers, dots, hyphens, and spaces.")
+    values["SPLIT_TUNNEL_DOMAINS"] = stdomains
 
     hostname = _first(form, "ROUTER_HOSTNAME", "travelrouter").strip().lower()
     if hostname and not re.fullmatch(r"[a-z0-9]([a-z0-9\-]{0,61}[a-z0-9])?", hostname):
@@ -242,6 +245,8 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
             errors.append("Root password and confirmation do not match.")
         if "\n" in new_root_pw or "\r" in new_root_pw:
             errors.append("Root password may not contain newline characters.")
+        if "\x00" in new_root_pw:
+            errors.append("Root password may not contain null characters.")
 
     return values, errors, new_root_pw
 
@@ -622,6 +627,13 @@ class Handler(BaseHTTPRequestHandler):
         submitted_token = _first(form, "_csrf_token")
         if not secrets.compare_digest(submitted_token, _csrf_token):
             self._send_json({"error": "Invalid or missing CSRF token"}, code=403)
+            return
+        # Guard against double-submission across server restarts: if ENV_FILE
+        # already exists, install.sh was already spawned — redirect to status.
+        if os.path.exists(ENV_FILE):
+            self.send_response(302)
+            self.send_header("Location", "/status")
+            self.end_headers()
             return
         values, errors, new_root_pw = _validate(form)
         if errors:
