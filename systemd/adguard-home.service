@@ -12,6 +12,7 @@ StandardError=journal
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
+ProtectHome=yes
 ReadWritePaths=/opt/AdGuardHome /var/lib/travel-router
 
 [Install]

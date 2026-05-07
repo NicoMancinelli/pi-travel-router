@@ -41,7 +41,7 @@ fi
 # regardless of surrounding shell syntax.
 PUBKEY=""
 while IFS= read -r line; do
-    KEY=$(printf '%s\n' "$line" | grep -oE '(ssh-(rsa|ed25519|dss|xmss)|ecdsa-sha2-[A-Za-z0-9]+) [A-Za-z0-9+/]+=* ?[^"'"'"'\n]*' | head -1)
+    KEY=$(printf '%s\n' "$line" | grep -oP '(ssh-(rsa|ed25519|dss|xmss)|ecdsa-sha2-[A-Za-z0-9]+) [A-Za-z0-9+/]+=*( \S+)?' | head -1)
     if [ -n "$KEY" ]; then
         PUBKEY="$KEY"
         break

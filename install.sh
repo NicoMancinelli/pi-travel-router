@@ -162,6 +162,17 @@ if [[ -n "${ROUTER_HOSTNAME:-}" ]]; then
         die "ROUTER_HOSTNAME '${ROUTER_HOSTNAME}' is invalid — use only letters, numbers, and hyphens (max 63 chars); must not start or end with a hyphen"
 fi
 
+# Validate AP schedule times when supplied via environment (direct-run path).
+# The wizard prompts accept freeform input but install.sh writes them straight
+# into a systemd OnCalendar= directive — a newline or extra chars would inject
+# arbitrary directives into the drop-in file.
+if [[ -n "${AP_DISABLE_TIME:-}" ]] && ! [[ "$AP_DISABLE_TIME" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+    die "AP_DISABLE_TIME must be in HH:MM format (00:00–23:59)"
+fi
+if [[ -n "${AP_ENABLE_TIME:-}" ]] && ! [[ "$AP_ENABLE_TIME" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+    die "AP_ENABLE_TIME must be in HH:MM format (00:00–23:59)"
+fi
+
 echo ""
 info "SSID:      $AP_SSID"
 info "Country:   $COUNTRY"
@@ -451,14 +462,21 @@ dtim_period=1
 EOF
     # C6: write SSID and passphrase safely via Python to avoid shell quoting issues
     python3 -c "
-import sys
-with open('/etc/hostapd/hostapd.conf') as f: lines = f.readlines()
+import sys, os, tempfile
+path = '/etc/hostapd/hostapd.conf'
+with open(path) as f: lines = f.readlines()
 out = []
 for l in lines:
     if l.startswith('ssid='): out.append('ssid=' + sys.argv[1] + '\n')
     elif l.startswith('wpa_passphrase='): out.append('wpa_passphrase=' + sys.argv[2] + '\n')
     else: out.append(l)
-with open('/etc/hostapd/hostapd.conf','w') as f: f.writelines(out)
+fd, tmp = tempfile.mkstemp(dir='/etc/hostapd', prefix='hostapd.conf.')
+try:
+    with os.fdopen(fd, 'w') as fh: fh.writelines(out)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+except:
+    os.unlink(tmp); raise
 " "$AP_SSID" "$AP_PASS"
     ok "hostapd configured: SSID=$AP_SSID"
 fi
@@ -591,13 +609,18 @@ install_file config/travel-router-defaults /etc/default/travel-router 600
 _safe_write_conf() {
     local key="$1" val="$2" path="$3"
     python3 -c "
-import sys, re, shlex
+import sys, re, shlex, os, tempfile
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f: lines = f.readlines()
 pat = re.compile(r'^' + re.escape(key) + r'=')
-new = key + '=' + shlex.quote(val) + '\n'
-lines = [new if pat.match(l) else l for l in lines]
-with open(path, 'w') as f: f.writelines(lines)
+new_line = key + '=' + shlex.quote(val) + '\n'
+lines = [new_line if pat.match(l) else l for l in lines]
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)))
+try:
+    with os.fdopen(fd, 'w') as fh: fh.writelines(lines)
+    os.replace(tmp, path)
+except:
+    os.unlink(tmp); raise
 " "$key" "$val" "$path"
 }
 

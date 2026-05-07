@@ -103,10 +103,11 @@ _bw_delta() {
     _elapsed=$(awk -v n="$_now" -v l="$_last" 'BEGIN{e=int((n-l)/1000000000); print (e<1)?1:e}')
     echo "$cur"  > "$prev_file"
     echo "$_now" > "$time_file"
-    # Use awk for all arithmetic to avoid 32-bit/signed-64-bit wrap on large byte counters
+    # Use awk for all arithmetic; u64 counters on arm64 never wrap at 2^32.
+    # On interface restart the counter resets to 0 (cur < prev) — clamp to 0.
     awk -v c="$cur" -v p="$prev" -v e="$_elapsed" 'BEGIN{
         delta = c - p
-        if (delta < 0) delta = 4294967296 - p + c
+        if (delta < 0) delta = 0
         printf "%d\n", delta / e
     }'
 }
@@ -169,6 +170,7 @@ _ap_edit_ssid() {
         printf "  ${R}SSID must not contain control characters${NC}\n"
         return
     fi
+    [[ "$new_val" =~ '#' ]] && { printf "  ${R}✗ SSID must not contain '#' (hostapd comment char)${NC}\n"; return; }
     python3 - "ssid" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
 import sys, re, os
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -983,9 +985,23 @@ show_settings() {
             c|C) _cfg_edit MAX_BLOCKLIST_ENTRIES \
                 "Max Blocklist Entries  (default 20000, lower to save RAM)"; sleep 1 ;;
             d|D) _cfg_edit AP_DISABLE_TIME \
-                "AP Disable Time  (HH:MM, requires ENABLE_AP_SCHEDULE=1)"; sleep 1 ;;
+                "AP Disable Time  (HH:MM, requires ENABLE_AP_SCHEDULE=1)"
+                # shellcheck source=/dev/null
+                source /etc/default/travel-router 2>/dev/null || true
+                mkdir -p /etc/systemd/system/ap-disable.timer.d
+                printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
+                    "${AP_DISABLE_TIME:-02:00}" > /etc/systemd/system/ap-disable.timer.d/time.conf
+                systemctl daemon-reload 2>/dev/null || true
+                sleep 1 ;;
             e|E) _cfg_edit AP_ENABLE_TIME \
-                "AP Enable Time  (HH:MM, requires ENABLE_AP_SCHEDULE=1)"; sleep 1 ;;
+                "AP Enable Time  (HH:MM, requires ENABLE_AP_SCHEDULE=1)"
+                # shellcheck source=/dev/null
+                source /etc/default/travel-router 2>/dev/null || true
+                mkdir -p /etc/systemd/system/ap-enable.timer.d
+                printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
+                    "${AP_ENABLE_TIME:-07:00}" > /etc/systemd/system/ap-enable.timer.d/time.conf
+                systemctl daemon-reload 2>/dev/null || true
+                sleep 1 ;;
             f|F) _cfg_edit UPS_SHUTDOWN_THRESHOLD \
                 "UPS Shutdown Threshold  (battery % to trigger safe shutdown)"; sleep 1 ;;
             g|G) _cfg_edit PUSHGW_URL \
