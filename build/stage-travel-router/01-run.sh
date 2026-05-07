@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 set -euo pipefail
 
 # Customize the rootfs for the pi-travel-router image.
@@ -7,12 +7,19 @@ set -euo pipefail
 REPO_URL="${REPO_URL:-https://github.com/NicoMancinelli/pi-travel-router.git}"
 GIT_REF="${GIT_REF:-main}"
 TARGET_DIR="${ROOTFS_DIR}/opt/pi-travel-router"
+REPO_STAGE_DIR="$(dirname "$0")"
 
 echo "Cloning ${REPO_URL} @ ${GIT_REF} into ${TARGET_DIR}"
 rm -rf "${TARGET_DIR}"
 mkdir -p "${TARGET_DIR}"
-git clone "${REPO_URL}" "${TARGET_DIR}"
-git -C "${TARGET_DIR}" checkout "${GIT_REF}"
+# C12: use --depth=50 for faster clones; retry checkout loop handles CDN propagation delays.
+git clone --depth=50 "${REPO_URL}" "${TARGET_DIR}"
+for attempt in 1 2 3 4 5; do
+    git -C "${TARGET_DIR}" fetch --depth=1 origin "${GIT_REF}" 2>/dev/null && \
+    git -C "${TARGET_DIR}" checkout FETCH_HEAD && break
+    [ "$attempt" -lt 5 ] && { echo "Checkout attempt $attempt failed, retrying in 15s..."; sleep 15; } || \
+    { echo "ERROR: Could not checkout ${GIT_REF} after 5 attempts" >&2; exit 1; }
+done
 
 GIT_SHA="$(git -C "${TARGET_DIR}" rev-parse --short HEAD)"
 BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -37,19 +44,26 @@ else
     printf '127.0.1.1\ttravelrouter\n' >> "${ROOTFS_DIR}/etc/hosts"
 fi
 
-# Use root as the only login user. Set password to 'changeme' (user must change),
-# enable root SSH login, and remove the throwaway pi-gen FIRST_USER.
+# Use root as the only login user. Set a random temporary password (written to
+# /boot/firmware/root-password.txt so the user can read it on first boot),
+# enable root SSH via key only, and remove the throwaway pi-gen FIRST_USER.
 on_chroot << 'EOF'
-echo 'root:changeme' | chpasswd
+ROOTPW=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
+echo "root:${ROOTPW}" | chpasswd
+echo "TEMP ROOT PASSWORD (change after first login): ${ROOTPW}" > /boot/firmware/root-password.txt 2>/dev/null || echo "${ROOTPW}" > /boot/root-password.txt
 mkdir -p /etc/ssh/sshd_config.d
-printf 'PermitRootLogin yes\nPasswordAuthentication yes\n' \
+printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' \
     > /etc/ssh/sshd_config.d/00-permit-root.conf
 chmod 0644 /etc/ssh/sshd_config.d/00-permit-root.conf
-# Remove the pi-gen first user (FIRST_USER_NAME) — root is the only account.
-if id neek >/dev/null 2>&1; then
-    pkill -u neek 2>/dev/null || true
-    deluser --remove-home neek 2>/dev/null || userdel -r neek 2>/dev/null || true
+# Remove the pi-gen first user (FIRST_USER_NAME=pi) — root is the only account.
+if id pi >/dev/null 2>&1; then
+    pkill -u pi 2>/dev/null || true
+    deluser --remove-home pi 2>/dev/null || userdel -r pi 2>/dev/null || true
 fi
+EOF
+# B-H6: Assert pi user was actually removed.
+on_chroot << 'EOF'
+id pi >/dev/null 2>&1 && { echo "ERROR: pi user still exists after deletion attempt"; exit 1; } || true
 EOF
 
 # Install a login-shell banner that warns the user the router is not yet configured.
@@ -68,8 +82,8 @@ printf "${RED}##################################################################
 printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
 printf "${RED}##${RST}  ${YEL}WARNING: THIS ROUTER IS NOT CONFIGURED YET${RST}               ${RED}##${RST}\n"
 printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
-printf "${RED}##${RST}  ${BLD}Root password is the factory default:${RST}                    ${RED}##${RST}\n"
-printf "${RED}##${RST}  ${BLD}  changeme${RST}                                               ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}Root password is on the boot partition:${RST}                  ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}  /boot/firmware/root-password.txt${RST}                       ${RED}##${RST}\n"
 printf "${RED}##${RST}  ${BLD}Change it NOW or run the setup wizard first.${RST}             ${RED}##${RST}\n"
 printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
 printf "${RED}##${RST}  ${BLD}Run the setup wizard:${RST}                                    ${RED}##${RST}\n"
@@ -90,29 +104,34 @@ CONFIG_TXT="${ROOTFS_DIR}/boot/firmware/config.txt"
 if [ ! -f "$CONFIG_TXT" ]; then
     CONFIG_TXT="${ROOTFS_DIR}/boot/config.txt"
 fi
+# H25: insert dtoverlay under existing [all] section rather than appending a new one.
 if ! grep -q "dtoverlay=dwc2" "$CONFIG_TXT" 2>/dev/null; then
-    {
-        echo ""
-        echo "# pi-travel-router: USB gadget mode for first-boot wizard reachability"
-        echo "[all]"
-        echo "dtoverlay=dwc2,dr_mode=peripheral"
-    } >> "$CONFIG_TXT"
+    # Insert after existing [all] line, or append if none
+    if grep -q "^\[all\]" "$CONFIG_TXT"; then
+        sed -i '/^\[all\]/{n;s/$/\ndtoverlay=dwc2,dr_mode=peripheral/}' "$CONFIG_TXT" || \
+        echo "dtoverlay=dwc2,dr_mode=peripheral" >> "$CONFIG_TXT"
+    else
+        printf '\n[all]\ndtoverlay=dwc2,dr_mode=peripheral\n' >> "$CONFIG_TXT"
+    fi
 fi
 
-# Load dwc2 and g_ether at boot.
+# Load dwc2 and g_ncm at boot.
+# g_ncm (CDC NCM) is used instead of g_ether (CDC ECM) because Windows 10/11
+# ships inbox NCM drivers and enumerates the gadget natively; ECM requires
+# manual RNDIS driver installation on Windows.
 mkdir -p "${ROOTFS_DIR}/etc/modules-load.d"
 echo "dwc2" > "${ROOTFS_DIR}/etc/modules-load.d/dwc2.conf"
-echo "g_ether" > "${ROOTFS_DIR}/etc/modules-load.d/g-ether.conf"
+echo "g_ncm" > "${ROOTFS_DIR}/etc/modules-load.d/g-ncm.conf"
 
-# cmdline.txt: modules-load ensures dwc2+g_ether init during early kernel boot,
+# cmdline.txt: modules-load ensures dwc2+g_ncm init during early kernel boot,
 # before userspace, so the host enumerates the gadget immediately on plug-in.
 CMDLINE_TXT="${ROOTFS_DIR}/boot/firmware/cmdline.txt"
 if [ ! -f "$CMDLINE_TXT" ]; then
     CMDLINE_TXT="${ROOTFS_DIR}/boot/cmdline.txt"
 fi
 if [ -f "$CMDLINE_TXT" ] && ! grep -q "modules-load=dwc2" "$CMDLINE_TXT"; then
-    sed -i '1s/$/ modules-load=dwc2,g_ether/' "$CMDLINE_TXT"
-    echo "cmdline.txt: appended modules-load=dwc2,g_ether"
+    sed -i '1s/$/ modules-load=dwc2,g_ncm/' "$CMDLINE_TXT"
+    echo "cmdline.txt: appended modules-load=dwc2,g_ncm"
 fi
 
 # NetworkManager profile for usb0: static 192.168.7.1/24 with shared mode (built-in DHCP for laptop).
@@ -152,74 +171,37 @@ WantedBy=sysinit.target
 UNIT
 chmod 0644 "${ROOTFS_DIR}/etc/systemd/system/imager-compat.service"
 
-cat > "${ROOTFS_DIR}/usr/local/sbin/imager-compat.sh" << 'SCRIPT'
-#!/bin/bash
-# imager-compat.sh — neutralise Raspberry Pi Imager firstrun.sh
-set -euo pipefail
-
-FIRSTRUN=""
-for candidate in /boot/firmware/firstrun.sh /boot/firstrun.sh; do
-    if [ -f "$candidate" ]; then
-        FIRSTRUN="$candidate"
-        break
-    fi
-done
-
-[ -z "$FIRSTRUN" ] && exit 0
-
-# Only act if this looks like an Imager-generated script.
-if ! grep -qE 'systemd\.run|raspi-config|authorized_keys' "$FIRSTRUN" 2>/dev/null; then
-    exit 0
-fi
-
-# Extract SSH public key(s) and write to /root/.ssh/authorized_keys.
-PUBKEY=""
-while IFS= read -r line; do
-    if echo "$line" | grep -qE '(authorized_keys|echo.*ssh-)'; then
-        KEY=$(echo "$line" | grep -oE '(ssh-(rsa|ed25519|dss)|ecdsa-sha2-[^ ]+) [A-Za-z0-9+/=]+ ?[^ ]*' | head -1)
-        if [ -n "$KEY" ]; then
-            PUBKEY="$KEY"
-            break
-        fi
-    fi
-done < "$FIRSTRUN"
-
-if [ -n "$PUBKEY" ]; then
-    mkdir -p /root/.ssh
-    chmod 0700 /root/.ssh
-    AK=/root/.ssh/authorized_keys
-    touch "$AK"
-    if ! grep -qF "$PUBKEY" "$AK" 2>/dev/null; then
-        echo "$PUBKEY" >> "$AK"
-    fi
-    chmod 0600 "$AK"
-    chown -R root:root /root/.ssh
-fi
-
-# Rewrite firstrun.sh to a minimal safe stub — only the cmdline.txt cleanup
-# that the systemd.run= boot mechanism expects.
-cat > "$FIRSTRUN" << 'STUB'
-#!/bin/bash
-# Neutralised by pi-travel-router imager-compat: SSH key already applied to root.
-# Remove systemd.run entries from cmdline.txt so this doesn't re-run.
-if [ -f /boot/firmware/cmdline.txt ]; then
-    sed -i 's| systemd\.run=[^ ]*||g; s| systemd\.run_success_action=[^ ]*||g; s| systemd\.unit=kernel-command-line\.target||g' /boot/firmware/cmdline.txt
-fi
-if [ -f /boot/cmdline.txt ]; then
-    sed -i 's| systemd\.run=[^ ]*||g; s| systemd\.run_success_action=[^ ]*||g; s| systemd\.unit=kernel-command-line\.target||g' /boot/cmdline.txt
-fi
-STUB
-chmod 0755 "$FIRSTRUN"
-
-exit 0
-SCRIPT
-chmod 0755 "${ROOTFS_DIR}/usr/local/sbin/imager-compat.sh"
+# H26: install imager-compat.sh from the committed file rather than an inline heredoc.
+install -m 0755 "${REPO_STAGE_DIR}/files/imager-compat.sh" "${ROOTFS_DIR}/usr/local/sbin/imager-compat.sh"
 
 on_chroot << 'EOF'
 systemctl enable imager-compat.service
 EOF
 
 echo "imager-compat.service installed and enabled"
+
+# Create the captive portal hooks directory and install example scripts.
+# Scripts in the live directory (/etc/travel-router/portals/) are auto-loaded
+# by captive-check.sh when their name matches the current SSID slug.
+# Examples are installed to the examples/ subdirectory — they are NOT loaded
+# automatically; users copy and customise them for specific hotel networks.
+PORTALS_DIR="${ROOTFS_DIR}/etc/travel-router/portals"
+PORTALS_EXAMPLES_DIR="${PORTALS_DIR}/examples"
+PORTALS_SRC="${TARGET_DIR}/scripts/portals"
+
+install -d -m 0755 "${PORTALS_DIR}"
+install -d -m 0755 "${PORTALS_EXAMPLES_DIR}"
+
+if [ -d "${PORTALS_SRC}" ]; then
+    for f in "${PORTALS_SRC}"/*.sh; do
+        [ -f "$f" ] || continue
+        # H29: install portal example scripts as executable (0755, not 0644).
+        install -m 0755 "$f" "${PORTALS_EXAMPLES_DIR}/"
+    done
+    echo "Portal example scripts installed to ${PORTALS_EXAMPLES_DIR}"
+else
+    echo "WARNING: ${PORTALS_SRC} not found in repo; portal examples not installed."
+fi
 
 # Image version stamp.
 cat > "${ROOTFS_DIR}/etc/travel-router-image-version" <<EOF

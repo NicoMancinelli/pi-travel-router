@@ -12,8 +12,16 @@ source /etc/default/travel-router 2>/dev/null || true
 R='\033[0;31m'; G='\033[0;32m'; C='\033[0;36m'
 NC='\033[0m'; W='\033[1;37m'; DIM='\033[2m'; BOLD='\033[1m'
 
-_cleanup() { tput cnorm 2>/dev/null || true; clear; exit 0; }
+_EXIT_NORMAL=0
+_cleanup() {
+    tput cnorm 2>/dev/null || true
+    [[ "$_EXIT_NORMAL" = "1" ]] && clear
+    exit 0
+}
 trap _cleanup INT TERM
+
+# AP interface — override with AP_IFACE env var if needed
+AP_IFACE="${AP_IFACE:-uap0}"
 
 # ── Box drawing ───────────────────────────────────────────────────────────────
 # Outer width: 68 chars  (╔ + 66═ + ╗)
@@ -59,6 +67,17 @@ _svc_dot() {
         && printf "${G}●${NC}" || printf "${R}○${NC}"
 }
 
+_cpu_usage() {
+    local u n s id u2 n2 s2 id2 _rest
+    read -r _rest u n s id _rest < /proc/stat
+    local total=$(( u + n + s + id )) idle=$id
+    sleep 0.1
+    read -r _rest u2 n2 s2 id2 _rest < /proc/stat
+    local total2=$(( u2 + n2 + s2 + id2 )) idle2=$id2
+    local dtotal=$(( total2 - total )) didle=$(( idle2 - idle ))
+    (( dtotal > 0 )) && printf '%d' $(( 100 * (dtotal - didle) / dtotal )) || printf '0'
+}
+
 _fmt_bps() {
     awk -v b="$1" 'BEGIN{
         if(b>=1048576) printf "%.1f MB/s", b/1048576
@@ -68,14 +87,23 @@ _fmt_bps() {
 }
 
 _bw_delta() {
-    local iface="$1" dir="$2" cur prev
-    local prev_file="/tmp/tui_${dir}_${iface}"
+    local iface="$1" dir="$2" cur prev _elapsed
+    mkdir -p /run/travel-router
+    local prev_file="/run/travel-router/tui_${dir}_${iface}"
+    local time_file="/run/travel-router/tui_time_${dir}_${iface}"
     cur=$(cat "/sys/class/net/${iface}/statistics/${dir}_bytes" 2>/dev/null || echo 0)
     cur=$(( cur + 0 ))
     prev=$(cat "$prev_file" 2>/dev/null || echo "$cur")
     prev=$(( prev + 0 ))
-    echo "$cur" > "$prev_file"
-    echo $(( cur > prev ? (cur - prev) / 5 : 0 ))
+    local _now; _now=$(date +%s%N)
+    local _last; _last=$(cat "$time_file" 2>/dev/null || echo "$_now")
+    _elapsed=$(( (_now - _last) / 1000000000 ))
+    (( _elapsed < 1 )) && _elapsed=1
+    echo "$cur"  > "$prev_file"
+    echo "$_now" > "$time_file"
+    local delta=$(( cur - prev ))
+    if (( delta < 0 )); then delta=$(( 4294967296 - prev + cur )); fi
+    echo $(( delta / _elapsed ))
 }
 
 # ── Config editing helpers ────────────────────────────────────────────────────
@@ -99,11 +127,26 @@ _cfg_edit() {
         read -r new_val
     fi
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
-    if grep -q "^${varname}=" /etc/default/travel-router 2>/dev/null; then
-        sed -i "s|^${varname}=.*|${varname}=\"${new_val}\"|" /etc/default/travel-router
-    else
-        printf '\n%s="%s"\n' "$varname" "$new_val" >> /etc/default/travel-router
-    fi
+    python3 - "$varname" "$new_val" "/etc/default/travel-router" << 'PY'
+import sys, re, tempfile, os
+key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+pattern = re.compile(r'^' + re.escape(key) + r'=')
+new_line = f'{key}="{val}"\n'
+replaced = False
+for i, line in enumerate(lines):
+    if pattern.match(line):
+        lines[i] = new_line
+        replaced = True
+        break
+if not replaced:
+    lines.append(new_line)
+tmp = path + '.tmp'
+with open(tmp, 'w') as fh:
+    fh.writelines(lines)
+os.replace(tmp, path)
+PY
     printf "  ${G}✓ Saved${NC}\n"
 }
 
@@ -113,7 +156,26 @@ _ap_edit_ssid() {
     printf "\n  ${W}AP Network Name (SSID)${NC}\n  Current: ${DIM}%s${NC}\n  New value (Enter to keep): " "${cur:-(unknown)}"
     read -r new_val
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
-    sed -i "s/^ssid=.*/ssid=${new_val}/" /etc/hostapd/hostapd.conf
+    python3 - "ssid" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
+import sys, re, os
+key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+pattern = re.compile(r'^' + re.escape(key) + r'=')
+new_line = f'{key}={val}\n'
+replaced = False
+for i, line in enumerate(lines):
+    if pattern.match(line):
+        lines[i] = new_line
+        replaced = True
+        break
+if not replaced:
+    lines.append(new_line)
+tmp = path + '.tmp'
+with open(tmp, 'w') as fh:
+    fh.writelines(lines)
+os.replace(tmp, path)
+PY
     printf "  ${G}✓ Saved${NC} — restarting hostapd...\n"
     systemctl restart hostapd 2>/dev/null \
         && printf "  ${G}✓ hostapd restarted — AP is now %s${NC}\n" "$new_val" \
@@ -134,7 +196,26 @@ _ap_edit_pass() {
         printf "  ${R}✗ Password must be 8–63 characters${NC}\n"
         return
     fi
-    sed -i "s/^wpa_passphrase=.*/wpa_passphrase=${new_val}/" /etc/hostapd/hostapd.conf
+    python3 - "wpa_passphrase" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
+import sys, re, os
+key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+pattern = re.compile(r'^' + re.escape(key) + r'=')
+new_line = f'{key}={val}\n'
+replaced = False
+for i, line in enumerate(lines):
+    if pattern.match(line):
+        lines[i] = new_line
+        replaced = True
+        break
+if not replaced:
+    lines.append(new_line)
+tmp = path + '.tmp'
+with open(tmp, 'w') as fh:
+    fh.writelines(lines)
+os.replace(tmp, path)
+PY
     printf "  ${G}✓ Saved${NC} — restarting hostapd...\n"
     systemctl restart hostapd 2>/dev/null \
         && printf "  ${G}✓ hostapd restarted${NC}\n" \
@@ -165,8 +246,22 @@ draw_dashboard() {
     _box_sep
 
     # ── Uplink ────────────────────────────────────────────────────────────────
-    uplink=$(ip route get 1.1.1.1 2>/dev/null \
-        | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' || true)
+    # Prefer failover state file; fall back to routing table (captive-portal safe)
+    local _uplink_state_file="/var/lib/travel-router/uplink.state"
+    if [[ -f "$_uplink_state_file" ]]; then
+        uplink=$(cat "$_uplink_state_file")
+    else
+        uplink=$(ip route get 1.1.1.1 2>/dev/null \
+            | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' || true)
+        if [[ -z "${uplink:-}" ]]; then
+            uplink=$(ip route show default 2>/dev/null \
+                | awk 'BEGIN{m=99999;iface=""} /^default/{
+                    for(i=1;i<=NF;i++){if($i=="dev")d=$(i+1); if($i=="metric")mt=$(i+1)}
+                    if(mt=="")mt=0
+                    if(mt<m){m=mt;iface=d}}
+                  END{print iface}' || true)
+        fi
+    fi
     src_ip=$(ip route get 1.1.1.1 2>/dev/null \
         | awk '/src/{for(i=1;i<=NF;i++){if($i=="src"){print $(i+1);exit}}}' || true)
     case "${uplink:-}" in
@@ -180,7 +275,10 @@ draw_dashboard() {
 
     bw_up=$(_bw_delta "${uplink:-lo}" tx)
     bw_dn=$(_bw_delta "${uplink:-lo}" rx)
-    signal=$(iw dev wlan0 link 2>/dev/null | awk '/signal/{print $2, $3}' || true)
+    # RSSI only meaningful when uplink is wlan0
+    signal=""
+    [[ "${uplink:-}" = "wlan0" ]] && \
+        signal=$(iw dev wlan0 link 2>/dev/null | awk '/signal/{print $2, $3}' || true)
 
     local up_dot up_color
     if [[ -n "${uplink:-}" ]]; then
@@ -189,8 +287,16 @@ draw_dashboard() {
         up_dot="${R}○${NC}"; up_color="$R"
     fi
 
-    _cl "  ${W}UPLINK${NC}    ${up_dot} ${up_color}${utype}${NC}  ${DIM}${uplink:-none}${NC}  ${DIM}src ${src_ip:-?}${NC}"
-    _cl "            ${DIM}↑${NC} $(_fmt_bps "$bw_up")  ${DIM}↓${NC} $(_fmt_bps "$bw_dn")${signal:+   ${DIM}WiFi ${signal}${NC}}"
+    # Build uplink label — append RSSI when on WiFi STA
+    local utype_disp="$utype"
+    [[ -n "$signal" ]] && utype_disp="${utype} · ${signal} dBm"
+
+    # Captive portal inline flag
+    local cp_flag=""
+    [ -f /tmp/captive-portal-active ] && cp_flag="  ${R}${BOLD}⚠ CAPTIVE PORTAL${NC}"
+
+    _cl "  ${W}UPLINK${NC}    ${up_dot} ${up_color}${utype_disp}${NC}  ${DIM}${uplink:-none}${NC}  ${DIM}src ${src_ip:-?}${NC}${cp_flag}"
+    _cl "            ${DIM}↑${NC} $(_fmt_bps "$bw_up")  ${DIM}↓${NC} $(_fmt_bps "$bw_dn")"
     _box_sep
 
     # ── Tailscale ─────────────────────────────────────────────────────────────
@@ -205,11 +311,32 @@ draw_dashboard() {
 
     # ── Access Point ──────────────────────────────────────────────────────────
     ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || printf "?")
-    ap_clients=$(iw dev uap0 station dump 2>/dev/null | grep -c "^Station" || printf "0")
-    client_ips=$(ip neigh show dev uap0 2>/dev/null | awk '{printf "%s ", $1}' | head -c 36 || true)
+    ap_clients=$(iw dev "${AP_IFACE}" station dump 2>/dev/null | grep -c "^Station" || printf "0")
+    # Build comma-separated IP list by cross-referencing station MACs against
+    # ip neigh (primary) then /proc/net/arp (fallback).
+    client_ips=""
+    if [[ "${ap_clients:-0}" -gt 0 ]]; then
+        local _neigh_table _arp_table _mac_list _ip_list _ip _m
+        _neigh_table=$(ip neigh show 2>/dev/null || true)
+        _arp_table=$(awk 'NR>1{print $4, $1}' /proc/net/arp 2>/dev/null || true)
+        _mac_list=$(iw dev "${AP_IFACE}" station dump 2>/dev/null \
+            | awk '/^Station/{print $2}' || true)
+        _ip_list=""
+        while IFS= read -r _m; do
+            [[ -z "$_m" ]] && continue
+            _ip=$(printf '%s' "$_neigh_table" \
+                | awk -v m="$_m" 'tolower($5)==tolower(m){print $1; exit}')
+            if [[ -z "$_ip" ]]; then
+                _ip=$(printf '%s' "$_arp_table" \
+                    | awk -v m="$_m" 'tolower($1)==tolower(m){print $2; exit}')
+            fi
+            [[ -n "$_ip" ]] && _ip_list="${_ip_list:+${_ip_list}, }${_ip}"
+        done <<< "$_mac_list"
+        client_ips="$_ip_list"
+    fi
     systemctl is-active --quiet hostapd 2>/dev/null \
         && ap_dot="${G}●${NC}" || ap_dot="${R}○${NC}"
-    _cl "  ${W}AP${NC}        ${ap_dot} ${G}${ap_ssid}${NC}  ${DIM}${ap_clients} client$( [[ "${ap_clients:-0}" = "1" ]] && echo '' || echo 's' )${NC}${client_ips:+   ${DIM}(${client_ips%% })${NC}}"
+    _cl "  ${W}AP${NC}        ${ap_dot} ${G}${ap_ssid}${NC}  ${DIM}${ap_clients} client$( [[ "${ap_clients:-0}" = "1" ]] && echo '' || echo 's' )${NC}${client_ips:+  ${DIM}(${client_ips})${NC}}"
     _box_sep
 
     # ── Feature flags ─────────────────────────────────────────────────────────
@@ -219,11 +346,18 @@ draw_dashboard() {
     # ── System stats ──────────────────────────────────────────────────────────
     temp=$(awk '{printf "%.0f°C", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null || printf "?")
     up_str=$(uptime -p 2>/dev/null | sed 's/up //' || printf "?")
-    cpu=$(top -bn1 2>/dev/null | awk '/^%Cpu/{printf "%.0f%%", 100-$8}' || printf "?")
+    cpu="$(_cpu_usage)%"
     ram_info=$(free -m 2>/dev/null | awk '/^Mem/{printf "%dM/%dM", $3, $2}' || printf "?")
     disk_info=$(df -h / 2>/dev/null | awk 'NR==2{printf "%s/%s", $3, $2}' || printf "?")
     _cl "  ${DIM}CPU${NC} ${cpu}  ${DIM}Temp${NC} ${temp}  ${DIM}RAM${NC} ${ram_info}  ${DIM}Disk${NC} ${disk_info}  ${DIM}Up${NC} ${up_str}"
     _box_sep
+
+    # ── Captive portal warning ────────────────────────────────────────────────
+    if [ -f /tmp/captive-portal-active ]; then
+        _cl "  ${R}${BOLD}⚠  CAPTIVE PORTAL ACTIVE${NC}  ${DIM}Open a browser on your device to log in,${NC}"
+        _cl "  ${DIM}then run Network → [h] Re-check portal  (or wait ~60s for auto-check)${NC}"
+        _box_sep
+    fi
 
     # ── Navigation ────────────────────────────────────────────────────────────
     _bl "  [1] Services  [2] Features  [3] Logs  [4] Clients  [5] Network"
@@ -244,11 +378,18 @@ show_services() {
         _box_top
         _cl "  ${BOLD}${C}Services${NC}"
         _box_sep
+        # Batch-query all service states in a single systemctl call
+        local _svc_statuses
+        _svc_statuses=$(systemctl is-active "${svc_list[@]}" 2>/dev/null || true)
         local i=1
+        local _si=0
         for svc in "${svc_list[@]}"; do
-            local dot; dot=$(_svc_dot "$svc")
+            local _state; _state=$(printf '%s' "$_svc_statuses" | sed -n "$(( _si + 1 ))p")
+            local dot
+            [[ "$_state" = "active" ]] && dot="${G}●${NC}" || dot="${R}○${NC}"
             _cl "  [${i}] ${dot} ${svc}"
             (( i++ )) || true
+            (( _si++ )) || true
         done
         _box_sep
         _bl "  Enter number to restart, [q] to return: "
@@ -320,18 +461,32 @@ show_features() {
         read -r choice
         case "$choice" in
             q|Q) return ;;
-            [1-9]|1[0-9])
-                local idx=$(( choice - 1 ))
-                if [[ $idx -lt ${#flag_list[@]} ]]; then
+            *)
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#flag_list[@]} )); then
+                    local idx=$(( choice - 1 ))
                     local target_flag="${flag_list[$idx]}"
                     local cur_val="${!target_flag:-0}" new_val
                     [[ "$cur_val" = "1" ]] && new_val="0" || new_val="1"
-                    if grep -q "^${target_flag}=" /etc/default/travel-router 2>/dev/null; then
-                        sed -i "s/^${target_flag}=.*/${target_flag}=\"${new_val}\"/" \
-                            /etc/default/travel-router
-                    else
-                        printf '\n%s="%s"\n' "${target_flag}" "${new_val}" >> /etc/default/travel-router
-                    fi
+                    python3 - /etc/default/travel-router "$target_flag" "$new_val" << 'PY'
+import sys, os, shlex
+path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+new_lines = []
+found = False
+for line in lines:
+    if line.startswith(key + '='):
+        new_lines.append(key + '=' + shlex.quote(val) + '\n')
+        found = True
+    else:
+        new_lines.append(line)
+if not found:
+    new_lines.append('\n' + key + '=' + shlex.quote(val) + '\n')
+tmp = path + '.tmp'
+with open(tmp, 'w') as f:
+    f.writelines(new_lines)
+os.replace(tmp, path)
+PY
                     printf "  ${G}✓${NC} %s → %s\n" "$target_flag" "$new_val"
 
                     case "$target_flag" in
@@ -346,16 +501,20 @@ show_features() {
                             fi
                             ;;
                         ENABLE_DOT)
-                            [[ "$new_val" = "1" ]] \
-                                && systemctl restart stubby 2>/dev/null || true \
-                                || systemctl stop stubby 2>/dev/null || true
+                            if [[ "$new_val" = "1" ]]; then
+                                systemctl restart stubby 2>/dev/null || true
+                            else
+                                systemctl stop stubby 2>/dev/null || true
+                            fi
                             systemctl reload-or-restart dnsmasq 2>/dev/null || true
                             printf "  ${G}✓ DoT %s${NC}\n" "$([[ $new_val = 1 ]] && echo enabled || echo disabled)"
                             ;;
                         ENABLE_ADGUARD)
-                            [[ "$new_val" = "1" ]] \
-                                && systemctl restart adguard-home 2>/dev/null || true \
-                                || systemctl stop adguard-home 2>/dev/null || true
+                            if [[ "$new_val" = "1" ]]; then
+                                systemctl restart adguard-home 2>/dev/null || true
+                            else
+                                systemctl stop adguard-home 2>/dev/null || true
+                            fi
                             systemctl reload-or-restart dnsmasq 2>/dev/null || true
                             printf "  ${G}✓ AdGuard Home %s${NC}\n" "$([[ $new_val = 1 ]] && echo enabled || echo disabled)"
                             ;;
@@ -364,9 +523,11 @@ show_features() {
                             printf "  ${G}✓ avahi-daemon restarted${NC}\n"
                             ;;
                         ENABLE_HTTP_UA_REWRITE)
-                            [[ "$new_val" = "1" ]] \
-                                && systemctl restart privoxy 2>/dev/null || true \
-                                || systemctl stop privoxy 2>/dev/null || true
+                            if [[ "$new_val" = "1" ]]; then
+                                systemctl restart privoxy 2>/dev/null || true
+                            else
+                                systemctl stop privoxy 2>/dev/null || true
+                            fi
                             printf "  ${G}✓ privoxy %s${NC}\n" "$([[ $new_val = 1 ]] && echo started || echo stopped)"
                             ;;
                         ENABLE_AP_SCHEDULE)
@@ -493,66 +654,69 @@ show_logs() {
 
 # ── Clients ───────────────────────────────────────────────────────────────────
 show_clients() {
-    clear
-    _box_top
-    _cl "  ${BOLD}${C}AP Clients${NC}"
-    _box_sep
+    while true; do
+        clear
+        _box_top
+        _cl "  ${BOLD}${C}AP Clients${NC}"
+        _box_sep
 
-    local station_dump client_count
-    station_dump=$(iw dev uap0 station dump 2>/dev/null || true)
-    client_count=$(printf '%s' "$station_dump" | grep -c "^Station" || true)
+        local station_dump client_count
+        station_dump=$(iw dev "${AP_IFACE}" station dump 2>/dev/null || true)
+        client_count=$(printf '%s' "$station_dump" | grep -c "^Station" || true)
 
-    if [[ "${client_count:-0}" -eq 0 ]]; then
-        _bl "  No clients connected."
+        if [[ "${client_count:-0}" -eq 0 ]]; then
+            _bl "  No clients connected."
+            _box_sep
+            _bl "  [r] Refresh  [q] Return: "
+            _box_bot
+            local c; read -r c
+            [[ "$c" = "r" || "$c" = "R" ]] && continue
+            return
+        fi
+
+        _cl "  ${DIM}MAC               IP               Hostname         Signal${NC}"
+        local _mac="" _ip="" _signal="?" _pending=0
+        while IFS= read -r _line; do
+            case "$_line" in
+                "Station "*)
+                    # flush previous station if we have one
+                    if [[ "$_pending" -eq 1 ]]; then
+                        local _hostname=""
+                        _hostname=$(awk -v ip="$_ip" '$3==ip && $4!="*" {print $4; exit}' \
+                            /var/lib/misc/dnsmasq.leases 2>/dev/null || true)
+                        local _host_display=""
+                        [[ -n "$_hostname" ]] && _host_display=" ${DIM}${_hostname}${NC}"
+                        _cl "  ${G}${_mac}${NC}  ${DIM}${_ip}${NC}$(printf '%*s' $(( 18 - ${#_ip} )) '')${_host_display}$(printf '%*s' $(( 17 - ${#_hostname} )) '')${_signal}"
+                    fi
+                    _mac=$(printf '%s' "$_line" | awk '{print $2}')
+                    _ip=$(ip neigh show dev "${AP_IFACE}" 2>/dev/null \
+                        | awk -v m="$_mac" 'tolower($3)==tolower(m){print $1; exit}')
+                    [[ -z "$_ip" ]] && _ip="unknown"
+                    _signal="?"
+                    _pending=1
+                    ;;
+                *"signal:"*)
+                    _signal=$(printf '%s' "$_line" | awk '{print $2, $3}')
+                    ;;
+            esac
+        done <<< "$station_dump"
+        # flush last station
+        if [[ "$_pending" -eq 1 ]]; then
+            local _hostname=""
+            _hostname=$(awk -v ip="$_ip" '$3==ip && $4!="*" {print $4; exit}' \
+                /var/lib/misc/dnsmasq.leases 2>/dev/null || true)
+            local _host_display=""
+            [[ -n "$_hostname" ]] && _host_display=" ${DIM}${_hostname}${NC}"
+            _cl "  ${G}${_mac}${NC}  ${DIM}${_ip}${NC}$(printf '%*s' $(( 18 - ${#_ip} )) '')${_host_display}$(printf '%*s' $(( 17 - ${#_hostname} )) '')${_signal}"
+        fi
+
         _box_sep
         _bl "  [r] Refresh  [q] Return: "
         _box_bot
-        local c; read -r c
-        [[ "$c" = "r" || "$c" = "R" ]] && show_clients
+        local _choice; read -r _choice
+        [[ "$_choice" = "r" || "$_choice" = "R" ]] && continue
         return
-    fi
-
-    _cl "  ${DIM}MAC               IP               Hostname         Signal${NC}"
-    local _mac="" _ip="" _signal="?" _pending=0
-    while IFS= read -r _line; do
-        case "$_line" in
-            "Station "*)
-                # flush previous station if we have one
-                if [[ "$_pending" -eq 1 ]]; then
-                    local _hostname=""
-                    _hostname=$(awk -v ip="$_ip" '$3==ip && $4!="*" {print $4; exit}' \
-                        /var/lib/misc/dnsmasq.leases 2>/dev/null || true)
-                    local _host_display=""
-                    [[ -n "$_hostname" ]] && _host_display=" ${DIM}${_hostname}${NC}"
-                    _cl "  ${G}${_mac}${NC}  ${DIM}${_ip}${NC}$(printf '%*s' $(( 18 - ${#_ip} )) '')${_host_display}$(printf '%*s' $(( 17 - ${#_hostname} )) '')${_signal}"
-                fi
-                _mac=$(printf '%s' "$_line" | awk '{print $2}')
-                _ip=$(ip neigh show dev uap0 2>/dev/null \
-                    | awk -v m="$_mac" 'tolower($3)==tolower(m){print $1; exit}')
-                [[ -z "$_ip" ]] && _ip="unknown"
-                _signal="?"
-                _pending=1
-                ;;
-            *"signal:"*)
-                _signal=$(printf '%s' "$_line" | awk '{print $2, $3}')
-                ;;
-        esac
-    done <<< "$station_dump"
-    # flush last station
-    if [[ "$_pending" -eq 1 ]]; then
-        local _hostname=""
-        _hostname=$(awk -v ip="$_ip" '$3==ip && $4!="*" {print $4; exit}' \
-            /var/lib/misc/dnsmasq.leases 2>/dev/null || true)
-        local _host_display=""
-        [[ -n "$_hostname" ]] && _host_display=" ${DIM}${_hostname}${NC}"
-        _cl "  ${G}${_mac}${NC}  ${DIM}${_ip}${NC}$(printf '%*s' $(( 18 - ${#_ip} )) '')${_host_display}$(printf '%*s' $(( 17 - ${#_hostname} )) '')${_signal}"
-    fi
-
-    _box_sep
-    _bl "  [r] Refresh  [q] Return: "
-    _box_bot
-    local _choice; read -r _choice
-    [[ "$_choice" = "r" || "$_choice" = "R" ]] && show_clients
+    done
 }
 
 # ── Network tools ─────────────────────────────────────────────────────────────
@@ -575,6 +739,7 @@ show_network() {
         _bl "  [7] Connect to hotel / new WiFi network"
         _cl "  [8] Start Bluetooth tethering  ${DIM}${bt_hint}${NC}"
         _bl "  [9] Stop Bluetooth tethering"
+        _bl "  [h] Re-check captive portal now"
         _box_sep
         _bl "  Enter choice, [q] to return: "
         _box_bot
@@ -589,7 +754,8 @@ show_network() {
                _auth="WPA"
                [[ -z "$_pass" ]] && _auth="nopass"
                local _wifi_str="WIFI:T:${_auth};S:${_ssid};P:${_pass};;"
-               printf "  Network: %s\n  Password: %s\n\n" "$_ssid" "${_pass:-(open)}"
+               printf "  Network: %s\n" "$_ssid"
+               printf "  Password: %s\n\n" "$(printf '%s' "${_pass:-(open)}" | sed 's/./*/g')"
                if command -v qrencode >/dev/null 2>&1; then
                    qrencode -t ansiutf8 "$_wifi_str" 2>/dev/null || printf "  (qrencode failed)\n"
                else
@@ -616,7 +782,7 @@ show_network() {
                sleep 2 ;;
             5) command -v bmon >/dev/null 2>&1 && bmon \
                    || { printf "  bmon not installed\n  Press any key..."; read -rsn1 || true; } ;;
-            6) command -v iftop >/dev/null 2>&1 && iftop -i uap0 2>/dev/null || true \
+            6) command -v iftop >/dev/null 2>&1 && iftop -i "${AP_IFACE}" 2>/dev/null || true \
                    || { printf "  iftop not installed\n  Press any key..."; read -rsn1 || true; } ;;
             7) clear
                printf "${W}Connect to WiFi Network${NC}\n\n"
@@ -627,16 +793,30 @@ show_network() {
                [[ -z "$wifi_ssid" ]] && continue
                printf "  Password (Enter for open network): "
                local wifi_pass; read -rs wifi_pass; printf "\n"
+               local _connect_ok=0
                if [[ -n "$wifi_pass" ]]; then
                    nmcli device wifi connect "$wifi_ssid" password "$wifi_pass" ifname wlan0 2>&1 \
-                       && printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid" \
+                       && { printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid"; _connect_ok=1; } \
                        || printf "  ${R}✗ failed — check SSID/password${NC}\n"
                else
                    nmcli device wifi connect "$wifi_ssid" ifname wlan0 2>&1 \
-                       && printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid" \
+                       && { printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid"; _connect_ok=1; } \
                        || printf "  ${R}✗ could not connect${NC}\n"
                fi
-               sleep 3 ;;
+               if [[ "$_connect_ok" -eq 1 ]]; then
+                   printf "  ${DIM}Waiting for DHCP...${NC}\n"
+                   sleep 4
+                   printf "  Checking for captive portal...\n"
+                   /usr/local/bin/captive-check.sh 2>/dev/null || true
+                   if [ -f /tmp/captive-portal-active ]; then
+                       printf "  ${R}${BOLD}⚠  Captive portal detected!${NC}\n"
+                       printf "  ${W}Open a browser on your laptop/phone and log in to the hotel WiFi,${NC}\n"
+                       printf "  ${W}then return here and press [h] to re-check.${NC}\n"
+                   else
+                       printf "  ${G}✓ Internet clear — no captive portal${NC}\n"
+                   fi
+               fi
+               printf "\n  Press any key..."; read -rsn1 || true ;;
             8) if [[ -z "$bt_mac" ]]; then
                    printf "  ${R}IPHONE_BT_MAC not set — go to Settings → [1]${NC}\n"
                    sleep 2
@@ -652,6 +832,14 @@ show_network() {
                    && printf "  ${G}✓ BT tethering stopped${NC}\n" \
                    || printf "  ${R}✗ stop failed${NC}\n"
                sleep 2 ;;
+            h|H) printf "  Running captive portal check...\n"
+               /usr/local/bin/captive-check.sh 2>/dev/null || true
+               if [ -f /tmp/captive-portal-active ]; then
+                   printf "  ${R}⚠  Portal still active — authenticate via your browser first${NC}\n"
+               else
+                   printf "  ${G}✓ Internet clear — no captive portal${NC}\n"
+               fi
+               sleep 3 ;;
             q|Q) return ;;
         esac
     done
@@ -750,6 +938,9 @@ show_settings() {
                 "Prometheus Pushgateway URL  (e.g. http://192.168.1.10:9091)"; sleep 1 ;;
             a|A)
                 _cfg_edit SSH_ADMIN_KEY "SSH Admin Public Key  (ssh-ed25519 AAAA... or ssh-rsa AAAA...)"
+                # Re-source to get the updated value written by _cfg_edit
+                # shellcheck source=/dev/null
+                source /etc/default/travel-router 2>/dev/null || true
                 if [[ -n "${SSH_ADMIN_KEY:-}" ]]; then
                     printf "  Appending key to authorized_keys...\n"
                     mkdir -p /root/.ssh
@@ -803,7 +994,7 @@ show_system() {
                elif [[ ${#_pw1} -lt 8 ]]; then
                    printf "  ${R}✗ Must be at least 8 characters${NC}\n"
                else
-                   printf '%s:%s' "root" "$_pw1" | chpasswd 2>/dev/null \
+                   chpasswd <<< "root:${_pw1}" 2>/dev/null \
                        && printf "  ${G}✓ Root password updated${NC}\n" \
                        || printf "  ${R}✗ chpasswd failed${NC}\n"
                fi
@@ -840,7 +1031,15 @@ while true; do
     source /etc/default/travel-router 2>/dev/null || true
     draw_dashboard
     key=""
-    read -rsn1 -t 5 key || true
+    read -rsn1 -t 5 key; _rc=$?
+    if [[ $_rc -gt 128 ]]; then
+        # timed out — redraw
+        continue
+    elif [[ $_rc -ne 0 ]]; then
+        # stdin closed or other error
+        sleep 0.1
+        continue
+    fi
     case "$key" in
         1) show_services  ;;
         2) show_features  ;;
@@ -849,6 +1048,6 @@ while true; do
         5) show_network   ;;
         6) show_settings  ;;
         7) show_system    ;;
-        q|Q) _cleanup     ;;
+        q|Q) _EXIT_NORMAL=1; _cleanup ;;
     esac
 done
