@@ -41,9 +41,16 @@ restore_mac() {
     # H13: use -p to restore the permanent/hardware-burned MAC address,
     # not -r which would assign a new random MAC.
     log "Restoring permanent (hardware) MAC on $IFACE"
+    # N-H9: stop hostapd before taking wlan0 down to avoid crashing uap0
+    local _hostapd_was_running=0
+    if systemctl is-active --quiet hostapd 2>/dev/null; then
+        _hostapd_was_running=1
+        systemctl stop hostapd
+    fi
     ip link set "$IFACE" down
     macchanger -p "$IFACE"
     ip link set "$IFACE" up
+    [ "$_hostapd_was_running" = "1" ] && systemctl start hostapd
     log "MAC restored (permanent/hardware)"
     notify "wlan0 MAC restored to permanent hardware address" low
 }
@@ -58,10 +65,23 @@ clone_mac() {
         exit 0
     fi
     log "Cloning MAC $target onto $IFACE (was $current)"
+    # N-H9: stop hostapd before taking wlan0 down to avoid crashing uap0
+    local _hostapd_was_running=0
+    if systemctl is-active --quiet hostapd 2>/dev/null; then
+        _hostapd_was_running=1
+        systemctl stop hostapd
+    fi
     ip link set "$IFACE" down
     macchanger -m "$target" "$IFACE"
     ip link set "$IFACE" up
+    [ "$_hostapd_was_running" = "1" ] && systemctl start hostapd
     log "MAC cloned: $IFACE → $target"
+    # N-M29: persist cloned MAC so it can be re-applied after reboot
+    # NOTE: for full persistence at boot, configure a oneshot systemd service
+    # or a NetworkManager custom config that reads this file.
+    mkdir -p /var/lib/travel-router
+    printf '%s\n' "$target" > /var/lib/travel-router/cloned-mac
+    log "Cloned MAC saved to /var/lib/travel-router/cloned-mac"
     notify "wlan0 MAC cloned to $target for portal auth" low
     echo ""
     echo "wlan0 MAC is now $target"

@@ -21,7 +21,8 @@ fi
 teardown_split_tunnel() {
     ip rule del fwmark 1 table 200 2>/dev/null || true
     ip route flush table 200 2>/dev/null || true
-    ipset destroy travel-split 2>/dev/null || true
+    # N-H7: use consistent ipset name (vpn_domains, matching setup function)
+    ipset destroy vpn_domains 2>/dev/null || true
     logger -t split-tunnel "Split tunnel torn down"
 }
 
@@ -49,6 +50,10 @@ fi
 # Routing table 200: default via tailscale0
 if ! ip rule show | grep -q "fwmark 0x2 lookup 200"; then
     ip rule add fwmark 0x2 lookup 200 priority 200 2>/dev/null || true
+fi
+# N-M7: warn if tailscale0 is absent before attempting route add
+if ! ip link show tailscale0 >/dev/null 2>&1; then
+    logger -t "$LOG_TAG" "WARNING: tailscale0 not present — split tunnel route not set"
 fi
 ip route replace default dev tailscale0 table 200 2>/dev/null || true
 

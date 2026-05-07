@@ -8,17 +8,36 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOGFILE"
 }
 
+# N-M19: safe notify wrapper — falls back to logger if notify-router.sh is absent
+_notify_safe() {
+    local msg="$1" priority="${2:-default}"
+    if command -v notify-router.sh >/dev/null 2>&1 || [ -x /usr/local/bin/notify-router.sh ]; then
+        /usr/local/bin/notify-router.sh "$msg" "$priority" 2>/dev/null || true
+    else
+        logger -t travel-router "$msg"
+    fi
+}
+
 # H1: prevent concurrent instances from racing
 exec 9>/run/lock/failover-watchdog.lock
 flock -n 9 || exit 0
 
-# L1: cap log size when logrotate is not managing this file
-truncate_log() { tail -n 10000 "$LOGFILE" > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE" || true; }
+# N-M18: atomic log truncation with mktemp and EXIT trap cleanup
+_LOG_TMP=""
+_cleanup_log_tmp() { [ -n "$_LOG_TMP" ] && rm -f "$_LOG_TMP"; }
+trap _cleanup_log_tmp EXIT
+
+truncate_log() {
+    _LOG_TMP=$(mktemp "${LOGFILE}.tmp.XXXXXX")
+    tail -n 10000 "$LOGFILE" > "$_LOG_TMP" && mv "$_LOG_TMP" "$LOGFILE" || true
+    _LOG_TMP=""
+}
 truncate_log
 
 # Find active iPhone USB tether interface (enx*)
+# N-M3: also match UNKNOWN and DORMANT link states (common on USB gadgets)
 get_usb_tether_iface() {
-    ip -br link | awk '/^enx/ && /UP/ {print $1}' | head -1
+    ip -br link | awk '/^enx/ && /UP|UNKNOWN|DORMANT/ {print $1}' | head -1
 }
 
 # Find active Android USB tether interface (RNDIS or CDC-ECM)
@@ -62,8 +81,12 @@ set_default_metric() {
     local iface=$1
     local metric=$2
     local gw
+    # N-M2: read gateway at the moment of action, not snapshot time
     gw=$(get_gateway "$iface")
-    ip route del default dev "$iface" 2>/dev/null || true
+    # N-M1: only delete the route if it actually exists
+    if ip route show default dev "$iface" 2>/dev/null | grep -q default; then
+        ip route del default dev "$iface" 2>/dev/null || true
+    fi
     if [ -n "$gw" ]; then
         ip route add default via "$gw" dev "$iface" metric "$metric"
     else
@@ -139,15 +162,16 @@ _notify_uplink_change() {
     local curr_uplink="$1"
     local prev_uplink=""
     [ -f "$_UPLINK_STATE_FILE" ] && prev_uplink=$(cat "$_UPLINK_STATE_FILE")
-    # M4: skip notification on first boot when prev_uplink is empty
+    # N-H1: always write state file when curr_uplink is non-empty (first-run persistence)
+    if [ -n "$curr_uplink" ]; then
+        printf '%s\n' "$curr_uplink" > "$_UPLINK_STATE_FILE"
+    fi
+    # Only send notification when there actually was a previous uplink and it changed
     if [ -n "$curr_uplink" ] && [ -n "$prev_uplink" ] && [ "$curr_uplink" != "$prev_uplink" ]; then
         local prev_label curr_label
         prev_label=$(_uplink_label "${prev_uplink:-none}")
         curr_label=$(_uplink_label "$curr_uplink")
-        if [ -x /usr/local/bin/notify-router.sh ]; then
-            /usr/local/bin/notify-router.sh "Uplink: ${prev_label} → ${curr_label}" low 2>/dev/null || true
-        fi
-        printf '%s\n' "$curr_uplink" > "$_UPLINK_STATE_FILE"
+        _notify_safe "Uplink: ${prev_label} → ${curr_label}" low
     fi
 }
 # ─────────────────────────────────────────────────────────────────────────────
@@ -167,6 +191,9 @@ if [ -n "$USB_TETHER" ]; then
         exit 0
     else
         log "USB tether $USB_TETHER is UP but cannot reach internet"
+        # N-H2: demote failed interface so it is not chosen as default
+        _gw=$(get_gateway "$USB_TETHER")
+        [ -n "$_gw" ] && ip route change default via "$_gw" dev "$USB_TETHER" metric 900 2>/dev/null || true
     fi
 fi
 
@@ -179,6 +206,9 @@ if [ -n "$ANDROID_TETHER" ]; then
         exit 0
     else
         log "Android tether $ANDROID_TETHER is UP but cannot reach internet"
+        # N-H2: demote failed interface so it is not chosen as default
+        _gw=$(get_gateway "$ANDROID_TETHER")
+        [ -n "$_gw" ] && ip route change default via "$_gw" dev "$ANDROID_TETHER" metric 900 2>/dev/null || true
     fi
 fi
 
@@ -190,6 +220,9 @@ if [ -n "$BT_TETHER" ]; then
         exit 0
     else
         log "Bluetooth tether $BT_TETHER is UP but cannot reach internet"
+        # N-H2: demote failed interface so it is not chosen as default
+        _gw=$(get_gateway "$BT_TETHER")
+        [ -n "$_gw" ] && ip route change default via "$_gw" dev "$BT_TETHER" metric 900 2>/dev/null || true
     fi
 fi
 

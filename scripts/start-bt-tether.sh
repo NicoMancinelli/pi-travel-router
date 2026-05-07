@@ -22,7 +22,15 @@ if [ -f /run/bt-pan.pid ] && kill -0 "$(cat /run/bt-pan.pid)" 2>/dev/null; then
     logger -t bt-tether "bt-pan already running"
 else
     bt-pan --dbus client "$BT_MAC" &
-    echo $! > /run/bt-pan.pid
+    BT_PAN_PID=$!
+    echo "$BT_PAN_PID" > /run/bt-pan.pid
+    # N-M26: verify bt-pan process is still alive after 2 seconds (PID not recycled)
+    sleep 2
+    if ! kill -0 "$BT_PAN_PID" 2>/dev/null; then
+        logger -t bt-tether "bt-pan exited immediately (PID $BT_PAN_PID) — aborting"
+        rm -f /run/bt-pan.pid
+        exit 1
+    fi
 fi
 
 for _ in $(seq 1 15); do
@@ -37,6 +45,12 @@ fi
 
 # H10: Bookworm uses nmcli/dhcpcd; dhclient is not present
 nmcli device connect bnep0 2>/dev/null || dhcpcd bnep0 2>/dev/null || true
+
+# N-M10: wait for bnep0 to obtain an IP address before proceeding (up to 15 s)
+for _ in $(seq 1 15); do
+    ip addr show bnep0 2>/dev/null | grep -q 'inet ' && break
+    sleep 1
+done
 
 ip route del default dev bnep0 2>/dev/null || true
 GW=$(ip route show dev bnep0 | awk '/via/{print $3}' | head -1)

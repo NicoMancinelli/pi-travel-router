@@ -4,6 +4,12 @@
 # Copy this file to /etc/travel-router/portals/<SSID>.sh and chmod +x it.
 # Replace <SSID> with your network name (spaces and / become _).
 #
+# SECURITY: deployed scripts that contain credentials MUST be chmod 600 so that
+# only root can read them.  Example:
+#   sudo cp /etc/travel-router/portals/examples/example-credentials.sh \
+#       /etc/travel-router/portals/MyHotelSSID.sh
+#   sudo chmod 600 /etc/travel-router/portals/MyHotelSSID.sh
+#
 # Usage (called automatically by captive-check.sh):
 #   /etc/travel-router/portals/<SSID>.sh "<redirect-url>"
 #
@@ -69,7 +75,12 @@ if [ -z "$REDIRECT_URL" ]; then
     exit 1
 fi
 
-portal_html=$(curl -s --max-time 15 --interface wlan0 \
+# I-M6: use the active uplink interface instead of hardcoded wlan0
+_UPLINK=$(cat /var/lib/travel-router/uplink.state 2>/dev/null || \
+    ip route show default 2>/dev/null | awk '/default/{print $5; exit}')
+_UPLINK="${_UPLINK:-wlan0}"
+
+portal_html=$(curl -s --max-time 15 --interface "${_UPLINK}" \
     -L -c "$COOKIE_JAR" "$REDIRECT_URL" 2>/dev/null) || {
     echo "credentials portal: GET failed" >&2
     exit 1
@@ -102,7 +113,7 @@ esac
 # These field names are generic placeholders.  Inspect the actual form fields
 # (DevTools → Network → POST payload) and update them for your portal.
 
-curl -s -o /dev/null --max-time 15 --interface wlan0 \
+curl -s -o /dev/null --max-time 15 --interface "${_UPLINK}" \
     -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
     -X POST "$form_action" \
     -d "username=$(printf '%s' "$PORTAL_USER" | jq -sRr @uri)&password=$(printf '%s' "$PORTAL_PASS" | jq -sRr @uri)" \
@@ -115,7 +126,7 @@ curl -s -o /dev/null --max-time 15 --interface wlan0 \
 sleep 2
 
 verify=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 \
-    --interface wlan0 "$CONNECT_CHECK" 2>/dev/null)
+    --interface "${_UPLINK}" "$CONNECT_CHECK" 2>/dev/null)
 
 if [ "$verify" = "204" ]; then
     echo "credentials portal: login succeeded" >&2

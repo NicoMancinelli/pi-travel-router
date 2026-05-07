@@ -25,10 +25,21 @@ truncate_log() { tail -n 10000 "$LOGFILE" > "${LOGFILE}.tmp" && mv "${LOGFILE}.t
 truncate_log
 
 can_reach_wan() {
+    # N-H4: primary check via ping; if all pings fail, confirm with dual HTTP probe
+    # before declaring WAN down — avoids false reboot when ICMP is blocked.
     local target
     for target in $WAN_PING_TARGETS; do
         ping -c 2 -W 3 "$target" > /dev/null 2>&1 && return 0
     done
+    # All pings failed — try HTTP probes before concluding WAN is down
+    local code_a
+    code_a=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
+        "https://www.gstatic.com/generate_204" 2>/dev/null)
+    [ "$code_a" = "204" ] && return 0
+    local body_b
+    body_b=$(curl -s --max-time 5 \
+        "https://detectportal.firefox.com/success.txt" 2>/dev/null | tr -d '\r\n')
+    [ "$body_b" = "success" ] && return 0
     return 1
 }
 
@@ -72,6 +83,8 @@ case "$FAILS" in
     1)
         log "Recovery step 1: reconnecting wlan0 via NetworkManager"
         nmcli device disconnect wlan0 2>/dev/null || true
+        # N-M4: wait for disconnect to settle before reconnecting
+        sleep 4
         nmcli device connect wlan0 2>/dev/null || true
         ;;
     2)
@@ -82,8 +95,8 @@ case "$FAILS" in
     3)
         log "Recovery step 3: cycling wlan0 link + restarting hostapd"
         notify "travel-router: WAN down 3x, cycling WiFi link" high
-        # M3: stop hostapd before taking wlan0 down to avoid crashing uap0
-        systemctl stop hostapd 2>/dev/null || true
+        # N-H5: confirm hostapd is stopped before taking wlan0 down
+        systemctl stop hostapd && sleep 1
         ip link set wlan0 down 2>/dev/null || true
         sleep 3
         ip link set wlan0 up 2>/dev/null || true

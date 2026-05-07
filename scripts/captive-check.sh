@@ -4,7 +4,10 @@
 # Also run manually after joining a new network: sudo /usr/local/bin/captive-check.sh
 
 LOGFILE="/var/log/wan-watchdog.log"
-STATE_FILE="/tmp/captive-portal-active"
+# N-H6: use a persistent directory so state survives reboots
+_STATE_DIR="/var/lib/travel-router"
+STATE_FILE="${_STATE_DIR}/captive-portal-active"
+mkdir -p "$_STATE_DIR"
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
@@ -21,8 +24,8 @@ notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || t
 restore_tailscale() {
     local args=()
     if [ -n "$TAILSCALE_UP_ARGS" ]; then
-        # shellcheck disable=SC2206
-        args=($TAILSCALE_UP_ARGS)
+        # N-H10: use read -ra to avoid word-split and glob issues
+        read -ra args <<< "$TAILSCALE_UP_ARGS"
     fi
     tailscale up "${args[@]}" 2>/dev/null
 }
@@ -55,12 +58,18 @@ attempt_portal_login() {
     # C3: use a private per-invocation cookie jar; clean up on exit from this function
     local COOKIE_JAR
     COOKIE_JAR=$(mktemp /tmp/portal-cookies.XXXXXX)
+    # N-M6: save outer EXIT trap and restore it when this function exits
+    local _prev_trap
+    _prev_trap=$(trap -p EXIT 2>/dev/null || true)
     # shellcheck disable=SC2064
-    trap "rm -f '$COOKIE_JAR'" EXIT
+    trap "rm -f '$COOKIE_JAR'; eval \"$_prev_trap\"" EXIT
 
     local portal_html form_action base_url
-    portal_html=$(curl -s --max-time 10 --interface wlan0 \
-        -L -c "$COOKIE_JAR" "$redirect_url" 2>/dev/null)
+    if ! portal_html=$(curl -s --max-time 10 --interface wlan0 \
+        -L -c "$COOKIE_JAR" "$redirect_url" 2>/dev/null); then
+        log "Portal GET failed — cannot attempt auto-login"
+        return 1
+    fi
 
     # M1: handle single-quoted and unquoted action attributes
     form_action=$(printf '%s' "$portal_html" \
@@ -75,10 +84,14 @@ attempt_portal_login() {
     base_url=$(printf '%s' "$redirect_url" | grep -o 'https\?://[^/]*')
     [[ "$form_action" != http* ]] && form_action="${base_url}${form_action}"
 
-    curl -s -o /dev/null --max-time 10 --interface wlan0 \
+    # N-M5: check curl exit code; log and return 1 on failure
+    if ! curl -s -o /dev/null --max-time 10 --interface wlan0 \
         -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
         -X POST "$form_action" \
-        -d "accept=true&terms=1&submit=Connect&button=Connect" 2>/dev/null
+        -d "accept=true&terms=1&submit=Connect&button=Connect" 2>/dev/null; then
+        log "Portal POST failed"
+        return 1
+    fi
 
     sleep 2
     local verify
@@ -192,7 +205,10 @@ else
         touch "$STATE_FILE"
         tailscale down 2>/dev/null
         if attempt_portal_login "$REDIRECT_URL"; then
-            notify "Captive portal: auto-login succeeded" low
+            log "Portal auto-login succeeded — restoring Tailscale"
+            # N-H11: restore Tailscale immediately after successful portal login
+            restore_tailscale && rm -f "$STATE_FILE"
+            notify "Captive portal: auto-login succeeded, Tailscale restored" low
         else
             notify "Captive portal detected! Open browser → authenticate → Tailscale auto-restores" high
             log "Tailscale paused. After portal auth, run: sudo /usr/local/bin/captive-check.sh"
