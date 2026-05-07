@@ -467,12 +467,26 @@ show_features() {
                     local target_flag="${flag_list[$idx]}"
                     local cur_val="${!target_flag:-0}" new_val
                     [[ "$cur_val" = "1" ]] && new_val="0" || new_val="1"
-                    if grep -q "^${target_flag}=" /etc/default/travel-router 2>/dev/null; then
-                        sed -i "s/^${target_flag}=.*/${target_flag}=\"${new_val}\"/" \
-                            /etc/default/travel-router
-                    else
-                        printf '\n%s="%s"\n' "${target_flag}" "${new_val}" >> /etc/default/travel-router
-                    fi
+                    python3 - /etc/default/travel-router "$target_flag" "$new_val" << 'PY'
+import sys, os, shlex
+path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path) as f:
+    lines = f.readlines()
+new_lines = []
+found = False
+for line in lines:
+    if line.startswith(key + '='):
+        new_lines.append(key + '=' + shlex.quote(val) + '\n')
+        found = True
+    else:
+        new_lines.append(line)
+if not found:
+    new_lines.append('\n' + key + '=' + shlex.quote(val) + '\n')
+tmp = path + '.tmp'
+with open(tmp, 'w') as f:
+    f.writelines(new_lines)
+os.replace(tmp, path)
+PY
                     printf "  ${G}✓${NC} %s → %s\n" "$target_flag" "$new_val"
 
                     case "$target_flag" in

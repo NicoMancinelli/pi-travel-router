@@ -20,7 +20,7 @@ mkdir -p /var/lib/travel-router
 UPLINK_IFACE="wlan0"
 UPLINK_STATE="/var/lib/travel-router/uplink.state"
 if [ -f "$UPLINK_STATE" ]; then
-    _candidate=$(cat "$UPLINK_STATE" 2>/dev/null | tr -d '[:space:]')
+    _candidate=$(tr -d '[:space:]' < "$UPLINK_STATE" 2>/dev/null || true)
     if [ -n "$_candidate" ] && ip link show "$_candidate" >/dev/null 2>&1; then
         UPLINK_IFACE="$_candidate"
     fi

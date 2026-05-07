@@ -45,4 +45,4 @@ printf '</body></html>\n'
 } > "${OUT}.tmp"
 
 mv "${OUT}.tmp" "$OUT"
-logger "generate-bandwidth-report: wrote %s" "$OUT"
+logger -t generate-bandwidth-report "wrote ${OUT}"

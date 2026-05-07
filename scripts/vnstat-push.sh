@@ -63,7 +63,7 @@ _seen_ifaces[wlan0]=1
 _seen_ifaces[uap0]=1
 
 if [[ -f /var/lib/travel-router/uplink.state ]]; then
-    _active=$(cat /var/lib/travel-router/uplink.state 2>/dev/null | tr -d '[:space:]')
+    _active=$(tr -d '[:space:]' < /var/lib/travel-router/uplink.state 2>/dev/null || true)
     if [[ -n "$_active" && -z "${_seen_ifaces[$_active]+x}" ]]; then
         _iface_list+=("$_active")
         _seen_ifaces[$_active]=1

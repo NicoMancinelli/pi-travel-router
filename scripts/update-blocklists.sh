@@ -38,7 +38,7 @@ curl -s --max-time 60 -o "$TMP_FILE" "$BLOCKLIST_URL" || {
     exit 0
 }
 
-COUNT=$(grep -c -v '^#' "$TMP_FILE" 2>/dev/null || echo 0)
+COUNT=$(grep -cvE '^#|^[[:space:]]*$' "$TMP_FILE" 2>/dev/null || echo 0)
 echo "Fetched $COUNT entries"
 if [[ "$COUNT" -lt 100 ]]; then
     logger -t update-blocklists "ERROR: blocklist has only $COUNT entries — suspiciously small, aborting"

@@ -84,9 +84,9 @@ apply_update() {
     SCRIPT_ALLOWLIST=(
         failover-watchdog.sh wan-watchdog.sh captive-check.sh travel-router-firewall.sh
         apply-split-tunnel.sh start-tether.sh start-bt-tether.sh stop-bt-tether.sh
-        clone-mac.sh ap-schedule.sh tailscale-watchdog.sh ups-monitor.sh notify-router.sh
+        stop-tether.sh clone-mac.sh ap-schedule.sh tailscale-watchdog.sh ups-monitor.sh notify-router.sh
         travel-tui.sh travel-status.sh travel-diagnostic.sh generate-bandwidth-report.sh
-        vnstat-push.sh tune-cake.sh daily-digest.sh update-router.sh update-blocklists.sh
+        vnstat-push.sh vnstat-metrics.sh tune-cake.sh daily-digest.sh update-router.sh update-blocklists.sh
         setup-2fa.sh install-adguard.sh apply-cake.sh
     )
 
