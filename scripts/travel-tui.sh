@@ -209,6 +209,7 @@ _ap_edit_pass() {
         printf "  ${R}✗ Password must be 8–63 characters${NC}\n"
         return
     fi
+    [[ "$new_val" =~ '#' ]] && { printf "  ${R}✗ Password must not contain '#' (hostapd comment char)${NC}\n"; return; }
     python3 - "wpa_passphrase" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
 import sys, re, os
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]

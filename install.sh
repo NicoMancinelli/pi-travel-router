@@ -814,7 +814,7 @@ if [[ -n "$TS_KEY" ]]; then
     read -ra TS_ARGS <<< "${TAILSCALE_UP_ARGS:-}"
     # Validate TAILSCALE_UP_ARGS against forbidden flags
     _FORBIDDEN_TS=("--authkey" "--reset" "--force-reauth" "--auth-key")
-    for _targ in "${TS_ARGS[@]:-}"; do
+    for _targ in "${TS_ARGS[@]}"; do
         for _f in "${_FORBIDDEN_TS[@]}"; do
             [[ "$_targ" = "$_f" || "$_targ" = "${_f}="* ]] && \
                 die "TAILSCALE_UP_ARGS contains forbidden flag: $_targ"
