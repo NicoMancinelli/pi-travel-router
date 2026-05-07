@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-05-06
+
+### Fixed — Critical / Security
+- `config/sshd-travel-router.conf`: `PermitRootLogin no` → `prohibit-password` (CRITICAL regression: 99-travel-router.conf sorts after 00-permit-root.conf, so `PermitRootLogin no` overrode the correct `prohibit-password` setting in 00-permit-root.conf and locked root out of SSH entirely — the only account on the system)
+- `scripts/travel-tui.sh`: `_ap_edit_pass` now rejects passwords containing `#`; hostapd silently treats `#` as a comment delimiter in its config file, meaning any password with `#` would be truncated to the preceding characters at runtime
+
+### Fixed — Reliability / Correctness
+- `scripts/apply-split-tunnel.sh`: `teardown_split_tunnel()` now deletes the iptables mangle rule before calling `ipset destroy vpn_domains`; the kernel refuses to destroy a referenced ipset, so the previous order caused silent teardown failures leaving stale routing marks
+- `scripts/tailscale-watchdog.sh`: Go zero-time value `"0001-01-01T00:00:00Z"` (returned for peers that have never handshaked) now handled explicitly — `fromdateiso8601` would error on it; treated as epoch 0 (no handshake)
+- `scripts/notify-router.sh`: added `--max-time 10 --connect-timeout 5` to curl; without a timeout the call blocks for ~2 min when WAN is down, stalling all callers
+- `firstboot/server.py`: IPv6 address regex `_BARE_IP_RE` tightened to require ≥ 2 colon-separated groups; the previous pattern matched plain hex strings (`dead`, `cafe`), MAC addresses, and any alphanumeric token containing colons
+
+### Fixed — Configuration / Systemd
+- `systemd/failover-watchdog.timer`: removed `Requires=failover-watchdog.service` and `After=failover-watchdog.service`; `Requires=` on a timer triggers immediate service activation at boot, bypassing `OnBootSec=30` and running the watchdog before network interfaces are ready
+- `systemd/wan-watchdog.timer`: same fix — removed `Requires=wan-watchdog.service`; previously bypassed `OnBootSec=60`
+- `config/AdGuardHome.yaml`: reverted `http.address` from `127.0.0.1:3000` back to `0.0.0.0:3000`; the loopback binding introduced in v1.5.0 made the admin UI unreachable from AP clients at `10.3.141.1`; the AP firewall already limits external access
+- `install.sh`: `"${TS_ARGS[@]:-}"` → `"${TS_ARGS[@]}"` — the `:-` fallback on a named array expands to one empty-string element instead of zero elements when the array is empty, passing a spurious `""` argument to `tailscale up`
+
 ## [1.7.0] - 2026-05-06
 
 ### Fixed — Critical / Security
