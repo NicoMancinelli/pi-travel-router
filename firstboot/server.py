@@ -173,7 +173,10 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
 
     stdomains = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
     if stdomains and not _SPLIT_DOMAINS_RE.fullmatch(stdomains):
-        errors.append("Split tunnel domains must be valid RFC 952 hostnames separated by spaces (no leading/trailing dots or hyphens).")
+        errors.append(
+            "Split tunnel domains must be valid RFC 952 hostnames "
+            "separated by spaces (no leading/trailing dots or hyphens)."
+        )
     values["SPLIT_TUNNEL_DOMAINS"] = stdomains
 
     hostname = _first(form, "ROUTER_HOSTNAME", "travelrouter").strip().lower()
@@ -344,22 +347,30 @@ def _spawn_install() -> None:
 _BASE_CSS = """
 :root{color-scheme:dark}
 *{box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:#0d1117;color:#c9d1d9;margin:0;padding:1rem;line-height:1.45}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+background:#0d1117;color:#c9d1d9;margin:0;padding:1rem;line-height:1.45}
 .wrap{max-width:760px;margin:0 auto}
 h1{color:#58a6ff;margin:.25rem 0 1rem;font-size:1.5rem}
 h2{color:#c9d1d9;font-size:1.05rem;margin:1.25rem 0 .5rem}
 p{margin:.5rem 0}
 a{color:#58a6ff}
-pre{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:1rem;overflow:auto;font-size:.8rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.4;white-space:pre-wrap;word-break:break-word}
-.spin{display:inline-block;width:1em;height:1em;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:s 1s linear infinite;vertical-align:middle;margin-right:.5rem}
+pre{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:1rem;overflow:auto;
+font-size:.8rem;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+line-height:1.4;white-space:pre-wrap;word-break:break-word}
+.spin{display:inline-block;width:1em;height:1em;border:2px solid #30363d;
+border-top-color:#58a6ff;border-radius:50%;animation:s 1s linear infinite;
+vertical-align:middle;margin-right:.5rem}
 @keyframes s{to{transform:rotate(360deg)}}
 .steps{list-style:none;padding:0;margin:.5rem 0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9rem}
 .steps li{padding:.2rem 0;color:#8b949e}
 .steps li.done{color:#3fb950}
 .steps li.current{color:#58a6ff;font-weight:600}
 .success{background:#0f2a14;border:1px solid #238636;border-radius:8px;padding:1.25rem;color:#aff5b4}
-.success .check{display:inline-block;width:2rem;height:2rem;line-height:2rem;text-align:center;border-radius:50%;background:#238636;color:#fff;font-weight:700;margin-right:.5rem;vertical-align:middle}
-.warn{background:#341a1a;border:1px solid #f85149;border-radius:6px;padding:.65rem .85rem;color:#ffa198;font-size:.9rem;margin:1rem 0}
+.success .check{display:inline-block;width:2rem;height:2rem;line-height:2rem;
+text-align:center;border-radius:50%;background:#238636;color:#fff;
+font-weight:700;margin-right:.5rem;vertical-align:middle}
+.warn{background:#341a1a;border:1px solid #f85149;border-radius:6px;
+padding:.65rem .85rem;color:#ffa198;font-size:.9rem;margin:1rem 0}
 """
 
 
@@ -482,7 +493,8 @@ def _status_page() -> bytes:
 <style>{_BASE_CSS}</style></head>
 <body><div class="wrap">
 <div class="success"><span class="check">&#10003;</span><strong>Setup complete.</strong>
-<p style="margin:.75rem 0 0">The Pi is rebooting. Reconnect to your new SSID <strong>{html.escape(ssid)}</strong> to use the router.</p>
+<p style="margin:.75rem 0 0">The Pi is rebooting. Reconnect to your new SSID
+<strong>{html.escape(ssid)}</strong> to use the router.</p>
 <p style="margin:.5rem 0 0;color:#8b949e">This page will not respond after the reboot.</p>
 </div>
 </div></body></html>
@@ -538,7 +550,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; style-src 'self' 'unsafe-inline';"
+            " script-src 'self' 'unsafe-inline'",
+        )
         self.end_headers()
         self.wfile.write(body)
 
@@ -575,8 +591,10 @@ class Handler(BaseHTTPRequestHandler):
             if _preseed:
                 script = '<script>var _ps=' + json.dumps(_preseed).replace("</", "<\\/") + ';'
                 script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
-                script += 'if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");if(e)e.value=_ps.ROUTER_HOSTNAME;}'
-                script += 'if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");if(e)e.value=_ps.SSH_ADMIN_KEY;}'
+                script += ('if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");'
+                           'if(e)e.value=_ps.ROUTER_HOSTNAME;}')
+                script += ('if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");'
+                           'if(e)e.value=_ps.SSH_ADMIN_KEY;}')
                 script += 'if(_ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=_ps.AP_PASS;}'
                 script += '</script>'
                 body = body.replace(b'</body>', script.encode() + b'</body>')
@@ -692,8 +710,10 @@ class Handler(BaseHTTPRequestHandler):
             )}
             err_script = '<script>var _ps=' + json.dumps(err_preseed).replace("</", "<\\/") + ';'
             err_script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
-            err_script += 'if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");if(e)e.value=_ps.ROUTER_HOSTNAME;}'
-            err_script += 'if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");if(e)e.value=_ps.SSH_ADMIN_KEY;}'
+            err_script += ('if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");'
+                           'if(e)e.value=_ps.ROUTER_HOSTNAME;}')
+            err_script += ('if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");'
+                           'if(e)e.value=_ps.SSH_ADMIN_KEY;}')
             err_script += 'if(_ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=_ps.AP_PASS;}'
             # Inject errors list so JS can display the banner
             err_items_json = json.dumps(errors).replace("</", "<\\/")
@@ -702,7 +722,9 @@ class Handler(BaseHTTPRequestHandler):
                            'var el=document.getElementById("errlist");'
                            'var es=document.getElementById("errsum");'
                            'if(el&&es){'
-                           '_errors.forEach(function(m){var li=document.createElement("li");li.textContent=m;el.appendChild(li);});'
+                           '_errors.forEach(function(m){'
+                           'var li=document.createElement("li");'
+                           'li.textContent=m;el.appendChild(li);});'
                            'es.classList.add("show");'
                            'window.scrollTo({top:0,behavior:"smooth"});'
                            '}'
