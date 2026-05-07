@@ -44,12 +44,15 @@ else
     printf '127.0.1.1\ttravelrouter\n' >> "${ROOTFS_DIR}/etc/hosts"
 fi
 
-# Use root as the only login user. Set password to 'changeme' (user must change),
-# enable root SSH login, and remove the throwaway pi-gen FIRST_USER.
+# Use root as the only login user. Set a random temporary password (written to
+# /boot/firmware/root-password.txt so the user can read it on first boot),
+# enable root SSH via key only, and remove the throwaway pi-gen FIRST_USER.
 on_chroot << 'EOF'
-echo 'root:changeme' | chpasswd
+ROOTPW=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
+echo "root:${ROOTPW}" | chpasswd
+echo "TEMP ROOT PASSWORD (change after first login): ${ROOTPW}" > /boot/firmware/root-password.txt 2>/dev/null || echo "${ROOTPW}" > /boot/root-password.txt
 mkdir -p /etc/ssh/sshd_config.d
-printf 'PermitRootLogin yes\nPasswordAuthentication yes\n' \
+printf 'PermitRootLogin prohibit-password\nPasswordAuthentication yes\n' \
     > /etc/ssh/sshd_config.d/00-permit-root.conf
 chmod 0644 /etc/ssh/sshd_config.d/00-permit-root.conf
 # Remove the pi-gen first user (FIRST_USER_NAME=pi) — root is the only account.
@@ -57,6 +60,10 @@ if id pi >/dev/null 2>&1; then
     pkill -u pi 2>/dev/null || true
     deluser --remove-home pi 2>/dev/null || userdel -r pi 2>/dev/null || true
 fi
+EOF
+# B-H6: Assert pi user was actually removed.
+on_chroot << 'EOF'
+id pi >/dev/null 2>&1 && { echo "ERROR: pi user still exists after deletion attempt"; exit 1; } || true
 EOF
 
 # Install a login-shell banner that warns the user the router is not yet configured.
@@ -75,8 +82,8 @@ printf "${RED}##################################################################
 printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
 printf "${RED}##${RST}  ${YEL}WARNING: THIS ROUTER IS NOT CONFIGURED YET${RST}               ${RED}##${RST}\n"
 printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
-printf "${RED}##${RST}  ${BLD}Root password is the factory default:${RST}                    ${RED}##${RST}\n"
-printf "${RED}##${RST}  ${BLD}  changeme${RST}                                               ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}Root password is on the boot partition:${RST}                  ${RED}##${RST}\n"
+printf "${RED}##${RST}  ${BLD}  /boot/firmware/root-password.txt${RST}                       ${RED}##${RST}\n"
 printf "${RED}##${RST}  ${BLD}Change it NOW or run the setup wizard first.${RST}             ${RED}##${RST}\n"
 printf "${RED}##${RST}                                                              ${RED}##${RST}\n"
 printf "${RED}##${RST}  ${BLD}Run the setup wizard:${RST}                                    ${RED}##${RST}\n"

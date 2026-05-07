@@ -21,3 +21,4 @@
 - [ ] `shellcheck <script>` passes for every modified shell script (required if modifying `.sh` files)
 - [ ] `CHANGELOG.md` updated under `[Unreleased]` (required for any user-visible change)
 - [ ] Commit message follows the `fix:` / `feat:` / `docs:` / `chore:` convention
+- [ ] TUI coverage: new `ENABLE_*` flag added to `flag_list` in `show_features()`, new config var to `show_settings()`, new script to TUI menu (see AGENTS.md — TUI Coverage Rule)

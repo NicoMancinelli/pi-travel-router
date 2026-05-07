@@ -52,12 +52,16 @@ A fresh Pi Zero 2 W has no Ethernet, no Wi-Fi STA configured, and no AP up yet (
 ## Default credentials
 
 - Username: `root`
-- Password: `changeme`
+- Password: randomly generated at image build time — stored in `/boot/firmware/root-password.txt` (readable from the FAT boot partition before first boot)
 
-`root` is the only login account on the image; SSH password login is enabled for `root` so the wizard can be reached without prior key setup. **Change the password immediately after first boot** with:
+`root` is the only login account on the image; SSH root login requires a key (`PermitRootLogin prohibit-password`). **Read the temporary password from the boot partition and change it immediately after first boot:**
 
 ```sh
-ssh root@travelrouter.local   # password: changeme
+# Read the temporary password (from the SD card boot partition on your laptop):
+cat /Volumes/bootfs/root-password.txt   # macOS
+cat /media/$USER/bootfs/root-password.txt  # Linux
+
+ssh root@travelrouter.local   # use the temporary password
 passwd
 ```
 
@@ -82,9 +86,10 @@ cd pi-gen
 sudo apt install -y coreutils quilt parted qemu-user-static debootstrap zerofree zip \
     dosfstools libarchive-tools libcap2-bin grep rsync xz-utils file git curl bc \
     qemu-utils kpartx gpg pigz arch-test
-# Register binfmt handlers and add the qemu-arm symlink expected by pi-gen
+# Register binfmt handlers and add the qemu symlinks expected by pi-gen
 sudo systemctl start systemd-binfmt 2>/dev/null || sudo update-binfmts --enable
-sudo ln -sf /usr/bin/qemu-aarch64-static /usr/bin/qemu-arm 2>/dev/null || true
+sudo ln -sf /usr/bin/qemu-arm-static /usr/local/bin/qemu-arm
+sudo ln -sf /usr/bin/qemu-aarch64-static /usr/local/bin/qemu-aarch64
 cp /path/to/pi-travel-router/build/config ./config
 ln -s /path/to/pi-travel-router/build/stage-travel-router ./stage-travel-router
 touch stage2/SKIP_IMAGES

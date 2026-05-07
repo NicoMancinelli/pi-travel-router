@@ -2,6 +2,8 @@ name: Shellcheck
 
 on:
   push:
+    tags:
+      - 'v*'
     paths:
       - 'scripts/**'
       - 'install.sh'
@@ -20,23 +22,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
       - name: Shellcheck scripts
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38  # 2.0.0
         with:
           scandir: './scripts'
           severity: warning
 
-      # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
       - name: Shellcheck install.sh
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38  # 2.0.0
         with:
           additional_files: 'install.sh'
           severity: warning
 
-      # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
       - name: Shellcheck build stage scripts
-        uses: ludeeus/action-shellcheck@2.0.0
+        uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38  # 2.0.0
         with:
           scandir: './build/stage-travel-router'
           severity: warning

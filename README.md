@@ -151,7 +151,7 @@ sudo /usr/local/bin/captive-check.sh
 Many hotel portals expire every 4–12 hours. The watchdog detects re-auth and notifies you via ntfy. Tailscale auto-restores after each re-login.
 
 **6. Switch uplinks on the fly.**
-Plug in your iPhone (USB tethering on) or Android phone — the Pi picks up the tether as a higher-priority uplink (metric 100) and drops hotel WiFi automatically. No configuration needed.
+Plug in your iPhone (USB tethering on) or Android phone — the Pi picks up the tether as a higher-priority uplink (iPhone USB: metric 100, Android USB: metric 200) and drops hotel WiFi automatically. No configuration needed.
 
 ---
 
@@ -198,7 +198,7 @@ The TUI gives you:
 
 All changes write directly to `/etc/default/travel-router` and take effect immediately. No need to edit config files manually.
 
-**RaspAP** web UI is available at `http://10.3.141.1` (credentials: `admin` / `secret`). It provides a graphical interface for hostapd/dnsmasq configuration. The `travel-tui` covers most management tasks, but RaspAP can be useful for advanced WiFi tuning.
+**RaspAP** web UI is available at `http://10.3.141.1` (credentials: `admin` / `secret`). It provides a graphical interface for hostapd/dnsmasq configuration. The `travel-tui` covers most management tasks, but RaspAP can be useful for advanced WiFi tuning. **Change these immediately** — go to RaspAP → System → Authentication. The defaults are publicly known.
 
 ---
 

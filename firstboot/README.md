@@ -82,3 +82,4 @@ If `AP_PASS` is not present in `firstrun.sh`, the wizard will still require it t
 - Form fields are shell-escaped with `shlex.quote` before being written to the env file. Inputs that look like shell metacharacters can't break out.
 - The env file is written with mode `0600` so only root can read the AP passphrase / Tailscale key.
 - The wizard only listens during first boot; after the install completes the unit is disabled and the file `firstboot-done` blocks reactivation.
+- **The `/status` page is unauthenticated and streams install log output to anyone on the LAN while the wizard is active.** Never add `set -x` or equivalent to `install.sh` as it would expose secrets (Tailscale keys, AP passphrases) in the log.

@@ -19,11 +19,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install pyflakes
-        run: pip install pyflakes
+      - name: Install linters
+        run: pip install flake8 pylint
 
       - name: Compile check
         run: find firstboot -name "*.py" -exec python -m py_compile {} +
 
-      - name: Pyflakes
-        run: find firstboot -name "*.py" | xargs python -m pyflakes
+      - name: flake8
+        run: find firstboot -name "*.py" | xargs flake8 --max-line-length=120
+
+      - name: pylint
+        run: pylint --disable=C0114,C0115,C0116 firstboot/server.py

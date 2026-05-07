@@ -40,6 +40,7 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 | uap0 | AP for clients | 10.3.141.0/24 | — |
 | wlan0 | STA uplink (hotel/open WiFi) | DHCP | 600 |
 | enx* | iPhone USB tether | DHCP | 100 |
+| rndis0 | Android USB tether | DHCP | 200 |
 | bnep0 | iPhone Bluetooth PAN | DHCP | 300 |
 | usb0 | USB gadget (laptop admin) | 192.168.7.1/24 | — |
 | tailscale0 | Tailscale mesh VPN | 100.x.x.x | — |
@@ -50,8 +51,8 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 /etc/default/travel-router      # NTFY_TOPIC, IPHONE_BT_MAC, PUSHGW_URL, feature flags
 /etc/hostapd/hostapd.conf       # AP config (SSID, channel, 802.11n)
 /etc/dnsmasq.d/                 # DNS/DHCP configs
-/etc/iptables/rules.v{4,6}      # Saved firewall + TTL rules
-/etc/nftables.conf.d/travel-router.nft  # nftables TTL/DSCP ruleset
+/etc/iptables/rules.v{4,6}      # Saved FORWARD/NAT firewall rules (iptables-persistent)
+/etc/nftables.conf.d/travel-router.nft  # nftables inet travel_mangle table (TTL/DSCP/hop-limit rules)
 /etc/tor/torrc                  # Tor transparent proxy config
 /usr/local/bin/                 # All router scripts
 /etc/systemd/system/            # All watchdog timers and services
@@ -72,10 +73,8 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 - USB Ethernet gadget (g_ncm/dwc2): 192.168.7.1/24 — pre-enabled in the image; no post-install reboot needed for USB gadget reachability
 - Open WiFi fallback is available but disabled by default (`ENABLE_OPEN_WIFI_FALLBACK=0`)
 - Tailscale + subnet router (10.3.141.0/24), exit node capable
-- TTL=65 iptables mangle + IPv6 hop-limit=65 (Visible carrier bypass)
+- TTL=65 + IPv6 hop-limit=65 + DSCP strip + IPv6 ext-header drop via nftables `inet travel_mangle` table (`/etc/nftables.conf.d/travel-router.nft`) — carrier bypass
 - IPv6 disabled on uplinks (DPI fingerprint protection)
-- DSCP strip on uplinks (iptables mangle, carrier bypass)
-- IPv6 extension header drop (ip6tables mangle)
 - TCP BBR + CAKE qdisc (bufferbloat control)
 - CPU performance governor (systemd oneshot)
 - hostapd 802.11n: HT40, WMM, DTIM=1
@@ -116,6 +115,10 @@ config/             # All config file templates
 systemd/            # All .service and .timer units
 tools/              # Helper scripts for external infrastructure (not the Pi itself)
                     #   setup-headscale.sh — run on a public VPS to install Headscale
+firstboot/          # First-boot web wizard (Python stdlib HTTP server + HTML form)
+                    #   Runs on first boot to collect setup answers and invoke install.sh
+build/              # pi-gen custom stage and config for the pre-built SD card image
+                    #   build/config — pi-gen config; build/stage-travel-router/ — custom stage
 ```
 
 ## TUI Coverage Rule

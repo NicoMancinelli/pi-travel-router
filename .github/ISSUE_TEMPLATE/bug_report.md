@@ -20,10 +20,7 @@ cat /etc/os-release
 **Router version**
 ```
 # Image installs:
-cat /etc/travel-router-image-version
-
-# Or from the repo on the Pi:
-cat /opt/pi-travel-router/VERSION
+cat /etc/travel-router-image-version 2>/dev/null || cat /opt/pi-travel-router/VERSION
 ```
 
 **How you installed**

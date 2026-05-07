@@ -6,7 +6,7 @@ Thank you for taking the time to contribute. This is a hobbyist open-source proj
 
 ## Reporting a bug
 
-Use the [Bug report](.github/ISSUE_TEMPLATE/bug_report.md) issue template. Before filing, check whether the same issue already exists in the [issue tracker](https://github.com/NicoMancinelli/pi-travel-router/issues).
+Use the [Bug report](https://github.com/NicoMancinelli/pi-travel-router/issues/new?template=bug_report.md) issue template. Before filing, check whether the same issue already exists in the [issue tracker](https://github.com/NicoMancinelli/pi-travel-router/issues).
 
 Include:
 
@@ -16,11 +16,15 @@ Include:
 
 ## Suggesting a feature
 
-Use the [Feature request](.github/ISSUE_TEMPLATE/feature_request.md) issue template. Ground the request in a real use case, and note the hardware constraints: Pi Zero 2 W has a single-core 1 GHz ARM CPU, 512 MB RAM, and one USB port shared between power delivery and gadget mode.
+Use the [Feature request](https://github.com/NicoMancinelli/pi-travel-router/issues/new?template=feature_request.md) issue template. Ground the request in a real use case, and note the hardware constraints: Pi Zero 2 W has a quad-core Cortex-A53 @ 1 GHz, 512 MB RAM, and one USB port shared between power delivery and gadget mode.
 
 ---
 
 ## Dev setup
+
+### Python dev dependencies
+
+Install dev dependencies with `pip install flake8 pylint pyflakes` (or via `requirements-dev.txt` if present). The `python-lint.yml` CI workflow runs `flake8` and `pylint` on `firstboot/server.py`.
 
 ### Building the image locally
 

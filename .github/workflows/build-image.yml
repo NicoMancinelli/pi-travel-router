@@ -1,10 +1,26 @@
 name: Build Pi Image
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: 'Git ref to embed in the image (SHA, branch, or tag). Leave empty to use the triggering commit SHA.'
+        required: false
+        default: ''
   push:
     tags:
       - 'v*'
+    paths:
+      - 'build/**'
+      - 'install.sh'
+      - 'scripts/**'
+      - 'firstboot/**'
+  pull_request:
+    paths:
+      - 'build/**'
+      - 'install.sh'
+      - 'scripts/**'
+      - 'firstboot/**'
 
 jobs:
   build:
@@ -44,7 +60,7 @@ jobs:
         with:
           path: |
             pi-gen/work/*/aptcache
-          key: pi-gen-aptcache-${{ runner.os }}-bookworm-${{ hashFiles('pi-travel-router/build/stage-travel-router/00-packages') }}
+          key: pi-gen-aptcache-${{ runner.os }}-bookworm-${{ hashFiles('pi-travel-router/build/stage-travel-router/00-packages', 'pi-travel-router/install.sh') }}
           restore-keys: |
             pi-gen-aptcache-${{ runner.os }}-bookworm-
 
@@ -70,7 +86,7 @@ jobs:
       - name: Build image
         env:
           REPO_URL: https://github.com/${{ github.repository }}.git
-          GIT_REF: ${{ github.sha }}
+          GIT_REF: ${{ inputs.git_ref != '' && inputs.git_ref || github.sha }}
         run: |
           set -euxo pipefail
           cd pi-gen
@@ -89,6 +105,46 @@ jobs:
           echo "img_path=${IMG_PATH}" >> "$GITHUB_OUTPUT"
           echo "img_name=$(basename "${IMG_PATH}")" >> "$GITHUB_OUTPUT"
 
+      - name: Smoke-test built image
+        run: |
+          set -euo pipefail
+          IMG_PATH="${{ steps.locate.outputs.img_path }}"
+          # Decompress to a temp file for kpartx
+          TMPIMG="$(mktemp --suffix=.img)"
+          xz -dk "${IMG_PATH}" --stdout > "${TMPIMG}"
+          # Map partitions
+          sudo kpartx -av "${TMPIMG}"
+          LOOPDEV="$(sudo kpartx -l "${TMPIMG}" | awk 'NR==2{print $1}')"
+          MOUNTPOINT="$(mktemp -d)"
+          sudo mount "/dev/mapper/${LOOPDEV}" "${MOUNTPOINT}"
+          echo "--- Smoke test: checking image contents ---"
+          test -f "${MOUNTPOINT}/etc/systemd/system/firstboot.service"   || { echo "FAIL: firstboot.service missing"; exit 1; }
+          test -f "${MOUNTPOINT}/usr/local/sbin/imager-compat.sh"        || { echo "FAIL: imager-compat.sh missing"; exit 1; }
+          HOSTNAME="$(cat "${MOUNTPOINT}/etc/hostname" | tr -d '[:space:]')"
+          [ "${HOSTNAME}" = "travelrouter" ]                             || { echo "FAIL: hostname is '${HOSTNAME}', expected 'travelrouter'"; exit 1; }
+          test -f "${MOUNTPOINT}/etc/travel-router-image-version"        || { echo "FAIL: travel-router-image-version missing"; exit 1; }
+          echo "--- All smoke tests passed ---"
+          sudo umount "${MOUNTPOINT}"
+          sudo kpartx -dv "${TMPIMG}"
+          rm -f "${TMPIMG}"
+
+      - name: Generate SBOM
+        run: |
+          set -euo pipefail
+          IMG_PATH="${{ steps.locate.outputs.img_path }}"
+          TMPIMG="$(mktemp --suffix=.img)"
+          xz -dk "${IMG_PATH}" --stdout > "${TMPIMG}"
+          sudo kpartx -av "${TMPIMG}"
+          LOOPDEV="$(sudo kpartx -l "${TMPIMG}" | awk 'NR==2{print $1}')"
+          MOUNTPOINT="$(mktemp -d)"
+          sudo mount "/dev/mapper/${LOOPDEV}" "${MOUNTPOINT}"
+          # Generate SBOM using dpkg-query via chroot
+          sudo chroot "${MOUNTPOINT}" dpkg-query -W --showformat='${Package}\t${Version}\n' > sbom.txt
+          echo "SBOM generated: $(wc -l < sbom.txt) packages"
+          sudo umount "${MOUNTPOINT}"
+          sudo kpartx -dv "${TMPIMG}"
+          rm -f "${TMPIMG}"
+
       - name: Upload image as workflow artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
@@ -98,12 +154,21 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Upload SBOM as workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: travelrouter-sbom
+          path: sbom.txt
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Publish release asset
         if: startsWith(github.ref, 'refs/tags/v')
-        # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
-        # TODO: pin to SHA for supply-chain safety
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c062e08bd532815e2082a7e09ce9571a589a44ee  # v2.0.8
         with:
-          files: ${{ steps.locate.outputs.img_path }}
+          files: |
+            ${{ steps.locate.outputs.img_path }}
+            sbom.txt
           fail_on_unmatched_files: true
           generate_release_notes: true
