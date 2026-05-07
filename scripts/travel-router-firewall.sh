@@ -92,8 +92,13 @@ if [ "$ENABLE_PER_DEVICE_VPN" = "1" ] && [ -n "$VPN_DEVICE_MACS" ]; then
     # Routing table 100: default via tailscale0
     ip route replace default dev tailscale0 table 100 2>/dev/null || true
     # Add ip rule only if not already present
-    ip rule show | grep -q "fwmark 0x64 lookup 100" || \
+    ip rule show | grep -qE 'fwmark 0x64[[:space:]]+lookup[[:space:]]+100([^0-9]|$)' || \
         ip rule add fwmark 0x64 table 100 priority 100 2>/dev/null || true
+else
+    ip rule del fwmark 0x64 table 100 2>/dev/null || true
+    iptables -t mangle -D PREROUTING -i uap0 -j VPN_DEVICES 2>/dev/null || true
+    iptables -t mangle -F VPN_DEVICES 2>/dev/null || true
+    iptables -t mangle -X VPN_DEVICES 2>/dev/null || true
 fi
 
 if [ "${1:-}" = "--save" ]; then

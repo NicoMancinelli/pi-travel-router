@@ -83,16 +83,13 @@ set_default_metric() {
     local gw
     # N-M2: read gateway at the moment of action, not snapshot time
     gw=$(get_gateway "$iface")
-    # N-M1: only delete the route if it actually exists
-    if ip route show default dev "$iface" 2>/dev/null | grep -q default; then
-        ip route del default dev "$iface" 2>/dev/null || true
-    fi
     if [ -z "${gw}" ]; then
         log "set_default_metric: no gateway for $iface, skipping route add"
         return 0
     fi
-    if ! ip route add default via "$gw" dev "$iface" metric "$metric" 2>/dev/null; then
-        log "set_default_metric: ip route add failed for $iface via $gw metric $metric"
+    # Use ip route replace for an atomic metric change (no routing gap)
+    if ! ip route replace default via "$gw" dev "$iface" metric "$metric" 2>/dev/null; then
+        log "set_default_metric: ip route replace failed for $iface via $gw metric $metric"
     fi
 }
 
@@ -166,7 +163,12 @@ _notify_uplink_change() {
     [ -f "$_UPLINK_STATE_FILE" ] && prev_uplink=$(cat "$_UPLINK_STATE_FILE")
     # N-H1: always write state file when curr_uplink is non-empty (first-run persistence)
     if [ -n "$curr_uplink" ]; then
-        printf '%s\n' "$curr_uplink" > "$_UPLINK_STATE_FILE"
+        _tmp=$(mktemp "${_UPLINK_STATE_DIR}/uplink.XXXXXX")
+        if printf '%s\n' "$curr_uplink" > "$_tmp"; then
+            mv "$_tmp" "$_UPLINK_STATE_FILE"
+        else
+            rm -f "$_tmp"
+        fi
     fi
     # Only send notification when there actually was a previous uplink and it changed
     if [ -n "$curr_uplink" ] && [ -n "$prev_uplink" ] && [ "$curr_uplink" != "$prev_uplink" ]; then

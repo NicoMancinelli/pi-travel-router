@@ -27,7 +27,8 @@ case "$ACTION" in
         logger -t ap-schedule "AP disabled"
         ;;
     enable)
-        hostapd_cli -p /var/run/hostapd enable 2>/dev/null || true
+        _wait_hostapd || { logger -t ap-schedule "hostapd not ready for enable"; exit 1; }
+        hostapd_cli -p /var/run/hostapd -i uap0 enable 2>/dev/null || true
         logger -t ap-schedule "AP enabled"
         ;;
     *)

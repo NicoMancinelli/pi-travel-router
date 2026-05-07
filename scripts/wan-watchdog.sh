@@ -64,7 +64,12 @@ if can_reach_wan; then
         log "WAN restored after $FAILS failure(s)"
         notify "travel-router: WAN restored" low
     fi
-    echo 0 > "$STATE_FILE"
+    _tmp=$(mktemp "${STATE_FILE}.XXXXXX")
+    if printf '%s\n' 0 > "$_tmp"; then
+        mv "$_tmp" "$STATE_FILE"
+    else
+        rm -f "$_tmp"
+    fi
     # H17: only run captive-check when wlan0 is the active uplink.
     # Tether interfaces give direct internet — no portal to handle.
     _active_uplink=""
@@ -86,7 +91,12 @@ if can_reach_wan; then
 fi
 
 FAILS=$((FAILS + 1))
-echo "$FAILS" > "$STATE_FILE"
+_tmp=$(mktemp "${STATE_FILE}.XXXXXX")
+if printf '%s\n' "$FAILS" > "$_tmp"; then
+    mv "$_tmp" "$STATE_FILE"
+else
+    rm -f "$_tmp"
+fi
 log "WAN unreachable — consecutive failures: $FAILS"
 
 case "$FAILS" in

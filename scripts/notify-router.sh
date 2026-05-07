@@ -15,6 +15,11 @@ NTFY_TOPIC="${NTFY_TOPIC:-}"
 MSG="${1:-ping}"
 PRIORITY="${2:-default}"
 
+case "$PRIORITY" in
+    default|low|min|high|max|urgent) ;;
+    *) PRIORITY="default" ;;
+esac
+
 if [ -z "$NTFY_TOPIC" ]; then
     logger "notify-router: NTFY_TOPIC not set in /etc/default/travel-router"
     exit 0

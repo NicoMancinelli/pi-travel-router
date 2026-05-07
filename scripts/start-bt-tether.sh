@@ -15,6 +15,11 @@ if [ -z "$BT_MAC" ]; then
     exit 1
 fi
 
+if [[ ! "${BT_MAC:-}" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]; then
+    logger -t bt-tether "Invalid or missing BT_MAC: '${BT_MAC:-}'"
+    exit 1
+fi
+
 logger -t bt-tether "Connecting Bluetooth PAN to $BT_MAC"
 bt-pan --dbus client "$BT_MAC" &
 BT_PAN_PID=$!
@@ -32,17 +37,13 @@ fi
 
 dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether || true
 
+GW=$(ip route show default dev bnep0 | awk '{for(i=1;i<=NF;i++){if($i=="via"){print $(i+1);exit}}}')
 ip route del default dev bnep0 2>/dev/null || true
-GW=""
-for _ in $(seq 1 10); do
-    GW=$(ip route show default dev bnep0 | awk '{for(i=1;i<=NF;i++){if($i=="via"){print $(i+1);exit}}}')
-    [ -n "$GW" ] && break
-    sleep 1
-done
 if [ -n "$GW" ]; then
     ip route add default via "$GW" dev bnep0 metric 300
 else
-    logger -t bt-tether "WARNING: no gateway found on bnep0 after 10s"
+    logger -t bt-tether "WARNING: no gateway found on bnep0 after dhclient"
+    exit 1
 fi
 
 tc qdisc replace dev bnep0 root cake bandwidth 3mbit besteffort 2>/dev/null || true

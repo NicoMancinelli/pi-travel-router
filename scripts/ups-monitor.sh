@@ -49,6 +49,11 @@ if [[ -z "$LEVEL" ]]; then
     exit 0
 fi
 
+if [[ ! "$LEVEL" =~ ^[0-9]+$ ]]; then
+    logger -t "$LOG_TAG" "Non-numeric battery level '$LEVEL', skipping"
+    exit 0
+fi
+
 logger -t "$LOG_TAG" "Battery: ${LEVEL}%  (shutdown threshold: ${THRESHOLD}%)"
 
 if [[ "$LEVEL" -le "$THRESHOLD" ]]; then
