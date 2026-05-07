@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-07
+
+### Fixed — Critical
+- `apply-split-tunnel.sh`: fwmark mismatch in `teardown_split_tunnel` — teardown used decimal `1` while setup used hex `0x2`; routing rule persisted forever after disabling split-tunnel
+
+### Fixed — Security / Correctness
+- `captive-check.sh` `attempt_portal_login`: `ssid_slug` now strips `.` from allowed chars so an SSID named `..` can no longer produce path-traversal segments into parent directories
+- `captive-check.sh` `_probe()`: `redirect_url` validated as `http*` before use; HTTP status code string can no longer be passed as a URL
+- `server.py` `/setup`: double-submission guard — browser back+resubmit after install starts now redirects to `/status` instead of spawning a second concurrent `install.sh`
+- `server.py` `_validate()`: `SPLIT_TUNNEL_DOMAINS` now validated with regex; shell-unsafe characters rejected at form submission time
+- `server.py`: root password null-byte (`\x00`) check added — `chpasswd` is a C program that reads until null terminator, so a null in the validated password would silently shorten it
+- `install.sh` interactive path: control-character guard added for `AP_SSID` and `AP_PASS` entered at the prompt
+- `install.sh`: `ROUTER_HOSTNAME` validated against `^[a-z0-9][a-z0-9-]{0,62}$` before use in `sed` (direct-run path had no validation)
+- `build/config`: `FIRST_USER_PASS` changed from plaintext `changeme` to a placeholder; `01-run.sh` now randomises the pi user's password before deletion
+
+### Fixed — Reliability
+- `notify-router.sh`: `curl` now ends with `|| true`; transport errors no longer propagate to callers under `set -euo pipefail`
+- `start-tether.sh`: `notify-router.sh` call guarded with `|| true`; ntfy unreachability can no longer fail the tether service
+- `start-bt-tether.sh`: `ip route add` for bnep0 guarded with `|| true`; a pre-existing route no longer short-circuits CAKE setup and notification
+- `tailscale-watchdog.sh`: all 4 `jq` assignments restructured to `if ! var=$(jq ...)` — the previous `$?` guards were dead code under `set -euo pipefail` and would never execute on parse failure
+- `ups-monitor.sh`: `THRESHOLD` validated as numeric immediately after loading from config; non-numeric value falls back to 10 with a warning instead of silently becoming 0
+- `failover-watchdog.sh` `set_default_metric`: `ip route add` failure now logged instead of silently swallowed
+- `wan-watchdog.sh` `truncate_log`: SC2015 `A && B || C` anti-pattern replaced with `if/else`; `mv` failure no longer triggers log data deletion
+- `travel-tui.sh` `_cfg_edit`: Python inline now uses `shlex.quote()` to write config values; double-quotes in user-entered values no longer produce malformed shell syntax
+- `travel-tui.sh` client table: `printf '%*s'` width capped at zero to prevent misalignment on hostnames/IPs longer than the column width
+
+### Fixed — Monitoring / Observability
+- `travel-diagnostic.sh`: secret redaction pattern changed to match to end-of-line; values containing spaces were previously only partially redacted
+- `update-blocklists.sh`: `TMP_FILE` now uses `mktemp` with `trap … EXIT` for cleanup; fixed path eliminated TOCTOU symlink risk
+- `update-router.sh`: tmpdir trap extended to `EXIT INT TERM`; portal scripts installation now checks against an explicit `PORTAL_ALLOWLIST`
+- `vnstat-metrics.sh`: `TIMESTAMP` passed as `sys.argv[1]` instead of interpolated into Python heredoc; heredoc/pipe stdin conflict resolved
+
+### Build / CI / Systemd
+- `.github/workflows/shellcheck.yml`: `paths` filter moved off the tag trigger so shellcheck always runs when a release tag is pushed
+- `systemd/adguard-home.service`: obsolete `syslog.target` dependency removed; `StandardOutput/StandardError=journal` added
+- `systemd/generate-bandwidth-report.service`: `StandardOutput/StandardError=journal` added (consistent with peer services)
+- `.github/workflows/build-image.yml`: `trap … EXIT` added to smoke-test and SBOM steps to clean up loop devices on failure
+
 ## [1.2.0] - 2026-05-07
 
 ### Fixed — Critical
