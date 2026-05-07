@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-05-06
+
+### Fixed — Critical / Security
+- `server.py` / `install.sh`: `SSH_ADMIN_KEY` newline injection — multi-line values could inject extra keys into `/root/.ssh/authorized_keys`; both now strip `\n`/`\r` and validate the key starts with `ssh-`, `ecdsa-`, or `sk-`
+- `travel-router-firewall.sh`: ERR trap added — if any `iptables` command fails under `set -e`, policy is restored to `FORWARD DROP` and the chain is flushed instead of leaving the firewall wide open with `ACCEPT` policy and no rules
+
+### Fixed — Reliability / Correctness
+- `stop-tether.sh`: `wan-watchdog.service` is now restarted (`systemctl --no-block restart`) after tether teardown so the watchdog re-evaluates uplinks immediately instead of routing through the dead interface
+- `start-bt-tether.sh`: gateway capture now retries up to 5 times (1 s apart) before giving up; previously the route was queried before the interface was fully up
+- `ups-monitor.sh`: `0%` battery is now a valid charge level — the `[[ pct -gt 0 ]]` guard that rejected it has been replaced with a `0–100` range check
+- `tailscale-watchdog.sh`: removed `head -1` from stale-peer pipeline; all stale peers are now disconnected in one pass instead of only the first
+- `install.sh`: `AP_PASS`/`TOR_AP_PASS` newlines stripped in non-interactive CLI path; previously only interactive input was sanitised
+- `install.sh`: `_BARE_IP_RE` tightened to reject octets > 255 (e.g. `999.x.x.x`)
+- `install.sh`: `ROUTER_HOSTNAME` regex updated to `^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$` — trailing hyphens (RFC 952 invalid) are now rejected
+- `install.sh`: `_read_ap_ssid` now uses `shlex.split()` to re-parse the stored value; single quotes in SSIDs no longer garble the result
+- `travel-tui.sh`: toggling `ENABLE_SPLIT_TUNNEL` / `ENABLE_BANDWIDTH_DASHBOARD` now calls `systemctl try-restart` / `systemctl stop` on the corresponding service so the change takes effect immediately without a reboot
+- `travel-tui.sh`: large byte-counter arithmetic ported to `awk`; bash `$(( ))` overflow on 64-bit-signed-max values in GB range eliminated
+- `update-router.sh`: `shopt -s nullglob` guards added around all glob-based `for` loops; a missing match no longer iterates over a literal glob string
+
+### Fixed — Low / Housekeeping
+- `ap-schedule.sh`: `_wait_hostapd()` helper added; `hostapd_cli` calls now wait up to 10 s for the control socket before acting
+- `start-tether.sh` / `stop-bt-tether.sh`: `systemd-run --unit` names now include `$$` suffix to prevent name-collision errors when called in rapid succession
+- `notify-router.sh`: `python3` presence now checked at startup; exits cleanly with a log message if not installed
+- `ups-monitor.sh`: dead `&& pct -gt 0` condition removed from REST API path
+- `travel-tui.sh`: UUOC — `cat uplink.state` replaced with `read -r … < uplink.state`
+- `config/91-android-tether.rules`: added `ATTRS{idVendor}!="1d6b"` to exclude the Pi's own Linux Foundation USB gadget interface from triggering `start-tether.sh` on every boot
+- `.github/workflows/shellcheck.yml`: permanently no-op "Shellcheck firstboot scripts" step removed (no `.sh` files exist in `firstboot/`)
+- `.github/workflows/build-image.yml`: `if: always()` cleanup step added to unmount and remove leftover `MOUNTPOINT` temp directories on failure
+- `README.md`: SSH section rewritten — accurately describes key-only authentication, how to add an SSH key, that password login is disabled by design, and that `/boot/firmware/root-password.txt` is for console access only
+
 ## [1.3.0] - 2026-05-07
 
 ### Fixed — Critical
