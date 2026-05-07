@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-06
+
+### Fixed — Security (17 fixes)
+- Image: random root password written to `/boot/firmware/root-password.txt`; `PermitRootLogin prohibit-password` in image build
+- Wizard (`server.py`): CSRF token on `/retry`; preseed XSS fix (`</` → `<\/`); Host header allowlist (DNS rebinding prevention); SSID byte-length validation; AP_PASS printable-ASCII enforcement; UPS threshold 1–99 range check; PUSHGW_URL URL validation; 512-char cap on TAILSCALE_UP_ARGS; double-submit redirects to `/status`; log tail capped at 512 KB
+- `travel-router-firewall.sh`: IPv6 FORWARD chain DROP policy; SSH blocked from `wlan0`; Prometheus (9100) and AdGuard (3000) blocked from `uap0`
+- `install.sh`: log written mode 0600; BBR moved to `/etc/sysctl.d/99-bbr.conf`; `TAILSCALE_UP_ARGS` uses `read -ra`; WiFi QR redirected to `/dev/tty`; `PermitRootLogin prohibit-password` set unconditionally; open-WiFi fallback auto-enables kill switch
+
+### Fixed — Reliability (25 fixes)
+- `failover-watchdog.sh`: uplink state file always written on first active uplink; failed interfaces demoted to metric 900; DORMANT/UNKNOWN interface states detected; gateway read at action time not snapshot; route-del guarded by existence check; atomic log truncation via `mktemp`; `_notify_safe()` wrapper with logger fallback
+- `wan-watchdog.sh`: dual HTTPS probe before declaring WAN down; `sleep 4` between disconnect/reconnect; confirmed `hostapd` stopped before `wlan0` down
+- `captive-check.sh`: STATE_FILE moved to `/var/lib/travel-router/`; Tailscale restored + state file removed immediately after successful portal login; curl exit code checked; outer EXIT trap saved/restored in `attempt_portal_login`; `read -ra` for TAILSCALE_UP_ARGS
+- `apply-split-tunnel.sh`: ipset teardown name fixed (`vpn_domains` consistent); `tailscale0` absence logged before route add
+- `start-tether.sh`: failover-watchdog dispatched via `systemd-run --no-block`; UNKNOWN state accepted in poll; `TC_TETHER_BW` configurable (default 50mbit)
+- `start-bt-tether.sh`: polls for `inet` address before proceeding; bt-pan liveness check after 2 s
+- `stop-bt-tether.sh`: `nmcli disconnect` before `ip link down`; stale default route removed
+- `clone-mac.sh`: hostapd stopped/restarted around MAC change; successful clone saved to `/var/lib/travel-router/cloned-mac`
+- `ap-schedule.sh`: `enable` starts hostapd if not running; control socket checked before `hostapd_cli`
+- `tailscale-watchdog.sh`: flock guard; configurable `TS_STALE_HANDSHAKE_SECS`; only alerts on peers with `TxBytes > 0`; exits 1 on daemon unreachable
+- `ups-monitor.sh`: API response validated as integer 0–100; notify wrapped in `timeout 10`; shutdown hysteresis flag
+
+### Fixed — TUI & Monitoring (15 fixes)
+- `travel-tui.sh`: `if/else` replaces `&& B || C` for service toggle; `/run/travel-router/` for temp files; atomic `_cfg_edit` via `os.replace()`; SSID/passphrase edits use Python rewrite; `read` timeout vs closed-stdin distinguished; `chpasswd <<<` replaces `printf | chpasswd`; 32-bit counter wrap detection; `_cleanup clear` only on normal exit
+- `travel-status.sh`: CPU from `/proc/stat` two-sample; `AP_IFACE` variable respected
+- `travel-diagnostic.sh`: EXIT trap for temp-dir cleanup; stderr captured in `collect`; `HEADSCALE_URL`, `TOR_AP_PASS`, `PUSHGW_URL`, `IPHONE_BT_MAC` redacted
+- `generate-bandwidth-report.sh`: atomic write via `.tmp`; HTML-escaped vnstat output
+- `vnstat-push.sh`: single Python call per interface; active uplink included; PUSHGW_URL credentials redacted in logs
+- `tune-cake.sh`: CAKE applied to `$UPLINK_IFACE` not hardcoded `wlan0`; `LC_ALL=C` for speedtest
+- `daily-digest.sh`: `vnstat --json` + Python replaces `--oneline`; `AP_IFACE` variable
+- `update-router.sh`: explicit script-name allowlist for `/usr/local/bin/` installs
+- `update-blocklists.sh`: abort if blocklist < 100 entries; atomic rollback to `.prev` on `nft` failure
+
+### Fixed — Build & CI (12 fixes)
+- `00-packages`: pre-seeded 17 packages (`hostapd`, `dnsmasq`, `iptables*`, `jq`, `usbmuxd`, `libimobiledevice*`, `macchanger`, `vnstat`, `iw`, `qrencode`, `nftables`, `wireless-tools`, `bmon`)
+- `build/config`: `WPA_COUNTRY=''` (install.sh is sole authority)
+- `build-image.yml`: `softprops/action-gh-release` pinned to commit SHA; PR path trigger; image smoke-test step; SBOM generation; `workflow_dispatch` `git_ref` input; extended apt cache key
+- `shellcheck.yml`: `ludeeus/action-shellcheck` pinned to commit SHA; `push: tags: v*` trigger
+- `python-lint.yml`: switched from `pyflakes` to `flake8` + `pylint`
+- `.github/dependabot.yml`: weekly github-actions dependency updates
+
+### Fixed — Documentation (13 fixes)
+- `build/stage-travel-router/01-run.sh`: random root password; `PermitRootLogin prohibit-password`; pi-user deletion assertion
+- `build/README.md`: correct QEMU symlink commands
+- `README.md`: Android tether metric corrected; RaspAP credential change warning
+- `AGENTS.md`: nftables mangle attribution; `rndis0` interface row; `firstboot/` and `build/` in structure table
+- `CHANGELOG.md`: duplicate entries removed; version comparison footer links
+- `.github/CONTRIBUTING.md`: quad-core CPU fix; issue template creation URLs; dev deps note
+- `CODE_OF_CONDUCT.md`: expanded from stub to proper conduct document
+- `pull_request_template.md`: TUI coverage checklist item
+- `.github/SUPPORT.md`: created
+- `firstboot/README.md`: security note about unauthenticated `/status` log
+
+### Added
+- `firstboot/firstboot.service`: systemd sandbox (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem`, capability bounding)
+- `notify-router.sh`: `NTFY_TOKEN` bearer auth support; `set -euo pipefail`
+- `wizard (index.html)`: 250-word passphrase list (5 words, ~39 bits); 12 new country options; inline mobile-friendly confirm; empty TAILSCALE_UP_ARGS default
+
 ## [1.0.0] - 2026-05-06
 
 ### Fixed — Security & Correctness (27 fixes)
