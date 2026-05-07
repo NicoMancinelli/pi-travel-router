@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-05-06
+
+### Fixed — Critical / Security
+- `scripts/travel-router-firewall.sh`: added `ip6tables KILL_SWITCH6` chain mirroring the IPv4 `KILL_SWITCH` chain; in the non-kill-switch path, added IPv6 FORWARD ACCEPT rules for all uplink interfaces and tailscale0 (CRITICAL: ip6tables FORWARD default policy is DROP with no rules, AP clients had zero IPv6 forwarding; with kill-switch enabled, IPv6 traffic bypassed the VPN entirely)
+- `scripts/ups-monitor.sh`: removed the 0% battery guard introduced in v1.9.0 (CRITICAL regression: the non-numeric API artifact case is already caught by the `^[0-9]+$` regex guard; the extra 0% guard was preventing legitimate 0% shutdown from firing)
+- `scripts/captive-check.sh`: fixed `form_action` regex character class — the previous class `[^"'\'' &gt;]+` treated `&gt;` as five literal characters `&`, `g`, `t`, `;`, `>`, inadvertently excluding the letters `g` and `t` from URL matches; virtually every portal URL was truncated at the first `t` or `g` (e.g. `/portal/auth` → `/por`); replaced with `[^ "'<>]+` (HIGH)
+- `config/sshd-travel-router.conf`: added `PasswordAuthentication no` for defense-in-depth; `00-permit-root.conf` already sets this, but 99-travel-router.conf (deployed name) is now self-contained
+
+### Fixed — Reliability / Correctness
+- `scripts/travel-router-firewall.sh`: ERR trap now resets both `iptables` and `ip6tables` FORWARD policy to DROP on script failure
+- `scripts/travel-router-firewall.sh`: added `flock -x` on `/run/lock/travel-router-firewall.lock` to prevent concurrent invocations accumulating duplicate INPUT/nat PREROUTING rules
+- `scripts/wan-watchdog.sh`: captive-check.sh exit code now captured into `_cc_rc` before the `||` expression; previously `$?` always evaluated to the logger exit code (0) rather than captive-check's non-zero code
+- `scripts/stop-tether.sh`: `notify-router.sh` call now guarded with `2>/dev/null || true`; without it, a notification failure prevented the subsequent `systemctl restart wan-watchdog.service` from running
+- `scripts/failover-watchdog.sh`: `get_metric` now returns `"0"` (not empty) when a route has no explicit metric field; the empty return caused `promote_iface` to repeatedly re-set routes already at metric 0, causing unnecessary route churn every 60s
+- `scripts/apply-split-tunnel.sh`: absent `tailscale0` now triggers `exit 1` instead of continuing with an empty routing table 200; previously `|| true` on `ip route replace` silently left split-tunnel routing broken with no error
+- `scripts/notify-router.sh`: added `--fail` (`-f`) to curl; HTTP 4xx/5xx responses previously returned exit code 0 and were logged as successful deliveries
+- `scripts/start-bt-tether.sh`: dhclient exit code capture changed from dead `PIPESTATUS[0]` read (unreachable under `set -euo pipefail`) to `DHCP_RC=0; ... || DHCP_RC=$?` pattern
+- `scripts/tailscale-watchdog.sh`: jq `gsub` expanded to strip both `Z` and `+HH:MM`/`-HH:MM` timezone offsets before `fromdateiso8601`
+- `scripts/start-tether.sh`: fallback for unavailable `systemd-run` now uses `nohup ... &` instead of inline execution to avoid blocking the udev event thread
+
+### Fixed — Configuration / Systemd / TUI
+- `systemd/adguard-home.service`: added `After=rc-local.service` and `Wants=rc-local.service`; AdGuardHome was frequently starting before `rc.local` created `uap0` (10.3.141.1), causing the HTTP UI bind to fail silently on every boot
+- `scripts/update-blocklists.sh`: `mkdir -p /etc/nftables.d` moved before `mktemp`; previously the script crashed under `set -euo pipefail` if the directory was absent, before the EXIT trap could be set
+- `scripts/travel-tui.sh`: AP Disable/Enable Time drop-in writes now use `mktemp`+`mv` atomic pattern; a partial write previously left a corrupt drop-in that silently disabled the timer permanently
+- `scripts/travel-tui.sh`: HH:MM format validated before writing the timer drop-in; invalid values now print an error and skip the write
+- `scripts/travel-tui.sh`: `_cfg_edit` Python call now guarded; `FileNotFoundError` on absent `/etc/default/travel-router` previously crashed the entire TUI session
+- `build/stage-travel-router/files/imager-compat.sh` + `firstboot/server.py`: SSH key comment regex now strips trailing shell quote characters; Pi Imager-wrapped keys (`echo "ssh-ed25519 ... user@host"`) previously captured `user@host"` (with closing quote), causing duplicate entries in `authorized_keys`
+- `install.sh`: Tor AP passphrase write to `hostapd.conf` now uses `tempfile.mkstemp` + `os.replace` atomic pattern (the main SSID/pass write was fixed in v1.9.0; this second write was missed)
+- `firstboot/server.py`: `/retry` POST handler now returns HTTP 409 Conflict if an install is already running, preventing concurrent `install.sh` processes from corrupting system configuration
+
 ## [1.9.0] - 2026-05-06
 
 ### Fixed — Critical / Security
