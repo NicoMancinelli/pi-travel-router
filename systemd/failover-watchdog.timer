@@ -1,7 +1,5 @@
 [Unit]
 Description=Run failover watchdog every 30 seconds
-Requires=failover-watchdog.service
-After=failover-watchdog.service
 
 [Timer]
 OnBootSec=30
