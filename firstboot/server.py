@@ -29,6 +29,21 @@ REPO_DIR = "/opt/pi-travel-router"
 INDEX_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+# Allowlisted Host header values (bare hostname or host:port, case-insensitive)
+_ALLOWED_HOSTS = {
+    "travelrouter.local",
+    "192.168.7.1",
+    "192.168.4.1",
+    "10.3.141.1",
+    "localhost",
+    "127.0.0.1",
+    "::1",
+}
+_BARE_IP_RE = re.compile(
+    r"^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$"
+    r"|^\[?[0-9a-fA-F:]+\]?(?::\d+)?$"
+)
 SECTION_RE = re.compile(r"━━\s*(.+?)\s*━━")
 
 BOOL_FLAGS = [
@@ -97,13 +112,15 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     values: dict[str, str] = {}
 
     ap_ssid = _first(form, "AP_SSID", "TravelRouter").strip()
-    if not (1 <= len(ap_ssid) <= 32):
-        errors.append("AP SSID must be 1-32 characters.")
+    if not (1 <= len(ap_ssid.encode("utf-8")) <= 32):
+        errors.append("AP SSID must be 1–32 bytes (UTF-8 encoded).")
     values["AP_SSID"] = ap_ssid
 
     ap_pass = _first(form, "AP_PASS")
     if not (8 <= len(ap_pass) <= 63):
         errors.append("AP passphrase must be 8-63 characters.")
+    if ap_pass and not all(0x20 <= ord(c) <= 0x7E for c in ap_pass):
+        errors.append("AP passphrase must contain only printable ASCII characters (0x20–0x7E).")
     values["AP_PASS"] = ap_pass
 
     country = _first(form, "COUNTRY", "US").strip().upper()
@@ -157,6 +174,8 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     tor_ap_pass = _first(form, "TOR_AP_PASS")
     if values["ENABLE_TOR_TRANSPARENT"] == "1" and len(tor_ap_pass) < 8:
         errors.append("Tor AP passphrase must be 8+ characters.")
+    if tor_ap_pass and not all(0x20 <= ord(c) <= 0x7E for c in tor_ap_pass):
+        errors.append("Tor AP passphrase must contain only printable ASCII characters (0x20–0x7E).")
     values["TOR_AP_PASS"] = tor_ap_pass
 
     vpn_device_macs = _first(form, "VPN_DEVICE_MACS").strip()
@@ -191,10 +210,24 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     ups_threshold = _first(form, "UPS_SHUTDOWN_THRESHOLD", "10").strip()
     if ups_threshold and not re.fullmatch(r"[0-9]{1,3}", ups_threshold):
         errors.append("UPS shutdown threshold must be a number (percent).")
+    elif ups_threshold:
+        ups_val = int(ups_threshold)
+        if not (1 <= ups_val <= 99):
+            errors.append("UPS shutdown threshold must be between 1 and 99.")
     values["UPS_SHUTDOWN_THRESHOLD"] = ups_threshold or "10"
 
-    values["PUSHGW_URL"] = _first(form, "PUSHGW_URL").strip()
-    values["TAILSCALE_UP_ARGS"] = _first(form, "TAILSCALE_UP_ARGS").strip()
+    pushgw_url = _first(form, "PUSHGW_URL").strip()
+    if pushgw_url:
+        import urllib.parse as _up
+        _parsed_pgw = _up.urlparse(pushgw_url)
+        if _parsed_pgw.scheme not in ("http", "https") or not _parsed_pgw.netloc:
+            errors.append("Prometheus push gateway URL must be a valid http:// or https:// URL.")
+    values["PUSHGW_URL"] = pushgw_url
+
+    tailscale_up_args = _first(form, "TAILSCALE_UP_ARGS").strip()
+    if len(tailscale_up_args) > 512:
+        errors.append("Tailscale up args must be 512 characters or fewer.")
+    values["TAILSCALE_UP_ARGS"] = tailscale_up_args
 
     # New root password (optional). Don't strip — passwords may legitimately
     # contain leading/trailing spaces, though rare; use as-is.
@@ -255,7 +288,7 @@ def _spawn_install() -> None:
     cmd = (
         f"source {shlex.quote(ENV_FILE)} && "
         f"cd {shlex.quote(REPO_DIR)} && "
-        f"bash install.sh > {shlex.quote(LOG_FILE)} 2>&1; "
+        f"timeout 1800 bash install.sh > {shlex.quote(LOG_FILE)} 2>&1; "
         f"_rc=$?; "
         f"if [ $_rc -eq 0 ]; then "
         f"{{ [[ -s {rootpw_q} ]] && chpasswd < {rootpw_q} && rm -f {rootpw_q} || true; }} && "
@@ -338,11 +371,14 @@ def _failed_page() -> bytes:
 <body><div class="wrap">
 <h1 style="color:#f85149">Installation failed</h1>
 <pre>{tail_html}</pre>
-<form method="POST" action="/retry"><button type="submit">Retry setup</button></form>
+<form method="POST" action="/retry" enctype="application/x-www-form-urlencoded">
+<input type="hidden" name="_csrf_token" value="{{{{CSRF_TOKEN}}}}">
+<button type="submit">Retry setup</button></form>
 <p class="warn">If the error repeats, SSH in as root and check /var/log/firstboot-install.log</p>
 </div></body></html>
 """
-    return body.encode("utf-8")
+    # Replace placeholder with actual token
+    return body.replace("{{{{CSRF_TOKEN}}}}", _csrf_token).encode("utf-8")
 
 
 def parse_sections(text: str) -> list[str]:
@@ -356,9 +392,19 @@ def parse_sections(text: str) -> list[str]:
     return sections
 
 
+_LOG_MAX_BYTES = 512 * 1024  # 512 KB cap
+
+
 def _read_log_text() -> str:
     try:
         with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as fh:
+            fh.seek(0, 2)  # seek to end
+            size = fh.tell()
+            if size > _LOG_MAX_BYTES:
+                fh.seek(size - _LOG_MAX_BYTES)
+                fh.readline()  # discard partial first line
+            else:
+                fh.seek(0)
             return fh.read()
     except FileNotFoundError:
         return ""
@@ -459,7 +505,20 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(data).encode("utf-8")
         self._send(code, body, "application/json")
 
+    def _host_allowed(self) -> bool:
+        """Return True if the Host header is in the allowlist or is a bare IP."""
+        host = self.headers.get("Host", "").strip().lower()
+        # Strip port suffix for comparison against the named hosts
+        bare = host.split(":")[0] if ":" in host and not host.startswith("[") else host
+        if bare in _ALLOWED_HOSTS or host in _ALLOWED_HOSTS:
+            return True
+        # Accept any bare IPv4/IPv6 address (router may have other IPs)
+        return bool(_BARE_IP_RE.match(host))
+
     def do_GET(self):  # noqa: N802
+        if not self._host_allowed():
+            self._send(HTTPStatus.BAD_REQUEST, b"Invalid Host header", "text/plain")
+            return
         if self.path == "/" or self.path.startswith("/?"):
             try:
                 with open(INDEX_HTML, "rb") as fh:
@@ -473,7 +532,7 @@ class Handler(BaseHTTPRequestHandler):
                 _csrf_token.encode("ascii"),
             )
             if _preseed:
-                script = '<script>var _ps=' + json.dumps(_preseed) + ';'
+                script = '<script>var _ps=' + json.dumps(_preseed).replace("</", "<\\/") + ';'
                 script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
                 script += 'if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");if(e)e.value=_ps.ROUTER_HOSTNAME;}'
                 script += 'if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");if(e)e.value=_ps.SSH_ADMIN_KEY;}'
@@ -483,6 +542,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.OK, body)
             return
         if self.path == "/status":
+            # Redirect to setup form if no install has started yet
+            if not _installing and not any(os.path.exists(p) for p in (LOG_FILE, DONE_FILE, FAIL_FILE)):
+                self.send_response(302)
+                self.send_header("Location", "/")
+                self.end_headers()
+                return
             self._send(HTTPStatus.OK, _status_page())
             return
         if self.path == "/setup":
@@ -495,7 +560,32 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         global _installing
+        if not self._host_allowed():
+            self._send(HTTPStatus.BAD_REQUEST, b"Invalid Host header", "text/plain")
+            return
         if self.path == "/retry":
+            # CSRF check for /retry
+            ct = self.headers.get("Content-Type", "")
+            if ct.startswith("application/x-www-form-urlencoded"):
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                if 0 < length <= 1_000_000:
+                    body_bytes = self.rfile.read(length)
+                    try:
+                        raw = body_bytes.decode("utf-8", errors="strict")
+                    except UnicodeDecodeError:
+                        self._send(HTTPStatus.BAD_REQUEST, b"Invalid UTF-8", "text/plain")
+                        return
+                    form = parse_qs(raw, keep_blank_values=True)
+                    submitted_token = _first(form, "_csrf_token")
+                    if not secrets.compare_digest(submitted_token, _csrf_token):
+                        self._send(HTTPStatus.FORBIDDEN, b"Invalid or missing CSRF token", "text/plain")
+                        return
+                else:
+                    self._send(HTTPStatus.BAD_REQUEST, b"Bad request", "text/plain")
+                    return
+            else:
+                self._send(HTTPStatus.BAD_REQUEST, b"Expected application/x-www-form-urlencoded", "text/plain")
+                return
             _installing = False
             for path in (ENV_FILE, FAIL_FILE, ROOTPW_FILE, LOG_FILE, DONE_FILE):
                 try:
@@ -533,11 +623,42 @@ class Handler(BaseHTTPRequestHandler):
             return
         values, errors, new_root_pw = _validate(form)
         if errors:
-            self._send(HTTPStatus.BAD_REQUEST, _error_page(errors))
+            # Re-serve index.html with validated values as preseed and errors injected
+            try:
+                with open(INDEX_HTML, "rb") as fh:
+                    err_body = fh.read()
+            except FileNotFoundError:
+                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, b"index.html missing", "text/plain")
+                return
+            err_body = err_body.replace(b"{{CSRF_TOKEN}}", _csrf_token.encode("ascii"))
+            # Inject preseed of submitted values so the form retains state
+            err_preseed = {k: v for k, v in values.items()}
+            err_script = '<script>var _ps=' + json.dumps(err_preseed).replace("</", "<\\/") + ';'
+            err_script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
+            err_script += 'if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");if(e)e.value=_ps.ROUTER_HOSTNAME;}'
+            err_script += 'if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");if(e)e.value=_ps.SSH_ADMIN_KEY;}'
+            err_script += 'if(_ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=_ps.AP_PASS;}'
+            # Inject errors list so JS can display the banner
+            err_items_json = json.dumps(errors).replace("</", "<\\/")
+            err_script += 'var _errors=' + err_items_json + ';'
+            err_script += ('if(_errors&&_errors.length){'
+                           'var el=document.getElementById("errlist");'
+                           'var es=document.getElementById("errsum");'
+                           'if(el&&es){'
+                           '_errors.forEach(function(m){var li=document.createElement("li");li.textContent=m;el.appendChild(li);});'
+                           'es.classList.add("show");'
+                           'window.scrollTo({top:0,behavior:"smooth"});'
+                           '}'
+                           '}')
+            err_script += '</script>'
+            err_body = err_body.replace(b'</body>', err_script.encode("utf-8") + b'</body>')
+            self._send(HTTPStatus.BAD_REQUEST, err_body)
             return
-        # C9: double-submit guard
+        # C9: double-submit guard — redirect to status page instead of raw JSON
         if _installing:
-            self._send_json({"error": "Installation already in progress"}, code=409)
+            self.send_response(302)
+            self.send_header("Location", "/status")
+            self.end_headers()
             return
         _installing = True
         try:
@@ -654,9 +775,9 @@ def _load_preseed() -> dict[str, str]:
 
 def main() -> int:
     os.makedirs(STATE_DIR, exist_ok=True)
-    addr = ("0.0.0.0", 80)
+    addr = ("", 80)
     httpd = HTTPServer(addr, Handler)
-    sys.stderr.write(f"[firstboot] listening on {addr[0]}:{addr[1]}\n")
+    sys.stderr.write(f"[firstboot] listening on 0.0.0.0:{addr[1]}\n")
     _preseed.update(_load_preseed())
     try:
         httpd.serve_forever()

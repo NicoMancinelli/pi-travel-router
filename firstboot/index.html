@@ -86,7 +86,9 @@ button.submit:hover{background:#2ea043}
 </optgroup>
 <optgroup label="Europe">
   <option value="AT">AT — Austria</option>
+  <option value="BE">BE — Belgium</option>
   <option value="CH">CH — Switzerland</option>
+  <option value="CZ">CZ — Czech Republic</option>
   <option value="DE">DE — Germany</option>
   <option value="DK">DK — Denmark</option>
   <option value="ES">ES — Spain</option>
@@ -96,21 +98,31 @@ button.submit:hover{background:#2ea043}
   <option value="IT">IT — Italy</option>
   <option value="NL">NL — Netherlands</option>
   <option value="NO">NO — Norway</option>
+  <option value="PL">PL — Poland</option>
+  <option value="PT">PT — Portugal</option>
+  <option value="RO">RO — Romania</option>
   <option value="SE">SE — Sweden</option>
+  <option value="TR">TR — Turkey</option>
 </optgroup>
 <optgroup label="Middle East &amp; Africa">
   <option value="AE">AE — UAE</option>
+  <option value="IL">IL — Israel</option>
   <option value="ZA">ZA — South Africa</option>
 </optgroup>
 <optgroup label="Asia Pacific">
   <option value="AU">AU — Australia</option>
   <option value="HK">HK — Hong Kong</option>
+  <option value="ID">ID — Indonesia</option>
   <option value="IN">IN — India</option>
   <option value="JP">JP — Japan</option>
   <option value="KR">KR — South Korea</option>
+  <option value="MY">MY — Malaysia</option>
   <option value="NZ">NZ — New Zealand</option>
+  <option value="PH">PH — Philippines</option>
   <option value="SG">SG — Singapore</option>
+  <option value="TH">TH — Thailand</option>
   <option value="TW">TW — Taiwan</option>
+  <option value="VN">VN — Vietnam</option>
 </optgroup>
 </select>
 <span class="hint">Sets the Wi-Fi regulatory domain (allowed channels and power levels). Choose the country where the router is used.</span>
@@ -204,7 +216,7 @@ button.submit:hover{background:#2ea043}
 
 <div class="optgroup">
 <label for="tailscale_up_args" class="optional">Tailscale up args</label>
-<input id="tailscale_up_args" name="TAILSCALE_UP_ARGS" type="text" value="--advertise-routes=10.3.141.0/24 --accept-dns=false" autocomplete="off" autocorrect="off" autocapitalize="none">
+<input id="tailscale_up_args" name="TAILSCALE_UP_ARGS" type="text" value="" placeholder="e.g. --advertise-routes=192.168.0.0/24 --accept-dns=false" autocomplete="off" autocorrect="off" autocapitalize="none">
 <span class="hint">Extra arguments passed to <code>tailscale up</code>. Common additions: <code>--exit-node=</code>, <code>--ssh</code>.</span>
 </div>
 
@@ -307,7 +319,10 @@ button.submit:hover{background:#2ea043}
     if(pw.type==='password'){pw.type='text';btn.textContent='Hide';}
     else{pw.type='password';btn.textContent='Show';}
   });
-  var WORDS=['oak','elm','ash','ivy','bay','fog','ice','jet','log','mud','net','orb','pit','rod','sap','tar','urn','wax','yew','arc','bud','cob','dew','fin','gem','hub','imp','jar','keg','lex','mop','nib','ore','pod','rut','sod','tin','vat','wig','yak','zinc','wolf','tide','peak','sand','vine','hawk','moon','coal','flame','river','arrow','blade','cloud','crane','delta','eagle','field','grove','hedge','inlet','jade','kelp','lark','maple','marsh','orbit','palm','ridge','stone','tower','vale','amber','birch','cedar','depth','ember','flint','glade','haven','islet','knoll','ledge','manor','notch','olive','plume','quill','raven','slate','thyme','umbra','wheat','xylem'];
+  var WORDS=['oak','elm','ash','ivy','bay','fog','ice','jet','log','mud','net','orb','pit','rod','sap','tar','urn','wax','yew','arc','bud','cob','dew','fin','gem','hub','imp','jar','keg','lex','mop','nib','ore','pod','rut','sod','tin','vat','wig','yak','zinc','wolf','tide','peak','sand','vine','hawk','moon','coal','flame','river','arrow','blade','cloud','crane','delta','eagle','field','grove','hedge','inlet','jade','kelp','lark','maple','marsh','orbit','palm','ridge','stone','tower','vale','amber','birch','cedar','depth','ember','flint','glade','haven','islet','knoll','ledge','manor','notch','olive','plume','quill','raven','slate','thyme','umbra','wheat','xylem',
+    'trek','visa','port','cafe','map','bus','train','road','sky','sea','boat','sail','camp','hike','pack','tent','guide','tour','park','lake','hill','reef','cove','bay','dune','mist','rain','wind','snow','sun','star','dusk','dawn','noon','path','track','trail','route','fjord','mesa','atoll','oasis','delta','plain','grove','steppe','tundra','canyon','valley','forest','meadow','harbor','bridge','castle','temple','tower','plaza','market','station','harbor','island','coast','shore','cliff','beach','crest','summit','slope','basin','gorge','cape','fjord','glacier','lagoon','reef','haven','brook','stream','geyser','spring',
+    'swift','calm','bold','bright','crisp','cool','warm','mild','deep','wide','free','still','clear','sharp','smooth','rough','vast','wild','open','quiet','brave','keen','nimble','agile','alert','hardy','eager','loyal','proud','grace','swift','vivid','serene','rustic','rugged','cozy','lush','brisk','damp','arid','mossy','stony','sandy','misty','snowy','sunny','stormy','breezy',
+    'fox','bear','wolf','lynx','crane','heron','finch','swift','robin','wren','vole','otter','seal','whale','shark','trout','perch','bison','moose','deer','ibis','stork','egret','kite','swift','dove','quail','grouse','snipe','carp','bass','cod','pike','salmon','tuna'];
   function randWord(){
     var arr=new Uint32Array(1);
     crypto.getRandomValues(arr);
@@ -315,7 +330,7 @@ button.submit:hover{background:#2ea043}
   }
   function genPass(){
     var out=[];
-    for(var i=0;i<4;i++){out.push(randWord());}
+    for(var i=0;i<5;i++){out.push(randWord());}
     return out.join('-');
   }
   document.getElementById('genpw').addEventListener('click',function(){
@@ -346,6 +361,31 @@ button.submit:hover{background:#2ea043}
   var form=document.getElementById('setupform');
   var errsum=document.getElementById('errsum');
   var errlist=document.getElementById('errlist');
+  var submitBtn=document.querySelector('button.submit');
+
+  // Password-warning inline div (replaces window.confirm for mobile compatibility)
+  var pwWarnDiv=document.createElement('div');
+  pwWarnDiv.className='warn';
+  pwWarnDiv.id='pw_warn';
+  pwWarnDiv.style.display='none';
+  pwWarnDiv.innerHTML='<strong>No password set.</strong> The default <code>changeme</code> password is a security risk.'
+    +'<br><button type="button" id="pw_warn_set" style="margin-top:.5rem;margin-right:.5rem;background:#238636;color:#fff;border:0;border-radius:6px;padding:.4rem .8rem;cursor:pointer">Set Password</button>'
+    +'<button type="button" id="pw_warn_continue" style="margin-top:.5rem;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:6px;padding:.4rem .8rem;cursor:pointer">Continue Anyway</button>';
+  submitBtn.parentNode.insertBefore(pwWarnDiv, submitBtn);
+
+  document.getElementById('pw_warn_set').addEventListener('click',function(){
+    pwWarnDiv.style.display='none';
+    submitBtn.style.display='';
+    document.getElementById('rootpw').focus();
+  });
+  document.getElementById('pw_warn_continue').addEventListener('click',function(){
+    pwWarnDiv.style.display='none';
+    submitBtn.disabled=true;
+    submitBtn.textContent='Configuring…';
+    submitBtn.style.display='';
+    form.submit();
+  });
+
   form.addEventListener('submit',function(ev){
     var errs=[];
     var rp=document.getElementById('rootpw').value;
@@ -379,13 +419,14 @@ button.submit:hover{background:#2ea043}
     }
     if(!rp){
       ev.preventDefault();
-      var ok=window.confirm("You haven't set a new password. The default 'changeme' password is a security risk. Are you sure you want to continue?");
-      if(!ok){
-        document.getElementById('rootpw').focus();
-      } else {
-        form.submit();
-      }
+      submitBtn.style.display='none';
+      pwWarnDiv.style.display='';
+      window.scrollTo({top:pwWarnDiv.offsetTop-20,behavior:'smooth'});
+      return;
     }
+    // All validation passed — disable button to prevent double-submit
+    submitBtn.disabled=true;
+    submitBtn.textContent='Configuring…';
   });
 })();
 </script>
