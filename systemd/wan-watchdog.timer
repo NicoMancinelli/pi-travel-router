@@ -1,6 +1,7 @@
 [Unit]
 Description=Run WAN watchdog every 60 seconds
 Requires=wan-watchdog.service
+After=wan-watchdog.service
 
 [Timer]
 OnBootSec=60

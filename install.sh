@@ -142,6 +142,8 @@ fi
 
 [[ -n "$AP_SSID" && ${#AP_SSID} -le 32 ]] || die "SSID must be 1-32 characters"
 [[ ${#AP_PASS} -ge 8 && ${#AP_PASS} -le 63 ]] || die "Passphrase must be 8-63 characters"
+[[ "$AP_PASS" =~ '#' ]] && die "AP passphrase must not contain '#' (hostapd comment character)"
+[[ "${TOR_AP_PASS:-}" =~ '#' ]] && die "Tor AP passphrase must not contain '#' (hostapd comment character)"
 [[ "$COUNTRY" =~ ^[A-Za-z]{2}$ ]] || die "Country code must be two letters, e.g. US"
 COUNTRY="${COUNTRY^^}"
 [[ "$NTFY_TOPIC" =~ ^[A-Za-z0-9._-]*$ ]] || die "ntfy.sh topic may only contain letters, numbers, dot, underscore, or dash"
@@ -156,8 +158,8 @@ done
 # Validate ROUTER_HOSTNAME when supplied via environment (direct-run path)
 # Regex requires alphanumeric start AND end, disallowing trailing hyphens (RFC 952).
 if [[ -n "${ROUTER_HOSTNAME:-}" ]]; then
-    [[ "$ROUTER_HOSTNAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$ ]] || \
-        die "ROUTER_HOSTNAME '${ROUTER_HOSTNAME}' is invalid — use only letters, numbers, and hyphens; must not start or end with a hyphen"
+    [[ "$ROUTER_HOSTNAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]] || \
+        die "ROUTER_HOSTNAME '${ROUTER_HOSTNAME}' is invalid — use only letters, numbers, and hyphens (max 63 chars); must not start or end with a hyphen"
 fi
 
 echo ""

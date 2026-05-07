@@ -4,6 +4,7 @@ Description=Daily bandwidth report generation
 [Timer]
 OnCalendar=*-*-* 00:05
 Persistent=true
+RandomizedDelaySec=15min
 
 [Install]
 WantedBy=timers.target

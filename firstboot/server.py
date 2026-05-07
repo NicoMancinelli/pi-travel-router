@@ -47,6 +47,16 @@ _BARE_IP_RE = re.compile(
 )
 SECTION_RE = re.compile(r"━━\s*(.+?)\s*━━")
 
+# RFC 952-compliant domain token: labels must start and end with an
+# alphanumeric character; hyphens are allowed in the middle only.
+_DOMAIN_TOKEN = (
+    r'[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?'
+    r'(\.[A-Za-z0-9]([A-Za-z0-9\-]{0,61}[A-Za-z0-9])?)*'
+)
+_SPLIT_DOMAINS_RE = re.compile(
+    r'^' + _DOMAIN_TOKEN + r'( ' + _DOMAIN_TOKEN + r')*$'
+)
+
 BOOL_FLAGS = [
     "ENABLE_VPN_KILLSWITCH",
     "ENABLE_BLOCKLISTS",
@@ -162,8 +172,8 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     values["SSH_ADMIN_KEY"] = ssh_key
 
     stdomains = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
-    if stdomains and not re.fullmatch(r'^[A-Za-z0-9._-]+( [A-Za-z0-9._-]+)*$', stdomains):
-        errors.append("Split tunnel domains may only contain letters, numbers, dots, hyphens, and spaces.")
+    if stdomains and not _SPLIT_DOMAINS_RE.fullmatch(stdomains):
+        errors.append("Split tunnel domains must be valid RFC 952 hostnames separated by spaces (no leading/trailing dots or hyphens).")
     values["SPLIT_TUNNEL_DOMAINS"] = stdomains
 
     hostname = _first(form, "ROUTER_HOSTNAME", "travelrouter").strip().lower()
@@ -239,8 +249,12 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     tailscale_up_args = _first(form, "TAILSCALE_UP_ARGS").strip()
     if len(tailscale_up_args) > 512:
         errors.append("Tailscale up args must be 512 characters or fewer.")
-    _FORBIDDEN_TS_ARGS = ("--auth", "--authkey", "--reset", "--force-reauth")
-    if any(arg.startswith(f) for arg in tailscale_up_args.split() for f in _FORBIDDEN_TS_ARGS):
+    _FORBIDDEN_TS_ARGS = {"--authkey", "--reset", "--force-reauth", "--auth-key"}
+    if any(
+        arg == f or arg.startswith(f + "=")
+        for arg in tailscale_up_args.split()
+        for f in _FORBIDDEN_TS_ARGS
+    ):
         errors.append("TAILSCALE_UP_ARGS contains forbidden flags.")
     values["TAILSCALE_UP_ARGS"] = tailscale_up_args
 
@@ -302,17 +316,21 @@ def _write_rootpw_file(new_root_pw: str) -> None:
 
 def _spawn_install() -> None:
     rootpw_q = shlex.quote(ROOTPW_FILE)
+    fail_q = shlex.quote(FAIL_FILE)
     cmd = (
         f"source {shlex.quote(ENV_FILE)} && "
         f"cd {shlex.quote(REPO_DIR)} && "
         f"timeout 1800 bash install.sh > {shlex.quote(LOG_FILE)} 2>&1; "
         f"_rc=$?; "
         f"if [ $_rc -eq 0 ]; then "
-        f"{{ [[ -s {rootpw_q} ]] && chpasswd < {rootpw_q} && rm -f {rootpw_q} || true; }} && "
+        f"if [[ -s {rootpw_q} ]]; then "
+        f"chpasswd < {rootpw_q}; _pwrc=$?; rm -f {rootpw_q}; "
+        f"if [ $_pwrc -ne 0 ]; then echo $_pwrc > {fail_q}; exit 1; fi; "
+        f"fi; "
         f"touch {shlex.quote(DONE_FILE)} && "
         f"systemctl disable firstboot.service && "
         f"reboot; "
-        f"else echo $_rc > {shlex.quote(FAIL_FILE)}; fi"
+        f"else echo $_rc > {fail_q}; fi"
     )
     subprocess.Popen(
         ["nohup", "bash", "-c", cmd],
@@ -661,8 +679,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.INTERNAL_SERVER_ERROR, b"index.html missing", "text/plain")
                 return
             err_body = err_body.replace(b"{{CSRF_TOKEN}}", _csrf_token.encode("ascii"))
-            # Inject preseed of submitted values so the form retains state
-            err_preseed = {k: v for k, v in values.items()}
+            # Inject preseed of submitted values so the form retains state.
+            # Explicitly exclude secrets (TS_KEY, TOR_AP_PASS) — they must
+            # not be echoed back in the inline JSON sent to the browser.
+            err_preseed = {k: values.get(k, "") for k in (
+                "AP_SSID", "ROUTER_HOSTNAME", "SSH_ADMIN_KEY", "AP_PASS",
+                "PUSHGW_URL", "NTFY_TOPIC", "ROUTER_TIMEZONE",
+                "SPLIT_TUNNEL_DOMAINS", "TAILSCALE_UP_ARGS",
+            )}
             err_script = '<script>var _ps=' + json.dumps(err_preseed).replace("</", "<\\/") + ';'
             err_script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
             err_script += 'if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");if(e)e.value=_ps.ROUTER_HOSTNAME;}'
@@ -702,7 +726,21 @@ class Handler(BaseHTTPRequestHandler):
                 "text/plain",
             )
             return
-        _spawn_install()
+        try:
+            _spawn_install()
+        except OSError as exc:
+            _installing = False
+            for f in (ENV_FILE, ROOTPW_FILE):
+                try:
+                    os.unlink(f)
+                except FileNotFoundError:
+                    pass
+            self._send(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                f"Failed to start install: {exc}".encode("utf-8"),
+                "text/plain",
+            )
+            return
         self._send(HTTPStatus.OK, _running_page())
 
 

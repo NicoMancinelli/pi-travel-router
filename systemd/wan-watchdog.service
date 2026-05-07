@@ -5,5 +5,3 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/wan-watchdog.sh
-Restart=on-failure
-RestartSec=10

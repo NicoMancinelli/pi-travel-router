@@ -67,7 +67,10 @@ fi
 
 # Rewrite firstrun.sh to a minimal safe stub — only the cmdline.txt cleanup
 # that the systemd.run= boot mechanism expects.
-cat > "$FIRSTRUN" << 'STUB'
+# Write to a temp file then rename for atomicity (avoids a corrupt stub if
+# interrupted mid-write).
+TMPSTUB=$(mktemp "${FIRSTRUN}.XXXXXX")
+cat > "$TMPSTUB" << 'STUB'
 #!/bin/bash
 # Neutralised by pi-travel-router imager-compat: SSH key already applied to root.
 # Remove systemd.run entries from cmdline.txt so this doesn't re-run.
@@ -78,6 +81,7 @@ if [ -f /boot/cmdline.txt ]; then
     sed -i 's| systemd\.run=[^ ]*||g; s| systemd\.run_success_action=[^ ]*||g; s| systemd\.unit=kernel-command-line\.target||g' /boot/cmdline.txt
 fi
 STUB
-chmod 0755 "$FIRSTRUN"
+chmod 0755 "$TMPSTUB"
+mv "$TMPSTUB" "$FIRSTRUN"
 
 exit 0

@@ -1,5 +1,6 @@
 [Unit]
 Description=Re-enable travel router AP
+After=NetworkManager.service network.target
 ConditionPathExists=/usr/local/bin/ap-schedule.sh
 
 [Service]

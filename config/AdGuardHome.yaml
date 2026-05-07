@@ -13,7 +13,7 @@ dns:
   bind_hosts:
     - 127.0.0.1
   port: 5335
-  anonymize_client_ip: false
+  anonymize_client_ip: true
   protection_enabled: true
   blocking_mode: default
   blocked_response_ttl: 10

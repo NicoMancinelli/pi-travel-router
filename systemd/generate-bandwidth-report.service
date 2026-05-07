@@ -1,5 +1,6 @@
 [Unit]
 Description=Generate HTML bandwidth report from vnStat
+Wants=vnstat.service
 After=vnstat.service
 
 [Service]
