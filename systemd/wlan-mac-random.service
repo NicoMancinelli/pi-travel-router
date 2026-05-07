@@ -3,6 +3,7 @@ Description=Randomize wlan0 MAC address at boot
 After=network-pre.target
 Before=NetworkManager.service wpa_supplicant.service
 Wants=network-pre.target
+ConditionPathExists=/sys/class/net/wlan0
 
 [Service]
 Type=oneshot

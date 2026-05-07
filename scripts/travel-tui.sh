@@ -68,12 +68,12 @@ _svc_dot() {
 }
 
 _cpu_usage() {
-    local u n s id u2 n2 s2 id2 _rest
-    read -r _rest u n s id _rest < /proc/stat
-    local total=$(( u + n + s + id )) idle=$id
+    local u n s id iow irq si st u2 n2 s2 id2 iow2 irq2 si2 st2 _cpu _rest
+    read -r _cpu u n s id iow irq si st _rest < /proc/stat 2>/dev/null || return
+    local total=$(( u + n + s + id + iow + irq + si + st )) idle=$id
     sleep 0.1
-    read -r _rest u2 n2 s2 id2 _rest < /proc/stat
-    local total2=$(( u2 + n2 + s2 + id2 )) idle2=$id2
+    read -r _cpu u2 n2 s2 id2 iow2 irq2 si2 st2 _rest < /proc/stat 2>/dev/null || return
+    local total2=$(( u2 + n2 + s2 + id2 + iow2 + irq2 + si2 + st2 )) idle2=$id2
     local dtotal=$(( total2 - total )) didle=$(( idle2 - idle ))
     (( dtotal > 0 )) && printf '%d' $(( 100 * (dtotal - didle) / dtotal )) || printf '0'
 }
@@ -935,7 +935,7 @@ show_settings() {
         _cl "  [9] Split Tunnel Domains     ${DIM}${SPLIT_TUNNEL_DOMAINS:-(empty)}${NC}"
         _cl "  [0] Per-Client Bandwidth     ${DIM}${AP_CLIENT_BANDWIDTH:-unlimited}${NC}"
         _cl "  [b] Tor AP Password          ${DIM}${TOR_AP_PASS:+(set — ${#TOR_AP_PASS} chars)}${TOR_AP_PASS:-(empty)}${NC}"
-        _cl "  [c] Max Blocklist Entries    ${DIM}${MAX_BLOCKLIST_ENTRIES:-500000}${NC}"
+        _cl "  [c] Max Blocklist Entries    ${DIM}${MAX_BLOCKLIST_ENTRIES:-20000}${NC}"
         _be
         _cl "  ${DIM}AP SCHEDULING${NC}"
         _cl "  [d] AP Disable Time          ${DIM}${AP_DISABLE_TIME:-23:00}${NC}"
@@ -980,7 +980,7 @@ show_settings() {
             b|B) _cfg_edit TOR_AP_PASS \
                 "Tor AP Password  (min 8 chars, used for the uap1 Tor SSID)" 1; sleep 1 ;;
             c|C) _cfg_edit MAX_BLOCKLIST_ENTRIES \
-                "Max Blocklist Entries  (default 500000, lower to save RAM)"; sleep 1 ;;
+                "Max Blocklist Entries  (default 20000, lower to save RAM)"; sleep 1 ;;
             d|D) _cfg_edit AP_DISABLE_TIME \
                 "AP Disable Time  (HH:MM, requires ENABLE_AP_SCHEDULE=1)"; sleep 1 ;;
             e|E) _cfg_edit AP_ENABLE_TIME \

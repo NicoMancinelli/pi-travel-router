@@ -811,7 +811,15 @@ systemctl enable --now tailscaled 2>/dev/null || true
 
 if [[ -n "$TS_KEY" ]]; then
     # I-M1: use read -ra to avoid word-split issues with IFS-modified environments
-    read -ra TS_ARGS <<< "$TAILSCALE_UP_ARGS"
+    read -ra TS_ARGS <<< "${TAILSCALE_UP_ARGS:-}"
+    # Validate TAILSCALE_UP_ARGS against forbidden flags
+    _FORBIDDEN_TS=("--authkey" "--reset" "--force-reauth" "--auth-key")
+    for _targ in "${TS_ARGS[@]:-}"; do
+        for _f in "${_FORBIDDEN_TS[@]}"; do
+            [[ "$_targ" = "$_f" || "$_targ" = "${_f}="* ]] && \
+                die "TAILSCALE_UP_ARGS contains forbidden flag: $_targ"
+        done
+    done
     _TS_LOGIN_ARGS=()
     [[ -n "$HEADSCALE_URL" ]] && _TS_LOGIN_ARGS+=(--login-server="$HEADSCALE_URL")
     if tailscale up \

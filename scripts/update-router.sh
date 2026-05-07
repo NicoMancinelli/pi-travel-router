@@ -92,6 +92,7 @@ apply_update() {
     )
 
     # Scripts → /usr/local/bin/
+    local _fw_changed=0
     shopt -s nullglob
     for script in "${src}"/scripts/*.sh; do
         name=$(basename "$script")
@@ -118,6 +119,7 @@ apply_update() {
             cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
             log "  updated script: $name"
             changed=1
+            [[ "$name" = "travel-router-firewall.sh" ]] && _fw_changed=1
         fi
     done
     shopt -u nullglob
@@ -170,7 +172,8 @@ apply_update() {
     fi
 
     # Re-apply firewall if the firewall script changed (picks up new nftables rules)
-    if ! diff -q "${src}/scripts/travel-router-firewall.sh" /usr/local/bin/travel-router-firewall.sh >/dev/null 2>&1; then
+    if [[ "$_fw_changed" = "1" ]]; then
+        log "Firewall script updated — reloading"
         if /usr/local/bin/travel-router-firewall.sh --save 2>/dev/null; then
             log "  firewall rules reloaded"
         else

@@ -13,9 +13,11 @@ SUBSYSTEM=="net", ACTION=="remove", KERNEL=="rndis0", \
     TAGS=="pi_android_tether", \
     RUN+="/usr/local/bin/stop-tether.sh %k"
 SUBSYSTEM=="net", ACTION=="add", KERNEL=="usb0", \
+    DEVPATH!="*/gadget*", \
     ATTRS{idVendor}!="05ac", ATTRS{idVendor}!="1d6b", \
     TAG+="pi_android_tether", \
     RUN+="/usr/local/bin/start-tether.sh %k"
 SUBSYSTEM=="net", ACTION=="remove", KERNEL=="usb0", \
+    DEVPATH!="*/gadget*", \
     TAGS=="pi_android_tether", \
     RUN+="/usr/local/bin/stop-tether.sh %k"
