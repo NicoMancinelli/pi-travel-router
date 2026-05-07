@@ -123,14 +123,14 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     values: dict[str, str] = {}
 
     ap_ssid = _first(form, "AP_SSID", "TravelRouter").strip()
-    if not (1 <= len(ap_ssid.encode("utf-8")) <= 32):
+    if not 1 <= len(ap_ssid.encode("utf-8")) <= 32:
         errors.append("AP SSID must be 1–32 bytes (UTF-8 encoded).")
     if any(ord(c) < 0x20 for c in ap_ssid):
         errors.append("AP SSID may not contain control characters.")
     values["AP_SSID"] = ap_ssid
 
     ap_pass = _first(form, "AP_PASS")
-    if not (8 <= len(ap_pass) <= 63):
+    if not 8 <= len(ap_pass) <= 63:
         errors.append("AP passphrase must be 8-63 characters.")
     if ap_pass and not all(0x20 <= ord(c) <= 0x7E and c != '#' for c in ap_pass):
         errors.append("AP passphrase must use printable ASCII, excluding '#'.")
@@ -237,7 +237,7 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
         errors.append("UPS shutdown threshold must be a number (percent).")
     elif ups_threshold:
         ups_val = int(ups_threshold)
-        if not (1 <= ups_val <= 99):
+        if not 1 <= ups_val <= 99:
             errors.append("UPS shutdown threshold must be between 1 and 99.")
     values["UPS_SHUTDOWN_THRESHOLD"] = ups_threshold or "10"
 
@@ -540,7 +540,7 @@ def _status_page() -> bytes:
 class Handler(BaseHTTPRequestHandler):
     server_version = "TravelRouterFirstBoot/1.0"
 
-    def log_message(self, format, *args):  # noqa: A002
+    def log_message(self, format, *args):  # noqa: A002  # pylint: disable=redefined-builtin
         sys.stderr.write("[firstboot] " + (format % args) + "\n")
 
     def _send(self, status: int, body: bytes, content_type: str = "text/html; charset=utf-8") -> None:

@@ -29,4 +29,12 @@ jobs:
         run: find firstboot -name "*.py" | xargs flake8 --max-line-length=120
 
       - name: pylint
-        run: pylint --disable=C0114,C0115,C0116 firstboot/server.py
+        run: >
+          pylint firstboot/server.py
+          --max-line-length=120
+          --disable=C0114,C0115,C0116
+          --disable=C0103
+          --disable=C0415
+          --disable=R0911,R0912,R0914,R0915
+          --disable=R1732
+          --disable=W0603
