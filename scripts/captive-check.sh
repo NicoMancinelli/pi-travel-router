@@ -70,7 +70,7 @@ attempt_portal_login() {
 
     # M1: handle single-quoted, double-quoted, and unquoted action attributes
     form_action=$(printf '%s' "$portal_html" \
-        | grep -oiE 'action=["\x27]?[^"'\'' &gt;]+' \
+        | grep -oiE 'action=["\x27]?[^ "'\''<>]+' \
         | head -1 \
         | sed "s/^action=[\"']\{0,1\}//;s/[\"']\{0,1\}$//")
     if [ -z "$form_action" ]; then

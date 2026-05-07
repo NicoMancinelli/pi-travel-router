@@ -35,8 +35,8 @@ if ! ip link show bnep0 >/dev/null 2>&1; then
     exit 1
 fi
 
-dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether
-DHCP_RC=${PIPESTATUS[0]}
+DHCP_RC=0
+dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether || DHCP_RC=$?
 if [[ "$DHCP_RC" -ne 0 ]]; then
     logger -t bt-tether "dhclient exited $DHCP_RC on bnep0 — lease acquisition failed"
 fi

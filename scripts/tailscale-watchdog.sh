@@ -42,7 +42,7 @@ now=$(date +%s)
 stale_peers=$(printf '%s' "$ts_json" | jq -r --argjson now "$now" '
     .Peer // {} | to_entries[] |
     select(.value.Active == true) |
-    select(($now - (.value.LastHandshake | if (. == null or . == "0001-01-01T00:00:00Z") then 0 else gsub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 end)) > 300) |
+    select(($now - (.value.LastHandshake | if (. == null or . == "0001-01-01T00:00:00Z") then 0 else gsub("\\.[0-9]+(Z|[+-][0-9]{2}:[0-9]{2})$"; "Z") | fromdateiso8601 end)) > 300) |
     .value.HostName' 2>/dev/null || true)
 if [ -n "$stale_peers" ]; then
     while IFS= read -r peer; do
