@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-06
+
+### Fixed — Critical / Security
+- `start-bt-tether.sh`: gateway now captured BEFORE `ip route del default dev bnep0`; previously the route was deleted first, causing the capture to always return empty and Bluetooth PAN to never become a routable uplink
+- `server.py`: `chpasswd` failure in `_spawn_install` now writes `FAIL_FILE` and exits 1 instead of silently creating `DONE_FILE`; `ROOTPW_FILE` is now always deleted (success or failure)
+- `systemd/wan-watchdog.service` + `systemd/failover-watchdog.service`: removed `Restart=on-failure` / `RestartSec=10` — systemd silently ignores `Restart=` on `Type=oneshot` services; the round-6 addition had no effect
+
+### Fixed — Reliability / Correctness
+- `travel-router-firewall.sh`: `ENABLE_PER_DEVICE_VPN=0` now tears down the `VPN_DEVICES` mangle chain and `ip rule fwmark 0x64 lookup 100`; previously stale entries persisted routing marked traffic via Tailscale indefinitely
+- `notify-router.sh`: `PRIORITY` parameter validated against known ntfy.sh values; unrecognised values fall back to `"default"` preventing HTTP header injection
+- `start-bt-tether.sh`: `BT_MAC` validated as `([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}` before use
+- `failover-watchdog.sh`: `set_default_metric` now uses `ip route replace` (atomic) instead of `del`+`add`, eliminating the routing gap window; `_UPLINK_STATE_FILE` written atomically via mktemp+mv
+- `wan-watchdog.sh`: `STATE_FILE` (fail counter) written atomically via mktemp+mv
+- `tailscale-watchdog.sh`: corrupt `ts-peers.json` now detected via `jq empty` and reset to `[]` baseline instead of silently discarding peer-loss events; lost peers now notified one per call instead of concatenated
+- `ups-monitor.sh`: numeric guard added for `LEVEL` from `_get_battery_pct`; non-numeric sysfs content no longer causes arithmetic failure under `set -e`
+- `stop-bt-tether.sh`: `ip route del default dev bnep0` added before `ip link set down` to prevent stale kernel routes
+- `ap-schedule.sh`: `enable` branch now calls `_wait_hostapd` before issuing `hostapd_cli enable`, matching the `disable` branch
+- `travel-router-firewall.sh`: `grep` pattern for `fwmark 0x64 lookup 100` anchored to prevent false positives on `lookup 1000` etc.
+- `server.py`: `err_preseed` JSON on validation failure now built from an explicit allowlist; `TS_KEY` and `TOR_AP_PASS` are no longer included
+- `server.py`: `_spawn_install()` wrapped in `try/except OSError`; temp files cleaned up and 500 returned on Popen failure
+- `server.py`: `SPLIT_TUNNEL_DOMAINS` regex tightened to RFC 952 — rejects leading dots, leading/trailing hyphens per label
+- `server.py`: `TAILSCALE_UP_ARGS` forbidden-flag check uses exact-match/`=`-prefix to avoid false positives
+- `install.sh`: `ROUTER_HOSTNAME` regex updated to `[a-zA-Z0-9-]{0,61}` enforcing the 63-char RFC 952 label limit
+- `install.sh`: `AP_PASS` / `TOR_AP_PASS` now reject `#` characters in all install paths
+- `update-router.sh`: `chmod 755` applied to `${dest}.tmp` BEFORE `mv`, eliminating the window where a live script is non-executable; `tar` extraction adds `--no-absolute-names`; `VERSION_FILE` writes atomic via tmp+mv; `log()` uses `printf` not `echo`
+- `update-blocklists.sh`: `NFT_NEW` created via `mktemp` and added to EXIT trap; no stale partial file left on failure
+- `travel-tui.sh`: `uplink.state` value and `_bw_delta` iface parameter validated against `^[a-zA-Z0-9_.-]{1,15}$` before use in file paths; `_ap_edit_ssid` rejects SSID > 32 chars or containing control characters; Settings SSH key validated for key-type prefix; `tput reset` added after `bmon`/`iftop` to restore terminal state
+- `travel-diagnostic.sh`: output directory validated as existent and writable before collection begins
+- `build/stage-travel-router/files/imager-compat.sh`: `firstrun.sh` stub written atomically via mktemp+mv
+
+### Fixed — Configuration / Systemd
+- `config/AdGuardHome.yaml`: `anonymize_client_ip: true` — default config no longer logs full client IPs for all DNS queries
+- `config/91-android-tether.rules`: `add` rules set `TAG+="pi_android_tether"`; `remove` rules match `TAGS==` instead of `ENV{ID_VENDOR_ID}` (unreliable at removal time)
+- `config/hostapd.conf`: hardcoded `country_code=US` removed; operators must set the correct country code for their jurisdiction
+- `systemd/generate-bandwidth-report.service`: `Wants=vnstat.service` added alongside existing `After=`
+- `firstboot/firstboot.service`: `ProtectHome=yes` and `PrivateDevices=yes` added
+- `systemd/ap-disable.service` + `ap-enable.service`: `After=NetworkManager.service network.target` added
+- `systemd/wan-watchdog.timer` + `failover-watchdog.timer`: `After=<service>` added for correct ordering
+- `systemd/tune-cake.timer`, `daily-digest.timer`, `generate-bandwidth-report.timer`, `vnstat-push.timer`: `RandomizedDelaySec=15min` added to prevent thundering-herd on multi-router deployments
+
 ## [1.5.0] - 2026-05-06
 
 ### Fixed — Critical / Security
