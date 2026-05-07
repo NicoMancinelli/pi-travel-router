@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-06
+
+### Fixed — Critical / Security
+- `travel-router-firewall.sh`: policy order corrected — `iptables -P FORWARD DROP` now set *before* `iptables -F FORWARD`; on the very first invocation (fresh boot with ACCEPT baseline) all packets were previously forwarded unfiltered during the flush window
+- `update-router.sh`: `readonly REPO` (and other critical variables) added before sourcing `/etc/default/travel-router`; a compromised config file could previously override `REPO` and redirect updates to an attacker-controlled GitHub repository
+- `install.sh`: WiFi QR code assembly now validates `AP_SSID`/`AP_PASS` for shell-unsafe characters (`\``, `$`, `(`, `)`) before construction; backtick/subshell injection in the MECARD string is no longer possible
+- `build/stage-travel-router/01-run.sh` + `firstboot/firstboot.service`: `ExecStartPost` drop-in added to shred `/boot/firmware/root-password.txt` after firstboot completes; the FAT32 boot partition has no Unix permission enforcement and the plaintext password was readable by anyone with physical access to the SD card
+- `config/AdGuardHome.yaml`: admin UI bound to `127.0.0.1:3000` instead of `0.0.0.0:3000`; previously reachable by anyone on the hotel network before a password was set
+
+### Fixed — Reliability / Correctness
+- `captive-check.sh`: `tailscale down 2>/dev/null || true` — non-zero exit from tailscale (daemon not running, already disconnected) no longer aborts the script under `set -e`, which previously left a stale portal-active state file and permanently disabled auto-login retries
+- `tailscale-watchdog.sh`: `flock -n 9 || exit 0` guard added; concurrent invocations from rapid timer fires no longer race on state file writes
+- `start-bt-tether.sh`: `bt-pan` PID captured and cleaned up via EXIT trap if setup fails; orphaned bt-pan processes no longer accumulate on repeated udev events
+- `ups-monitor.sh`: `UPS_SHUTDOWN_THRESHOLD` now validated as integer with fallback warning; non-numeric config values no longer cause silent shutdown failure
+- `notify-router.sh`: dead `python3` guard removed; the guard blocked all notifications on systems without python3 even though python3 is not used
+- `wan-watchdog.sh`: `WAN_PING_TARGETS` now read into array to prevent glob expansion; `captive-check.sh` non-zero exit now logged
+- `start-tether.sh` / `stop-tether.sh`: interface name validated against `^(enx[0-9a-f]+|rndis0|usb0)$` before use
+- `ap-schedule.sh`: `_wait_hostapd` now probes with `hostapd_cli ping | grep PONG` instead of checking socket existence; stale socket files from a crashed hostapd no longer produce false-ready indications
+- `generate-bandwidth-report.sh`: interface names and `$(date)` output HTML-escaped before embedding in report headings
+- `vnstat-push.sh`: active interface from `uplink.state` validated against `^[a-zA-Z0-9_.-]{1,15}$` before appending to Pushgateway URL path
+- `update-router.sh`: version string from GitHub API sanitized with `tr -cd 'A-Za-z0-9._-'`; `log()` uses `printf` instead of `echo` to avoid escape-sequence interpretation
+- `update-blocklists.sh`: `curl` call now uses `--fail`; HTTP error responses (404/503) no longer silently treated as valid blocklist data
+- `tune-cake.sh`: CAKE state file written atomically via tmp+mv
+- `vnstat-metrics.sh`: Prometheus metrics file written atomically; node-exporter no longer sees truncated scrape files on parser failure
+- `travel-tui.sh`: cleanup trap extended to `EXIT` so cursor is always restored; `read` calls guarded with `|| true`; MECARD QR escaping added for `;`, `,`, `"`, `\`, `:`
+- `captive-check.sh`: `_probe()` temp file cleaned up on `RETURN` trap, preventing tmpfs accumulation
+
+### Fixed — Configuration / Systemd
+- `config/sshd-travel-router.conf`: `PasswordAuthentication no` added; installs via `install.sh` (not the pre-built image) previously left password SSH login enabled
+- `config/avahi-daemon.conf`: `enable-wide-area=no`; previously leaked mDNS service names to hotel/upstream DNS infrastructure
+- `config/91-android-tether.rules`: `ACTION=="remove"` rules now use `ENV{ID_VENDOR_ID}` instead of `ATTRS{idVendor}`; sysfs device attributes are often unavailable at removal time
+- `config/nftables-travel-router.nft`: `ip6 dscp set cs0` rules added for uplink interfaces; IPv6 hotspot traffic was previously not DSCP-stripped, enabling carrier fingerprinting
+- `systemd/adguard-home.service`: `NoNewPrivileges=yes`, `PrivateTmp=yes`, `ProtectSystem=strict` added; AdGuard Home processes untrusted DNS queries and was running as root with no sandbox
+- `systemd/failover-watchdog.service` + `systemd/wan-watchdog.service`: `Restart=on-failure` / `RestartSec=10` added; a single script error previously silently skipped the watchdog cycle
+- `systemd/daily-digest.service`: `Wants=network-online.target` added alongside `After=` so systemd pulls the target into the transaction
+- `firstboot/server.py`: `SPLIT_TUNNEL_DOMAINS` regex anchored and single-space-separated (no double-spaces producing `//`); `TAILSCALE_UP_ARGS` blocks `--auth`/`--reset`/`--force-reauth` flags; `/setup` Content-Length reduced to 32 KB, `/retry` to 8 KB
+- `install.sh`: `wpa_supplicant.conf` now chmod 600 immediately after write; `ROUTER_TIMEZONE` validated before `timedatectl` call; `PasswordAuthentication no` write guarded with `grep -q` to prevent duplicates
+
 ## [1.4.0] - 2026-05-06
 
 ### Fixed — Critical / Security
