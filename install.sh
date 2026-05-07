@@ -501,11 +501,11 @@ install_file config/travel-router-defaults /etc/default/travel-router 600
 _safe_write_conf() {
     local key="$1" val="$2" path="$3"
     python3 -c "
-import sys, re
+import sys, re, shlex
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f: lines = f.readlines()
 pat = re.compile(r'^' + re.escape(key) + r'=')
-new = key + '=\"' + val.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"') + '\"\n'
+new = key + '=' + shlex.quote(val) + '\n'
 lines = [new if pat.match(l) else l for l in lines]
 with open(path, 'w') as f: f.writelines(lines)
 " "$key" "$val" "$path"
@@ -531,6 +531,9 @@ _safe_write_conf "AP_ENABLE_TIME"        "${AP_ENABLE_TIME:-07:00}"      "$DEFAU
 _safe_write_conf "VPN_DEVICE_MACS"       "${VPN_DEVICE_MACS:-}"          "$DEFAULTS_FILE"
 # TOR_AP_PASS: store empty placeholder to avoid writing plaintext passphrase
 _safe_write_conf "TOR_AP_PASS"           ""                              "$DEFAULTS_FILE" 2>/dev/null || true
+_safe_write_conf "PUSHGW_URL"              "${PUSHGW_URL:-}"                    "$DEFAULTS_FILE"
+_safe_write_conf "UPS_SHUTDOWN_THRESHOLD"  "${UPS_SHUTDOWN_THRESHOLD:-10}"      "$DEFAULTS_FILE"
+_safe_write_conf "TAILSCALE_UP_ARGS"       "${TAILSCALE_UP_ARGS:-}"             "$DEFAULTS_FILE"
 
 ok "/etc/default/travel-router written"
 
@@ -863,7 +866,9 @@ section "WiFi QR code"
 
 WIFI_QR_DIR="/usr/local/share/travel-router/wifi-qr"
 mkdir -p "$WIFI_QR_DIR"
-WIFI_STRING="WIFI:T:WPA;S:${AP_SSID};P:${AP_PASS};;"
+_qr_ssid=$(printf '%s' "$AP_SSID" | sed 's/[\\;,:"]/\\&/g')
+_qr_pass=$(printf '%s' "$AP_PASS" | sed 's/[\\;,:"]/\\&/g')
+WIFI_STRING="WIFI:T:WPA;S:${_qr_ssid};P:${_qr_pass};;"
 printf '%s\n' "$WIFI_STRING" > "$WIFI_QR_DIR/wifi-string.txt"
 chmod 600 "$WIFI_QR_DIR/wifi-string.txt"
 

@@ -6,7 +6,7 @@ Description=Travel Router first-boot setup wizard
 # firstboot.service lives in multi-user.target — make the ordering
 # explicit here too so systemd enforces it regardless of target changes.
 After=network.target network-online.target avahi-daemon.service imager-compat.service
-Wants=network-online.target
+Wants=network-online.target imager-compat.service
 RequiresMountsFor=/opt
 ConditionPathExists=!/var/lib/travel-router/firstboot-done
 
@@ -21,9 +21,6 @@ StandardOutput=journal
 StandardError=journal
 NoNewPrivileges=yes
 PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/var/lib/travel-router /var/log /root/.ssh /opt/pi-travel-router /boot /boot/firmware
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
