@@ -91,6 +91,7 @@ apply_update() {
     )
 
     # Scripts → /usr/local/bin/
+    shopt -s nullglob
     for script in "${src}"/scripts/*.sh; do
         name=$(basename "$script")
 
@@ -119,11 +120,13 @@ apply_update() {
             changed=1
         fi
     done
+    shopt -u nullglob
 
     # H7: portal example scripts → /etc/travel-router/portals/examples/
     PORTAL_ALLOWLIST=(example-accept-terms.sh example-credentials.sh)
     if [ -d "${src}/scripts/portals" ]; then
         mkdir -p /etc/travel-router/portals/examples
+        shopt -s nullglob
         for portal in "${src}"/scripts/portals/*.sh; do
             [ -f "$portal" ] || continue
             pname=$(basename "$portal")
@@ -144,10 +147,12 @@ apply_update() {
                 changed=1
             fi
         done
+        shopt -u nullglob
     fi
 
     # Systemd units (service + timer files)
     local reload_needed=0
+    shopt -s nullglob
     for unit in "${src}"/systemd/*.service "${src}"/systemd/*.timer; do
         name=$(basename "$unit")
         dest="/etc/systemd/system/${name}"
@@ -158,6 +163,7 @@ apply_update() {
             changed=1
         fi
     done
+    shopt -u nullglob
 
     if [ "$reload_needed" = "1" ]; then
         systemctl daemon-reload

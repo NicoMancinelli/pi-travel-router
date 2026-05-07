@@ -151,6 +151,17 @@ jobs:
           sudo kpartx -dv "${TMPIMG}"
           rm -f "${TMPIMG}"
 
+      - name: Cleanup mount
+        if: always()
+        run: |
+          sudo umount /tmp/travelrouter-mount 2>/dev/null || true
+          sudo rmdir /tmp/travelrouter-mount 2>/dev/null || true
+          # Also sweep any leftover mktemp -d mounts from smoke-test / SBOM steps
+          for mp in /tmp/tmp.*; do
+            sudo umount "$mp" 2>/dev/null || true
+            sudo rmdir "$mp" 2>/dev/null || true
+          done
+
       - name: Upload image as workflow artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4

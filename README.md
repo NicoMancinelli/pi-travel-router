@@ -71,7 +71,7 @@ http://192.168.7.1
 - **Linux / macOS**: the USB device appears automatically; DHCP lease arrives within a few seconds.
 - **Windows 10/11**: uses CDC NCM — inbox driver, no installation needed. The device may take 10–15 seconds to enumerate on first use.
 
-If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (password `changeme`).
+If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (SSH key required — see step 6).
 
 **5. Fill in the form**
 
@@ -92,16 +92,22 @@ After reboot:
 - Connect your phones/tablets to the new AP SSID.
 - If you provided a Tailscale key, the Pi is already on your tailnet advertising `10.3.141.0/24`.
 
-**7. Change the root password**
+**7. SSH access**
 
-The image ships with `root` / `changeme`. After first boot:
+SSH key authentication is **required** — password login is disabled by design (`PasswordAuthentication no`, `PermitRootLogin prohibit-password`).
+
+Add your SSH public key via one of these methods:
+
+- **Raspberry Pi Imager** (recommended): click the ⚙ OS Customisation button before writing the card, go to the **Services** tab, and paste your public key there.
+- **Firstboot wizard** (`http://travelrouter.local`): paste your public key in the "SSH Admin Key" field.
+
+After setup:
 
 ```sh
-ssh root@travelrouter.local
-passwd
+ssh root@192.168.7.1          # or ssh root@travelrouter.local
 ```
 
-If you supplied an SSH public key in the wizard, password authentication is automatically disabled by `install.sh` and only key auth remains.
+> **Console-only password:** A temporary root password is written to `/boot/firmware/root-password.txt` on the boot partition for emergency console access only. It does **not** enable SSH password login. Change it with `passwd` after first boot, and delete the file.
 
 ---
 
@@ -119,7 +125,7 @@ The laptop gets a DHCP address in `192.168.7.0/24`. Your devices can now use the
 SSH in and run:
 
 ```sh
-ssh root@192.168.7.1        # password: changeme (or your set password)
+ssh root@192.168.7.1        # SSH key required
 nmcli dev wifi list          # scan — find the hotel SSID
 nmcli dev wifi connect "Hotel WiFi Name" password "roompassword"
 # For open networks (no password):

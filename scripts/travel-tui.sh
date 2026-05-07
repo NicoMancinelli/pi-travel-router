@@ -91,19 +91,21 @@ _bw_delta() {
     mkdir -p /run/travel-router
     local prev_file="/run/travel-router/tui_${dir}_${iface}"
     local time_file="/run/travel-router/tui_time_${dir}_${iface}"
-    cur=$(cat "/sys/class/net/${iface}/statistics/${dir}_bytes" 2>/dev/null || echo 0)
-    cur=$(( cur + 0 ))
-    prev=$(cat "$prev_file" 2>/dev/null || echo "$cur")
-    prev=$(( prev + 0 ))
+    cur=$(< "/sys/class/net/${iface}/statistics/${dir}_bytes" 2>/dev/null) || cur=0
+    cur=$(awk -v v="$cur" 'BEGIN{printf "%d", v+0}')
+    prev=$(< "$prev_file" 2>/dev/null) || prev="$cur"
+    prev=$(awk -v v="$prev" 'BEGIN{printf "%d", v+0}')
     local _now; _now=$(date +%s%N)
-    local _last; _last=$(cat "$time_file" 2>/dev/null || echo "$_now")
-    _elapsed=$(( (_now - _last) / 1000000000 ))
-    (( _elapsed < 1 )) && _elapsed=1
+    local _last; _last=$(< "$time_file" 2>/dev/null) || _last="$_now"
+    _elapsed=$(awk -v n="$_now" -v l="$_last" 'BEGIN{e=int((n-l)/1000000000); print (e<1)?1:e}')
     echo "$cur"  > "$prev_file"
     echo "$_now" > "$time_file"
-    local delta=$(( cur - prev ))
-    if (( delta < 0 )); then delta=$(( 4294967296 - prev + cur )); fi
-    echo $(( delta / _elapsed ))
+    # Use awk for all arithmetic to avoid 32-bit/signed-64-bit wrap on large byte counters
+    awk -v c="$cur" -v p="$prev" -v e="$_elapsed" 'BEGIN{
+        delta = c - p
+        if (delta < 0) delta = 4294967296 - p + c
+        printf "%d\n", delta / e
+    }'
 }
 
 # ── Config editing helpers ────────────────────────────────────────────────────
@@ -249,7 +251,7 @@ draw_dashboard() {
     # Prefer failover state file; fall back to routing table (captive-portal safe)
     local _uplink_state_file="/var/lib/travel-router/uplink.state"
     if [[ -f "$_uplink_state_file" ]]; then
-        uplink=$(cat "$_uplink_state_file")
+        read -r uplink < "$_uplink_state_file"
     else
         uplink=$(ip route get 1.1.1.1 2>/dev/null \
             | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' || true)
@@ -594,6 +596,24 @@ PY
                             else
                                 systemctl disable --now prometheus-node-exporter 2>/dev/null || true
                                 printf "  ${G}✓ Prometheus exporter disabled${NC}\n"
+                            fi
+                            ;;
+                        ENABLE_SPLIT_TUNNEL)
+                            if [[ "$new_val" = "1" ]]; then
+                                systemctl try-restart split-tunnel.service 2>/dev/null || true
+                                printf "  ${G}✓ split-tunnel service restarted${NC}\n"
+                            else
+                                systemctl stop split-tunnel.service 2>/dev/null || true
+                                printf "  ${G}✓ split-tunnel service stopped${NC}\n"
+                            fi
+                            ;;
+                        ENABLE_BANDWIDTH_DASHBOARD)
+                            if [[ "$new_val" = "1" ]]; then
+                                systemctl try-restart bandwidth-dashboard.service 2>/dev/null || true
+                                printf "  ${G}✓ bandwidth-dashboard service restarted${NC}\n"
+                            else
+                                systemctl stop bandwidth-dashboard.service 2>/dev/null || true
+                                printf "  ${G}✓ bandwidth-dashboard service stopped${NC}\n"
                             fi
                             ;;
                         *)

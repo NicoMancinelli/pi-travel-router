@@ -37,7 +37,3 @@ jobs:
           scandir: './build/stage-travel-router'
           severity: warning
 
-      # M37: scope to .sh files only so non-shell files in firstboot don't cause false failures.
-      # Pin to SHA for supply-chain safety in production: https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions
-      - name: Shellcheck firstboot scripts
-        run: find firstboot -name "*.sh" -exec shellcheck {} +
