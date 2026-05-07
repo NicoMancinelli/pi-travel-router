@@ -91,7 +91,9 @@ set_default_metric() {
         log "set_default_metric: no gateway for $iface, skipping route add"
         return 0
     fi
-    ip route add default via "$gw" dev "$iface" metric "$metric"
+    if ! ip route add default via "$gw" dev "$iface" metric "$metric" 2>/dev/null; then
+        log "set_default_metric: ip route add failed for $iface via $gw metric $metric"
+    fi
 }
 
 # Check if an interface can reach the internet (captive-portal-aware).

@@ -41,8 +41,8 @@ attempt_portal_login() {
 
     # Per-SSID hook: /etc/travel-router/portals/<SSID>.sh  (create for known hotel chains)
     local ssid_slug
-    # M2: strip any character that is not alphanumeric, dot, dash, or underscore
-    ssid_slug=$(printf '%s' "$current_ssid" | tr -cs 'a-zA-Z0-9._-' '_' | cut -c1-64)
+    # M2: strip any character that is not alphanumeric, dash, or underscore (dots excluded to prevent path traversal)
+    ssid_slug=$(printf '%s' "$current_ssid" | tr -cs 'a-zA-Z0-9_-' '_' | cut -c1-64)
     local ssid_script="/etc/travel-router/portals/${ssid_slug}.sh"
     if [ -x "$ssid_script" ]; then
         log "Running SSID portal script: $ssid_script"
@@ -130,6 +130,7 @@ _probe() {
         -o "$tmp" "$url" 2>/dev/null)
     redirect_url=$(printf '%s' "$code" | tail -n1)
     code=$(printf '%s' "$code" | head -n1)
+    [[ "$redirect_url" == http* ]] || redirect_url=""
     local body; body=$(cat "$tmp" 2>/dev/null); rm -f "$tmp"
 
     if [ "$code" = "204" ]; then

@@ -19,7 +19,7 @@ fi
 
 # H16: teardown helper — removes routing rules and flushes table 200
 teardown_split_tunnel() {
-    ip rule del fwmark 1 table 200 2>/dev/null || true
+    ip rule del fwmark 0x2 table 200 2>/dev/null || true
     ip route flush table 200 2>/dev/null || true
     # N-H7: use consistent ipset name (vpn_domains, matching setup function)
     ipset destroy vpn_domains 2>/dev/null || true

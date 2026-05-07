@@ -24,7 +24,11 @@ notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || t
 truncate_log() {
     local _LOG_TMP
     _LOG_TMP=$(mktemp "${LOGFILE}.tmp.XXXXXX")
-    tail -n 10000 "$LOGFILE" > "$_LOG_TMP" && mv "$_LOG_TMP" "$LOGFILE" || rm -f "$_LOG_TMP"
+    if tail -n 10000 "$LOGFILE" > "$_LOG_TMP"; then
+        mv "$_LOG_TMP" "$LOGFILE" || rm -f "$_LOG_TMP"
+    else
+        rm -f "$_LOG_TMP"
+    fi
 }
 truncate_log
 

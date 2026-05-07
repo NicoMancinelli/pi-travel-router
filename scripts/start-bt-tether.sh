@@ -54,7 +54,7 @@ done
 
 ip route del default dev bnep0 2>/dev/null || true
 GW=$(ip route show dev bnep0 | awk '/via/{print $3}' | head -1)
-[ -n "$GW" ] && ip route add default via "$GW" dev bnep0 metric 300
+[ -n "$GW" ] && ip route add default via "$GW" dev bnep0 metric 300 2>/dev/null || true
 
 tc qdisc replace dev bnep0 root cake bandwidth 3mbit besteffort 2>/dev/null || true
 

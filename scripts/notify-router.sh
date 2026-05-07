@@ -39,6 +39,6 @@ curl -s --max-time 10 \
     -H "Title: Travel Router" \
     "${AUTH_HEADER[@]}" \
     --data-raw "$MSG" \
-    "https://ntfy.sh/${topic_enc}" > /dev/null 2>&1
+    "https://ntfy.sh/${topic_enc}" > /dev/null 2>&1 || true
 
 logger "notify-router: sent '$MSG'"

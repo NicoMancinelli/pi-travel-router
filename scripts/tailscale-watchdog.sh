@@ -37,8 +37,7 @@ if ! ts_json=$(tailscale status --json 2>/dev/null); then
 fi
 
 # 2. BackendState == Running?
-backend=$(printf '%s' "$ts_json" | jq -r '.BackendState // "unknown"')
-if [ $? -ne 0 ] || [ -z "$backend" ]; then
+if ! backend=$(printf '%s' "$ts_json" | jq -r '.BackendState // "unknown"') || [ -z "$backend" ]; then
     logger -t tailscale-watchdog "jq parse error on BackendState"
     exit 1
 fi
@@ -51,14 +50,13 @@ fi
 now=$(date +%s)
 # N-M14: use configurable threshold and only alert on peers with TxBytes > 0
 # shellcheck disable=SC2016
-stale_peer=$(printf '%s' "$ts_json" | jq -r --argjson now "$now" --argjson thresh "$TS_STALE_HANDSHAKE_SECS" '
+if ! stale_peer=$(printf '%s' "$ts_json" | jq -r --argjson now "$now" --argjson thresh "$TS_STALE_HANDSHAKE_SECS" '
     .Peer // {} | to_entries[] |
     select(.value.Active == true) |
     select((.value.TxBytes // 0) > 0) |
     select(($now - (.value.LastHandshake // 0)) > $thresh) |
     .value.HostName' \
-    | head -1)
-if [ $? -ne 0 ]; then
+    | head -1); then
     logger -t tailscale-watchdog "jq parse error on stale-peer check"
     exit 1
 fi
@@ -68,16 +66,14 @@ fi
 
 # 4. Peer loss: compare to last known peer list
 # shellcheck disable=SC2016
-current_peers=$(printf '%s' "$ts_json" | jq -c '[.Peer // {} | to_entries[] | .value.HostName] | sort')
-if [ $? -ne 0 ] || [ -z "$current_peers" ]; then
+if ! current_peers=$(printf '%s' "$ts_json" | jq -c '[.Peer // {} | to_entries[] | .value.HostName] | sort') || [ -z "$current_peers" ]; then
     logger -t tailscale-watchdog "jq parse error on peer list"
     exit 1
 fi
 if [ -f "$STATE_FILE" ]; then
     prev_peers=$(cat "$STATE_FILE")
-    lost=$(jq -rn --argjson prev "$prev_peers" --argjson curr "$current_peers" \
-        '($prev - $curr) | .[]')
-    if [ $? -ne 0 ]; then
+    if ! lost=$(jq -rn --argjson prev "$prev_peers" --argjson curr "$current_peers" \
+        '($prev - $curr) | .[]'); then
         logger -t tailscale-watchdog "jq parse error on peer diff"
         exit 1
     fi
