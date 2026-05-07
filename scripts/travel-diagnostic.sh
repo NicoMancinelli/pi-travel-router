@@ -15,6 +15,8 @@ fi
 
 OUTPUT_DIR="${1:-/tmp}"
 
+[[ -d "$OUTPUT_DIR" && -w "$OUTPUT_DIR" ]] || { echo "Output directory does not exist or is not writable: $OUTPUT_DIR" >&2; exit 1; }
+
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 OUTFILE="${OUTPUT_DIR}/travel-diagnostic-${TIMESTAMP}.tar.gz"
 DIAG_DIR=$(mktemp -d /tmp/travel-diag-XXXXXX)

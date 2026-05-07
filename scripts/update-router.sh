@@ -72,7 +72,7 @@ download_release() {
     }
     log "Tarball integrity OK"
 
-    tar -xzf "$tarball" -C "$tmpdir" --strip-components=1
+    tar -xzf "$tarball" -C "$tmpdir" --strip-components=1 --no-absolute-names
 }
 
 # ── Apply update ─────────────────────────────────────────────────────────────
@@ -113,10 +113,9 @@ apply_update() {
             dest="/usr/local/bin/${name}"
         fi
         if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
-            # C5: atomic write — copy to .tmp then rename so running scripts are not
-            # overwritten in-place while executing
-            cp "$script" "${dest}.tmp" && mv "${dest}.tmp" "$dest"
-            chmod 755 "$dest"
+            # C5: atomic write — copy to .tmp, chmod before mv so the file is
+            # never live without the correct permissions
+            cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
             log "  updated script: $name"
             changed=1
         fi
@@ -142,8 +141,7 @@ apply_update() {
             fi
             pdest="/etc/travel-router/portals/examples/${pname}"
             if ! diff -q "$portal" "$pdest" >/dev/null 2>&1; then
-                cp "$portal" "${pdest}.tmp" && mv "${pdest}.tmp" "$pdest"
-                chmod 755 "$pdest"
+                cp "$portal" "${pdest}.tmp" && chmod 755 "${pdest}.tmp" && mv "${pdest}.tmp" "$pdest"
                 log "  updated portal example: $pname"
                 changed=1
             fi
@@ -184,9 +182,9 @@ apply_update() {
     if ! diff -q "${src}/install.sh" /usr/local/share/travel-router/install.sh >/dev/null 2>&1; then
         mkdir -p /usr/local/share/travel-router
         cp "${src}/install.sh" /usr/local/share/travel-router/install.sh.tmp \
+            && chmod 755 /usr/local/share/travel-router/install.sh.tmp \
             && mv /usr/local/share/travel-router/install.sh.tmp \
                   /usr/local/share/travel-router/install.sh
-        chmod 755 /usr/local/share/travel-router/install.sh
         log "  updated install.sh (at /usr/local/share/travel-router/install.sh — not auto-run)"
         changed=1
     fi
@@ -228,10 +226,10 @@ fi
 changed=0
 apply_update "$tmpdir"
 if [[ "$changed" = "1" ]]; then
-    echo "$latest" > "$VERSION_FILE"
+    printf '%s\n' "$latest" > "${VERSION_FILE}.tmp" && mv "${VERSION_FILE}.tmp" "$VERSION_FILE"
     log "Update complete: $current → $latest"
     notify "Router updated: $current → $latest" low
 else
     log "No files changed (already at $latest content)"
-    echo "$latest" > "$VERSION_FILE"
+    printf '%s\n' "$latest" > "${VERSION_FILE}.tmp" && mv "${VERSION_FILE}.tmp" "$VERSION_FILE"
 fi

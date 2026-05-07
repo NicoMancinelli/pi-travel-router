@@ -88,6 +88,9 @@ _fmt_bps() {
 
 _bw_delta() {
     local iface="$1" dir="$2" cur prev _elapsed
+    # Validate iface to prevent path traversal via crafted interface names
+    [[ "$iface" =~ ^[a-zA-Z0-9_.-]{1,15}$ ]] || iface=""
+    [[ -z "$iface" ]] && { printf '0\n'; return; }
     mkdir -p /run/travel-router
     local prev_file="/run/travel-router/tui_${dir}_${iface}"
     local time_file="/run/travel-router/tui_time_${dir}_${iface}"
@@ -158,6 +161,14 @@ _ap_edit_ssid() {
     printf "\n  ${W}AP Network Name (SSID)${NC}\n  Current: ${DIM}%s${NC}\n  New value (Enter to keep): " "${cur:-(unknown)}"
     read -r new_val || true
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
+    if [[ ${#new_val} -lt 1 || ${#new_val} -gt 32 ]]; then
+        printf "  ${R}SSID must be 1-32 characters${NC}\n"
+        return
+    fi
+    if [[ "$new_val" =~ $'\n' || "$new_val" =~ $'\r' || "$new_val" =~ $'\t' ]]; then
+        printf "  ${R}SSID must not contain control characters${NC}\n"
+        return
+    fi
     python3 - "ssid" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
 import sys, re, os
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -251,7 +262,8 @@ draw_dashboard() {
     # Prefer failover state file; fall back to routing table (captive-portal safe)
     local _uplink_state_file="/var/lib/travel-router/uplink.state"
     if [[ -f "$_uplink_state_file" ]]; then
-        read -r uplink < "$_uplink_state_file"
+        read -r uplink < "$_uplink_state_file" 2>/dev/null || uplink=""
+        [[ "$uplink" =~ ^[a-zA-Z0-9_.-]{1,15}$ ]] || uplink=""
     else
         uplink=$(ip route get 1.1.1.1 2>/dev/null \
             | awk '/dev/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' || true)
@@ -813,10 +825,18 @@ show_network() {
                    && printf "  ${G}✓ original MAC restored${NC}\n" \
                    || printf "  ${R}✗ restore failed${NC}\n"
                sleep 2 ;;
-            5) command -v bmon >/dev/null 2>&1 && bmon \
-                   || { printf "  bmon not installed\n  Press any key..."; read -rsn1 || true; } ;;
-            6) command -v iftop >/dev/null 2>&1 && iftop -i "${AP_IFACE}" 2>/dev/null || true \
-                   || { printf "  iftop not installed\n  Press any key..."; read -rsn1 || true; } ;;
+            5) if command -v bmon >/dev/null 2>&1; then
+                   bmon || true
+                   tput reset 2>/dev/null || stty sane 2>/dev/null || true
+               else
+                   printf "  bmon not installed\n  Press any key..."; read -rsn1 || true
+               fi ;;
+            6) if command -v iftop >/dev/null 2>&1; then
+                   iftop -i "${AP_IFACE}" 2>/dev/null || true
+                   tput reset 2>/dev/null || stty sane 2>/dev/null || true
+               else
+                   printf "  iftop not installed\n  Press any key..."; read -rsn1 || true
+               fi ;;
             7) clear
                printf "${W}Connect to WiFi Network${NC}\n\n"
                printf "  Scanning...\n\n"
@@ -975,6 +995,11 @@ show_settings() {
                 # shellcheck source=/dev/null
                 source /etc/default/travel-router 2>/dev/null || true
                 if [[ -n "${SSH_ADMIN_KEY:-}" ]]; then
+                    if [[ ! "${SSH_ADMIN_KEY}" =~ ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519|sk-ecdsa-sha2-nistp256)[[:space:]] ]]; then
+                        printf "  ${R}Invalid SSH key format${NC}\n"
+                        sleep 2
+                        continue
+                    fi
                     printf "  Appending key to authorized_keys...\n"
                     mkdir -p /root/.ssh
                     chmod 700 /root/.ssh

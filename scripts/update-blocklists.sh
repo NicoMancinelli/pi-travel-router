@@ -15,9 +15,9 @@ fi
 
 BLOCKLIST_URL="https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset"
 TMP_FILE=$(mktemp /tmp/firehol_XXXXXX.netset)
-trap 'rm -f "$TMP_FILE"' EXIT
 NFT_FILE="/etc/nftables.d/blocklists.nft"
-NFT_NEW="${NFT_FILE}.new"
+NFT_NEW=$(mktemp /etc/nftables.d/blocklists_XXXXXX.nft)
+trap 'rm -f "$TMP_FILE" "$NFT_NEW"' EXIT
 MAX_BLOCKLIST_ENTRIES="${MAX_BLOCKLIST_ENTRIES:-20000}"
 
 case "$MAX_BLOCKLIST_ENTRIES" in
