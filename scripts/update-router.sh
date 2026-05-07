@@ -121,11 +121,21 @@ apply_update() {
     done
 
     # H7: portal example scripts → /etc/travel-router/portals/examples/
+    PORTAL_ALLOWLIST=(example-accept-terms.sh example-credentials.sh)
     if [ -d "${src}/scripts/portals" ]; then
         mkdir -p /etc/travel-router/portals/examples
         for portal in "${src}"/scripts/portals/*.sh; do
             [ -f "$portal" ] || continue
             pname=$(basename "$portal")
+            # Skip portal scripts not in the allowlist
+            local _pallowed=0
+            for _pa in "${PORTAL_ALLOWLIST[@]}"; do
+                [[ "$_pa" = "$pname" ]] && { _pallowed=1; break; }
+            done
+            if [[ "$_pallowed" -eq 0 ]]; then
+                log "  SKIP portal (not in allowlist): $pname"
+                continue
+            fi
             pdest="/etc/travel-router/portals/examples/${pname}"
             if ! diff -q "$portal" "$pdest" >/dev/null 2>&1; then
                 cp "$portal" "${pdest}.tmp" && mv "${pdest}.tmp" "$pdest"
@@ -200,7 +210,7 @@ log "Update available: $current → $latest"
 
 tmpdir=$(mktemp -d)
 # shellcheck disable=SC2064
-trap "rm -rf '$tmpdir'" EXIT
+trap "rm -rf '$tmpdir'" EXIT INT TERM
 
 if ! download_release "$latest" "$tmpdir"; then
     log "Update aborted: download failed"

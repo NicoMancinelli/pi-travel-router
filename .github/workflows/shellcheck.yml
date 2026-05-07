@@ -2,13 +2,10 @@ name: Shellcheck
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
-    paths:
-      - 'scripts/**'
-      - 'install.sh'
-      - 'build/**'
-      - 'firstboot/**'
   pull_request:
     paths:
       - 'scripts/**'

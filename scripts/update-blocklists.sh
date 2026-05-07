@@ -14,7 +14,8 @@ if [ "${ENABLE_BLOCKLISTS:-0}" != "1" ]; then
 fi
 
 BLOCKLIST_URL="https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/firehol_level1.netset"
-TMP_FILE="/tmp/firehol_level1.netset"
+TMP_FILE=$(mktemp /tmp/firehol_XXXXXX.netset)
+trap 'rm -f "$TMP_FILE"' EXIT
 NFT_FILE="/etc/nftables.d/blocklists.nft"
 NFT_NEW="${NFT_FILE}.new"
 MAX_BLOCKLIST_ENTRIES="${MAX_BLOCKLIST_ENTRIES:-20000}"

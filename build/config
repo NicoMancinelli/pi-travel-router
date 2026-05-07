@@ -9,7 +9,7 @@ TIMEZONE_DEFAULT='Etc/UTC'
 # survives with the FIRST_USER_PASS below and SSH password login is enabled.
 # Verify deletion succeeded when debugging image builds.
 FIRST_USER_NAME='pi'
-FIRST_USER_PASS='changeme'
+FIRST_USER_PASS='__deleted_by_01run__'
 DISABLE_FIRST_BOOT_USER_RENAME=1
 WPA_COUNTRY=''
 ENABLE_SSH=1

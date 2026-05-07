@@ -128,12 +128,12 @@ _cfg_edit() {
     fi
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
     python3 - "$varname" "$new_val" "/etc/default/travel-router" << 'PY'
-import sys, re, tempfile, os
+import sys, re, tempfile, os, shlex
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f:
     lines = f.readlines()
 pattern = re.compile(r'^' + re.escape(key) + r'=')
-new_line = f'{key}="{val}"\n'
+new_line = f'{key}={shlex.quote(val)}\n'
 replaced = False
 for i, line in enumerate(lines):
     if pattern.match(line):
@@ -686,7 +686,11 @@ show_clients() {
                             /var/lib/misc/dnsmasq.leases 2>/dev/null || true)
                         local _host_display=""
                         [[ -n "$_hostname" ]] && _host_display=" ${DIM}${_hostname}${NC}"
-                        _cl "  ${G}${_mac}${NC}  ${DIM}${_ip}${NC}$(printf '%*s' $(( 18 - ${#_ip} )) '')${_host_display}$(printf '%*s' $(( 17 - ${#_hostname} )) '')${_signal}"
+                        local _ip_pad=$(( 18 - ${#_ip} ))
+                        (( _ip_pad < 0 )) && _ip_pad=0
+                        local _hn_pad=$(( 17 - ${#_hostname} ))
+                        (( _hn_pad < 0 )) && _hn_pad=0
+                        _cl "  ${G}${_mac}${NC}  ${DIM}${_ip}${NC}$(printf '%*s' "$_ip_pad" '')${_host_display}$(printf '%*s' "$_hn_pad" '')${_signal}"
                     fi
                     _mac=$(printf '%s' "$_line" | awk '{print $2}')
                     _ip=$(ip neigh show dev "${AP_IFACE}" 2>/dev/null \
@@ -707,7 +711,11 @@ show_clients() {
                 /var/lib/misc/dnsmasq.leases 2>/dev/null || true)
             local _host_display=""
             [[ -n "$_hostname" ]] && _host_display=" ${DIM}${_hostname}${NC}"
-            _cl "  ${G}${_mac}${NC}  ${DIM}${_ip}${NC}$(printf '%*s' $(( 18 - ${#_ip} )) '')${_host_display}$(printf '%*s' $(( 17 - ${#_hostname} )) '')${_signal}"
+            local _ip_pad=$(( 18 - ${#_ip} ))
+            (( _ip_pad < 0 )) && _ip_pad=0
+            local _hn_pad=$(( 17 - ${#_hostname} ))
+            (( _hn_pad < 0 )) && _hn_pad=0
+            _cl "  ${G}${_mac}${NC}  ${DIM}${_ip}${NC}$(printf '%*s' "$_ip_pad" '')${_host_display}$(printf '%*s' "$_hn_pad" '')${_signal}"
         fi
 
         _box_sep
