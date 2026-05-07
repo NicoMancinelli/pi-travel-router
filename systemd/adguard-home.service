@@ -9,6 +9,10 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/opt/AdGuardHome /var/lib/travel-router
 
 [Install]
 WantedBy=multi-user.target

@@ -186,6 +186,7 @@ fi
 
 # ── Apply timezone ────────────────────────────────────────────────────────────
 if [[ -n "${ROUTER_TIMEZONE:-}" ]]; then
+    [[ "$ROUTER_TIMEZONE" =~ ^[A-Za-z][A-Za-z0-9/_+-]{1,49}$ ]] || die "Invalid ROUTER_TIMEZONE: $ROUTER_TIMEZONE"
     timedatectl set-timezone "$ROUTER_TIMEZONE" 2>/dev/null || true
     ok "Timezone set to $ROUTER_TIMEZONE"
 fi
@@ -382,6 +383,7 @@ network={
     id_str="open-fallback"
 }
 EOF
+    chmod 600 /etc/wpa_supplicant/wpa_supplicant.conf
     ok "wpa_supplicant open fallback configured"
 elif [[ "${ENABLE_OPEN_WIFI_FALLBACK:-0}" = "1" ]]; then
     warn "wpa_supplicant.conf already exists — open fallback not modified"
@@ -976,23 +978,41 @@ section "WiFi QR code"
 
 WIFI_QR_DIR="/usr/local/share/travel-router/wifi-qr"
 mkdir -p "$WIFI_QR_DIR"
-_qr_ssid=$(printf '%s' "$AP_SSID" | sed 's/[\\;,:"]/\\&/g')
-_qr_pass=$(printf '%s' "$AP_PASS" | sed 's/[\\;,:"]/\\&/g')
-WIFI_STRING="WIFI:T:WPA;S:${_qr_ssid};P:${_qr_pass};;"
-printf '%s\n' "$WIFI_STRING" > "$WIFI_QR_DIR/wifi-string.txt"
-chmod 600 "$WIFI_QR_DIR/wifi-string.txt"
 
-if command -v qrencode >/dev/null 2>&1; then
-    qrencode -t UTF8 -o "$WIFI_QR_DIR/wifi-qr.txt" "$WIFI_STRING"
-    chmod 600 "$WIFI_QR_DIR/wifi-qr.txt"
-    ok "WiFi QR code saved to $WIFI_QR_DIR/wifi-qr.txt"
-    ok "Display with: cat $WIFI_QR_DIR/wifi-qr.txt"
-    echo ""
-    # I-M2: redirect to /dev/tty so passphrase is not captured in the install log
-    qrencode -t UTF8 "$WIFI_STRING" > /dev/tty || true
-    echo ""
+# Validate AP_SSID and AP_PASS for shell-unsafe characters before QR assembly.
+# Backticks, $(), and backslash-escapes can cause injection in shell-interpolated strings.
+if [[ "$AP_SSID" =~ ['`$()\\'] ]] || [[ "$AP_PASS" =~ ['`$()\\'] ]]; then
+    warn "AP_SSID or AP_PASS contains shell-unsafe characters; skipping QR code generation"
 else
-    ok "qrencode not available — WiFi string saved to $WIFI_QR_DIR/wifi-string.txt"
+    # Assemble QR string entirely in Python to avoid shell metacharacter interpretation.
+    WIFI_STRING=$(python3 -c "
+import sys
+ssid, pwd = sys.argv[1], sys.argv[2]
+def mecard_escape(s):
+    result = ''
+    for c in s:
+        if c in '\\\\;,\":':
+            result += '\\\\' + c
+        else:
+            result += c
+    return result
+print('WIFI:T:WPA;S:' + mecard_escape(ssid) + ';P:' + mecard_escape(pwd) + ';;', end='')
+" "$AP_SSID" "$AP_PASS")
+    printf '%s\n' "$WIFI_STRING" > "$WIFI_QR_DIR/wifi-string.txt"
+    chmod 600 "$WIFI_QR_DIR/wifi-string.txt"
+
+    if command -v qrencode >/dev/null 2>&1; then
+        qrencode -t UTF8 -o "$WIFI_QR_DIR/wifi-qr.txt" "$WIFI_STRING"
+        chmod 600 "$WIFI_QR_DIR/wifi-qr.txt"
+        ok "WiFi QR code saved to $WIFI_QR_DIR/wifi-qr.txt"
+        ok "Display with: cat $WIFI_QR_DIR/wifi-qr.txt"
+        echo ""
+        # I-M2: redirect to /dev/tty so passphrase is not captured in the install log
+        qrencode -t UTF8 "$WIFI_STRING" > /dev/tty || true
+        echo ""
+    else
+        ok "qrencode not available — WiFi string saved to $WIFI_QR_DIR/wifi-string.txt"
+    fi
 fi
 
 # ── §. Monitoring — Prometheus node exporter (#33) ───────────────────────────
@@ -1229,7 +1249,8 @@ if [[ -n "${SSH_ADMIN_KEY:-}" ]]; then
         printf '%s\n' "$SSH_ADMIN_KEY" >> "$ADMIN_HOME/.ssh/authorized_keys"
     fi
     chown -R "$ADMIN_USER:$ADMIN_USER" "$ADMIN_HOME/.ssh"
-    echo "PasswordAuthentication no" >> /etc/ssh/sshd_config.d/99-travel-router.conf
+    grep -q "PasswordAuthentication" /etc/ssh/sshd_config.d/99-travel-router.conf 2>/dev/null || \
+        echo "PasswordAuthentication no" >> /etc/ssh/sshd_config.d/99-travel-router.conf
     ok "SSH public key added for $ADMIN_USER ($ADMIN_HOME); password auth disabled"
 else
     ok "No SSH key provided — password auth remains enabled"

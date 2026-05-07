@@ -14,6 +14,7 @@ ConditionPathExists=!/var/lib/travel-router/firstboot-done
 Type=simple
 ExecStartPre=/bin/mkdir -p /var/lib/travel-router
 ExecStart=/usr/bin/python3 /opt/pi-travel-router/firstboot/server.py
+ExecStartPost=-/bin/sh -c "shred -u /boot/firmware/root-password.txt 2>/dev/null; rm -f /boot/firmware/root-password.txt /boot/root-password.txt"
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=infinity

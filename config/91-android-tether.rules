@@ -10,5 +10,5 @@ SUBSYSTEM=="net", ACTION=="add", KERNEL=="usb0", \
     ATTRS{idVendor}!="05ac", ATTRS{idVendor}!="1d6b", \
     RUN+="/usr/local/bin/start-tether.sh %k"
 SUBSYSTEM=="net", ACTION=="remove", KERNEL=="usb0", \
-    ATTRS{idVendor}!="05ac", ATTRS{idVendor}!="1d6b", \
+    ENV{ID_VENDOR_ID}!="05ac", ENV{ID_VENDOR_ID}!="1d6b", \
     RUN+="/usr/local/bin/stop-tether.sh %k"

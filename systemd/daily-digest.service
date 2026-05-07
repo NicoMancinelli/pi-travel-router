@@ -1,6 +1,7 @@
 [Unit]
 Description=Travel router daily digest notification
 After=network-online.target tailscaled.service
+Wants=network-online.target
 
 [Service]
 Type=oneshot

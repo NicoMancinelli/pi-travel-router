@@ -6,3 +6,5 @@ Wants=network.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/failover-watchdog.sh
+Restart=on-failure
+RestartSec=10

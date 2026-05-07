@@ -29,6 +29,13 @@ FIRSTBOOT_UNIT_SRC="${TARGET_DIR}/firstboot/firstboot.service"
 FIRSTBOOT_UNIT_DST="${ROOTFS_DIR}/etc/systemd/system/firstboot.service"
 if [ -f "${FIRSTBOOT_UNIT_SRC}" ]; then
     install -D -m 0644 "${FIRSTBOOT_UNIT_SRC}" "${FIRSTBOOT_UNIT_DST}"
+    # Ensure the root-password.txt on the FAT32 boot partition is shredded after
+    # firstboot completes.  The drop-in is a safety net in case firstboot.service
+    # itself does not already carry an ExecStartPost= for this.
+    mkdir -p "${ROOTFS_DIR}/etc/systemd/system/firstboot.service.d"
+    printf '[Service]\nExecStartPost=-/bin/sh -c "shred -u /boot/firmware/root-password.txt 2>/dev/null; rm -f /boot/firmware/root-password.txt /boot/root-password.txt"\n' \
+        > "${ROOTFS_DIR}/etc/systemd/system/firstboot.service.d/cleanup-rootpw.conf"
+    chmod 0644 "${ROOTFS_DIR}/etc/systemd/system/firstboot.service.d/cleanup-rootpw.conf"
     on_chroot << 'EOF'
 systemctl enable firstboot.service
 EOF
@@ -50,6 +57,9 @@ fi
 on_chroot << 'EOF'
 ROOTPW=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
 echo "root:${ROOTPW}" | chpasswd
+# NOTE: firstboot.service must shred this file after first successful login/setup.
+# The FAT32 boot partition has no Unix permission enforcement — anyone who mounts
+# the boot partition (e.g. on a laptop) can read this plaintext password.
 echo "TEMP ROOT PASSWORD (change after first login): ${ROOTPW}" > /boot/firmware/root-password.txt 2>/dev/null || echo "${ROOTPW}" > /boot/root-password.txt
 mkdir -p /etc/ssh/sshd_config.d
 printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' \

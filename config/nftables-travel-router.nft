@@ -15,7 +15,9 @@ table inet travel_mangle {
 
         # Strip DSCP — prevents carrier QoS fingerprinting on uplinks.
         oifname { "wlan0", "usb0", "rndis0", "bnep0" } ip dscp set cs0
+        oifname { "wlan0", "usb0", "rndis0", "bnep0" } ip6 dscp set cs0
         oifname "enx*" ip dscp set cs0
+        oifname "enx*" ip6 dscp set cs0
     }
 
     chain forward {

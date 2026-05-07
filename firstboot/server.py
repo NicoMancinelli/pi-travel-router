@@ -162,7 +162,7 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     values["SSH_ADMIN_KEY"] = ssh_key
 
     stdomains = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
-    if stdomains and not re.fullmatch(r'[A-Za-z0-9._\- ]+', stdomains):
+    if stdomains and not re.fullmatch(r'^[A-Za-z0-9._-]+( [A-Za-z0-9._-]+)*$', stdomains):
         errors.append("Split tunnel domains may only contain letters, numbers, dots, hyphens, and spaces.")
     values["SPLIT_TUNNEL_DOMAINS"] = stdomains
 
@@ -239,6 +239,9 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     tailscale_up_args = _first(form, "TAILSCALE_UP_ARGS").strip()
     if len(tailscale_up_args) > 512:
         errors.append("Tailscale up args must be 512 characters or fewer.")
+    _FORBIDDEN_TS_ARGS = ("--auth", "--authkey", "--reset", "--force-reauth")
+    if any(arg.startswith(f) for arg in tailscale_up_args.split() for f in _FORBIDDEN_TS_ARGS):
+        errors.append("TAILSCALE_UP_ARGS contains forbidden flags.")
     values["TAILSCALE_UP_ARGS"] = tailscale_up_args
 
     # New root password (optional). Don't strip — passwords may legitimately
@@ -588,7 +591,7 @@ class Handler(BaseHTTPRequestHandler):
             ct = self.headers.get("Content-Type", "")
             if ct.startswith("application/x-www-form-urlencoded"):
                 length = int(self.headers.get("Content-Length", "0") or 0)
-                if 0 < length <= 1_000_000:
+                if 0 < length <= 8_192:
                     body_bytes = self.rfile.read(length)
                     try:
                         raw = body_bytes.decode("utf-8", errors="strict")
@@ -625,7 +628,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": "Expected application/x-www-form-urlencoded"}, code=415)
             return
         length = int(self.headers.get("Content-Length", "0") or 0)
-        if length <= 0 or length > 1_000_000:
+        if length <= 0 or length > 32_768:
             self._send(HTTPStatus.BAD_REQUEST, b"Bad request", "text/plain")
             return
         body_bytes = self.rfile.read(length)
