@@ -50,7 +50,7 @@ iptables -A FORWARD -i uap0 -o uap0 -j DROP
 if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
     # Flush and rebuild chain each run so rules are always current.
     iptables -t filter -N KILL_SWITCH 2>/dev/null || iptables -t filter -F KILL_SWITCH
-    iptables -t filter -A KILL_SWITCH -o tailscale0 -j RETURN
+    iptables -t filter -A KILL_SWITCH -o tailscale0 -j ACCEPT
     iptables -t filter -A KILL_SWITCH -j DROP
     iptables -A FORWARD -i uap0 -j KILL_SWITCH
 else

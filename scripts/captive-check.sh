@@ -81,7 +81,12 @@ attempt_portal_login() {
 
     base_url=$(printf '%s' "$redirect_url" | grep -o 'https\?://[^/]*')
     [ -n "${base_url:-}" ] || { log "Cannot resolve base URL from redirect"; rm -f "$COOKIE_JAR"; return 1; }
-    [[ "$form_action" != http* ]] && form_action="${base_url}${form_action}"
+    case "$form_action" in
+        http*) ;;                                         # absolute, use as-is
+        //*) form_action="http:${form_action}" ;;         # protocol-relative
+        /*) form_action="${base_url%/}${form_action}" ;;  # path-relative with leading /
+        *)  form_action="${base_url%/}/${form_action}" ;; # path-relative without leading /
+    esac
 
     # N-M5: check curl exit code; log and return 1 on failure
     if ! curl -s -o /dev/null --max-time 10 --interface wlan0 \
@@ -210,7 +215,12 @@ else
         if attempt_portal_login "$REDIRECT_URL"; then
             log "Portal auto-login succeeded — restoring Tailscale"
             # N-H11: restore Tailscale immediately after successful portal login
-            restore_tailscale && rm -f "$STATE_FILE"
+            if restore_tailscale; then
+                rm -f "$STATE_FILE"
+                logger -t captive-check "Auto-login succeeded, Tailscale restored"
+            else
+                logger -t captive-check "Tailscale restore failed after portal login — retrying next cycle"
+            fi
             notify "Captive portal: auto-login succeeded, Tailscale restored" low
         else
             notify "Captive portal detected! Open browser → authenticate → Tailscale auto-restores" high

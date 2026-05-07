@@ -160,6 +160,7 @@ _uplink_label() {
 _notify_uplink_change() {
     local curr_uplink="$1"
     local prev_uplink=""
+    local _tmp
     [ -f "$_UPLINK_STATE_FILE" ] && prev_uplink=$(cat "$_UPLINK_STATE_FILE")
     # N-H1: always write state file when curr_uplink is non-empty (first-run persistence)
     if [ -n "$curr_uplink" ]; then
