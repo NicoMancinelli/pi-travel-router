@@ -3,9 +3,8 @@
 
 set -euo pipefail
 
-# N-L5: prevent concurrent runs from racing
-exec 9>/run/lock/travel-router-firewall.lock
-flock -n 9 || { logger -t firewall "already running, skipping"; exit 0; }
+# Restore FORWARD DROP on unexpected failure so the firewall is never left open
+trap 'iptables -P FORWARD DROP 2>/dev/null || true' ERR
 
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
@@ -41,18 +40,11 @@ save_rules() {
 # TTL, hop-limit, DSCP, and hop-by-hop rules are in /etc/nftables.conf.d/travel-router.nft
 
 # FORWARD: flush and rebuild each run — guarantees correct rule ordering.
-# C4: flush first, install all ACCEPT rules, THEN set DROP policy to eliminate
-#     the blackhole window where traffic is dropped before rules are in place.
-iptables -F FORWARD; iptables -P FORWARD ACCEPT
+iptables -F FORWARD
+iptables -P FORWARD DROP
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # AP client isolation: prevent clients from reaching each other or the Pi LAN.
 iptables -A FORWARD -i uap0 -o uap0 -j DROP
-
-# S-H7: IPv6 FORWARD — rebuild and enforce DROP default
-ip6tables -F FORWARD; ip6tables -P FORWARD ACCEPT
-ip6tables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
-# AP clients must not forward IPv6 by default
-ip6tables -A FORWARD -i uap0 -j DROP
 
 if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
     # Flush and rebuild chain each run so rules are always current.
@@ -60,29 +52,16 @@ if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
     iptables -t filter -A KILL_SWITCH -o tailscale0 -j RETURN
     iptables -t filter -A KILL_SWITCH -j DROP
     iptables -A FORWARD -i uap0 -j KILL_SWITCH
-    # S-H7: also allow AP→tailscale0 IPv6 when VPN killswitch is enabled
-    ip6tables -I FORWARD 1 -i uap0 -o tailscale0 -j ACCEPT
 else
     for _out in wlan0 bnep0 tailscale0 usb0 rndis0 enx+; do
         iptables -A FORWARD -i uap0 -o "$_out" -j ACCEPT
     done
 fi
 iptables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
-# Set DROP as default policy only after all ACCEPT rules are installed
-iptables -P FORWARD DROP
-# S-H7: set IPv6 FORWARD DROP policy after all accept rules are installed
-ip6tables -P FORWARD DROP
 
 # INPUT: block AP clients from Pi admin interfaces.
 ipt_add filter INPUT -i uap0 -p tcp --dport 22 -j DROP
 ipt_add filter INPUT -i uap0 -p tcp --dport 80 -j DROP
-# S-H2: block Prometheus node-exporter from AP clients
-ipt_add filter INPUT -i uap0 -p tcp --dport 9100 -j DROP
-# S-M3: block AdGuard Home setup port from AP clients
-ipt_add filter INPUT -i uap0 -p tcp --dport 3000 -j DROP
-# S-H6: block inbound SSH from hotel uplink (wlan0) — use Tailscale SSH for remote access
-ipt_add filter INPUT -i wlan0 -p tcp --dport 22 -j DROP
-ip6t_add filter INPUT -i wlan0 -p tcp --dport 22 -j DROP
 
 if [ "$ENABLE_HTTP_UA_REWRITE" = "1" ]; then
     ipt_add nat PREROUTING -i uap0 -p tcp --dport 80 -j REDIRECT --to-port 8118

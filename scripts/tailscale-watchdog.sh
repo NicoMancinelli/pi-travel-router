@@ -6,17 +6,8 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
-# N-L5: prevent concurrent instances from racing
-exec 9>/run/lock/tailscale-watchdog.lock
-flock -n 9 || exit 0
-
-# H14: jq is required for peer monitoring; exit gracefully if missing
-command -v jq >/dev/null 2>&1 || { logger -t tailscale-watchdog "jq not installed — peer monitoring disabled"; exit 0; }
-
 NTFY_TOPIC="${NTFY_TOPIC:-}"
 STATE_DIR="/var/lib/travel-router"
-# N-M14: configurable stale-handshake threshold (default 300 s)
-TS_STALE_HANDSHAKE_SECS="${TS_STALE_HANDSHAKE_SECS:-300}"
 STATE_FILE="$STATE_DIR/ts-peers.json"
 mkdir -p "$STATE_DIR"
 
@@ -32,51 +23,38 @@ _notify() {
 # 1. Daemon reachable?
 if ! ts_json=$(tailscale status --json 2>/dev/null); then
     _notify "Tailscale daemon unreachable" high
-    # N-M15: exit 1 when daemon is unreachable so callers can detect failure
-    exit 1
+    exit 0
 fi
 
 # 2. BackendState == Running?
-if ! backend=$(printf '%s' "$ts_json" | jq -r '.BackendState // "unknown"') || [ -z "$backend" ]; then
-    logger -t tailscale-watchdog "jq parse error on BackendState"
-    exit 1
-fi
+backend=$(printf '%s' "$ts_json" | jq -r '.BackendState // "unknown"')
 if [ "$backend" != "Running" ]; then
     _notify "Tailscale not running (state: $backend)" high
     exit 0
 fi
 
-# 3. Stale handshake? Active peers with no handshake in >threshold and TxBytes > 0
+# 3. Stale handshake? Active peers with no handshake in >5 min
 now=$(date +%s)
-# N-M14: use configurable threshold and only alert on peers with TxBytes > 0
 # shellcheck disable=SC2016
-if ! stale_peer=$(printf '%s' "$ts_json" | jq -r --argjson now "$now" --argjson thresh "$TS_STALE_HANDSHAKE_SECS" '
+stale_peers=$(printf '%s' "$ts_json" | jq -r --argjson now "$now" '
     .Peer // {} | to_entries[] |
     select(.value.Active == true) |
-    select((.value.TxBytes // 0) > 0) |
-    select(($now - (.value.LastHandshake // 0)) > $thresh) |
-    .value.HostName' \
-    | head -1); then
-    logger -t tailscale-watchdog "jq parse error on stale-peer check"
-    exit 1
-fi
-if [ -n "$stale_peer" ]; then
-    _notify "Tailscale stale handshake: $stale_peer" normal
+    select(($now - (.value.LastHandshake // 0)) > 300) |
+    .value.HostName' 2>/dev/null || true)
+if [ -n "$stale_peers" ]; then
+    while IFS= read -r peer; do
+        [ -n "$peer" ] && _notify "Tailscale stale handshake: $peer" normal
+    done <<< "$stale_peers"
 fi
 
 # 4. Peer loss: compare to last known peer list
 # shellcheck disable=SC2016
-if ! current_peers=$(printf '%s' "$ts_json" | jq -c '[.Peer // {} | to_entries[] | .value.HostName] | sort') || [ -z "$current_peers" ]; then
-    logger -t tailscale-watchdog "jq parse error on peer list"
-    exit 1
-fi
+current_peers=$(printf '%s' "$ts_json" | jq -c '[.Peer // {} | to_entries[] | .value.HostName] | sort' 2>/dev/null || printf '%s' "[]")
 if [ -f "$STATE_FILE" ]; then
     prev_peers=$(cat "$STATE_FILE")
-    if ! lost=$(jq -rn --argjson prev "$prev_peers" --argjson curr "$current_peers" \
-        '($prev - $curr) | .[]'); then
-        logger -t tailscale-watchdog "jq parse error on peer diff"
-        exit 1
-    fi
+    # shellcheck disable=SC2016
+    lost=$(jq -rn --argjson prev "$prev_peers" --argjson curr "$current_peers" \
+        '($prev - $curr) | .[]' 2>/dev/null || true)
     if [ -n "$lost" ]; then
         _notify "Tailscale peer lost: $lost" normal
     fi
