@@ -86,3 +86,9 @@ UPS_SHUTDOWN_THRESHOLD="10"
 
 # Tor AP passphrase (set during install; stored empty here to avoid plaintext).
 TOR_AP_PASS=""
+
+# AP subnet and gateway IP.
+# I-M5: these are used by dnsmasq, hostapd comments, firewall, and the summary.
+# Change both together if you need a different RFC-1918 range.
+AP_SUBNET="10.3.141.0/24"
+AP_GATEWAY="10.3.141.1"

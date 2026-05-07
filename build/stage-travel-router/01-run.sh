@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/bash
 set -euo pipefail
 
 # Customize the rootfs for the pi-travel-router image.
@@ -52,7 +52,7 @@ ROOTPW=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
 echo "root:${ROOTPW}" | chpasswd
 echo "TEMP ROOT PASSWORD (change after first login): ${ROOTPW}" > /boot/firmware/root-password.txt 2>/dev/null || echo "${ROOTPW}" > /boot/root-password.txt
 mkdir -p /etc/ssh/sshd_config.d
-printf 'PermitRootLogin prohibit-password\nPasswordAuthentication yes\n' \
+printf 'PermitRootLogin prohibit-password\nPasswordAuthentication no\n' \
     > /etc/ssh/sshd_config.d/00-permit-root.conf
 chmod 0644 /etc/ssh/sshd_config.d/00-permit-root.conf
 # Remove the pi-gen first user (FIRST_USER_NAME=pi) — root is the only account.
