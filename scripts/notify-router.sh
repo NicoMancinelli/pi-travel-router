@@ -5,9 +5,15 @@
 #
 # Set NTFY_TOPIC in /etc/default/travel-router to activate
 # Install ntfy app (iOS/Android) and subscribe to your topic
-# shellcheck source=/dev/null
-source /etc/default/travel-router 2>/dev/null
 
+set -u
+
+command -v python3 >/dev/null 2>&1 || { logger -t notify-router "python3 not found, skipping notification"; exit 0; }
+
+# shellcheck source=/dev/null
+source /etc/default/travel-router 2>/dev/null || true
+
+NTFY_TOPIC="${NTFY_TOPIC:-}"
 MSG="${1:-ping}"
 PRIORITY="${2:-default}"
 

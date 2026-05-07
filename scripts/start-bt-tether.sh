@@ -31,8 +31,17 @@ fi
 dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether || true
 
 ip route del default dev bnep0 2>/dev/null || true
-GW=$(ip route show dev bnep0 | awk '/via/{print $3}' | head -1)
-[ -n "$GW" ] && ip route add default via "$GW" dev bnep0 metric 300
+GW=""
+for _ in $(seq 1 10); do
+    GW=$(ip route show dev bnep0 | awk '/via/{print $3; exit}')
+    [ -n "$GW" ] && break
+    sleep 1
+done
+if [ -n "$GW" ]; then
+    ip route add default via "$GW" dev bnep0 metric 300
+else
+    logger -t bt-tether "WARNING: no gateway found on bnep0 after 10s"
+fi
 
 tc qdisc replace dev bnep0 root cake bandwidth 3mbit besteffort 2>/dev/null || true
 

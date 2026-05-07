@@ -7,8 +7,19 @@ set -euo pipefail
 source /etc/default/travel-router 2>/dev/null || true
 
 ACTION="${1:-}"
+
+# Wait for hostapd control socket (up to 10s)
+_wait_hostapd() {
+    for _ in $(seq 1 10); do
+        [ -S /var/run/hostapd ] || [ -d /var/run/hostapd ] && return 0
+        sleep 1
+    done
+    return 1
+}
+
 case "$ACTION" in
     disable)
+        _wait_hostapd || { logger -t ap-schedule "hostapd socket not ready, skipping disable"; exit 0; }
         hostapd_cli -p /var/run/hostapd disable 2>/dev/null || true
         if [ -x /usr/local/bin/notify-router.sh ]; then
             /usr/local/bin/notify-router.sh "AP disabled for the night (${AP_DISABLE_TIME:-02:00}–${AP_ENABLE_TIME:-07:00})" low 2>/dev/null || true

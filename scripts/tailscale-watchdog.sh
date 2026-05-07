@@ -36,13 +36,15 @@ fi
 # 3. Stale handshake? Active peers with no handshake in >5 min
 now=$(date +%s)
 # shellcheck disable=SC2016
-stale_peer=$(printf '%s' "$ts_json" | jq -r --argjson now "$now" '
+stale_peers=$(printf '%s' "$ts_json" | jq -r --argjson now "$now" '
     .Peer // {} | to_entries[] |
     select(.value.Active == true) |
     select(($now - (.value.LastHandshake // 0)) > 300) |
-    .value.HostName' 2>/dev/null | head -1 || true)
-if [ -n "$stale_peer" ]; then
-    _notify "Tailscale stale handshake: $stale_peer" normal
+    .value.HostName' 2>/dev/null || true)
+if [ -n "$stale_peers" ]; then
+    while IFS= read -r peer; do
+        [ -n "$peer" ] && _notify "Tailscale stale handshake: $peer" normal
+    done <<< "$stale_peers"
 fi
 
 # 4. Peer loss: compare to last known peer list

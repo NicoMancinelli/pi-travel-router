@@ -3,6 +3,9 @@
 
 set -euo pipefail
 
+# Restore FORWARD DROP on unexpected failure so the firewall is never left open
+trap 'iptables -P FORWARD DROP 2>/dev/null || true' ERR
+
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
