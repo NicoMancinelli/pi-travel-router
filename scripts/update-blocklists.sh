@@ -34,9 +34,10 @@ fi
 mkdir -p /etc/nftables.d
 
 echo "Fetching Firehol Level 1 blocklist..."
-curl -s --max-time 60 -o "$TMP_FILE" "$BLOCKLIST_URL" || {
+curl -sf --max-time 60 -o "$TMP_FILE" "$BLOCKLIST_URL" || {
+    logger -t update-blocklists "Failed to fetch blocklist — keeping existing rules"
     echo "Failed to fetch blocklist — keeping existing rules"
-    exit 0
+    exit 1
 }
 
 COUNT=$(grep -cvE '^#|^[[:space:]]*$' "$TMP_FILE" 2>/dev/null || echo 0)

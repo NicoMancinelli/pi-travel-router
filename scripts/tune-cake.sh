@@ -39,7 +39,7 @@ if [[ -z "$UPLOAD_MBIT" || "$UPLOAD_MBIT" -lt 1 ]]; then
 fi
 
 BANDWIDTH="${UPLOAD_MBIT}mbit"
-echo "$BANDWIDTH" > "$STATE_FILE"
+echo "$BANDWIDTH" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
 logger -t "$LOG_TAG" "Measured upload: ${UPLOAD_MBIT} Mbit/s → CAKE bandwidth = $BANDWIDTH"
 
 if ip link show "$UPLINK_IFACE" >/dev/null 2>&1; then

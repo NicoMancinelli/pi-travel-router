@@ -12,11 +12,12 @@ REPO="NicoMancinelli/pi-travel-router"
 VERSION_FILE="/etc/travel-router-version"
 LOG="/var/log/update-router.log"
 LOGFILE="$LOG"
+readonly REPO VERSION_FILE LOG LOGFILE
 
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
-log()    { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOGFILE"; }
+log()    { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOGFILE"; }
 notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || true; }
 
 # ── Version helpers ──────────────────────────────────────────────────────────
@@ -200,7 +201,7 @@ log "=== update-router.sh start ==="
 current=$(current_version)
 log "Current version: $current"
 
-latest=$(latest_version)
+latest=$(latest_version | tr -cd 'A-Za-z0-9._-' | head -c 40)
 if [ -z "$latest" ]; then
     log "Could not determine latest version (no network or API error) — skipping"
     exit 0

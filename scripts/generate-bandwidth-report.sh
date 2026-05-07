@@ -21,7 +21,7 @@ printf 'pre{background:#161b22;padding:1em;border:1px solid #30363d;overflow-x:a
 printf 'p{color:#8b949e}\n'
 printf '</style></head><body>\n'
 printf '<h1>Travel Router — Bandwidth Report</h1>\n'
-printf '<p>Generated: %s</p>\n' "$(date)"
+printf '<p>Generated: %s</p>\n' "$(date | _html_escape)"
 printf '<h2>wlan0 — WiFi Uplink</h2><pre>\n'
 vnstat -i wlan0 2>/dev/null | _html_escape || printf '(no data)\n'
 printf '</pre>\n'
@@ -35,7 +35,8 @@ shopt -s nullglob
 # M7: no break — report all active tether interfaces, not just the first one.
 for _iface in enx* rndis0 bnep0; do
     if ip link show "$_iface" >/dev/null 2>&1 && vnstat -i "$_iface" >/dev/null 2>&1; then
-        printf '<h2>%s — Tether Uplink</h2><pre>\n' "$_iface"
+        _iface_escaped=$(printf '%s' "$_iface" | _html_escape)
+        printf '<h2>%s — Tether Uplink</h2><pre>\n' "$_iface_escaped"
         vnstat -i "$_iface" 2>/dev/null | _html_escape || true
         printf '</pre>\n'
     fi

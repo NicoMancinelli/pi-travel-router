@@ -18,7 +18,7 @@ _cleanup() {
     [[ "$_EXIT_NORMAL" = "1" ]] && clear
     exit 0
 }
-trap _cleanup INT TERM
+trap _cleanup INT TERM EXIT
 
 # AP interface — override with AP_IFACE env var if needed
 AP_IFACE="${AP_IFACE:-uap0}"
@@ -124,9 +124,9 @@ _cfg_edit() {
     fi
     printf "  New value (Enter to keep): "
     if [[ "$secret" = "1" ]]; then
-        read -rs new_val; printf "\n"
+        read -rs new_val || true; printf "\n"
     else
-        read -r new_val
+        read -r new_val || true
     fi
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
     python3 - "$varname" "$new_val" "/etc/default/travel-router" << 'PY'
@@ -156,7 +156,7 @@ _ap_edit_ssid() {
     local cur new_val
     cur=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2 || echo "")
     printf "\n  ${W}AP Network Name (SSID)${NC}\n  Current: ${DIM}%s${NC}\n  New value (Enter to keep): " "${cur:-(unknown)}"
-    read -r new_val
+    read -r new_val || true
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
     python3 - "ssid" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
 import sys, re, os
@@ -192,7 +192,7 @@ _ap_edit_pass() {
         && printf "  Current: ${DIM}(set — %d chars)${NC}\n" "${#cur}" \
         || printf "  Current: ${DIM}(empty)${NC}\n"
     printf "  New password (8–63 chars, Enter to keep): "
-    read -rs new_val; printf "\n"
+    read -rs new_val || true; printf "\n"
     [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
     if [[ ${#new_val} -lt 8 || ${#new_val} -gt 63 ]]; then
         printf "  ${R}✗ Password must be 8–63 characters${NC}\n"
@@ -398,7 +398,7 @@ show_services() {
         _box_bot
 
         local choice
-        read -r choice
+        read -r choice || true
         case "$choice" in
             q|Q) return ;;
             [1-9]|10)
@@ -460,7 +460,7 @@ show_features() {
         _box_bot
 
         local choice
-        read -r choice
+        read -r choice || true
         case "$choice" in
             q|Q) return ;;
             *)
@@ -645,7 +645,7 @@ show_logs() {
         _box_bot
 
         local choice
-        read -r choice
+        read -r choice || true
         case "$choice" in
             1) clear; printf "${W}wan-watchdog.log:${NC}\n\n"
                tail -n 30 /var/log/wan-watchdog.log 2>/dev/null || printf "  (no log found)\n"
@@ -689,7 +689,7 @@ show_clients() {
             _box_sep
             _bl "  [r] Refresh  [q] Return: "
             _box_bot
-            local c; read -r c
+            local c; read -r c || true
             [[ "$c" = "r" || "$c" = "R" ]] && continue
             return
         fi
@@ -741,7 +741,7 @@ show_clients() {
         _box_sep
         _bl "  [r] Refresh  [q] Return: "
         _box_bot
-        local _choice; read -r _choice
+        local _choice; read -r _choice || true
         [[ "$_choice" = "r" || "$_choice" = "R" ]] && continue
         return
     done
@@ -773,7 +773,7 @@ show_network() {
         _box_bot
 
         local choice
-        read -r choice
+        read -r choice || true
         case "$choice" in
             1) clear; printf "${W}WiFi QR Code:${NC}\n\n"
                local _ssid _pass _auth
@@ -781,6 +781,11 @@ show_network() {
                _pass=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2)
                _auth="WPA"
                [[ -z "$_pass" ]] && _auth="nopass"
+               # MECARD escaping for special characters in SSID and password
+               _ssid="${_ssid//\\/\\\\}"; _ssid="${_ssid//;/\\;}"; _ssid="${_ssid//,/\\,}"
+               _ssid="${_ssid//\"/\\\"}"; _ssid="${_ssid//:/\\:}"
+               _pass="${_pass//\\/\\\\}"; _pass="${_pass//;/\\;}"; _pass="${_pass//,/\\,}"
+               _pass="${_pass//\"/\\\"}"; _pass="${_pass//:/\\:}"
                local _wifi_str="WIFI:T:${_auth};S:${_ssid};P:${_pass};;"
                printf "  Network: %s\n" "$_ssid"
                printf "  Password: %s\n\n" "$(printf '%s' "${_pass:-(open)}" | sed 's/./*/g')"
@@ -795,7 +800,7 @@ show_network() {
                    printf "  ${R}failed${NC} — check: journalctl -u tune-cake\n"
                printf "\n  Press any key..."; read -rsn1 || true ;;
             3) printf "\n  MAC to clone (e.g. aa:bb:cc:dd:ee:ff): "
-               local mac_in; read -r mac_in
+               local mac_in; read -r mac_in || true
                if [[ "$mac_in" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
                    /usr/local/bin/clone-mac.sh "$mac_in" 2>&1 \
                        && printf "  ${G}✓ MAC cloned to wlan0${NC}\n" \
@@ -817,10 +822,10 @@ show_network() {
                printf "  Scanning...\n\n"
                nmcli --fields SSID,SIGNAL,SECURITY device wifi list 2>/dev/null | head -20 || true
                printf "\n  SSID to connect to (Enter to cancel): "
-               local wifi_ssid; read -r wifi_ssid
+               local wifi_ssid; read -r wifi_ssid || true
                [[ -z "$wifi_ssid" ]] && continue
                printf "  Password (Enter for open network): "
-               local wifi_pass; read -rs wifi_pass; printf "\n"
+               local wifi_pass; read -rs wifi_pass || true; printf "\n"
                local _connect_ok=0
                if [[ -n "$wifi_pass" ]]; then
                    nmcli device wifi connect "$wifi_ssid" password "$wifi_pass" ifname wlan0 2>&1 \
@@ -931,7 +936,7 @@ show_settings() {
         _box_bot
 
         local choice
-        read -r choice
+        read -r choice || true
         case "$choice" in
             q|Q) return ;;
             1) _cfg_edit IPHONE_BT_MAC \
@@ -1008,13 +1013,13 @@ show_system() {
         _box_bot
 
         local choice
-        read -r choice
+        read -r choice || true
         case "$choice" in
             q|Q) return ;;
             0) printf "\n  New root password: "
-               local _pw1; read -rs _pw1; printf "\n"
+               local _pw1; read -rs _pw1 || true; printf "\n"
                printf "  Confirm password: "
-               local _pw2; read -rs _pw2; printf "\n"
+               local _pw2; read -rs _pw2 || true; printf "\n"
                if [[ -z "$_pw1" ]]; then
                    printf "  ${DIM}Cancelled${NC}\n"
                elif [[ "$_pw1" != "$_pw2" ]]; then
