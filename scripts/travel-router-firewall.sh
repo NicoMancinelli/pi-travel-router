@@ -43,13 +43,13 @@ save_rules() {
 # FORWARD: flush and rebuild each run — guarantees correct rule ordering.
 # C4: flush first, install all ACCEPT rules, THEN set DROP policy to eliminate
 #     the blackhole window where traffic is dropped before rules are in place.
-iptables -F FORWARD
+iptables -F FORWARD; iptables -P FORWARD ACCEPT
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # AP client isolation: prevent clients from reaching each other or the Pi LAN.
 iptables -A FORWARD -i uap0 -o uap0 -j DROP
 
 # S-H7: IPv6 FORWARD — rebuild and enforce DROP default
-ip6tables -F FORWARD
+ip6tables -F FORWARD; ip6tables -P FORWARD ACCEPT
 ip6tables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # AP clients must not forward IPv6 by default
 ip6tables -A FORWARD -i uap0 -j DROP

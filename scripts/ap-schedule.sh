@@ -24,7 +24,7 @@ case "$ACTION" in
             exit 1
         fi
         _check_hostapd_socket || exit 1
-        hostapd_cli -p /var/run/hostapd disable 2>/dev/null || true
+        hostapd_cli -p /var/run/hostapd -i uap0 disable 2>/dev/null || true
         if [ -x /usr/local/bin/notify-router.sh ]; then
             /usr/local/bin/notify-router.sh "AP disabled for the night (${AP_DISABLE_TIME:-02:00}–${AP_ENABLE_TIME:-07:00})" low 2>/dev/null || true
         fi
@@ -37,7 +37,7 @@ case "$ACTION" in
             systemctl start hostapd
         fi
         _check_hostapd_socket || exit 1
-        hostapd_cli -p /var/run/hostapd enable 2>/dev/null || true
+        hostapd_cli -p /var/run/hostapd -i uap0 enable 2>/dev/null || true
         logger -t ap-schedule "AP enabled"
         ;;
     *)

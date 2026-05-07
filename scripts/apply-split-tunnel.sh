@@ -23,6 +23,7 @@ teardown_split_tunnel() {
     ip route flush table 200 2>/dev/null || true
     # N-H7: use consistent ipset name (vpn_domains, matching setup function)
     ipset destroy vpn_domains 2>/dev/null || true
+    iptables -t mangle -D PREROUTING -m set --match-set vpn_domains dst -j MARK --set-mark 0x2 2>/dev/null || true
     logger -t split-tunnel "Split tunnel torn down"
 }
 

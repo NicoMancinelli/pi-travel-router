@@ -37,8 +37,11 @@ if ! ts_json=$(tailscale status --json 2>/dev/null); then
 fi
 
 # 2. BackendState == Running?
-backend=$(printf '%s' "$ts_json" | jq -r '.BackendState // "unknown"' \
-    || { logger -t tailscale-watchdog "jq parse error on BackendState"; exit 1; })
+backend=$(printf '%s' "$ts_json" | jq -r '.BackendState // "unknown"')
+if [ $? -ne 0 ] || [ -z "$backend" ]; then
+    logger -t tailscale-watchdog "jq parse error on BackendState"
+    exit 1
+fi
 if [ "$backend" != "Running" ]; then
     _notify "Tailscale not running (state: $backend)" high
     exit 0
@@ -54,22 +57,30 @@ stale_peer=$(printf '%s' "$ts_json" | jq -r --argjson now "$now" --argjson thres
     select((.value.TxBytes // 0) > 0) |
     select(($now - (.value.LastHandshake // 0)) > $thresh) |
     .value.HostName' \
-    | head -1 \
-    || { logger -t tailscale-watchdog "jq parse error on stale-peer check"; exit 1; })
+    | head -1)
+if [ $? -ne 0 ]; then
+    logger -t tailscale-watchdog "jq parse error on stale-peer check"
+    exit 1
+fi
 if [ -n "$stale_peer" ]; then
     _notify "Tailscale stale handshake: $stale_peer" normal
 fi
 
 # 4. Peer loss: compare to last known peer list
 # shellcheck disable=SC2016
-current_peers=$(printf '%s' "$ts_json" | jq -c '[.Peer // {} | to_entries[] | .value.HostName] | sort' \
-    || { logger -t tailscale-watchdog "jq parse error on peer list"; exit 1; })
+current_peers=$(printf '%s' "$ts_json" | jq -c '[.Peer // {} | to_entries[] | .value.HostName] | sort')
+if [ $? -ne 0 ] || [ -z "$current_peers" ]; then
+    logger -t tailscale-watchdog "jq parse error on peer list"
+    exit 1
+fi
 if [ -f "$STATE_FILE" ]; then
     prev_peers=$(cat "$STATE_FILE")
-    # shellcheck disable=SC2016
     lost=$(jq -rn --argjson prev "$prev_peers" --argjson curr "$current_peers" \
-        '($prev - $curr) | .[]' \
-        || { logger -t tailscale-watchdog "jq parse error on peer diff"; exit 1; })
+        '($prev - $curr) | .[]')
+    if [ $? -ne 0 ]; then
+        logger -t tailscale-watchdog "jq parse error on peer diff"
+        exit 1
+    fi
     if [ -n "$lost" ]; then
         _notify "Tailscale peer lost: $lost" normal
     fi

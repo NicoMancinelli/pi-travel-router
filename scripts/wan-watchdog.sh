@@ -21,7 +21,11 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOGFILE"; }
 notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || true; }
 
 # L1: cap log size when logrotate is not managing this file
-truncate_log() { tail -n 10000 "$LOGFILE" > "${LOGFILE}.tmp" && mv "${LOGFILE}.tmp" "$LOGFILE" || true; }
+truncate_log() {
+    local _LOG_TMP
+    _LOG_TMP=$(mktemp "${LOGFILE}.tmp.XXXXXX")
+    tail -n 10000 "$LOGFILE" > "$_LOG_TMP" && mv "$_LOG_TMP" "$LOGFILE" || rm -f "$_LOG_TMP"
+}
 truncate_log
 
 can_reach_wan() {
@@ -100,6 +104,7 @@ case "$FAILS" in
         ip link set wlan0 down 2>/dev/null || true
         sleep 3
         ip link set wlan0 up 2>/dev/null || true
+        nmcli device connect wlan0 2>/dev/null || true
         systemctl start hostapd 2>/dev/null || true
         ;;
     4)

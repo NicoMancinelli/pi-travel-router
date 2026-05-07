@@ -18,7 +18,7 @@ _get_battery_pct() {
     local pct
     pct=$(curl -sf --max-time 2 "http://localhost:8421/get_battery_percentage" 2>/dev/null \
         | awk -F'"data":' 'NF>1{gsub(/[^0-9.]/,"",$2); printf "%.0f", $2+0}') || true
-    [[ -n "$pct" && "$pct" -gt 0 ]] && { printf '%s' "$pct"; return; }
+    [[ "$pct" =~ ^[0-9]+$ ]] && [[ "$pct" -gt 0 ]] && { printf '%s' "$pct"; return; }
 
     # Fallback: sysfs power_supply
     for _ps in /sys/class/power_supply/pisugar* /sys/class/power_supply/PiSugar*; do

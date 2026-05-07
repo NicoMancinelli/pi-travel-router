@@ -11,7 +11,8 @@
 
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG="/tmp/travel-router-install.log"
+LOG="/var/log/firstboot-install.log"
+install -m 600 -o root -g root /dev/null "$LOG" 2>/dev/null || true
 exec > >(tee -a "$LOG") 2>&1
 
 # ── Colours ───────────────────────────────────────────────────────────────────
@@ -203,7 +204,16 @@ if ! dpkg -l log2ram &>/dev/null; then
     info "Installing log2ram"
     echo "deb [signed-by=/usr/share/keyrings/azlux-archive-keyring.gpg] http://packages.azlux.fr/debian/ bookworm main" \
         > /etc/apt/sources.list.d/azlux.list
-    curl -s https://azlux.fr/repo.gpg.key | gpg --dearmor -o /usr/share/keyrings/azlux-archive-keyring.gpg
+    # S-H8: download, dearmor, verify fingerprint before trusting
+    curl -s https://azlux.fr/repo.gpg.key | gpg --dearmor -o /tmp/azlux.gpg
+    _AZLUX_FP=$(gpg --no-default-keyring --keyring /tmp/azlux.gpg --fingerprint 2>/dev/null | tr -d ' \n' | grep -oi '[0-9A-F]\{40\}' | head -1 || true)
+    _AZLUX_EXPECTED="7ACDC3E7BB726C780FFA4C5C6C26D5E78B89A06B"
+    if [[ "${_AZLUX_FP^^}" != "$_AZLUX_EXPECTED" ]]; then
+        rm -f /tmp/azlux.gpg
+        die "log2ram GPG key fingerprint mismatch — aborting (got: ${_AZLUX_FP:-empty})"
+    fi
+    mv /tmp/azlux.gpg /usr/share/keyrings/azlux-archive-keyring.gpg
+    chmod 644 /usr/share/keyrings/azlux-archive-keyring.gpg
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y log2ram
 fi
@@ -223,6 +233,35 @@ if ! dpkg -l raspap-webgui &>/dev/null && [[ ! -d /etc/raspap ]]; then
     ok "RaspAP installed"
 else
     ok "RaspAP already present — skipping"
+fi
+
+# S-H3: rotate RaspAP default credentials immediately after install
+RASPAP_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16 || true)
+if [[ -n "$RASPAP_PASS" ]]; then
+    _RASPAP_AUTH=""
+    for _p in /etc/raspap/raspap.auth /var/www/html/app/config/raspap.php /etc/raspap/hostapd/auth.conf; do
+        [[ -f "$_p" ]] && { _RASPAP_AUTH="$_p"; break; }
+    done
+    if [[ -n "$_RASPAP_AUTH" ]]; then
+        # Replace password field — file format varies; use Python for safety
+        python3 -c "
+import sys, re
+path, pwd = sys.argv[1], sys.argv[2]
+with open(path) as f: content = f.read()
+content = re.sub(r'(password|pass)\s*=\s*[\"']?[A-Za-z0-9!@#\$%^&*_-]*[\"']?', r'\1 = \"' + pwd + '\"', content, flags=re.IGNORECASE)
+with open(path, 'w') as f: f.write(content)
+" "$_RASPAP_AUTH" "$RASPAP_PASS" 2>/dev/null || true
+        ok "RaspAP password rotated (stored in $_RASPAP_AUTH)"
+    else
+        # Fallback: write to known PHP config location used by raspi-webgui
+        _RASPAP_AUTH_DIR="/etc/raspap"
+        mkdir -p "$_RASPAP_AUTH_DIR"
+        printf 'admin:%s\n' "$RASPAP_PASS" > "$_RASPAP_AUTH_DIR/raspap.auth"
+        chmod 640 "$_RASPAP_AUTH_DIR/raspap.auth"
+        ok "RaspAP auth file created at $_RASPAP_AUTH_DIR/raspap.auth"
+    fi
+    # S-H3: print in install summary for operator to record
+    RASPAP_PASS_DISPLAY="$RASPAP_PASS"
 fi
 
 # ── 2. Boot config (USB gadget mode) ─────────────────────────────────────────
@@ -259,14 +298,11 @@ net.ipv6.conf.eth0.disable_ipv6 = 1
 net.ipv6.conf.default.disable_ipv6 = 1
 EOF
 
-if ! grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf 2>/dev/null; then
-    cat >> /etc/sysctl.conf << 'EOF'
-
-# TCP BBR congestion control
+# I-H3: write BBR settings to drop-in file instead of appending to /etc/sysctl.conf
+cat > /etc/sysctl.d/99-bbr.conf << 'EOF'
 net.core.default_qdisc=fq
 net.ipv4.tcp_congestion_control=bbr
 EOF
-fi
 
 sysctl -p /etc/sysctl.d/99-tailscale.conf &>/dev/null || true
 sysctl -p /etc/sysctl.d/99-disable-ipv6-uplink.conf &>/dev/null || true
@@ -337,7 +373,34 @@ fi
 # ── 8. hostapd ────────────────────────────────────────────────────────────────
 section "hostapd — 802.11n + DTIM tuning"
 
-cat > /etc/hostapd/hostapd.conf << EOF
+if [[ -f /etc/hostapd/hostapd.conf ]]; then
+    # I-H2: config already exists — read back SSID/pass rather than overwriting
+    _EXISTING_SSID=$(python3 -c "
+import sys
+with open('/etc/hostapd/hostapd.conf') as f:
+    for l in f:
+        if l.startswith('ssid='):
+            print(l.strip()[5:])
+            break
+" 2>/dev/null || true)
+    _EXISTING_PASS=$(python3 -c "
+import sys
+with open('/etc/hostapd/hostapd.conf') as f:
+    in_bss = False
+    for l in f:
+        if l.startswith('bss='): in_bss = True
+        if not in_bss and l.startswith('wpa_passphrase='):
+            print(l.strip()[15:])
+            break
+" 2>/dev/null || true)
+    if [[ -n "$_EXISTING_SSID" ]]; then
+        warn "hostapd.conf already exists — preserving existing SSID/passphrase"
+        AP_SSID="${AP_SSID:-$_EXISTING_SSID}"
+        AP_PASS="${AP_PASS:-$_EXISTING_PASS}"
+    fi
+    ok "hostapd.conf already present — not overwritten (SSID=$AP_SSID)"
+else
+    cat > /etc/hostapd/hostapd.conf << EOF
 driver=nl80211
 ctrl_interface=/var/run/hostapd
 ctrl_interface_group=0
@@ -362,8 +425,8 @@ ht_capab=[HT40][SHORT-GI-20][DSSS_CCK-40]
 # DTIM=1: iOS wakes every beacon, halves interactive latency
 dtim_period=1
 EOF
-# C6: write SSID and passphrase safely via Python to avoid shell quoting issues
-python3 -c "
+    # C6: write SSID and passphrase safely via Python to avoid shell quoting issues
+    python3 -c "
 import sys
 with open('/etc/hostapd/hostapd.conf') as f: lines = f.readlines()
 out = []
@@ -373,7 +436,8 @@ for l in lines:
     else: out.append(l)
 with open('/etc/hostapd/hostapd.conf','w') as f: f.writelines(out)
 " "$AP_SSID" "$AP_PASS"
-ok "hostapd configured: SSID=$AP_SSID"
+    ok "hostapd configured: SSID=$AP_SSID"
+fi
 
 # Apply regulatory domain immediately (takes effect without reboot).
 # hostapd also enforces country_code= at startup, so this is belt-and-braces.
@@ -458,15 +522,17 @@ ok "  travel-diagnostic.sh → travel-diagnostic"
 #   sudo chmod +x /etc/travel-router/portals/MyHotelSSID.sh
 # See /etc/travel-router/portals/examples/ and scripts/portals/README.md for details.
 mkdir -p /etc/travel-router/portals/examples
-chmod 755 /etc/travel-router/portals
-chmod 755 /etc/travel-router/portals/examples
+# I-H5: restrict portal dirs — scripts may contain credentials
+chmod 0750 /etc/travel-router/portals
+chmod 0750 /etc/travel-router/portals/examples
 
 # Copy example portal scripts for reference (not auto-loaded — examples only)
 if [[ -d "$REPO/scripts/portals" ]]; then
     for f in "$REPO"/scripts/portals/*.sh; do
         [[ -f "$f" ]] || continue
         cp "$f" /etc/travel-router/portals/examples/
-        chmod 644 /etc/travel-router/portals/examples/"$(basename "$f")"
+        # I-H5: 0640 — readable by group only; deployed scripts with credentials must be chmod 600
+        chmod 0640 /etc/travel-router/portals/examples/"$(basename "$f")"
     done
     ok "Portal example scripts installed to /etc/travel-router/portals/examples/"
 fi
@@ -501,11 +567,11 @@ install_file config/travel-router-defaults /etc/default/travel-router 600
 _safe_write_conf() {
     local key="$1" val="$2" path="$3"
     python3 -c "
-import sys, re
+import sys, re, shlex
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f: lines = f.readlines()
 pat = re.compile(r'^' + re.escape(key) + r'=')
-new = key + '=\"' + val.replace('\\\\', '\\\\\\\\').replace('\"', '\\\\\"') + '\"\n'
+new = key + '=' + shlex.quote(val) + '\n'
 lines = [new if pat.match(l) else l for l in lines]
 with open(path, 'w') as f: f.writelines(lines)
 " "$key" "$val" "$path"
@@ -513,6 +579,9 @@ with open(path, 'w') as f: f.writelines(lines)
 
 DEFAULTS_FILE="/etc/default/travel-router"
 ENABLE_WAN_METRICS="${ENABLE_WAN_METRICS:-1}"
+# I-M5: AP subnet variables — sourced from defaults file if already written, else use built-in defaults
+AP_SUBNET="${AP_SUBNET:-10.3.141.0/24}"
+AP_GATEWAY="${AP_GATEWAY:-10.3.141.1}"
 
 # Write boolean flags (values are always 0 or 1 — safe with sed too, but use helper for consistency)
 for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR; do
@@ -531,6 +600,9 @@ _safe_write_conf "AP_ENABLE_TIME"        "${AP_ENABLE_TIME:-07:00}"      "$DEFAU
 _safe_write_conf "VPN_DEVICE_MACS"       "${VPN_DEVICE_MACS:-}"          "$DEFAULTS_FILE"
 # TOR_AP_PASS: store empty placeholder to avoid writing plaintext passphrase
 _safe_write_conf "TOR_AP_PASS"           ""                              "$DEFAULTS_FILE" 2>/dev/null || true
+_safe_write_conf "PUSHGW_URL"              "${PUSHGW_URL:-}"                    "$DEFAULTS_FILE"
+_safe_write_conf "UPS_SHUTDOWN_THRESHOLD"  "${UPS_SHUTDOWN_THRESHOLD:-10}"      "$DEFAULTS_FILE"
+_safe_write_conf "TAILSCALE_UP_ARGS"       "${TAILSCALE_UP_ARGS:-}"             "$DEFAULTS_FILE"
 
 ok "/etc/default/travel-router written"
 
@@ -681,9 +753,19 @@ with open('/etc/hostapd/hostapd.conf','w') as f: f.writelines(out)
 
         install_file config/dnsmasq-tor-ap.conf /etc/dnsmasq.d/tor-ap.conf
 
-        # Create uap1 at boot alongside uap0 in rc.local
-        if ! grep -q "uap1" /etc/rc.local; then
-            sed -i '/interface add uap0/a iw dev wlan0 interface add uap1 type __ap || true' /etc/rc.local
+        # I-H7: write uap1 creation to a drop-in instead of sed-patching rc.local
+        mkdir -p /etc/rc.local.d
+        cat > /etc/rc.local.d/50-tor-uap1.sh << 'RCEOF'
+#!/bin/sh
+# Created by pi-travel-router install.sh — I-H7
+# Create second virtual AP for Tor transparent proxy SSID
+iw dev wlan0 interface add uap1 type __ap || true
+RCEOF
+        chmod 755 /etc/rc.local.d/50-tor-uap1.sh
+
+        # Ensure rc.local sources drop-ins (idempotent)
+        if [[ -f /etc/rc.local ]] && ! grep -q "rc.local.d" /etc/rc.local; then
+            sed -i '/^exit 0/i # Source rc.local drop-ins\nfor _f in /etc/rc.local.d/*.sh; do [ -f "$_f" ] \&\& . "$_f"; done' /etc/rc.local
         fi
 
         ok "uap1 supported — TorAP SSID configured on 172.16.100.0/24"
@@ -693,23 +775,19 @@ with open('/etc/hostapd/hostapd.conf','w') as f: f.writelines(out)
     fi
 else
     systemctl disable --now tor 2>/dev/null || true
+    # I-H7: remove uap1 drop-in when Tor is disabled
+    rm -f /etc/rc.local.d/50-tor-uap1.sh
     ok "Tor disabled by default"
 fi
 
-# ── 18. firewall rules ───────────────────────────────────────────────────────
-section "Firewall — TTL, DSCP, isolation, optional proxy rules"
-
-/usr/local/bin/travel-router-firewall.sh --save
-ok "Firewall rules applied and saved"
-
-# ── 19. Tailscale ─────────────────────────────────────────────────────────────
+# ── 18. Tailscale ─────────────────────────────────────────────────────────────
 section "Tailscale"
 
 systemctl enable --now tailscaled 2>/dev/null || true
 
 if [[ -n "$TS_KEY" ]]; then
-    # shellcheck disable=SC2206
-    TS_ARGS=($TAILSCALE_UP_ARGS)
+    # I-M1: use read -ra to avoid word-split issues with IFS-modified environments
+    read -ra TS_ARGS <<< "$TAILSCALE_UP_ARGS"
     _TS_LOGIN_ARGS=()
     [[ -n "$HEADSCALE_URL" ]] && _TS_LOGIN_ARGS+=(--login-server="$HEADSCALE_URL")
     if tailscale up \
@@ -729,6 +807,14 @@ else
         warn "  sudo tailscale up $TAILSCALE_UP_ARGS"
     fi
 fi
+
+# ── 19. firewall rules ───────────────────────────────────────────────────────
+# I-H4: firewall applied AFTER tailscaled is enabled/started so tailscale0
+#        interface exists when iptables rules that reference it are saved.
+section "Firewall — TTL, DSCP, isolation, optional proxy rules"
+
+/usr/local/bin/travel-router-firewall.sh --save
+ok "Firewall rules applied and saved"
 
 # ── 20. usbmuxd / ipheth ──────────────────────────────────────────────────────
 section "usbmuxd hardening"
@@ -842,6 +928,13 @@ if [[ "${ENABLE_2FA:-0}" = "1" ]]; then
     fi
     systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
     ok "SSH 2FA enabled — run: sudo -u \$(logname) setup-2fa.sh to configure TOTP"
+    # I-M3: warn for any login-shell users who have not yet configured TOTP
+    while IFS=: read -r _u _ _uid _ _ _home _shell; do
+        [[ "$_uid" -lt 1000 && "$_u" != "root" ]] && continue
+        [[ "$_shell" == */false || "$_shell" == */nologin ]] && continue
+        [[ -f "$_home/.google_authenticator" ]] && continue
+        warn "2FA not configured for user $_u — run: sudo -u $_u setup-2fa.sh"
+    done < /etc/passwd
 else
     ok "SSH 2FA disabled (set ENABLE_2FA=1 then run setup-2fa.sh)"
 fi
@@ -863,7 +956,9 @@ section "WiFi QR code"
 
 WIFI_QR_DIR="/usr/local/share/travel-router/wifi-qr"
 mkdir -p "$WIFI_QR_DIR"
-WIFI_STRING="WIFI:T:WPA;S:${AP_SSID};P:${AP_PASS};;"
+_qr_ssid=$(printf '%s' "$AP_SSID" | sed 's/[\\;,:"]/\\&/g')
+_qr_pass=$(printf '%s' "$AP_PASS" | sed 's/[\\;,:"]/\\&/g')
+WIFI_STRING="WIFI:T:WPA;S:${_qr_ssid};P:${_qr_pass};;"
 printf '%s\n' "$WIFI_STRING" > "$WIFI_QR_DIR/wifi-string.txt"
 chmod 600 "$WIFI_QR_DIR/wifi-string.txt"
 
@@ -873,7 +968,8 @@ if command -v qrencode >/dev/null 2>&1; then
     ok "WiFi QR code saved to $WIFI_QR_DIR/wifi-qr.txt"
     ok "Display with: cat $WIFI_QR_DIR/wifi-qr.txt"
     echo ""
-    qrencode -t UTF8 "$WIFI_STRING" || true
+    # I-M2: redirect to /dev/tty so passphrase is not captured in the install log
+    qrencode -t UTF8 "$WIFI_STRING" > /dev/tty || true
     echo ""
 else
     ok "qrencode not available — WiFi string saved to $WIFI_QR_DIR/wifi-string.txt"
@@ -913,7 +1009,7 @@ if [[ "${ENABLE_BANDWIDTH_DASHBOARD:-0}" = "1" ]]; then
     # Serve via lighttpd: symlink into webroot
     ln -sf /var/lib/travel-router/bandwidth.html \
         /var/www/html/bandwidth.html 2>/dev/null || true
-    ok "Bandwidth dashboard: http://10.3.141.1/bandwidth.html"
+    ok "Bandwidth dashboard: http://${AP_GATEWAY}/bandwidth.html"
     ok "Regenerated daily at 00:05"
 else
     systemctl disable generate-bandwidth-report.timer 2>/dev/null || true
@@ -993,12 +1089,17 @@ section "AdGuard Home — DNS ad-blocker"
 
 if [[ "${ENABLE_ADGUARD:-0}" = "1" ]]; then
     info "Downloading AdGuard Home binary..."
-    bash "$REPO/scripts/install-adguard.sh"
+    # I-M4: handle install-adguard.sh failures gracefully
+    if ! bash "$REPO/scripts/install-adguard.sh"; then
+        warn "AdGuard Home installation failed — check network and retry"
+        warn "To retry: bash /opt/pi-travel-router/scripts/install-adguard.sh"
+        ENABLE_ADGUARD=0
+    fi
     install_file config/AdGuardHome.yaml /opt/AdGuardHome/AdGuardHome.yaml 640
     install_file config/dnsmasq-adguard.conf /etc/dnsmasq.d/adguard.conf
     rm -f /etc/dnsmasq.d/dot.conf
     systemctl enable --now adguard-home 2>/dev/null || true
-    ok "AdGuard Home enabled — web UI at http://10.3.141.1:3000 (set password on first visit)"
+    ok "AdGuard Home enabled — web UI at http://${AP_GATEWAY}:3000 (set password on first visit)"
     ok "DNS: dnsmasq → AdGuard Home (127.0.0.1:5335) → DoT upstreams"
 else
     ok "AdGuard Home disabled (set ENABLE_ADGUARD=1 to activate)"
@@ -1138,8 +1239,8 @@ section "Installation complete"
 
 echo ""
 echo "  Summary of what was installed:"
-echo "    • RaspAP web UI (http://10.3.141.1 after boot)"
-echo "    • AP SSID: $AP_SSID  (on uap0, 10.3.141.0/24)"
+echo "    • RaspAP web UI (http://${AP_GATEWAY} after boot)"
+echo "    • AP SSID: $AP_SSID  (on uap0, ${AP_SUBNET})"
 echo "    • USB gadget: usb0 → 192.168.7.1  (active after reboot)"
 echo "    • iPhone USB tether: udev auto-detect (enx*, metric 100)"
 echo "    • Android USB tether: udev auto-detect (rndis0/usb0, metric 200)"
@@ -1148,7 +1249,7 @@ echo "    • Uplink failover watchdog: 30s timer"
 echo "    • WAN watchdog + captive portal detection: 60s timer"
 echo "    • TTL=65 + DSCP strip (Visible carrier bypass)"
 echo "    • DNS-over-TLS: ${ENABLE_DOT:-0}  (stubby → Cloudflare/Quad9)"
-echo "    • AdGuard Home: ${ENABLE_ADGUARD:-0}  (web UI: http://10.3.141.1:3000)"
+echo "    • AdGuard Home: ${ENABLE_ADGUARD:-0}  (web UI: http://${AP_GATEWAY}:3000)"
 echo "    • VPN kill switch: ${ENABLE_VPN_KILLSWITCH:-0}  (AP traffic blocked if Tailscale drops)"
 echo "    • privoxy: HTTP User-Agent normalization (${ENABLE_HTTP_UA_REWRITE:-0})"
 echo "    • Tor: transparent proxy (${ENABLE_TOR_TRANSPARENT:-0})"
@@ -1163,13 +1264,13 @@ echo "    • Per-device VPN: ${ENABLE_PER_DEVICE_VPN:-0}  (set VPN_DEVICE_MACS 
 echo "    • Domain split tunnel: ${ENABLE_SPLIT_TUNNEL:-0}  (domains via Tailscale: ${SPLIT_TUNNEL_DOMAINS:-none})"
 echo "    • SSH 2FA (TOTP): ${ENABLE_2FA:-0}  (run: sudo -u \$(logname) setup-2fa.sh to configure)"
 echo "    • WAN metric management: ${ENABLE_WAN_METRICS:-1}  (enx*=100 rndis0=200 bnep0=300 wlan0=600)"
-echo "    • Bandwidth dashboard: ${ENABLE_BANDWIDTH_DASHBOARD:-0}  (http://10.3.141.1/bandwidth.html)"
+echo "    • Bandwidth dashboard: ${ENABLE_BANDWIDTH_DASHBOARD:-0}  (http://${AP_GATEWAY}/bandwidth.html)"
 echo "    • Prometheus node exporter: ${ENABLE_PROMETHEUS_EXPORTER:-0}  (:9100/metrics via Tailscale)"
 echo "    • UPS monitor (PiSugar): ${ENABLE_UPS_MONITOR:-0}  (shutdown at ${UPS_SHUTDOWN_THRESHOLD:-10}%)"
 echo "    • Run 'sudo travel-status' for a one-shot status summary"
 echo "    • Run 'sudo travel-tui' for the interactive management TUI"
 echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"
-echo "    • Tailscale: subnet router for 10.3.141.0/24"
+echo "    • Tailscale: subnet router for ${AP_SUBNET}"
 echo "    • Tailscale control: ${HEADSCALE_URL:-Tailscale cloud (login.tailscale.com)}"
 echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
 echo "    • log2ram: /var/log in RAM"
@@ -1187,7 +1288,7 @@ echo "  Next steps:"
 echo "    ${TS_KEY:+1}${TS_KEY:-2}. sudo reboot  ← activates USB gadget mode (dwc2) + log2ram"
 echo "    3. Connect via USB-C → ssh root@192.168.7.1"
 echo "    4. Edit /etc/default/travel-router to set NTFY_TOPIC + IPHONE_BT_MAC"
-echo "    5. RaspAP web UI: http://10.3.141.1  (admin / secret)"
+echo "    5. RaspAP web UI: http://${AP_GATEWAY}  (admin / ${RASPAP_PASS_DISPLAY:-<rotated — see above>})"
 echo ""
 echo "  Log saved to: $LOG"
 echo ""

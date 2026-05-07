@@ -114,13 +114,15 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     ap_ssid = _first(form, "AP_SSID", "TravelRouter").strip()
     if not (1 <= len(ap_ssid.encode("utf-8")) <= 32):
         errors.append("AP SSID must be 1–32 bytes (UTF-8 encoded).")
+    if any(ord(c) < 0x20 for c in ap_ssid):
+        errors.append("AP SSID may not contain control characters.")
     values["AP_SSID"] = ap_ssid
 
     ap_pass = _first(form, "AP_PASS")
     if not (8 <= len(ap_pass) <= 63):
         errors.append("AP passphrase must be 8-63 characters.")
-    if ap_pass and not all(0x20 <= ord(c) <= 0x7E for c in ap_pass):
-        errors.append("AP passphrase must contain only printable ASCII characters (0x20–0x7E).")
+    if ap_pass and not all(0x20 <= ord(c) <= 0x7E and c != '#' for c in ap_pass):
+        errors.append("AP passphrase must use printable ASCII, excluding '#'.")
     values["AP_PASS"] = ap_pass
 
     country = _first(form, "COUNTRY", "US").strip().upper()
@@ -174,8 +176,8 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     tor_ap_pass = _first(form, "TOR_AP_PASS")
     if values["ENABLE_TOR_TRANSPARENT"] == "1" and len(tor_ap_pass) < 8:
         errors.append("Tor AP passphrase must be 8+ characters.")
-    if tor_ap_pass and not all(0x20 <= ord(c) <= 0x7E for c in tor_ap_pass):
-        errors.append("Tor AP passphrase must contain only printable ASCII characters (0x20–0x7E).")
+    if tor_ap_pass and not all(0x20 <= ord(c) <= 0x7E and c != '#' for c in tor_ap_pass):
+        errors.append("Tor AP passphrase must use printable ASCII, excluding '#'.")
     values["TOR_AP_PASS"] = tor_ap_pass
 
     vpn_device_macs = _first(form, "VPN_DEVICE_MACS").strip()

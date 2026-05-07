@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 # Detect captive portal and temporarily pause Tailscale
 # Called automatically by wan-watchdog.sh every 60s
 # Also run manually after joining a new network: sudo /usr/local/bin/captive-check.sh
@@ -55,19 +56,15 @@ attempt_portal_login() {
     # Generic: GET portal page, find <form action>, POST generic accept-terms fields
     [ -z "$redirect_url" ] && { log "No redirect URL — cannot attempt auto-login"; return 1; }
 
-    # C3: use a private per-invocation cookie jar; clean up on exit from this function
+    # C3: use a private per-invocation cookie jar; clean up at each return path
     local COOKIE_JAR
     COOKIE_JAR=$(mktemp /tmp/portal-cookies.XXXXXX)
-    # N-M6: save outer EXIT trap and restore it when this function exits
-    local _prev_trap
-    _prev_trap=$(trap -p EXIT 2>/dev/null || true)
-    # shellcheck disable=SC2064
-    trap "rm -f '$COOKIE_JAR'; eval \"$_prev_trap\"" EXIT
 
     local portal_html form_action base_url
     if ! portal_html=$(curl -s --max-time 10 --interface wlan0 \
         -L -c "$COOKIE_JAR" "$redirect_url" 2>/dev/null); then
         log "Portal GET failed — cannot attempt auto-login"
+        rm -f "$COOKIE_JAR"
         return 1
     fi
 
@@ -78,10 +75,12 @@ attempt_portal_login() {
         | sed "s/action=[\"']//;s/[\"']$//")
     if [ -z "$form_action" ]; then
         log "No form action found — manual login required"
+        rm -f "$COOKIE_JAR"
         return 1
     fi
 
     base_url=$(printf '%s' "$redirect_url" | grep -o 'https\?://[^/]*')
+    [ -n "${base_url:-}" ] || { log "Cannot resolve base URL from redirect"; rm -f "$COOKIE_JAR"; return 1; }
     [[ "$form_action" != http* ]] && form_action="${base_url}${form_action}"
 
     # N-M5: check curl exit code; log and return 1 on failure
@@ -90,8 +89,10 @@ attempt_portal_login() {
         -X POST "$form_action" \
         -d "accept=true&terms=1&submit=Connect&button=Connect" 2>/dev/null; then
         log "Portal POST failed"
+        rm -f "$COOKIE_JAR"
         return 1
     fi
+    rm -f "$COOKIE_JAR"
 
     sleep 2
     local verify

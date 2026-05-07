@@ -87,11 +87,11 @@ set_default_metric() {
     if ip route show default dev "$iface" 2>/dev/null | grep -q default; then
         ip route del default dev "$iface" 2>/dev/null || true
     fi
-    if [ -n "$gw" ]; then
-        ip route add default via "$gw" dev "$iface" metric "$metric"
-    else
-        ip route add default dev "$iface" metric "$metric"
+    if [ -z "${gw}" ]; then
+        log "set_default_metric: no gateway for $iface, skipping route add"
+        return 0
     fi
+    ip route add default via "$gw" dev "$iface" metric "$metric"
 }
 
 # Check if an interface can reach the internet (captive-portal-aware).
@@ -192,8 +192,7 @@ if [ -n "$USB_TETHER" ]; then
     else
         log "USB tether $USB_TETHER is UP but cannot reach internet"
         # N-H2: demote failed interface so it is not chosen as default
-        _gw=$(get_gateway "$USB_TETHER")
-        [ -n "$_gw" ] && ip route change default via "$_gw" dev "$USB_TETHER" metric 900 2>/dev/null || true
+        set_default_metric "$USB_TETHER" 900
     fi
 fi
 
@@ -207,8 +206,7 @@ if [ -n "$ANDROID_TETHER" ]; then
     else
         log "Android tether $ANDROID_TETHER is UP but cannot reach internet"
         # N-H2: demote failed interface so it is not chosen as default
-        _gw=$(get_gateway "$ANDROID_TETHER")
-        [ -n "$_gw" ] && ip route change default via "$_gw" dev "$ANDROID_TETHER" metric 900 2>/dev/null || true
+        set_default_metric "$ANDROID_TETHER" 900
     fi
 fi
 
@@ -221,8 +219,7 @@ if [ -n "$BT_TETHER" ]; then
     else
         log "Bluetooth tether $BT_TETHER is UP but cannot reach internet"
         # N-H2: demote failed interface so it is not chosen as default
-        _gw=$(get_gateway "$BT_TETHER")
-        [ -n "$_gw" ] && ip route change default via "$_gw" dev "$BT_TETHER" metric 900 2>/dev/null || true
+        set_default_metric "$BT_TETHER" 900
     fi
 fi
 
