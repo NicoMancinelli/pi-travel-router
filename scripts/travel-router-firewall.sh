@@ -78,18 +78,19 @@ else
         iptables -A FORWARD -i uap0 -o "$_out" -j ACCEPT
     done
     # IPv6 FORWARD rules (non-kill-switch path)
-    for _uplink in wlan0 bnep0 usb0 rndis0; do
+    for _uplink in wlan0 bnep0 usb0 rndis0 enx+; do
         ip6tables -A FORWARD -i uap0 -o "$_uplink" -j ACCEPT
         ip6tables -A FORWARD -i "$_uplink" -o uap0 -j ACCEPT
     done
     ip6tables -A FORWARD -i uap0 -o tailscale0 -j ACCEPT
     ip6tables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
 fi
-iptables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
 
 # INPUT: block AP clients from Pi admin interfaces.
 ipt_add filter INPUT -i uap0 -p tcp --dport 22 -j DROP
+ip6t_add filter INPUT -i uap0 -p tcp --dport 22 -j DROP
 ipt_add filter INPUT -i uap0 -p tcp --dport 80 -j DROP
+ip6t_add filter INPUT -i uap0 -p tcp --dport 80 -j DROP
 
 if [ "$ENABLE_HTTP_UA_REWRITE" = "1" ]; then
     ipt_add nat PREROUTING -i uap0 -p tcp --dport 80 -j REDIRECT --to-port 8118
