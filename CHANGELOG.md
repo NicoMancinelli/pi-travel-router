@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-05-07
+
+### Fixed — Critical
+- `firstboot.service`: removed `ProtectSystem=strict` + `ProtectHome=yes` which made `/etc`, `/usr`, and `/boot` read-only in the spawn namespace, causing every `install.sh` write to fail with EROFS; sandbox directives were incompatible with the child process that legitimately needs full filesystem access
+- `wan-watchdog.sh` `truncate_log`: replaced fixed `.tmp` path with `mktemp` to eliminate race condition / zero-length log on crash
+
+### Fixed — Security / Correctness
+- `server.py`: `AP_SSID` now rejects control characters (embedded `\n` via crafted POST would have injected a new line into `hostapd.conf`)
+- `server.py`: `AP_PASS` and `TOR_AP_PASS` now reject `#` (`hostapd.conf` treats `#` as comment start, silently truncating the passphrase)
+- `install.sh`: WiFi QR string now escapes `\`, `;`, `,`, `:`, `"` per ZXing WPA spec so phone cameras can parse the code when SSID/pass contain these characters
+- `install.sh` `_safe_write_conf`: switched from double-quoted `KEY="val"` to `shlex.quote()` (single-quoted) to prevent `$var` expansion when `/etc/default/travel-router` is sourced
+- `build/stage-travel-router/01-run.sh`: `PasswordAuthentication` changed to `no`; the image comment already stated "key only" but the directive contradicted it
+- `failover-watchdog.sh`: inline `ip route change` replaced with `set_default_metric` function call; `ip route change` fails silently when the route changed between check and action
+- `captive-check.sh`: added `set -euo pipefail`; added `base_url` guard in `attempt_portal_login`; replaced fragile nested `eval "$_prev_trap"` trap restore with direct inline cookie jar cleanup
+- `travel-router-firewall.sh`: `iptables/ip6tables -P FORWARD ACCEPT` now set immediately after flush so no packets are dropped during the rebuild window
+- `start-bt-tether.sh` / `stop-bt-tether.sh`: `failover-watchdog.sh` now dispatched via `systemd-run --no-block` (same fix as `start-tether.sh`) to avoid blocking udev worker threads
+- `update-router.sh`: `stop-tether.sh` and `vnstat-metrics.sh` added to `SCRIPT_ALLOWLIST` so they receive updates during auto-update runs
+
+### Fixed — Reliability
+- `install.sh`: `PUSHGW_URL`, `UPS_SHUTDOWN_THRESHOLD`, and `TAILSCALE_UP_ARGS` now persisted to `/etc/default/travel-router` via `_safe_write_conf` so wizard values survive reboot
+- `firstboot.service`: added `Wants=imager-compat.service` alongside `After=` so systemd starts the compat shim when it exists
+- `wan-watchdog.sh` recovery step 3: added `nmcli device connect wlan0` after `ip link set wlan0 up` to re-trigger STA association
+- `failover-watchdog.sh` `set_default_metric`: skip `ip route add` if gateway is empty to prevent gateway-less default routes
+- `apply-split-tunnel.sh` `teardown_split_tunnel`: delete the `iptables mangle PREROUTING` mark rule on teardown to prevent rule accumulation
+- `ups-monitor.sh`: numeric regex guard before `-gt` comparison to avoid crash on non-integer API response under `set -euo pipefail`
+- `notify-router.sh`: `${NTFY_TOPIC:-}` instead of `$NTFY_TOPIC` to avoid `set -u` unbound variable error
+- `ap-schedule.sh`: both `hostapd_cli` calls now include `-i uap0` to target the correct VAP
+- `tailscale-watchdog.sh`: `jq` parse errors restructured to call `exit 1` in the outer shell (not a no-op subshell)
+- `generate-bandwidth-report.sh`: `logger` call fixed to avoid literal `%s` in syslog output
+- `update-blocklists.sh`: blank lines excluded from `COUNT` so the sanity guard accurately reflects real IP entries
+- `travel-tui.sh` `show_features`: `sed -i` replaced with inline Python atomic writer to safely handle `/`, `&` in flag values
+- `vnstat-push.sh`, `tune-cake.sh`: useless `cat | tr` pipeline replaced with input redirection
+
+### Build / CI
+- `.github/workflows/build-image.yml`: `systemd/**` and `config/**` added to push/PR path triggers
+- `build/stage-travel-router/01-run.sh`: removed redundant `-e` from shebang (superseded by `set -euo pipefail`)
+- `config/travel-router-defaults`: added `AP_SUBNET` and `AP_GATEWAY` defaults for consistent reference across scripts
+
 ## [1.1.0] - 2026-05-06
 
 ### Fixed — Security (17 fixes)
