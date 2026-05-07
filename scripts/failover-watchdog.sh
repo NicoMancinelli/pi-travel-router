@@ -71,10 +71,21 @@ get_gateway() {
     ip route | awk -v iface="$iface" '/default/{for(i=1;i<=NF;i++){if($i=="dev" && $(i+1)==iface){for(j=1;j<=NF;j++){if($j=="via"){print $(j+1);exit}}}}}' | head -1
 }
 
-# Get the current metric for a default route on an interface
+# Get the current metric for a default route on an interface.
+# Returns "0" when the interface has a default route but no explicit metric field
+# (kernel-default 0), preventing unnecessary route churn every 60s.
 get_metric() {
     local iface=$1
-    ip route | awk -v iface="$iface" '/default/{for(i=1;i<=NF;i++){if($i=="dev" && $(i+1)==iface){for(j=1;j<=NF;j++){if($j=="metric"){print $(j+1);exit}}}}}' | head -1
+    ip route | awk -v iface="$iface" '
+        /default/ {
+            dev = ""
+            for (i = 1; i <= NF; i++) {
+                if ($i == "dev") dev = $(i+1)
+                if ($i == "metric" && dev == iface) { print $(i+1); exit }
+            }
+            if (dev == iface) { print "0"; exit }
+        }
+    ' | head -1
 }
 
 # Re-add a default route preserving its gateway, with a new metric

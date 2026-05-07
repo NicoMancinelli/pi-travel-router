@@ -30,7 +30,7 @@ nmcli device connect "$IFACE" 2>&1 | logger -t "start-tether" || true
 tc qdisc replace dev "$IFACE" root cake bandwidth 15mbit besteffort 2>/dev/null || true
 
 systemd-run --no-block --unit="failover-watchdog-$$" /usr/local/bin/failover-watchdog.sh 2>/dev/null || \
-    /usr/local/bin/failover-watchdog.sh 2>/dev/null || true
+    nohup /usr/local/bin/failover-watchdog.sh >/dev/null 2>&1 &
 
 logger "start-tether: $IFACE configured"
 /usr/local/bin/notify-router.sh "USB tether connected: $IFACE" low 2>/dev/null || true

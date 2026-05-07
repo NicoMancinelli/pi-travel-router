@@ -53,9 +53,9 @@ fi
 if ! ip rule show | grep -qE 'fwmark 0x2[[:space:]]+lookup[[:space:]]+200([^0-9]|$)'; then
     ip rule add fwmark 0x2 lookup 200 priority 200 2>/dev/null || true
 fi
-# N-M7: warn if tailscale0 is absent before attempting route add
 if ! ip link show tailscale0 >/dev/null 2>&1; then
-    logger -t "$LOG_TAG" "WARNING: tailscale0 not present — split tunnel route not set"
+    logger -t "$LOG_TAG" "ERROR: tailscale0 not present — split tunnel cannot be configured"
+    exit 1
 fi
 ip route replace default dev tailscale0 table 200 2>/dev/null || true
 

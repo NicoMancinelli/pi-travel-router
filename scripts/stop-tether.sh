@@ -17,5 +17,5 @@ logger "stop-tether: $IFACE removed, disconnecting via NM"
 nmcli device disconnect "$IFACE" 2>/dev/null || true
 logger "stop-tether: done"
 
-/usr/local/bin/notify-router.sh "USB tether disconnected: $IFACE" low
+/usr/local/bin/notify-router.sh "USB tether disconnected: $IFACE" low 2>/dev/null || true
 systemctl --no-block restart wan-watchdog.service 2>/dev/null || true

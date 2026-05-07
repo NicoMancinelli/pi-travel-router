@@ -4,7 +4,12 @@
 set -euo pipefail
 
 # Restore FORWARD DROP on unexpected failure so the firewall is never left open
-trap 'iptables -P FORWARD DROP 2>/dev/null || true' ERR
+trap 'iptables -P FORWARD DROP 2>/dev/null || true; ip6tables -P FORWARD DROP 2>/dev/null || true' ERR
+
+# Prevent concurrent executions from accumulating duplicate iptables rules
+mkdir -p /run/lock
+exec 8>/run/lock/travel-router-firewall.lock
+flock -x 8
 
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
@@ -62,10 +67,23 @@ if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
     iptables -t filter -A KILL_SWITCH -o tailscale0 -j ACCEPT
     iptables -t filter -A KILL_SWITCH -j DROP
     iptables -A FORWARD -i uap0 -j KILL_SWITCH
+    # ip6tables kill-switch mirror
+    ip6tables -t filter -N KILL_SWITCH6 2>/dev/null || ip6tables -t filter -F KILL_SWITCH6
+    ip6tables -t filter -A KILL_SWITCH6 -o tailscale0 -j ACCEPT
+    ip6tables -t filter -A KILL_SWITCH6 -j DROP
+    ip6tables -A FORWARD -i uap0 -j KILL_SWITCH6
+    ip6tables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
 else
     for _out in wlan0 bnep0 tailscale0 usb0 rndis0 enx+; do
         iptables -A FORWARD -i uap0 -o "$_out" -j ACCEPT
     done
+    # IPv6 FORWARD rules (non-kill-switch path)
+    for _uplink in wlan0 bnep0 usb0 rndis0; do
+        ip6tables -A FORWARD -i uap0 -o "$_uplink" -j ACCEPT
+        ip6tables -A FORWARD -i "$_uplink" -o uap0 -j ACCEPT
+    done
+    ip6tables -A FORWARD -i uap0 -o tailscale0 -j ACCEPT
+    ip6tables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
 fi
 iptables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
 

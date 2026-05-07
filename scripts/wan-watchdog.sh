@@ -84,8 +84,9 @@ if can_reach_wan; then
     if [ "$_active_uplink" = "wlan0" ] || [ -z "$_active_uplink" ]; then
         # Pings succeed even behind a captive portal (the gateway responds).
         # Run the captive-check so portal state is kept up-to-date.
-        /usr/local/bin/captive-check.sh 2>/dev/null || \
-            logger -t wan-watchdog "captive-check.sh exited non-zero ($?)"
+        _cc_rc=0
+        /usr/local/bin/captive-check.sh 2>/dev/null || _cc_rc=$?
+        [ "$_cc_rc" -ne 0 ] && logger -t wan-watchdog "captive-check.sh exited non-zero ($_cc_rc)" || true
     fi
     exit 0
 fi
@@ -151,6 +152,7 @@ if [ -z "$_active_uplink_fail" ]; then
         | head -1)
 fi
 if [ "$_active_uplink_fail" = "wlan0" ] || [ -z "$_active_uplink_fail" ]; then
-    /usr/local/bin/captive-check.sh 2>/dev/null || \
-        logger -t wan-watchdog "captive-check.sh exited non-zero ($?)"
+    _cc_rc=0
+    /usr/local/bin/captive-check.sh 2>/dev/null || _cc_rc=$?
+    [ "$_cc_rc" -ne 0 ] && logger -t wan-watchdog "captive-check.sh exited non-zero ($_cc_rc)" || true
 fi
