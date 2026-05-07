@@ -828,7 +828,7 @@ def _load_preseed() -> dict[str, str]:
                     finally:
                         os.close(fd)
                 os.chmod(ak_path, 0o600)
-            except Exception as _e:
+            except Exception as _e:  # pylint: disable=broad-exception-caught
                 import traceback
                 _log(f"SSH key write error: {_e}\n{traceback.format_exc()}")
         # WiFi SSID: nmcli ... ssid "VALUE" or wpa SSID_VALUE style
@@ -860,7 +860,7 @@ def _load_preseed() -> dict[str, str]:
             if len(ap_pass_val) >= 8:
                 result["AP_PASS"] = ap_pass_val
         return result
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         import traceback
         _log(f"preseed error: {e}\n{traceback.format_exc()}")
         return {}
