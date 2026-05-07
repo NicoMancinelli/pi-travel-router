@@ -32,13 +32,13 @@ jobs:
 
     steps:
       - name: Checkout pi-travel-router
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: pi-travel-router
           fetch-depth: 0
 
       - name: Checkout pi-gen
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: RPi-Distro/pi-gen
           ref: bookworm-arm64
