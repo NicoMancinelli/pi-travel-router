@@ -7,7 +7,7 @@ set -euo pipefail
 REPO_URL="${REPO_URL:-https://github.com/NicoMancinelli/pi-travel-router.git}"
 GIT_REF="${GIT_REF:-main}"
 TARGET_DIR="${ROOTFS_DIR}/opt/pi-travel-router"
-REPO_STAGE_DIR="$(dirname "$0")"
+REPO_STAGE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "Cloning ${REPO_URL} @ ${GIT_REF} into ${TARGET_DIR}"
 rm -rf "${TARGET_DIR}"
