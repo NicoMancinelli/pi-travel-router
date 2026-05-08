@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-05-08
+
+### Fixed — Critical Reliability
+
+- `scripts/ota-update.sh`: SHA256 verify decompressed image before `dd` write; aborts and skips `next-boot-slot` on mismatch; warn-only if no `.sha256` manifest (older releases remain compatible)
+- `scripts/failover-watchdog.sh`: `can_reach_internet()` now 2-of-3 majority vote — HTTP generate_204 + HTTPS detectportal + DNS probe `@8.8.8.8`; single probe failure no longer demotes an uplink; timeout configurable via `FAILOVER_PROBE_TIMEOUT` (default 5s)
+- `web/app.py`: WireGuard peer add re-reads `wg0.conf` after write to verify persistence; activates peer live via `wg addconf` if `wg0` interface is up; returns HTTP 500 on verification failure
+- `web/app.py`: config editor validates `ENABLE_*` keys (must be 0 or 1), `*_PORT` keys (integer 1024–65535), `*TARGET`/`*ADDR`/`*SERVER` keys (no shell metacharacters) before write; invalid values return HTTP 400 with descriptive error
+
+### Improved
+
+- `web/app.py`: `/api/status` responses cached for 5 seconds — prevents Pi Zero CPU spike when multiple devices poll simultaneously
+- `web/app.py`: `/api/system/reboot` now returns immediately with `{"rebooting": true, "in_seconds": 30}`; reboot executes after 30-second grace period allowing clients to disconnect cleanly
+
 ## [2.0.0] - 2026-05-08
 
 ### Added — Major Features (v2.0)
