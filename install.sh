@@ -558,13 +558,35 @@ for script in \
     tailscale-watchdog.sh \
     wireguard-watchdog.sh \
     travel-status.sh \
-    travel-tui.sh \
     daily-digest.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"
 done
 
 install_file scripts/travel-diagnostic.sh /usr/local/bin/travel-diagnostic 755
+
+# ── TUI: Python (preferred) + bash fallback ───────────────────────────────────
+# Install Python TUI
+cp "${REPO}/scripts/travel-tui.py" /usr/local/sbin/travel-tui.py
+chmod 0755 /usr/local/sbin/travel-tui.py
+ok "  travel-tui.py → /usr/local/sbin/travel-tui.py"
+
+# Keep bash TUI as fallback
+cp "${REPO}/scripts/travel-tui-legacy.sh" /usr/local/sbin/travel-tui-legacy
+chmod 0755 /usr/local/sbin/travel-tui-legacy
+ok "  travel-tui-legacy.sh → /usr/local/sbin/travel-tui-legacy"
+
+# Update /usr/local/sbin/travel-tui to prefer Python TUI, fall back to bash
+cat > /usr/local/sbin/travel-tui << 'EOF'
+#!/bin/bash
+if python3 -c "import textual" 2>/dev/null; then
+    exec python3 /usr/local/sbin/travel-tui.py "$@"
+else
+    exec /usr/local/sbin/travel-tui-legacy "$@"
+fi
+EOF
+chmod 0755 /usr/local/sbin/travel-tui
+ok "  travel-tui wrapper → /usr/local/sbin/travel-tui"
 ok "  travel-diagnostic.sh → travel-diagnostic"
 
 # Captive portal per-SSID hooks directory.

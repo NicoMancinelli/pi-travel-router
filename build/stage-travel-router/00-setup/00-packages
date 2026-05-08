@@ -25,3 +25,4 @@ wireguard-tools
 modemmanager
 radvd
 python3-flask
+python3-textual
