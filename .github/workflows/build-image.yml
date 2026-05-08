@@ -64,7 +64,7 @@ jobs:
         with:
           path: |
             pi-gen/work/*/aptcache
-          key: pi-gen-aptcache-${{ runner.os }}-bookworm-${{ hashFiles('pi-travel-router/build/stage-travel-router/00-packages', 'pi-travel-router/install.sh') }}
+          key: pi-gen-aptcache-${{ runner.os }}-bookworm-${{ hashFiles('pi-travel-router/build/stage-travel-router/00-setup/00-packages', 'pi-travel-router/install.sh') }}
           restore-keys: |
             pi-gen-aptcache-${{ runner.os }}-bookworm-
 
@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n pi-travel-router/install.sh
-          bash -n pi-travel-router/build/stage-travel-router/01-run.sh
+          bash -n pi-travel-router/build/stage-travel-router/00-setup/01-run.sh
           bash -n pi-travel-router/build/stage-travel-router/files/imager-compat.sh
           bash -n pi-travel-router/scripts/wan-watchdog.sh
           bash -n pi-travel-router/scripts/captive-check.sh
