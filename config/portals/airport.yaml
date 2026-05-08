@@ -1,0 +1,8 @@
+name: Airport WiFi (generic)
+ssid_pattern: "*Airport*"
+priority: 5
+method: POST
+fields:
+  accept_terms: "true"
+  submit: "1"
+  terms: "true"

@@ -1,0 +1,10 @@
+[Unit]
+Description=Rotate travel-router combined log
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash -c 'mkdir -p /var/log/travel-router && \
+  f=/var/log/travel-router/combined.log; \
+  [ -f "$f" ] && [ $(wc -c < "$f") -gt 5242880 ] && \
+  mv "$f" "${f}.1" && gzip -f "${f}.1" || true'

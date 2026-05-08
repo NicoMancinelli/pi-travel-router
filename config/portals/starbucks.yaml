@@ -1,0 +1,6 @@
+name: Starbucks WiFi
+ssid_pattern: "Google Starbucks"
+priority: 10
+method: GET
+login_url_pattern: "google.*starbucks|attwifi"
+fields: {}

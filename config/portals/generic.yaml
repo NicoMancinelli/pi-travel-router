@@ -1,0 +1,9 @@
+name: Generic Portal
+ssid_pattern: "*"
+priority: 0
+method: POST
+fields:
+  accept: "1"
+  terms: "1"
+  submit: "Connect"
+  button: "Continue"

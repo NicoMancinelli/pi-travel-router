@@ -1,0 +1,10 @@
+[Unit]
+Description=Rotate travel-router logs daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+AccuracySec=10min
+Persistent=false
+
+[Install]
+WantedBy=timers.target

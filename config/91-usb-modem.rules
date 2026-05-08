@@ -1,0 +1,18 @@
+# udev rules for USB LTE modems (Sierra Wireless, Quectel, Huawei HiLink, ZTE)
+# Trigger modem-watchdog on attach
+
+# Sierra Wireless
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1199", ACTION=="add", \
+    RUN+="/bin/systemctl start modem-watchdog.service"
+
+# Quectel
+SUBSYSTEM=="usb", ATTRS{idVendor}=="2c7c", ACTION=="add", \
+    RUN+="/bin/systemctl start modem-watchdog.service"
+
+# Huawei HiLink
+SUBSYSTEM=="usb", ATTRS{idVendor}=="12d1", ACTION=="add", \
+    RUN+="/bin/systemctl start modem-watchdog.service"
+
+# ZTE
+SUBSYSTEM=="usb", ATTRS{idVendor}=="19d2", ACTION=="add", \
+    RUN+="/bin/systemctl start modem-watchdog.service"

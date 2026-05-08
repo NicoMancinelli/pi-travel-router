@@ -1,0 +1,9 @@
+name: Marriott WiFi
+ssid_pattern: "Marriott*"
+priority: 10
+method: POST
+login_url_pattern: "marriott"
+fields:
+  agree: "1"
+  submit: "Connect"
+  buttonClicked: "4"

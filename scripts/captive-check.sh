@@ -88,6 +88,17 @@ attempt_portal_login() {
         *)  form_action="${base_url%/}/${form_action}" ;; # path-relative without leading /
     esac
 
+    # Try Python-based portal login with YAML template support
+    if [[ -x /opt/pi-travel-router/install/lib/portal_login.py ]] && [[ -n "$form_action" ]]; then
+        CURRENT_SSID=$(nmcli -t -f active,ssid dev wifi 2>/dev/null | awk -F: '/^yes/{print $2; exit}')
+        if python3 /opt/pi-travel-router/install/lib/portal_login.py \
+               "${CURRENT_SSID:-unknown}" "${form_action}" 2>/dev/null; then
+            logger -t captive-check "Portal login succeeded via template (SSID: ${CURRENT_SSID})"
+            rm -f "$COOKIE_JAR"
+            return 0
+        fi
+    fi
+
     # N-M5: check curl exit code; log and return 1 on failure
     if ! curl -s -o /dev/null --max-time 10 --interface wlan0 \
         -b "$COOKIE_JAR" -c "$COOKIE_JAR" \

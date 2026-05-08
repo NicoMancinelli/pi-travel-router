@@ -1,0 +1,8 @@
+name: Hilton WiFi
+ssid_pattern: "Hilton*"
+priority: 10
+method: POST
+login_url_pattern: "hilton"
+fields:
+  terms: "on"
+  submit: "Connect"

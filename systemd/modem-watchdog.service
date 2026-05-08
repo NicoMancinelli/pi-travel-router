@@ -1,0 +1,7 @@
+[Unit]
+Description=USB LTE modem health watchdog
+After=ModemManager.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/modem-watchdog.sh

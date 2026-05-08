@@ -20,6 +20,15 @@ case "$PRIORITY" in
     *) PRIORITY="default" ;;
 esac
 
+SEVERITY="${NOTIFY_SEVERITY:-info}"
+# Map severity to ntfy priority
+case "$SEVERITY" in
+    critical) NTFY_PRIORITY="urgent" ;;
+    warning)  NTFY_PRIORITY="high" ;;
+    *)        NTFY_PRIORITY="${NTFY_PRIORITY:-$PRIORITY}" ;;
+esac
+PRIORITY="$NTFY_PRIORITY"
+
 if [ -z "$NTFY_TOPIC" ]; then
     logger "notify-router: NTFY_TOPIC not set in /etc/default/travel-router"
     exit 0
