@@ -98,7 +98,7 @@ jobs:
           bash -n pi-travel-router/build/stage-travel-router/files/imager-compat.sh
           bash -n pi-travel-router/scripts/wan-watchdog.sh
           bash -n pi-travel-router/scripts/captive-check.sh
-          bash -n pi-travel-router/scripts/travel-tui.sh
+          bash -n pi-travel-router/scripts/travel-tui-legacy.sh
           echo "All syntax checks passed"
 
       - name: Build image

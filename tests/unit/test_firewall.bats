@@ -56,20 +56,29 @@ teardown() {
 # ---------------------------------------------------------------------------
 _run_firewall() {
     # We must patch the lock path and the source line.
-    # Build a wrapper that overrides the incompatible parts.
+    # Use python3 to avoid sed quoting pitfalls with paths containing special chars.
     local env_overrides="${1:-}"
-
-    # Replace the flock/exec block and source line in a temp copy
     local tmp_script="${_STATE_DIR}/firewall_test.sh"
-    sed \
-        -e 's|exec 8>/run/lock/.*|true|' \
-        -e 's|flock -x 8||' \
-        -e 's|source /etc/default/travel-router.*|source "'"${TRAVEL_ROUTER_ENV}"'" 2>/dev/null || true|' \
-        "${FIREWALL_SCRIPT}" > "${tmp_script}"
+    local lock_dir="${_STATE_DIR}/run/lock"
+
+    python3 - "${FIREWALL_SCRIPT}" "${tmp_script}" "${lock_dir}" "${TRAVEL_ROUTER_ENV}" <<'PYEOF'
+import sys, re
+src, dst, lock_dir, env_file = sys.argv[1:]
+text = open(src).read()
+# Redirect lock directory to temp path
+text = text.replace('mkdir -p /run/lock', f'mkdir -p "{lock_dir}"')
+text = re.sub(r'exec 8>/run/lock/\S+', f'exec 8>"{lock_dir}/firewall.lock"', text)
+# Remove flock (no-op in tests)
+text = re.sub(r'flock -x 8\b[^\n]*', '', text)
+# Redirect config source to temp env file
+text = re.sub(r'source /etc/default/travel-router\S*',
+              f'source "{env_file}" 2>/dev/null || true', text)
+open(dst, 'w').write(text)
+PYEOF
     chmod +x "${tmp_script}"
 
     # shellcheck disable=SC2086
-    env ${env_overrides} bash "${tmp_script}"
+    env ${env_overrides:-} bash "${tmp_script}"
 }
 
 # ---------------------------------------------------------------------------
