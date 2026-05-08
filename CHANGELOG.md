@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-08
+
+### Added — Major Features (v2.0)
+
+- **WireGuard VPN** (`scripts/wireguard-watchdog.sh`, `config/wg0.conf.template`): WireGuard raw VPN as first-class option alongside Tailscale; `ENABLE_WIREGUARD` flag; keypair generated at install; kill-switch chains updated for `wg0`; firstboot wizard gains VPN selector with 44-char base64 key validation
+- **Web Management Dashboard** (`web/app.py`, `web/static/index.html`): Flask REST API on `:8080`; dark-theme single-page dashboard (no CDN, mobile-responsive); endpoints for status, logs, bandwidth, config, service restart, WireGuard peer add, OTA trigger; token auth (`/var/lib/travel-router/web-token`); AP-subnet clients unauthenticated
+- **Python/Textual TUI** (`scripts/travel-tui.py`): 830-line async Textual app replacing bash TUI; DataTable for AP clients and WireGuard peers; 5s status auto-refresh; live log tail; route table view; feature flag toggles; bash TUI kept as `travel-tui-legacy` fallback
+- **Modular install.sh** (`install/run.sh`, `install/00-validate.sh` … `install/10-finalize.sh`): 14-file modular architecture; `--dry-run`, `--module=X`, `--skip=X` flags; each module idempotent and independently sourceable; original `install.sh` unchanged as fallback
+- **Test Suite** (`tests/unit/`, `.github/workflows/unit-tests.yml`): 34 bats tests across 4 scripts (captive-check, failover-watchdog, firewall, ups-monitor); 18 pytest tests for firstboot server (Content-Length, SSH key dedup, WireGuard validation); CI workflow on push/PR
+- **OTA A/B Safety** (`scripts/ota-update.sh`, `scripts/ota-commit.sh`, `scripts/ota-rollback.sh`): downloads + GPG-verifies release, writes to inactive slot; `ota-commit.timer` marks slot permanent 5min after stable boot; `ota-rollback` reverts slot; web UI endpoint `/api/system/ota-update`
+- **Captive Portal v2** (`config/portals/*.yaml`, `install/lib/portal_login.py`): 5 YAML portal templates (Marriott, Hilton, airport, Starbucks, generic); Python cookie-jar multi-step login with template matching and generic POST fallback; community-extensible
+- **4G/LTE Modem** (`scripts/modem-watchdog.sh`, `config/91-usb-modem.rules`): ModemManager integration; udev rules for Sierra/Quectel/Huawei/ZTE; `wwan0` uplink at metric 150; APN config via feature flags
+- **IPv6 First-Class** (`config/radvd.conf`, `config/dhclient6.conf`, `config/nm-dispatcher/70-dhcpv6-uplink.sh`): ip6tables save/restore persistence; DHCPv6 client on WAN interfaces via NM dispatcher; SLAAC (radvd) on `uap0` AP; IPv6 selectively re-enabled on AP while uplinks remain gated by kill-switch
+- **Observability Stack** (`install/lib/logger.sh`, `systemd/travel-router-log-rotate.*`): structured `log_info/warn/error/debug` helpers writing JSON-compatible lines to `/var/log/travel-router/combined.log`; ntfy severity levels (critical→urgent, warning→high, info→default); daily log rotation
+
+### Added — Config Engine
+- `install/lib/config.py`: atomic Python config read/write with history log at `/etc/travel-router/history.log`; CLI shim `python3 config.py get KEY`
+- `install/lib/common.sh`: shared `log`, `warn`, `die`, `section`, `run_or_dry`, `install_file` helpers
+
+### Added — Packages
+- `wireguard-tools`, `modemmanager`, `radvd`, `python3-flask`, `python3-textual` added to pi-gen stage packages
+
 ## [1.11.0] - 2026-05-07
 
 ### Fixed — Critical / Security
