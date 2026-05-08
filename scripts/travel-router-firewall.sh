@@ -44,6 +44,21 @@ save_rules() {
     ip6tables-save > "$_tmp" && mv "$_tmp" /etc/iptables/rules.v6 || rm -f "$_tmp"
 }
 
+restore_rules() {
+    # Fast path: restore persisted rules to avoid full rebuild on every start
+    if command -v netfilter-persistent >/dev/null 2>&1; then
+        netfilter-persistent reload 2>/dev/null && return 0 || true
+    fi
+    [ -f /etc/iptables/rules.v4 ] && iptables-restore  < /etc/iptables/rules.v4 2>/dev/null || true
+    [ -f /etc/iptables/rules.v6 ] && ip6tables-restore < /etc/iptables/rules.v6 2>/dev/null || true
+}
+
+# If called with --restore, replay saved rules and exit (used by boot service)
+if [ "${1:-}" = "--restore" ]; then
+    restore_rules
+    exit 0
+fi
+
 # TTL, hop-limit, DSCP, and hop-by-hop rules are in /etc/nftables.conf.d/travel-router.nft
 
 # FORWARD: set DROP policy BEFORE flush so there is never an open window

@@ -238,7 +238,8 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     bluez bluez-tools python3-dbus \
     avahi-daemon \
     iproute2 iw wireless-tools \
-    qrencode
+    qrencode \
+    radvd
 
 ok "Packages installed"
 
@@ -1082,6 +1083,40 @@ if [[ "${ENABLE_WAN_METRICS:-1}" = "1" ]]; then
 else
     rm -f /etc/NetworkManager/dispatcher.d/50-wan-metrics
     ok "WAN metric dispatcher disabled"
+fi
+
+# ── §. IPv6 — DHCPv6 uplink + SLAAC on AP ───────────────────────────────────
+section "IPv6 — DHCPv6 uplink + SLAAC on AP (radvd)"
+
+# Install DHCPv6 client config
+install_file config/dhclient6.conf /etc/dhclient6.conf 644
+
+# Install NM dispatcher script to start DHCPv6 on WAN interfaces
+mkdir -p /etc/NetworkManager/dispatcher.d
+install_file config/nm-dispatcher/70-dhcpv6-uplink.sh \
+    /etc/NetworkManager/dispatcher.d/70-dhcpv6-uplink 755
+ok "DHCPv6 uplink dispatcher installed → /etc/NetworkManager/dispatcher.d/70-dhcpv6-uplink"
+
+# Install radvd config for SLAAC on uap0 AP interface
+if command -v radvd >/dev/null 2>&1; then
+    install_file config/radvd.conf /etc/radvd.conf 644
+    systemctl enable radvd 2>/dev/null || true
+    ok "radvd: Router Advertisement config installed for uap0 — AP clients get SLAAC IPv6"
+else
+    warn "radvd not found — SLAAC/RA on uap0 will not work (install radvd manually)"
+fi
+
+# Selectively re-enable IPv6 on the AP interface (uap0) while keeping uplinks disabled.
+# The 99-disable-ipv6-uplink.conf sysctl disables IPv6 on wlan0/eth0/default.
+# uap0 needs IPv6 enabled so radvd can send Router Advertisements.
+if ! grep -q "uap0" /etc/sysctl.d/99-disable-ipv6-uplink.conf 2>/dev/null; then
+    cat >> /etc/sysctl.d/99-disable-ipv6-uplink.conf << 'EOF'
+
+# uap0: keep IPv6 enabled so radvd can send Router Advertisements to AP clients
+net.ipv6.conf.uap0.disable_ipv6 = 0
+EOF
+    sysctl -p /etc/sysctl.d/99-disable-ipv6-uplink.conf &>/dev/null || true
+    ok "sysctl: IPv6 enabled on uap0 (needed for radvd RA)"
 fi
 
 # ── §. WiFi QR code ───────────────────────────────────────────────────────────
