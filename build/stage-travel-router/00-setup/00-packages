@@ -24,3 +24,4 @@ bmon
 wireguard-tools
 modemmanager
 radvd
+python3-flask

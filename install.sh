@@ -1291,6 +1291,27 @@ else
     ok "AdGuard Home disabled (set ENABLE_ADGUARD=1 to activate)"
 fi
 
+# ── §. Web management dashboard ───────────────────────────────────────────────
+install_web_dashboard() {
+    log "Installing web dashboard..."
+    # Generate auth token if not already present
+    WEB_TOKEN_FILE="/var/lib/travel-router/web-token"
+    mkdir -p /var/lib/travel-router
+    if [ ! -f "${WEB_TOKEN_FILE}" ]; then
+        python3 -c "import secrets; print(secrets.token_urlsafe(32))" > "${WEB_TOKEN_FILE}"
+        chmod 0600 "${WEB_TOKEN_FILE}"
+    fi
+    cp -r "${REPO}/web" /opt/pi-travel-router/
+    install_file "${REPO}/systemd/travel-router-web.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable travel-router-web.service
+    log "Web dashboard installed — token at ${WEB_TOKEN_FILE}"
+}
+
+section "Web management dashboard"
+install_web_dashboard
+ok "Web dashboard enabled on :8080 — token at /var/lib/travel-router/web-token"
+
 # ── §. Hardware watchdog ──────────────────────────────────────────────────────
 section "Hardware watchdog (BCM2835)"
 
