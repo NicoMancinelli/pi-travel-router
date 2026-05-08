@@ -1,0 +1,47 @@
+name: Unit Tests
+
+on:
+  push:
+    paths:
+      - "scripts/**"
+      - "firstboot/**"
+      - "tests/**"
+      - ".github/workflows/unit-tests.yml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "firstboot/**"
+      - "tests/**"
+      - ".github/workflows/unit-tests.yml"
+
+jobs:
+  python-tests:
+    name: Python unit tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run Python tests
+        run: pytest tests/unit/test_server.py -v
+
+  bash-tests:
+    name: Bash unit tests (bats)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bats-core
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y bats
+
+      - name: Run bats tests
+        run: bats tests/unit/
