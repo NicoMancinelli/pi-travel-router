@@ -1,0 +1,40 @@
+name: Unit Tests
+
+on:
+  push:
+    paths:
+      - 'scripts/**'
+      - 'firstboot/**'
+      - 'tests/**'
+      - 'install/**'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'firstboot/**'
+      - 'tests/**'
+      - 'install/**'
+
+jobs:
+  bats:
+    name: Bash unit tests (bats-core)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats-core
+        run: |
+          sudo apt-get install -y bats
+      - name: Run bats tests
+        run: bats tests/unit/
+
+  pytest:
+    name: Python unit tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install pytest
+      - name: Run pytest
+        run: pytest tests/unit/test_server.py -v
