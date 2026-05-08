@@ -1,0 +1,13 @@
+[Unit]
+Description=OTA update commit (mark active slot as permanent)
+After=network.target
+ConditionPathExists=|/boot/firmware/next-boot-slot
+ConditionPathExists=|/boot/next-boot-slot
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ota-commit
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

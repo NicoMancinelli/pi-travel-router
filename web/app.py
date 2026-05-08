@@ -449,5 +449,40 @@ def index():
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
+@app.route('/api/system/update-check', methods=['GET'])
+def update_check():
+    """Check GitHub for latest release version."""
+    try:
+        import urllib.request as _urllib
+        url = "https://api.github.com/repos/NicoMancinelli/pi-travel-router/releases/latest"
+        req = _urllib.Request(url, headers={"User-Agent": "travel-router-ota"})
+        with _urllib.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read())
+        version_file = "/etc/travel-router-image-version"
+        current = Path(version_file).read_text().strip() if os.path.exists(version_file) else "unknown"
+        return jsonify({"latest": data.get("tag_name"), "current": current, "url": data.get("html_url")})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route('/api/system/ota-update', methods=['POST'])
+@require_auth_always
+def ota_update():
+    """Trigger OTA update to inactive slot (long-running, backgrounded)."""
+    import threading
+    url = request.json.get('url', '') if request.is_json else ''
+
+    def _run():
+        cmd = ['/usr/local/sbin/ota-update']
+        if url:
+            cmd.append(url)
+        subprocess.run(cmd, capture_output=True, timeout=600)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return jsonify({"status": "started", "message": "OTA update running in background. Check logs for progress."})
+
+
+# ── Entrypoint ────────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8080, debug=False, threaded=False)

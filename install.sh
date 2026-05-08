@@ -709,10 +709,17 @@ for unit in \
     ap-enable.service ap-enable.timer \
     daily-digest.service daily-digest.timer \
     update-router.service update-router.timer \
-    tune-cake.service tune-cake.timer; do
+    tune-cake.service tune-cake.timer \
+    ota-commit.service ota-commit.timer; do
     install_file "systemd/$unit" "$SYSTEMD_DEST/$unit" 644
     ok "  $unit"
 done
+
+# OTA scripts
+install -m 0755 "${REPO}/scripts/ota-update.sh"   /usr/local/sbin/ota-update
+install -m 0755 "${REPO}/scripts/ota-commit.sh"   /usr/local/sbin/ota-commit
+install -m 0755 "${REPO}/scripts/ota-rollback.sh" /usr/local/sbin/ota-rollback
+ok "  ota-update / ota-commit / ota-rollback → /usr/local/sbin/"
 
 systemctl daemon-reload
 
@@ -724,7 +731,8 @@ for unit in \
     tailscale-watchdog.timer \
     wireguard-watchdog.timer \
     daily-digest.timer \
-    update-router.timer; do
+    update-router.timer \
+    ota-commit.timer; do
     if systemctl enable "$unit" 2>/dev/null; then ok "  enabled: $unit"; else warn "  could not enable $unit"; fi
 done
 

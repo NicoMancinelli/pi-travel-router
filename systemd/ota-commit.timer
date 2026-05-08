@@ -1,0 +1,9 @@
+[Unit]
+Description=OTA commit timer — mark new slot permanent after stable boot
+
+[Timer]
+OnBootSec=5min
+Unit=ota-commit.service
+
+[Install]
+WantedBy=timers.target
