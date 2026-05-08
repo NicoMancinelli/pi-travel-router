@@ -65,16 +65,19 @@ if [ "$ENABLE_VPN_KILLSWITCH" = "1" ]; then
     # Flush and rebuild chain each run so rules are always current.
     iptables -t filter -N KILL_SWITCH 2>/dev/null || iptables -t filter -F KILL_SWITCH
     iptables -t filter -A KILL_SWITCH -o tailscale0 -j ACCEPT
+    iptables -t filter -A KILL_SWITCH -o wg0 -j ACCEPT
     iptables -t filter -A KILL_SWITCH -j DROP
     iptables -A FORWARD -i uap0 -j KILL_SWITCH
     # ip6tables kill-switch mirror
     ip6tables -t filter -N KILL_SWITCH6 2>/dev/null || ip6tables -t filter -F KILL_SWITCH6
     ip6tables -t filter -A KILL_SWITCH6 -o tailscale0 -j ACCEPT
+    ip6tables -t filter -A KILL_SWITCH6 -o wg0 -j ACCEPT
     ip6tables -t filter -A KILL_SWITCH6 -j DROP
     ip6tables -A FORWARD -i uap0 -j KILL_SWITCH6
     ip6tables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
+    ip6tables -A FORWARD -i wg0 -o uap0 -j ACCEPT
 else
-    for _out in wlan0 bnep0 tailscale0 usb0 rndis0 enx+; do
+    for _out in wlan0 bnep0 tailscale0 wg0 usb0 rndis0 enx+; do
         iptables -A FORWARD -i uap0 -o "$_out" -j ACCEPT
     done
     # IPv6 FORWARD rules (non-kill-switch path)
@@ -84,6 +87,8 @@ else
     done
     ip6tables -A FORWARD -i uap0 -o tailscale0 -j ACCEPT
     ip6tables -A FORWARD -i tailscale0 -o uap0 -j ACCEPT
+    ip6tables -A FORWARD -i uap0 -o wg0 -j ACCEPT
+    ip6tables -A FORWARD -i wg0 -o uap0 -j ACCEPT
 fi
 
 # INPUT: block AP clients from Pi admin interfaces.

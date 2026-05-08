@@ -92,3 +92,9 @@ TOR_AP_PASS=""
 # Change both together if you need a different RFC-1918 range.
 AP_SUBNET="10.3.141.0/24"
 AP_GATEWAY="10.3.141.1"
+
+# WireGuard VPN
+ENABLE_WIREGUARD=0
+WG_LISTEN_PORT=51820
+WG_NETWORK=10.9.0.0/24
+WG_INTERFACE=wg0

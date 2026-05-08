@@ -77,6 +77,7 @@ BOOL_FLAGS = [
     "ENABLE_HTTP_UA_REWRITE",
     "ENABLE_OPEN_WIFI_FALLBACK",
     "ENABLE_PER_DEVICE_VPN",
+    "ENABLE_WIREGUARD",
 ]
 
 STRING_FIELDS = [
@@ -99,6 +100,10 @@ STRING_FIELDS = [
     "UPS_SHUTDOWN_THRESHOLD",
     "PUSHGW_URL",
     "TAILSCALE_UP_ARGS",
+    "WG_LISTEN_PORT",
+    "WG_PEER_PUBKEY",
+    "WG_PEER_ENDPOINT",
+    "WG_PEER_ALLOWED_IPS",
 ]
 
 # Module-level flag to prevent double-submit
@@ -260,6 +265,36 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     ):
         errors.append("TAILSCALE_UP_ARGS contains forbidden flags.")
     values["TAILSCALE_UP_ARGS"] = tailscale_up_args
+
+    wg_listen_port = _first(form, "WG_LISTEN_PORT", "51820").strip()
+    if wg_listen_port:
+        try:
+            _wg_port_val = int(wg_listen_port)
+            if not 1024 <= _wg_port_val <= 65535:
+                errors.append("WireGuard listen port must be between 1024 and 65535.")
+        except ValueError:
+            errors.append("WireGuard listen port must be a valid integer.")
+    values["WG_LISTEN_PORT"] = wg_listen_port or "51820"
+
+    wg_peer_pubkey = _first(form, "WG_PEER_PUBKEY").strip()
+    if wg_peer_pubkey and not re.fullmatch(r"[A-Za-z0-9+/]{43}=", wg_peer_pubkey):
+        errors.append("WireGuard peer public key must be a 44-character base64 string ending in '='.")
+    values["WG_PEER_PUBKEY"] = wg_peer_pubkey
+
+    wg_peer_endpoint = _first(form, "WG_PEER_ENDPOINT").strip()
+    if wg_peer_endpoint and not re.fullmatch(r"[A-Za-z0-9._\-\[\]:]+:[0-9]{1,5}", wg_peer_endpoint):
+        errors.append("WireGuard peer endpoint must be in host:port format.")
+    values["WG_PEER_ENDPOINT"] = wg_peer_endpoint
+
+    wg_peer_allowed_ips = _first(form, "WG_PEER_ALLOWED_IPS", "0.0.0.0/0").strip()
+    if wg_peer_allowed_ips:
+        _cidr_re = re.compile(r"^[0-9a-fA-F.:]+/[0-9]{1,3}$")
+        for _cidr in wg_peer_allowed_ips.split(","):
+            _cidr = _cidr.strip()
+            if _cidr and not _cidr_re.match(_cidr):
+                errors.append(f"WireGuard allowed IPs contains invalid CIDR: {_cidr!r}")
+                break
+    values["WG_PEER_ALLOWED_IPS"] = wg_peer_allowed_ips or "0.0.0.0/0"
 
     # New root password (optional). Don't strip — passwords may legitimately
     # contain leading/trailing spaces, though rare; use as-is.

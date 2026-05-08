@@ -135,6 +135,8 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" == "1" ]]; then
     : "${ENABLE_BANDWIDTH_DASHBOARD:=0}"
     : "${ENABLE_PROMETHEUS_EXPORTER:=0}"
     : "${ENABLE_UPS_MONITOR:=0}"
+    : "${ENABLE_WIREGUARD:=0}"
+    : "${WG_LISTEN_PORT:=51820}"
     if [[ "${ENABLE_TOR_TRANSPARENT}" == "1" ]]; then
         [[ ${#TOR_AP_PASS} -ge 8 ]] || die "Set TOR_AP_PASS (8+ chars) in environment when ENABLE_TOR_TRANSPARENT=1"
     fi
@@ -151,7 +153,7 @@ if [[ -n "$TS_KEY" && -z "$HEADSCALE_URL" ]]; then
     [[ "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
 fi
 ENABLE_WAN_METRICS="${ENABLE_WAN_METRICS:-1}"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_WIREGUARD; do
     validate_flag "$flag"
 done
 
@@ -553,6 +555,7 @@ for script in \
     ap-schedule.sh \
     update-router.sh \
     tailscale-watchdog.sh \
+    wireguard-watchdog.sh \
     travel-status.sh \
     travel-tui.sh \
     daily-digest.sh; do
@@ -638,7 +641,7 @@ AP_SUBNET="${AP_SUBNET:-10.3.141.0/24}"
 AP_GATEWAY="${AP_GATEWAY:-10.3.141.1}"
 
 # Write boolean flags (values are always 0 or 1 — safe with sed too, but use helper for consistency)
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_WIREGUARD; do
     _safe_write_conf "$flag" "${!flag:-0}" "$DEFAULTS_FILE"
 done
 
@@ -657,6 +660,10 @@ _safe_write_conf "TOR_AP_PASS"           ""                              "$DEFAU
 _safe_write_conf "PUSHGW_URL"              "${PUSHGW_URL:-}"                    "$DEFAULTS_FILE"
 _safe_write_conf "UPS_SHUTDOWN_THRESHOLD"  "${UPS_SHUTDOWN_THRESHOLD:-10}"      "$DEFAULTS_FILE"
 _safe_write_conf "TAILSCALE_UP_ARGS"       "${TAILSCALE_UP_ARGS:-}"             "$DEFAULTS_FILE"
+_safe_write_conf "WG_LISTEN_PORT"          "${WG_LISTEN_PORT:-51820}"           "$DEFAULTS_FILE"
+_safe_write_conf "WG_PEER_PUBKEY"          "${WG_PEER_PUBKEY:-}"                "$DEFAULTS_FILE"
+_safe_write_conf "WG_PEER_ENDPOINT"        "${WG_PEER_ENDPOINT:-}"              "$DEFAULTS_FILE"
+_safe_write_conf "WG_PEER_ALLOWED_IPS"     "${WG_PEER_ALLOWED_IPS:-}"           "$DEFAULTS_FILE"
 
 ok "/etc/default/travel-router written"
 
@@ -673,6 +680,7 @@ for unit in \
     vnstat-metrics.service vnstat-metrics.timer \
     update-blocklists.service update-blocklists.timer \
     tailscale-watchdog.service tailscale-watchdog.timer \
+    wireguard-watchdog.service wireguard-watchdog.timer \
     adguard-home.service \
     ap-disable.service ap-disable.timer \
     ap-enable.service ap-enable.timer \
@@ -691,6 +699,7 @@ for unit in \
     wlan-mac-random.service \
     vnstat-metrics.timer update-blocklists.timer \
     tailscale-watchdog.timer \
+    wireguard-watchdog.timer \
     daily-digest.timer \
     update-router.timer; do
     if systemctl enable "$unit" 2>/dev/null; then ok "  enabled: $unit"; else warn "  could not enable $unit"; fi
@@ -875,6 +884,61 @@ else
     else
         warn "  sudo tailscale up $TAILSCALE_UP_ARGS"
     fi
+fi
+
+# ── 18b. WireGuard ───────────────────────────────────────────────────────────
+section "WireGuard"
+
+ENABLE_WIREGUARD="${ENABLE_WIREGUARD:-0}"
+if [[ "$ENABLE_WIREGUARD" = "1" ]]; then
+    mkdir -p /etc/wireguard
+    chmod 700 /etc/wireguard
+    if [[ ! -f /etc/wireguard/wg0.key ]]; then
+        wg genkey | tee /etc/wireguard/wg0.key | wg pubkey > /etc/wireguard/wg0.pub
+        chmod 600 /etc/wireguard/wg0.key
+    fi
+    # Derive the first host address from WG_NETWORK
+    _wg_server_addr=$(python3 -c "
+import ipaddress, sys
+n = ipaddress.ip_network(sys.argv[1], strict=False)
+print(str(list(n.hosts())[0]))
+" "${WG_NETWORK:-10.9.0.0/24}")
+    # Substitute template placeholders via Python (handles special chars safely)
+    python3 -c "
+import sys, os, tempfile
+tmpl, dest, privkey, addr, port = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+with open(tmpl) as f: content = f.read()
+content = content.replace('__WG_PRIVATE_KEY__', privkey)
+content = content.replace('__WG_SERVER_ADDRESS__', addr)
+content = content.replace('__WG_LISTEN_PORT__', port)
+fd, tmp = tempfile.mkstemp(dir='/etc/wireguard')
+try:
+    with os.fdopen(fd, 'w') as fh: fh.write(content)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, dest)
+except:
+    os.unlink(tmp); raise
+" "$REPO/config/wg0.conf.template" /etc/wireguard/wg0.conf \
+      "$(cat /etc/wireguard/wg0.key)" \
+      "$_wg_server_addr" \
+      "${WG_LISTEN_PORT:-51820}"
+    # Append [Peer] section if a peer public key was supplied
+    if [[ -n "${WG_PEER_PUBKEY:-}" ]]; then
+        python3 -c "
+import sys
+path = '/etc/wireguard/wg0.conf'
+peer_block = '\n[Peer]\nPublicKey = ' + sys.argv[1]
+if sys.argv[2]: peer_block += '\nEndpoint = ' + sys.argv[2]
+if sys.argv[3]: peer_block += '\nAllowedIPs = ' + sys.argv[3]
+peer_block += '\n'
+with open(path, 'a') as f: f.write(peer_block)
+" "$WG_PEER_PUBKEY" "${WG_PEER_ENDPOINT:-}" "${WG_PEER_ALLOWED_IPS:-0.0.0.0/0}"
+    fi
+    systemctl enable wg-quick@wg0 2>/dev/null || true
+    ok "WireGuard configured (wg0); public key: $(cat /etc/wireguard/wg0.pub 2>/dev/null || echo 'unknown')"
+else
+    systemctl disable wg-quick@wg0 2>/dev/null || true
+    ok "WireGuard disabled (set ENABLE_WIREGUARD=1 to activate)"
 fi
 
 # ── 19. firewall rules ───────────────────────────────────────────────────────
@@ -1358,6 +1422,7 @@ echo "    • WAN metric management: ${ENABLE_WAN_METRICS:-1}  (enx*=100 rndis0=
 echo "    • Bandwidth dashboard: ${ENABLE_BANDWIDTH_DASHBOARD:-0}  (http://${AP_GATEWAY}/bandwidth.html)"
 echo "    • Prometheus node exporter: ${ENABLE_PROMETHEUS_EXPORTER:-0}  (:9100/metrics via Tailscale)"
 echo "    • UPS monitor (PiSugar): ${ENABLE_UPS_MONITOR:-0}  (shutdown at ${UPS_SHUTDOWN_THRESHOLD:-10}%)"
+echo "    • WireGuard VPN: ${ENABLE_WIREGUARD:-0}  (wg0, port ${WG_LISTEN_PORT:-51820}; public key: $(cat /etc/wireguard/wg0.pub 2>/dev/null || echo 'n/a'))"
 echo "    • Run 'sudo travel-status' for a one-shot status summary"
 echo "    • Run 'sudo travel-tui' for the interactive management TUI"
 echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"

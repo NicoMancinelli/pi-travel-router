@@ -304,6 +304,23 @@ button.submit:hover{background:#2ea043}
   <input id="vpn_macs" name="VPN_DEVICE_MACS" type="text" autocomplete="off" placeholder="aa:bb:cc:dd:ee:ff 11:22:33:44:55:66">
   <span class="hint">Space-separated MAC addresses to route through Tailscale. Leave blank = all devices.</span>
 </div>
+
+<div class="flag"><input type="checkbox" id="f_wg" name="ENABLE_WIREGUARD" value="1"><label class="label" for="f_wg">WireGuard VPN<span class="desc">Manual WireGuard exit node alongside or instead of Tailscale.</span></label></div>
+<div class="split-domains" id="wg_details_row">
+  <div class="row2">
+    <div>
+      <label for="wg_listen_port" style="margin-top:0">Listen port</label>
+      <input id="wg_listen_port" name="WG_LISTEN_PORT" type="number" min="1024" max="65535" value="51820" autocomplete="off">
+    </div>
+  </div>
+  <label for="wg_peer_pubkey" style="margin-top:.75rem">Peer public key</label>
+  <input id="wg_peer_pubkey" name="WG_PEER_PUBKEY" type="text" autocomplete="off" placeholder="44-char base64 public key (optional)">
+  <label for="wg_peer_endpoint" style="margin-top:.5rem">Peer endpoint</label>
+  <input id="wg_peer_endpoint" name="WG_PEER_ENDPOINT" type="text" autocomplete="off" placeholder="vpn.example.com:51820 (optional)">
+  <label for="wg_peer_allowed_ips" style="margin-top:.5rem">Allowed IPs</label>
+  <input id="wg_peer_allowed_ips" name="WG_PEER_ALLOWED_IPS" type="text" value="0.0.0.0/0" autocomplete="off" placeholder="0.0.0.0/0">
+  <span class="hint">A keypair is generated automatically. Add a peer if you want to connect to an existing WireGuard server.</span>
+</div>
 </fieldset>
 
 <div class="warn">Setup takes about 5-10 minutes. The Pi will reboot automatically when finished — reconnect to your new SSID afterward.</div>
@@ -357,6 +374,10 @@ button.submit:hover{background:#2ea043}
   var fqos=document.getElementById('f_qos'), qosbwrow=document.getElementById('qos_bw_row');
   function syncQos(){qosbwrow.classList.toggle('show', fqos.checked);}
   fqos.addEventListener('change',syncQos); syncQos();
+
+  var fwg=document.getElementById('f_wg'), wgrow=document.getElementById('wg_details_row');
+  function syncWg(){wgrow.classList.toggle('show', fwg.checked);}
+  fwg.addEventListener('change',syncWg); syncWg();
 
   var form=document.getElementById('setupform');
   var errsum=document.getElementById('errsum');
