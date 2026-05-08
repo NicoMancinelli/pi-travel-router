@@ -35,6 +35,28 @@ else
     echo "WARNING: No signature found at ${SIG_URL}, proceeding without verification"
 fi
 
+# SHA256 verification: try to fetch remote manifest
+EXPECTED_SHA=""
+SHA_URL="${RELEASE_URL}.sha256"
+if curl -sfL "${SHA_URL}" -o "${WORK_DIR}/update.img.xz.sha256" 2>/dev/null; then
+    EXPECTED_SHA="$(awk '{print $1}' "${WORK_DIR}/update.img.xz.sha256")"
+    echo "Remote SHA256 manifest fetched: ${EXPECTED_SHA}"
+else
+    echo "WARNING: No SHA256 manifest found at ${SHA_URL}, skipping checksum verification"
+fi
+
+# Compute SHA256 of decompressed image before writing
+if [ -n "${EXPECTED_SHA}" ]; then
+    echo "Computing SHA256 of decompressed image..."
+    ACTUAL_SHA="$(xz -dk "${WORK_DIR}/update.img.xz" --stdout | sha256sum | awk '{print $1}')"
+    if [ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]; then
+        echo "ERROR: SHA256 mismatch. Expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}"
+        echo "Aborting OTA — inactive slot NOT marked for boot."
+        exit 1
+    fi
+    echo "SHA256 verified OK"
+fi
+
 echo "Writing to inactive slot ${INACTIVE_SLOT} (${INACTIVE_DEV})..."
 xz -dk "${WORK_DIR}/update.img.xz" --stdout | dd of="${INACTIVE_DEV}" bs=4M status=progress conv=fsync
 

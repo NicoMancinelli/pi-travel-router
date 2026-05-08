@@ -23,7 +23,33 @@ UPS_STATUS_FILE = "/var/lib/travel-router/ups-status"
 WG_CONF = "/etc/wireguard/wg0.conf"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
+
+# ── Status cache ──────────────────────────────────────────────────────────────
+_STATUS_CACHE: dict = {"ts": 0.0, "data": {}}
+_STATUS_CACHE_TTL = 5  # seconds
 TAILSCALE_PREFIX = "100."
+
+# ── Config value validators ───────────────────────────────────────────────────
+import re as _re
+
+_CONFIG_VALIDATORS = {
+    # ENABLE_* keys must be 0 or 1
+    _re.compile(r'^ENABLE_'): lambda v: v in ('0', '1') or "must be 0 or 1",
+    # Port keys must be integers 1024-65535
+    _re.compile(r'_(PORT|LISTEN_PORT)$'): lambda v: (v.isdigit() and 1024 <= int(v) <= 65535) or "must be a port number 1024-65535",
+    # IP/target keys must not contain shell metacharacters
+    _re.compile(r'(TARGET|ADDR|SERVER)$'): lambda v: not _re.search(r'[;&|`$]', v) or "invalid characters in value",
+}
+
+
+def _validate_config_value(key, value):
+    for pattern, validator in _CONFIG_VALIDATORS.items():
+        if pattern.search(key):
+            result = validator(value)
+            if result is not True:
+                return result
+    return None  # No validator matched → allow
+
 
 WHITELISTED_SERVICES = {
     "hostapd",
@@ -232,16 +258,21 @@ def _battery_info():
 @app.route("/api/status")
 @require_auth
 def api_status():
-    return jsonify(
-        {
-            "uplink": _uplink_info(),
-            "ap_clients": _ap_clients(),
-            "vpn": _vpn_state(),
-            "system": _system_stats(),
-            "battery": _battery_info(),
-            "timestamp": int(time.time()),
-        }
-    )
+    now = time.monotonic()
+    if now - _STATUS_CACHE["ts"] < _STATUS_CACHE_TTL and _STATUS_CACHE["data"]:
+        return jsonify(_STATUS_CACHE["data"])
+
+    result_dict = {
+        "uplink": _uplink_info(),
+        "ap_clients": _ap_clients(),
+        "vpn": _vpn_state(),
+        "system": _system_stats(),
+        "battery": _battery_info(),
+        "timestamp": int(time.time()),
+    }
+    _STATUS_CACHE["ts"] = time.monotonic()
+    _STATUS_CACHE["data"] = result_dict
+    return jsonify(result_dict)
 
 
 @app.route("/api/logs")
@@ -337,6 +368,12 @@ def _config_post():
         if len(v_str) > 512:
             return jsonify({"error": f"Value too long for key: {k}"}), 400
 
+    # Semantic validation by key pattern
+    for key, value in data.items():
+        err = _validate_config_value(key, str(value))
+        if err:
+            return jsonify({"error": f"Invalid value for {key}: {err}"}), 400
+
     try:
         content = Path(DEFAULTS_FILE).read_text()
     except OSError:
@@ -376,8 +413,17 @@ def api_service_restart(name):
 @app.route("/api/system/reboot", methods=["POST"])
 @require_auth_always
 def api_system_reboot():
-    _run(["systemctl", "reboot"], timeout=5)
-    return jsonify({"ok": True, "message": "Reboot initiated"})
+    import threading
+    delay = 30
+
+    def _do_reboot():
+        import time as _t
+        _t.sleep(delay)
+        subprocess.run(["systemctl", "reboot"], timeout=10)
+
+    threading.Thread(target=_do_reboot, daemon=True).start()
+    return jsonify({"rebooting": True, "in_seconds": delay,
+                    "message": f"Reboot scheduled in {delay} seconds"})
 
 
 @app.route("/api/vpn/wireguard/peer", methods=["POST"])
@@ -424,9 +470,21 @@ def api_wg_add_peer():
     except OSError as e:
         return jsonify({"error": f"Cannot write {WG_CONF}: {e}"}), 503
 
-    # Apply live via wg addconf
-    wg_stdin_cmd = f"echo '{peer_block}' | wg addconf wg0 /dev/stdin"
-    _run(wg_stdin_cmd, timeout=10)
+    # Verify the peer was actually written (re-read and check)
+    try:
+        conf_content = Path(WG_CONF).read_text()
+        if public_key not in conf_content:
+            return jsonify({"error": "Write verification failed — peer not found in conf after write"}), 500
+    except Exception as e:
+        return jsonify({"error": f"Verification read failed: {e}"}), 500
+
+    # Try to activate live if wg0 interface is already up
+    try:
+        result = subprocess.run(["ip", "link", "show", "wg0"], capture_output=True, timeout=3)
+        if result.returncode == 0:
+            subprocess.run(["wg", "addconf", "wg0", WG_CONF], capture_output=True, timeout=5)
+    except Exception:
+        pass  # Interface may not be up yet; peer will load on next wg-quick start
 
     return jsonify({"ok": True, "public_key": public_key})
 

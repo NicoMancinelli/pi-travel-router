@@ -105,43 +105,37 @@ set_default_metric() {
     fi
 }
 
-# Check if an interface can reach the internet (captive-portal-aware).
-# Uses HTTP probes rather than ICMP so that hotel APs that answer ping locally
-# are not mistaken for working uplinks.
+# Check if an interface can reach the internet using a 2-of-3 majority vote.
+# Uses HTTP/HTTPS probes and DNS rather than ICMP so that hotel APs that
+# answer ping locally are not mistaken for working uplinks.
 #
-# Probe A: GET http://connectivitycheck.gstatic.com/generate_204
-#   → 204  clear internet
-#   → 000  no layer-3 connectivity (skip second probe, return fail)
-#   → else captive portal or broken — try probe B
+# Probe 1: HTTP generate_204 (connectivitycheck.gstatic.com)
+# Probe 2: HTTPS detectportal.firefox.com/success.txt
+# Probe 3: DNS resolution of google.com via 8.8.8.8
 #
-# Probe B: GET http://detectportal.firefox.com/success.txt
-#   → body "success"  clear internet
-#   → else            portal or no connectivity
-#
-# Returns 0 (success) only when at least one probe confirms clear internet.
-# Returns 1 for portal, no connectivity, or any error.
+# Returns 0 (success) when at least 2 of 3 probes pass.
+# Returns 1 otherwise.
+# Timeout is configurable via FAILOVER_PROBE_TIMEOUT (default 5s).
 can_reach_internet() {
     local iface=$1
-    local code_a
-    code_a=$(curl -s -o /dev/null -w "%{http_code}" \
-        --max-time 5 --interface "$iface" \
-        "http://connectivitycheck.gstatic.com/generate_204" 2>/dev/null)
+    local timeout="${FAILOVER_PROBE_TIMEOUT:-5}"
+    local pass=0
 
-    case "$code_a" in
-        204) return 0 ;;
-        000) return 1 ;;
-    esac
+    # Probe 1: HTTP generate_204
+    curl -sf --max-time "${timeout}" --interface "${iface}" -o /dev/null \
+        "http://connectivitycheck.gstatic.com/generate_204" 2>/dev/null && ((pass++)) || true
 
-    # Ambiguous (portal redirect or unexpected code) — try second endpoint
-    local body_b
-    body_b=$(curl -s -o - -w "" \
-        --max-time 5 --interface "$iface" \
-        "http://detectportal.firefox.com/success.txt" 2>/dev/null)
-    local trimmed
-    trimmed=$(printf '%s' "$body_b" | tr -d '\r\n')
-    [ "$trimmed" = "success" ] && return 0
+    # Probe 2: HTTPS detectportal
+    curl -sf --max-time "${timeout}" --interface "${iface}" -o /dev/null \
+        "https://detectportal.firefox.com/success.txt" 2>/dev/null && ((pass++)) || true
 
-    return 1
+    # Probe 3: DNS resolution
+    if host -W "${timeout}" google.com 8.8.8.8 >/dev/null 2>&1 \
+       || dig +time="${timeout}" +short google.com @8.8.8.8 >/dev/null 2>&1; then
+        ((pass++)) || true
+    fi
+
+    [ "${pass}" -ge 2 ]
 }
 
 promote_iface() {
