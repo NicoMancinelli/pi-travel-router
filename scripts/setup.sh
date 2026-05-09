@@ -91,5 +91,12 @@ printf "\n"
 INSTALL_SCRIPT="${INSTALL_DIR}/install.sh"
 [[ -f "${INSTALL_SCRIPT}" ]] || die "install.sh not found at ${INSTALL_SCRIPT}. Clone may be incomplete."
 
-# Pass through any env vars the user set (AP_PASS, INSTALL_NONINTERACTIVE, feature flags, etc.)
-exec bash "${INSTALL_SCRIPT}"
+# When invoked via `curl | sudo bash`, stdin is the pipe — not the terminal.
+# Re-attach to /dev/tty so install.sh can prompt interactively for SSID, password, etc.
+# In non-interactive mode (INSTALL_NONINTERACTIVE=1) this is a no-op since install.sh
+# never reads from stdin in that mode.
+if [[ ! -t 0 ]] && [[ -e /dev/tty ]]; then
+    exec bash "${INSTALL_SCRIPT}" </dev/tty
+else
+    exec bash "${INSTALL_SCRIPT}"
+fi
