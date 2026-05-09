@@ -34,7 +34,23 @@ Everything is opt-in via flags: DNS-over-TLS, AdGuard Home, VPN kill switch, Tor
 
 ## Quick Start
 
-The fastest path is the pre-built SD card image. No terminal required to get a working router.
+The fastest path is the pre-built SD card image.
+
+### One-liner (macOS / Linux)
+
+Insert your SD card, then run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NicoMancinelli/pi-travel-router/main/scripts/flash.sh | bash
+```
+
+The script downloads the latest release, verifies the SHA256 checksum, prompts you to confirm the target device, and flashes. Takes 2–5 minutes. Done — skip to step 3 below.
+
+> **Requires:** `curl`, `xz`, `dd` (all pre-installed on macOS and most Linux distros). You'll be asked for your password once for `sudo dd`.
+
+---
+
+### Manual flash (Raspberry Pi Imager)
 
 **1. Download the image**
 
@@ -44,17 +60,11 @@ Grab the latest `travelrouter-*-arm64-lite.img.xz` from the [Releases](https://g
 
 Open [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
 
-- **Choose OS** -> **Use custom** -> select the `.img.xz` you downloaded
-- **Choose Storage** -> select your SD card
+- **Choose OS** → **Use custom** → select the `.img.xz` you downloaded
+- **Choose Storage** → select your SD card
 - **Write**
 
-Imager handles `xz` decompression and writes the SD card. (CLI alternative:
-```bash
-xz -d travelrouter-*.img.xz
-diskutil unmountDisk /dev/diskN  # macOS: required before dd
-sudo dd if=travelrouter-*.img of=/dev/diskN bs=4M status=progress conv=fsync
-```
-Replace `/dev/diskN` with your SD card device — use `diskutil list` on macOS or `lsblk` on Linux to identify it.)
+---
 
 **3. Boot the Pi**
 
@@ -72,6 +82,21 @@ http://192.168.7.1
 - **Windows 10/11**: uses CDC NCM — inbox driver, no installation needed. The device may take 10–15 seconds to enumerate on first use.
 
 If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (SSH key required — see step 6).
+
+#### USB gadget not showing up?
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Nothing in System Settings → Network | Wrong port | Use the **middle** micro-USB port (`USB`), not the outer one (`PWR IN`) |
+| Nothing in System Settings → Network | Charge-only cable | Swap for a data cable — test with `system_profiler SPUSBDataType \| grep -i ncm` |
+| Device appears but no IP / can't reach 192.168.7.1 | `config.txt` patch didn't apply | Mount SD card, check `/Volumes/bootfs/config.txt` for `dtoverlay=dwc2,dr_mode=peripheral` and `cmdline.txt` for `modules-load=dwc2,g_ncm`; if missing, re-flash |
+| Interface appears as "RNDIS" not Ethernet (Windows) | Driver mismatch | Expected — CDC NCM should show as Ethernet; if RNDIS appears, ensure Windows is up to date |
+
+Quick check (macOS, Pi plugged in):
+```bash
+system_profiler SPUSBDataType | grep -i -A8 "ncm\|gadget\|linux"
+# Should show: "Linux File-Stor Gadget" or similar with CDC NCM
+```
 
 **5. Fill in the form**
 
