@@ -16,7 +16,7 @@ install -m 600 -o root -g root /dev/null "$LOG" 2>/dev/null || true
 exec > >(tee -a "$LOG") 2>&1
 
 # ── Colours ───────────────────────────────────────────────────────────────────
-R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; NC='\033[0m'
+R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; C='\033[0;36m'; NC='\033[0m'; BLD='\033[1m'
 ok()      { echo -e "${G}✓${NC} $*"; }
 info()    { echo -e "${C}→${NC} $*"; }
 warn()    { echo -e "${Y}⚠${NC} $*"; }
@@ -47,63 +47,161 @@ echo ""
 # ── Config prompts ────────────────────────────────────────────────────────────
 section "Configuration"
 
-# Optional features — env-var pre-set wins (allows scripted/non-interactive installs)
-# In non-interactive mode (INSTALL_NONINTERACTIVE=1), _yn defaults the flag to 0 instead of prompting.
+# ── Prompt helpers ─────────────────────────────────────────────────────────────
+# _yn  VAR "Question?"        "Tip (optional)"
+# _ask VAR "Prompt" "default" "Tip (optional)"  — skips if VAR already set
+# _secret VAR "Prompt"        "Tip (optional)"  — skips if VAR already set
+
 _yn() {
     local v="${!1:-}"
     [[ "$v" =~ ^[01]$ ]] && return
     if [[ "${INSTALL_NONINTERACTIVE:-0}" == "1" ]]; then
-        printf -v "$1" '%s' "0"
-        return
+        printf -v "$1" '%s' "0"; return
     fi
+    [[ -n "${3:-}" ]] && echo -e "        ${C}ℹ${NC}  ${3}"
     read -rp "  $2 [y/N] " _r
     printf -v "$1" '%s' "$([[ "$_r" =~ ^[Yy]$ ]] && echo 1 || echo 0)"
 }
 
+_ask() {
+    local cur="${!1:-}"
+    [[ -n "$cur" ]] && return
+    [[ -n "${4:-}" ]] && echo -e "        ${C}ℹ${NC}  ${4}"
+    if [[ -n "${3:-}" ]]; then
+        read -rp "  $2 [${3}]: " _r; printf -v "$1" '%s' "${_r:-${3}}"
+    else
+        read -rp "  $2: " _r; printf -v "$1" '%s' "${_r:-}"
+    fi
+}
+
+_secret() {
+    local cur="${!1:-}"
+    [[ -n "$cur" ]] && return
+    [[ -n "${3:-}" ]] && echo -e "        ${C}ℹ${NC}  ${3}"
+    read -rsp "  $2: " _r; echo
+    printf -v "$1" '%s' "${_r:-}"
+}
+
 if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
-    read -rp "  AP SSID [TravelRouter]: " AP_SSID;          AP_SSID="${AP_SSID:-TravelRouter}"
-    # Reject control characters in SSID (ord < 0x20)
+
+    # ── Setup mode ──────────────────────────────────────────────────────────────
+    echo ""
+    echo -e "  ${BLD}Choose a setup mode:${NC}\n"
+    echo -e "  ${BLD}[1] Quick   ${NC}— just SSID + password; security features on by default    (2 min)"
+    echo -e "  ${BLD}[2] Standard${NC}— adds Tailscale, SSH key, and security choices             (5 min)"
+    echo -e "  ${BLD}[3] Expert  ${NC}— all options, grouped and explained                       (10 min)"
+    echo ""
+    read -rp "  Mode [1]: " _MODE
+    _MODE="${_MODE:-1}"
+    [[ "$_MODE" =~ ^[123]$ ]] || { warn "Invalid — defaulting to Quick"; _MODE="1"; }
+    echo ""
+
+    # ── Group 1: WiFi (all modes) ───────────────────────────────────────────────
+    echo -e "  ${BLD}── WiFi ──────────────────────────────────────${NC}"
+    _ask AP_SSID "AP name (SSID)" "TravelRouter" \
+        "What your devices see when connecting. Keep it short and recognisable."
     if printf '%s' "$AP_SSID" | LC_ALL=C grep -qP '[\x00-\x1f]'; then
         die "AP SSID may not contain control characters"
     fi
-    read -rsp "  AP passphrase (8+ chars): " AP_PASS;        echo
-    # Reject control characters (including newlines) in passphrase
+    _secret AP_PASS "AP passphrase (8–63 chars, no # character)" \
+        "Secures all devices on your network. Must be 8–63 printable ASCII characters."
     if printf '%s' "$AP_PASS" | LC_ALL=C grep -qP '[\x00-\x1f\x7f-\xff]'; then
         die "AP passphrase must use printable ASCII only (no control characters)"
     fi
-    read -rp "  WiFi country code [US]: " COUNTRY;           COUNTRY="${COUNTRY:-US}"
-    read -rp "  ntfy.sh topic (blank = no notifications): " NTFY_TOPIC; NTFY_TOPIC="${NTFY_TOPIC:-}"
-    read -rsp "  Tailscale auth key (tskey-auth-... or blank): " TS_KEY; echo; TS_KEY="${TS_KEY:-}"
-    read -rp  "  SSH admin public key (paste ed25519/rsa pubkey, or blank to keep password auth): " SSH_ADMIN_KEY; SSH_ADMIN_KEY="${SSH_ADMIN_KEY:-}"
-    read -rp  "  Headscale URL (blank = use Tailscale cloud): " HEADSCALE_URL; HEADSCALE_URL="${HEADSCALE_URL:-}"
+    _ask COUNTRY "WiFi country code" "US" \
+        "Two-letter ISO code (US, GB, DE, AU…). Required for legal channel + power settings."
+    echo ""
 
-    _yn ENABLE_BLOCKLISTS          "Enable threat-intel blocklist (Firehol L1)?"
-    _yn ENABLE_TOR_TRANSPARENT     "Enable Tor transparent proxy?"
-    _yn ENABLE_HTTP_UA_REWRITE     "Enable HTTP User-Agent normalization (privoxy)?"
-    _yn ENABLE_OPEN_WIFI_FALLBACK  "Enable open WiFi fallback (join any open network)?"
-    _yn ENABLE_DOT                 "Enable DNS-over-TLS (stubby → Cloudflare + Quad9)?"
-    _yn ENABLE_VPN_KILLSWITCH      "Enable VPN kill switch (block AP traffic if Tailscale drops)?"
-    _yn ENABLE_AUTO_UPDATES        "Enable automatic OS security updates (unattended-upgrades)?"
-    _yn ENABLE_ADGUARD             "Enable AdGuard Home (DNS ad-blocker + per-client analytics)?"
-    _yn ENABLE_AVAHI_REFLECTOR  "Enable mDNS reflector (AirPrint/AirPlay over Tailscale)?"
-    _yn ENABLE_AP_SCHEDULE      "Enable scheduled AP disable at night (02:00–07:00)?"
-    _yn ENABLE_CLIENT_QOS       "Enable per-client bandwidth fairness (CAKE per-host on uap0)?"
-    _yn ENABLE_PER_DEVICE_VPN   "Enable per-device Tailscale routing (specific MACs via VPN)?"
-    _yn ENABLE_CAKE_AUTOTUNE    "Enable automatic CAKE bandwidth tuning (weekly speedtest on wlan0)?"
-    _yn ENABLE_SPLIT_TUNNEL     "Enable domain-based split tunnel (route specific domains via Tailscale)?"
-    if [[ "${ENABLE_SPLIT_TUNNEL:-0}" = "1" && -z "${SPLIT_TUNNEL_DOMAINS:-}" ]]; then
-        read -rp "  Split tunnel domains (space-separated, e.g. mybank.com work.example.com): " SPLIT_TUNNEL_DOMAINS
-        SPLIT_TUNNEL_DOMAINS="${SPLIT_TUNNEL_DOMAINS:-}"
+    if [[ "$_MODE" == "1" ]]; then
+        # Quick: lock in sensible security defaults; skip all further prompts
+        ENABLE_AUTO_UPDATES="${ENABLE_AUTO_UPDATES:-1}"
+        ENABLE_ADGUARD="${ENABLE_ADGUARD:-1}"
+        ENABLE_DOT="${ENABLE_DOT:-1}"
+        ENABLE_BLOCKLISTS="${ENABLE_BLOCKLISTS:-1}"
+        ENABLE_VPN_KILLSWITCH="${ENABLE_VPN_KILLSWITCH:-0}"   # off until VPN is configured
+        echo -e "  ${G}✓${NC} Security defaults applied (AdGuard ON, DoT ON, auto-updates ON, blocklists ON)"
+        echo -e "  ${C}→${NC} Re-run with mode 2 or 3 to customise Tailscale, SSH keys, and advanced features."
+        echo ""
     fi
-    _yn ENABLE_2FA              "Enable SSH two-factor authentication (TOTP)?"
-    _yn ENABLE_BANDWIDTH_DASHBOARD "Enable bandwidth analytics dashboard (daily HTML report)?"
-    _yn ENABLE_PROMETHEUS_EXPORTER "Enable Prometheus node exporter on :9100?"
-    _yn ENABLE_UPS_MONITOR      "Enable PiSugar UPS battery monitor (safe shutdown at low battery)?"
 
-    if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
-        read -rsp "  Tor AP passphrase (8+ chars, for TorAP SSID): " TOR_AP_PASS; echo
-        [[ ${#TOR_AP_PASS} -ge 8 ]] || die "Tor AP passphrase must be 8+ characters"
+    if [[ "$_MODE" =~ ^[23]$ ]]; then
+        # ── Group 2: Remote access ───────────────────────────────────────────────
+        echo -e "  ${BLD}── Remote Access ─────────────────────────────${NC}"
+        _secret TS_KEY "Tailscale auth key (tskey-auth-… or blank to skip)" \
+            "Get one at tailscale.com/settings/keys. Adds this Pi to your tailnet automatically."
+        _ask HEADSCALE_URL "Headscale URL (blank = Tailscale cloud)" "" \
+            "Only if you self-host Headscale. Leave blank for the standard Tailscale service."
+        _ask SSH_ADMIN_KEY "SSH public key (paste pubkey, or blank for password auth)" "" \
+            "Run 'cat ~/.ssh/id_ed25519.pub' on your laptop and paste it here. Disables password SSH."
+        _ask NTFY_TOPIC "ntfy.sh push notification topic (blank = off)" "" \
+            "Create a free topic at ntfy.sh. Alerts you on failovers, reboots, and security events."
+        echo ""
+
+        # ── Group 3: Security ────────────────────────────────────────────────────
+        echo -e "  ${BLD}── Security ──────────────────────────────────${NC}"
+        _yn ENABLE_AUTO_UPDATES   "Auto OS security updates?"      \
+            "Installs security patches nightly via unattended-upgrades. Strongly recommended."
+        _yn ENABLE_ADGUARD        "AdGuard Home (DNS ad-blocker)?" \
+            "Blocks ads + trackers for every connected device. Dashboard at http://192.168.7.1:3000"
+        _yn ENABLE_DOT            "DNS-over-TLS?"                  \
+            "Encrypts DNS via stubby → Cloudflare 1.1.1.1 + Quad9. Prevents DNS snooping on hotel WiFi."
+        _yn ENABLE_BLOCKLISTS     "Threat-intel IP blocklist?"     \
+            "Blocks Firehol Level-1: known malware, botnets, and scanner IPs (~10 000 entries)."
+        _yn ENABLE_VPN_KILLSWITCH "VPN kill switch?"               \
+            "Drops all AP traffic if Tailscale disconnects. Only enable if you always route via VPN."
+        echo ""
     fi
+
+    if [[ "$_MODE" == "3" ]]; then
+        # ── Group 4: Privacy ─────────────────────────────────────────────────────
+        echo -e "  ${BLD}── Privacy ───────────────────────────────────${NC}"
+        _yn ENABLE_TOR_TRANSPARENT  "Tor transparent proxy?"              \
+            "Routes all AP traffic through Tor. Adds a second 'TorAP' SSID. Slow but anonymous."
+        _yn ENABLE_HTTP_UA_REWRITE  "HTTP User-Agent normalisation?"      \
+            "Rewrites browser fingerprints via privoxy. Reduces cross-site tracking."
+        _yn ENABLE_OPEN_WIFI_FALLBACK "Auto-join open WiFi networks?"     \
+            "Connects to any open AP when no known network is in range. Convenient but risky."
+        echo ""
+
+        # ── Group 5: Network ─────────────────────────────────────────────────────
+        echo -e "  ${BLD}── Network ───────────────────────────────────${NC}"
+        _yn ENABLE_CLIENT_QOS     "Per-client bandwidth fairness (CAKE)?" \
+            "Prevents one device hogging the uplink. Uses CAKE qdisc per-host on the AP interface."
+        _yn ENABLE_CAKE_AUTOTUNE  "Auto CAKE bandwidth tuning?"           \
+            "Runs a weekly speedtest to calibrate CAKE shaper rates automatically."
+        _yn ENABLE_SPLIT_TUNNEL   "Domain-based split tunnel?"            \
+            "Route specific domains (e.g. work.example.com) via Tailscale; everything else direct."
+        if [[ "${ENABLE_SPLIT_TUNNEL:-0}" = "1" && -z "${SPLIT_TUNNEL_DOMAINS:-}" ]]; then
+            _ask SPLIT_TUNNEL_DOMAINS "Split tunnel domains (space-separated)" "" \
+                "Example: mybank.com work.example.com — these go via your tailnet, rest goes direct."
+        fi
+        _yn ENABLE_AVAHI_REFLECTOR "mDNS reflector (AirPrint / AirPlay)?" \
+            "Reflects mDNS across subnets so AirPrint and AirPlay work over Tailscale."
+        _yn ENABLE_PER_DEVICE_VPN  "Per-device VPN routing?"              \
+            "Route specific device MACs through Tailscale; others go direct to the internet."
+        echo ""
+
+        # ── Group 6: Schedule & Services ─────────────────────────────────────────
+        echo -e "  ${BLD}── Schedule & Services ───────────────────────${NC}"
+        _yn ENABLE_AP_SCHEDULE         "Scheduled AP quiet hours (02:00–07:00)?" \
+            "Turns the WiFi AP off overnight to save power and reduce RF exposure."
+        _yn ENABLE_2FA                 "SSH two-factor auth (TOTP)?"             \
+            "Adds a Google Authenticator OTP on top of SSH key auth. Requires an authenticator app."
+        _yn ENABLE_BANDWIDTH_DASHBOARD "Daily bandwidth report?"                 \
+            "Generates an HTML traffic report per device each day. Viewable on the web dashboard."
+        _yn ENABLE_PROMETHEUS_EXPORTER "Prometheus metrics exporter on :9100?"   \
+            "Node exporter for Grafana/Prometheus. Only needed if you run a monitoring stack."
+        _yn ENABLE_UPS_MONITOR         "PiSugar UPS battery monitor?"            \
+            "Monitors a PiSugar battery HAT and triggers a safe shutdown at low charge."
+        echo ""
+
+        if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
+            _secret TOR_AP_PASS "Tor AP passphrase (8+ chars, for the TorAP SSID)" \
+                "A separate passphrase for the Tor-only SSID. Must be 8+ chars, no #."
+            [[ ${#TOR_AP_PASS} -ge 8 ]] || die "Tor AP passphrase must be 8+ characters"
+        fi
+    fi
+
 fi
 
 # Defaults for both interactive and non-interactive paths.
@@ -872,6 +970,7 @@ RCEOF
 
         # Ensure rc.local sources drop-ins (idempotent)
         if [[ -f /etc/rc.local ]] && ! grep -q "rc.local.d" /etc/rc.local; then
+            # shellcheck disable=SC2016  # single quotes intentional in sed script
             sed -i '/^exit 0/i # Source rc.local drop-ins\nfor _f in /etc/rc.local.d/*.sh; do [ -f "$_f" ] \&\& . "$_f"; done' /etc/rc.local
         fi
 
@@ -1163,6 +1262,7 @@ mkdir -p "$WIFI_QR_DIR"
 
 # Validate AP_SSID and AP_PASS for shell-unsafe characters before QR assembly.
 # Backticks, $(), and backslash-escapes can cause injection in shell-interpolated strings.
+# shellcheck disable=SC2016,SC1003  # character class uses single quotes intentionally
 if [[ "$AP_SSID" =~ ['`$()\\'] ]] || [[ "$AP_PASS" =~ ['`$()\\'] ]]; then
     warn "AP_SSID or AP_PASS contains shell-unsafe characters; skipping QR code generation"
 else

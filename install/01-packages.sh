@@ -7,11 +7,15 @@ run_packages() {
 
     run_or_dry apt-get update -qq
 
+    # libimobiledevice was renamed in Debian 13 (trixie); detect which name is available
+    _libimob="libimobiledevice6"
+    apt-cache show libimobiledevice6 &>/dev/null 2>&1 || _libimob="libimobiledevice-1.0-6"
+
     # Core packages
     run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y \
         hostapd dnsmasq iptables iptables-persistent netfilter-persistent \
         curl wget git jq \
-        usbmuxd libimobiledevice6 libimobiledevice-utils ipheth-utils \
+        usbmuxd "${_libimob}" libimobiledevice-utils ipheth-utils \
         macchanger vnstat \
         privoxy \
         tor \
@@ -26,9 +30,13 @@ run_packages() {
     ok "Core packages installed"
 
     # log2ram (external repo)
+    # log2ram only publishes up to bookworm; use that repo for any newer release too
+    _log2ram_suite="$(grep '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo bookworm)"
+    case "${_log2ram_suite}" in bullseye|bookworm) ;; *) _log2ram_suite="bookworm" ;; esac
+
     if ! dpkg -l log2ram &>/dev/null; then
         info "Installing log2ram"
-        echo "deb [signed-by=/usr/share/keyrings/azlux-archive-keyring.gpg] http://packages.azlux.fr/debian/ bookworm main" \
+        echo "deb [signed-by=/usr/share/keyrings/azlux-archive-keyring.gpg] http://packages.azlux.fr/debian/ ${_log2ram_suite} main" \
             > /etc/apt/sources.list.d/azlux.list
         curl -s https://azlux.fr/repo.gpg.key | gpg --dearmor -o /tmp/azlux.gpg
         _AZLUX_FP=$(gpg --no-default-keyring --keyring /tmp/azlux.gpg --fingerprint 2>/dev/null \
