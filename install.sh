@@ -21,10 +21,18 @@ ok()      { echo -e "${G}✓${NC} $*"; }
 info()    { echo -e "${C}→${NC} $*"; }
 warn()    { echo -e "${Y}⚠${NC} $*"; }
 die()     { echo -e "${R}✗ FATAL:${NC} $*" >&2; exit 1; }
-section() { echo -e "\n${C}━━ $* ━━${NC}"; }
+_STEP=0
+section() { ((_STEP++)) || true; echo -e "\n${C}━━ [${_STEP}] $* ━━${NC}"; }
 validate_flag() {
     local name=$1 value=${!1:-0}
     [[ "$value" =~ ^[01]$ ]] || die "$name must be 0 or 1"
+}
+# Try to detect WiFi country from system locale (e.g. en_GB.UTF-8 → GB)
+_detect_country() {
+    local _lc
+    _lc="$(locale 2>/dev/null | grep '^LANG=' | sed 's/.*_\([A-Za-z][A-Za-z]\)[.@].*/\1/' | head -1 || true)"
+    _lc="${_lc^^}"
+    [[ "$_lc" =~ ^[A-Z]{2}$ ]] && echo "$_lc" || echo "US"
 }
 
 # ── Guards ────────────────────────────────────────────────────────────────────
@@ -274,18 +282,65 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
 
     # ── Group 1: WiFi (all modes) ───────────────────────────────────────────────
     echo -e "  ${BLD}── WiFi ──────────────────────────────────────${NC}"
-    _ask AP_SSID "AP name (SSID)" "TravelRouter" \
-        "What your devices see when connecting. Keep it short and recognisable."
-    if printf '%s' "$AP_SSID" | LC_ALL=C grep -qP '[\x00-\x1f]'; then
-        die "AP SSID may not contain control characters"
+
+    # SSID — retry on invalid input
+    while true; do
+        _ask AP_SSID "Network name (SSID)" "TravelRouter" \
+            "The name your devices see when connecting. 1–32 characters, no special symbols."
+        if printf '%s' "${AP_SSID:-}" | LC_ALL=C grep -qP '[\x00-\x1f]'; then
+            warn "Network name cannot contain control characters — try again."; AP_SSID=""; continue
+        fi
+        if [[ ${#AP_SSID} -lt 1 || ${#AP_SSID} -gt 32 ]]; then
+            warn "Network name must be 1–32 characters (got ${#AP_SSID}) — try again."; AP_SSID=""; continue
+        fi
+        break
+    done
+
+    # Passphrase — retry on invalid, then confirm to catch typos
+    while true; do
+        _secret AP_PASS "WiFi password (8–63 chars, no #)" \
+            "Used by all devices connecting to your network. Min 8 chars, no # character."
+        if [[ ${#AP_PASS:-0} -lt 8 ]]; then
+            warn "Password too short — minimum 8 characters. Try again."; AP_PASS=""; continue
+        fi
+        if [[ ${#AP_PASS} -gt 63 ]]; then
+            warn "Password too long — maximum 63 characters. Try again."; AP_PASS=""; continue
+        fi
+        if printf '%s' "$AP_PASS" | LC_ALL=C grep -qP '[\x00-\x1f\x7f-\xff]'; then
+            warn "Use printable ASCII characters only. Try again."; AP_PASS=""; continue
+        fi
+        if [[ "$AP_PASS" =~ '#' ]]; then
+            warn "# is not allowed in the password. Try again."; AP_PASS=""; continue
+        fi
+        # Confirm — skip in reconfigure mode when user pressed Enter to keep existing
+        if [[ "${_INSTALL_ACTION:-fresh}" != "reconfigure" ]]; then
+            read -rsp "  Confirm password: " _AP_PASS2; echo
+            if [[ "$AP_PASS" != "$_AP_PASS2" ]]; then
+                warn "Passwords don't match — try again."; AP_PASS=""; continue
+            fi
+        fi
+        break
+    done
+
+    # Country — auto-detect for Quick mode, always prompt for Standard/Expert
+    _default_country="$(_detect_country)"
+    if [[ "$_MODE" == "1" && -z "${COUNTRY:-}" ]]; then
+        COUNTRY="$_default_country"
+        if [[ "$COUNTRY" == "US" ]]; then
+            echo -e "        ${C}ℹ${NC}  Country defaulted to US. Change with: sudo travel-tui"
+        else
+            echo -e "        ${C}ℹ${NC}  Country auto-detected: ${COUNTRY}. Change with: sudo travel-tui"
+        fi
+    else
+        while true; do
+            _ask COUNTRY "WiFi country code" "${_default_country}" \
+                "Two-letter code (US, GB, DE, AU, JP…). Required for legal WiFi channel settings."
+            COUNTRY="${COUNTRY^^}"
+            [[ "$COUNTRY" =~ ^[A-Z]{2}$ ]] && break
+            warn "Country code must be exactly two letters (e.g. US, GB, DE) — try again."
+            COUNTRY=""
+        done
     fi
-    _secret AP_PASS "AP passphrase (8–63 chars, no # character)" \
-        "Secures all devices on your network. Must be 8–63 printable ASCII characters."
-    if printf '%s' "${AP_PASS:-}" | LC_ALL=C grep -qP '[\x00-\x1f\x7f-\xff]'; then
-        die "AP passphrase must use printable ASCII only (no control characters)"
-    fi
-    _ask COUNTRY "WiFi country code" "US" \
-        "Two-letter ISO code (US, GB, DE, AU…). Required for legal channel + power settings."
     echo ""
 
     if [[ "$_MODE" == "1" ]]; then
@@ -455,15 +510,39 @@ if [[ -n "${AP_ENABLE_TIME:-}" ]] && ! [[ "$AP_ENABLE_TIME" =~ ^([01][0-9]|2[0-3
     die "AP_ENABLE_TIME must be in HH:MM format (00:00–23:59)"
 fi
 
-echo ""
-info "SSID:      $AP_SSID"
-info "Country:   $COUNTRY"
-info "ntfy:      ${NTFY_TOPIC:-disabled}"
-info "Tailscale: ${TS_KEY:+key provided}${TS_KEY:-will auth manually after install}"
-echo ""
 if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
-    read -rp "  Proceed? [y/N] " CONFIRM
-    [[ "$CONFIRM" =~ ^[Yy]$ ]] || { echo "Aborted."; exit 0; }
+    echo ""
+    echo -e "  ${BLD}╔═════════════════════════════════════════════════════╗${NC}"
+    echo -e "  ${BLD}║   Ready to install                                  ║${NC}"
+    echo -e "  ${BLD}╚═════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  ${BLD}WiFi network${NC}"
+    echo -e "    Name      ${BLD}${AP_SSID}${NC}"
+    echo -e "    Country   ${COUNTRY}"
+    echo ""
+    echo -e "  ${BLD}Security${NC}"
+    # shellcheck disable=SC2031
+    _sum_feat() { [[ "${!1:-0}" == "1" ]] && echo -e "    ${G}✓${NC}  $2" || echo -e "    ${C}·${NC}  $2  (off)"; }
+    _sum_feat ENABLE_AUTO_UPDATES   "Automatic OS security updates"
+    _sum_feat ENABLE_ADGUARD        "AdGuard Home  (DNS ad-blocker, http://192.168.7.1:3000)"
+    _sum_feat ENABLE_DOT            "DNS-over-TLS  (encrypted DNS via Cloudflare + Quad9)"
+    _sum_feat ENABLE_BLOCKLISTS     "Threat-intel IP blocklist  (Firehol Level 1)"
+    [[ "${ENABLE_VPN_KILLSWITCH:-0}" == "1" ]] && \
+        echo -e "    ${G}✓${NC}  VPN kill switch  (AP blocked if Tailscale drops)"
+    echo ""
+    if [[ -n "${TS_KEY:-}" ]]; then
+        echo -e "  ${G}✓${NC}  Tailscale key provided — Pi will join your tailnet on first boot"
+    else
+        echo -e "  ${C}→${NC}  Tailscale: run ${BLD}sudo tailscale up${NC} after reboot to connect"
+    fi
+    [[ -n "${SSH_ADMIN_KEY:-}" ]] && \
+        echo -e "  ${G}✓${NC}  SSH public key loaded — password auth will be disabled"
+    echo ""
+    echo -e "  ${Y}This will take 8–15 minutes. A reboot is required at the end.${NC}"
+    echo ""
+    # shellcheck disable=SC2034
+    read -rp "  Press Enter to start, Ctrl+C to cancel... " _ignored
+    echo ""
 fi
 
 # ── Apply hostname ────────────────────────────────────────────────────────────
@@ -584,8 +663,6 @@ with open(path, 'w') as f: f.write(content)
         chmod 640 "$_RASPAP_AUTH_DIR/raspap.auth"
         ok "RaspAP auth file created at $_RASPAP_AUTH_DIR/raspap.auth"
     fi
-    # S-H3: print in install summary for operator to record
-    RASPAP_PASS_DISPLAY="$RASPAP_PASS"
 fi
 
 # ── 2. Boot config (USB gadget mode) ─────────────────────────────────────────
@@ -1761,58 +1838,36 @@ ok "Installed version: $INSTALLED_VERSION"
 section "Installation complete"
 
 echo ""
-echo "  Summary of what was installed:"
-echo "    • RaspAP web UI (http://${AP_GATEWAY} after boot)"
-echo "    • AP SSID: $AP_SSID  (on uap0, ${AP_SUBNET})"
-echo "    • USB gadget: usb0 → 192.168.7.1  (active after reboot)"
-echo "    • iPhone USB tether: udev auto-detect (enx*, metric 100)"
-echo "    • Android USB tether: udev auto-detect (rndis0/usb0, metric 200)"
-echo "    • Bluetooth tether: set IPHONE_BT_MAC in /etc/default/travel-router"
-echo "    • Uplink failover watchdog: 30s timer"
-echo "    • WAN watchdog + captive portal detection: 60s timer"
-echo "    • TTL=65 + DSCP strip (Visible carrier bypass)"
-echo "    • DNS-over-TLS: ${ENABLE_DOT:-0}  (stubby → Cloudflare/Quad9)"
-echo "    • AdGuard Home: ${ENABLE_ADGUARD:-0}  (web UI: http://${AP_GATEWAY}:3000)"
-echo "    • VPN kill switch: ${ENABLE_VPN_KILLSWITCH:-0}  (AP traffic blocked if Tailscale drops)"
-echo "    • privoxy: HTTP User-Agent normalization (${ENABLE_HTTP_UA_REWRITE:-0})"
-echo "    • Tor: transparent proxy (${ENABLE_TOR_TRANSPARENT:-0})"
-echo "    • Threat intel blocklist: daily timer installed, loading enabled=${ENABLE_BLOCKLISTS:-0}"
-echo "    • Auto security updates: ${ENABLE_AUTO_UPDATES:-0}  (unattended-upgrades, reboot 03:30)"
-echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo update-router.sh"
-echo "    • Tailscale watchdog: 5-min peer health check + ntfy alerts"
-echo "    • Daily digest: 08:00 ntfy push (uptime, uplink, Tailscale, AP clients)"
-echo "    • Per-client QoS: ${ENABLE_CLIENT_QOS:-0}  (CAKE per-host on uap0)"
-echo "    • CAKE auto-tune: ${ENABLE_CAKE_AUTOTUNE:-0}  (weekly speedtest → adjusts wlan0 CAKE bandwidth)"
-echo "    • Per-device VPN: ${ENABLE_PER_DEVICE_VPN:-0}  (set VPN_DEVICE_MACS in /etc/default/travel-router)"
-echo "    • Domain split tunnel: ${ENABLE_SPLIT_TUNNEL:-0}  (domains via Tailscale: ${SPLIT_TUNNEL_DOMAINS:-none})"
-echo "    • SSH 2FA (TOTP): ${ENABLE_2FA:-0}  (run: sudo -u \$(logname) setup-2fa.sh to configure)"
-echo "    • WAN metric management: ${ENABLE_WAN_METRICS:-1}  (enx*=100 rndis0=200 bnep0=300 wlan0=600)"
-echo "    • Bandwidth dashboard: ${ENABLE_BANDWIDTH_DASHBOARD:-0}  (http://${AP_GATEWAY}/bandwidth.html)"
-echo "    • Prometheus node exporter: ${ENABLE_PROMETHEUS_EXPORTER:-0}  (:9100/metrics via Tailscale)"
-echo "    • UPS monitor (PiSugar): ${ENABLE_UPS_MONITOR:-0}  (shutdown at ${UPS_SHUTDOWN_THRESHOLD:-10}%)"
-echo "    • WireGuard VPN: ${ENABLE_WIREGUARD:-0}  (wg0, port ${WG_LISTEN_PORT:-51820}; public key: $(cat /etc/wireguard/wg0.pub 2>/dev/null || echo 'n/a'))"
-echo "    • Run 'sudo travel-status' for a one-shot status summary"
-echo "    • Run 'sudo travel-tui' for the interactive management TUI"
-echo "    • Installed version: $INSTALLED_VERSION  (cat /etc/travel-router-version)"
-echo "    • Tailscale: subnet router for ${AP_SUBNET}"
-echo "    • Tailscale control: ${HEADSCALE_URL:-Tailscale cloud (login.tailscale.com)}"
-echo "    • TCP BBR + CAKE qdisc (bufferbloat control)"
-echo "    • log2ram: /var/log in RAM"
-echo "    • Hardware watchdog: BCM2835 — reboots if kernel locks up (active after reboot)"
-echo "    • Log rotation: daily, 7-day retention for wan-watchdog.log"
-echo "    • SSH hardening: PermitRootLogin no, MaxAuthTries 3${SSH_ADMIN_KEY:+, key auth only (password disabled)}"
-echo "    • MAC randomization: wlan0 at boot"
-echo "    • mDNS reflector: ${ENABLE_AVAHI_REFLECTOR:-0}  (AirPrint/AirPlay/NAS over Tailscale)"
-echo "    • AP schedule: ${ENABLE_AP_SCHEDULE:-0}  (disable 02:00, re-enable 07:00)"
-echo "    • WiFi QR: cat /usr/local/share/travel-router/wifi-qr/wifi-qr.txt"
-echo "    • ntfy.sh: ${NTFY_TOPIC:-not configured (set NTFY_TOPIC in /etc/default/travel-router)}"
+echo -e "  ${G}${BLD}╔══════════════════════════════════════════════════════╗${NC}"
+echo -e "  ${G}${BLD}║   ✓  Installation complete!                          ║${NC}"
+echo -e "  ${G}${BLD}╚══════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo "  Next steps:"
-[[ -z "$TS_KEY" ]] && echo "    1. sudo tailscale up $TAILSCALE_UP_ARGS"
-echo "    ${TS_KEY:+1}${TS_KEY:-2}. sudo reboot  ← activates USB gadget mode (dwc2) + log2ram"
-echo "    3. Connect via USB-C → ssh root@192.168.7.1"
-echo "    4. Edit /etc/default/travel-router to set NTFY_TOPIC + IPHONE_BT_MAC"
-echo "    5. RaspAP web UI: http://${AP_GATEWAY}  (admin / ${RASPAP_PASS_DISPLAY:-<rotated — see above>})"
+echo -e "  ${BLD}Next steps${NC}"
 echo ""
-echo "  Log saved to: $LOG"
+echo -e "  ${BLD}1.${NC}  Reboot the Pi:"
+echo    "        sudo reboot"
+echo ""
+echo -e "  ${BLD}2.${NC}  After reboot, connect your laptop:"
+echo    "        Plug the Pi's middle USB port into your laptop"
+echo    "        → USB Ethernet adapter appears automatically"
+echo    "        → Web UI:  http://192.168.7.1"
+echo    "        → SSH:     ssh root@192.168.7.1"
+echo ""
+echo -e "  ${BLD}3.${NC}  Connect your devices to WiFi:"
+echo    "        Network:   ${AP_SSID}"
+echo    "        Password:  (the one you just set)"
+echo ""
+if [[ -z "${TS_KEY:-}" ]]; then
+    echo -e "  ${Y}Tailscale not configured yet.${NC}"
+    echo    "        After reboot: sudo tailscale up"
+    echo ""
+fi
+echo -e "  ${BLD}Useful commands${NC}"
+echo -e "    sudo travel-status    — live status overview"
+echo -e "    sudo travel-tui       — interactive management dashboard"
+echo -e "    sudo update-router    — pull and apply latest update"
+echo ""
+echo -e "  ${C}Config:${NC}  /etc/default/travel-router"
+echo -e "  ${C}Log:${NC}     ${LOG}"
+echo -e "  ${C}Version:${NC} ${INSTALLED_VERSION}"
 echo ""
