@@ -36,9 +36,9 @@ Everything is opt-in via flags: DNS-over-TLS, AdGuard Home, VPN kill switch, Tor
 
 The fastest path is the pre-built SD card image.
 
-### One-liner (macOS / Linux)
+### Option A — Pre-built image (recommended, fastest)
 
-Insert your SD card, then run:
+Insert your SD card into your Mac or Linux machine, then run:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NicoMancinelli/pi-travel-router/main/scripts/flash.sh | bash
@@ -50,7 +50,33 @@ The script downloads the latest release, verifies the SHA256 checksum, prompts y
 
 ---
 
-### Manual flash (Raspberry Pi Imager)
+### Option B — Install on a fresh Pi OS (no laptop needed)
+
+If you already have a Raspberry Pi Zero 2 W running **Pi OS Lite Bookworm** (64-bit), SSH in and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NicoMancinelli/pi-travel-router/main/scripts/setup.sh | sudo bash
+```
+
+The script:
+1. Verifies you're on a Raspberry Pi running Bookworm
+2. Installs `git` if it isn't present
+3. Clones the repo to `/opt/pi-travel-router`
+4. Launches the interactive installer (prompts for SSID, password, country, and optional features)
+
+**Non-interactive / scripted mode:**
+
+```bash
+curl -fsSL .../scripts/setup.sh | sudo AP_PASS="mysecretpass" INSTALL_NONINTERACTIVE=1 bash
+```
+
+All `install.sh` env vars are passed through (see `install.sh` header for the full list).
+
+The Pi reboots at the end. After reboot, connect via USB gadget (step 4 below).
+
+---
+
+### Option C — Manual flash (Raspberry Pi Imager)
 
 **1. Download the image**
 
