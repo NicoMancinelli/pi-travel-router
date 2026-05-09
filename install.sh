@@ -31,7 +31,13 @@ validate_flag() {
 [[ $EUID -ne 0 ]] && die "Run as root: sudo bash install.sh"
 [[ -f "$REPO/scripts/wan-watchdog.sh" ]] || die "Run from repo root (scripts/ not found)"
 uname -m | grep -qE 'armv7l|aarch64' || warn "Expected armv7l/aarch64 — got $(uname -m)"
-grep -q bookworm /etc/os-release 2>/dev/null || warn "Expected Bookworm — continuing anyway"
+# Accept any Debian/Raspberry Pi OS release (bullseye, bookworm, trixie, …)
+_os_id="$(grep '^ID=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || true)"
+case "${_os_id}" in
+    debian|raspbian) ;;
+    *) warn "Unrecognised OS (${_os_id:-unknown}). Expected Raspberry Pi OS or Debian — continuing anyway." ;;
+esac
+unset _os_id
 
 echo ""
 echo "  Pi Zero 2 W Travel Router — Installer"

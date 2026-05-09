@@ -51,11 +51,19 @@ else
 fi
 
 # ── OS check ──────────────────────────────────────────────────────────────────
-if grep -q bookworm /etc/os-release 2>/dev/null; then
-    ok "OS: Raspberry Pi OS Bookworm"
-else
-    warn "Expected Bookworm — this is only tested on Pi OS Lite Bookworm (64-bit)"
-fi
+# Accept any Debian/Raspberry Pi OS release (bullseye, bookworm, trixie, …)
+OS_ID="$(grep '^ID=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || true)"
+OS_CODENAME="$(grep '^VERSION_CODENAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || true)"
+OS_PRETTY="$(grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || true)"
+
+case "${OS_ID}" in
+    debian|raspbian)
+        ok "OS: ${OS_PRETTY:-Debian/Raspberry Pi OS} (${OS_CODENAME:-unknown release})"
+        ;;
+    *)
+        warn "Unrecognised OS (${OS_PRETTY:-unknown}). Expected Raspberry Pi OS or Debian — continuing anyway."
+        ;;
+esac
 
 # ── Install git ───────────────────────────────────────────────────────────────
 section "Dependencies"
