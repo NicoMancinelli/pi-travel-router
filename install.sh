@@ -44,31 +44,194 @@ echo "  Pi Zero 2 W Travel Router — Installer"
 echo "  Log: $LOG"
 echo ""
 
+# ── Existing install detection ────────────────────────────────────────────────
+_VERSION_FILE="/etc/travel-router-version"
+_DEFAULTS_FILE="/etc/default/travel-router"
+_INSTALL_ACTION="fresh"   # fresh | upgrade | reconfigure | repair | uninstall
+
+# ── Uninstall function ────────────────────────────────────────────────────────
+_uninstall() {
+    section "Uninstalling pi-travel-router"
+    warn "This removes all services, scripts, and config."
+    warn "Installed packages (hostapd, dnsmasq, etc.) are left in place."
+    echo ""
+    read -rp "  Type 'yes' to confirm: " _uc
+    [[ "$_uc" == "yes" ]] || { echo "Aborted."; exit 0; }
+
+    info "Stopping and disabling services..."
+    for _svc in \
+        failover-watchdog.timer   failover-watchdog.service \
+        wan-watchdog.timer        wan-watchdog.service \
+        cpu-performance.service   cake-qdisc.service \
+        wlan-mac-random.service \
+        vnstat-metrics.timer      vnstat-metrics.service \
+        update-blocklists.timer   update-blocklists.service \
+        tailscale-watchdog.timer  tailscale-watchdog.service \
+        wireguard-watchdog.timer  wireguard-watchdog.service \
+        adguard-home.service \
+        ap-disable.timer  ap-disable.service \
+        ap-enable.timer   ap-enable.service \
+        daily-digest.timer        daily-digest.service \
+        update-router.timer       update-router.service \
+        tune-cake.timer           tune-cake.service \
+        ota-commit.timer          ota-commit.service \
+        travel-router-firewall.service; do
+        systemctl disable --now "$_svc" 2>/dev/null || true
+        rm -f "/etc/systemd/system/$_svc"
+    done
+    systemctl daemon-reload
+    ok "Systemd units removed"
+
+    info "Removing scripts from /usr/local/sbin..."
+    rm -f \
+        /usr/local/sbin/wan-watchdog \
+        /usr/local/sbin/failover-watchdog \
+        /usr/local/sbin/travel-router-firewall \
+        /usr/local/sbin/captive-check \
+        /usr/local/sbin/travel-status \
+        /usr/local/sbin/travel-tui \
+        /usr/local/sbin/travel-diagnostic \
+        /usr/local/sbin/update-router \
+        /usr/local/sbin/update-router.sh \
+        /usr/local/sbin/vnstat-metrics \
+        /usr/local/sbin/vnstat-push \
+        /usr/local/sbin/clone-mac \
+        /usr/local/sbin/start-tether \
+        /usr/local/sbin/stop-tether \
+        /usr/local/sbin/start-bt-tether \
+        /usr/local/sbin/stop-bt-tether \
+        /usr/local/sbin/apply-split-tunnel \
+        /usr/local/sbin/apply-cake \
+        /usr/local/sbin/tune-cake \
+        /usr/local/sbin/update-blocklists \
+        /usr/local/sbin/generate-bandwidth-report \
+        /usr/local/sbin/daily-digest \
+        /usr/local/sbin/notify-router \
+        /usr/local/sbin/ota-update \
+        /usr/local/sbin/ota-commit \
+        /usr/local/sbin/ota-rollback \
+        /usr/local/sbin/setup-2fa.sh
+    ok "Scripts removed"
+
+    info "Removing config, data, and udev rules..."
+    rm -f /etc/default/travel-router /etc/travel-router-version
+    rm -rf /usr/local/share/travel-router
+    rm -f /etc/udev/rules.d/90-ipheth.rules \
+          /etc/udev/rules.d/91-android-tether.rules \
+          /etc/udev/rules.d/99-apple-autosuspend.rules
+    rm -f /etc/update-motd.d/10-travel-router
+    udevadm control --reload-rules 2>/dev/null || true
+    ok "Config and udev rules removed"
+
+    echo ""
+    ok "pi-travel-router uninstalled."
+    info "Reboot recommended to restore default network settings."
+    info "To also remove packages: sudo apt-get purge hostapd dnsmasq tailscale log2ram"
+    echo ""
+    exit 0
+}
+
+# ── Detect previous install and offer menu ────────────────────────────────────
+if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
+    if [[ -f "$_VERSION_FILE" ]]; then
+        _INSTALLED_VER="$(cat "$_VERSION_FILE" 2>/dev/null || echo "unknown")"
+        _REPO_VER="$(cat "$REPO/VERSION" 2>/dev/null || echo "unknown")"
+        echo ""
+        echo -e "  ${BLD}╔═══════════════════════════════════════════════════════╗${NC}"
+        echo -e "  ${BLD}║   pi-travel-router is already installed               ║${NC}"
+        echo    "  $(printf "${BLD}║   Installed: %-10s   Available: %-10s      ║${NC}" "$_INSTALLED_VER" "$_REPO_VER")"
+        echo -e "  ${BLD}╚═══════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "  ${BLD}[1] Upgrade      ${NC}— update scripts, units, and packages (keep existing config)"
+        echo -e "  ${BLD}[2] Reconfigure  ${NC}— change SSID, features, Tailscale key, and other settings"
+        echo -e "  ${BLD}[3] Repair       ${NC}— re-run full install keeping all current settings"
+        echo -e "  ${BLD}[4] Uninstall    ${NC}— remove pi-travel-router from this system"
+        echo -e "  ${BLD}[5] Exit"
+        echo ""
+        read -rp "  Choice [1]: " _choice
+        case "${_choice:-1}" in
+            1) _INSTALL_ACTION="upgrade" ;;
+            2) _INSTALL_ACTION="reconfigure" ;;
+            3) _INSTALL_ACTION="repair" ;;
+            4) _uninstall ;;
+            5|q|Q) echo "Exiting."; exit 0 ;;
+            *) warn "Invalid choice — defaulting to Upgrade"; _INSTALL_ACTION="upgrade" ;;
+        esac
+        echo ""
+    elif [[ -f "$_DEFAULTS_FILE" ]]; then
+        echo ""
+        echo -e "  ${Y}╔═══════════════════════════════════════════════════════╗${NC}"
+        echo -e "  ${Y}║   Partial install detected — previous run did not     ║${NC}"
+        echo -e "  ${Y}║   finish. Config exists but no version stamp found.   ║${NC}"
+        echo -e "  ${Y}╚═══════════════════════════════════════════════════════╝${NC}"
+        echo ""
+        echo -e "  ${BLD}[1] Resume       ${NC}— finish the interrupted install (recommended)"
+        echo -e "  ${BLD}[2] Fresh start  ${NC}— wipe partial config and start from scratch"
+        echo -e "  ${BLD}[3] Exit"
+        echo ""
+        read -rp "  Choice [1]: " _choice
+        case "${_choice:-1}" in
+            1) _INSTALL_ACTION="repair" ;;
+            2) _INSTALL_ACTION="fresh"; rm -f "$_DEFAULTS_FILE" ;;
+            3|q|Q) echo "Exiting."; exit 0 ;;
+            *) warn "Invalid — defaulting to Resume"; _INSTALL_ACTION="repair" ;;
+        esac
+        echo ""
+    fi
+fi
+
+# ── Load existing config for upgrade / repair / reconfigure ───────────────────
+if [[ "$_INSTALL_ACTION" =~ ^(upgrade|repair|reconfigure)$ ]]; then
+    # shellcheck disable=SC1090,SC1091
+    source "$_DEFAULTS_FILE" 2>/dev/null || true
+    # AP WiFi settings live in hostapd.conf, not the defaults file
+    AP_SSID="${AP_SSID:-$(grep '^ssid=' /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo 'TravelRouter')}"
+    AP_PASS="${AP_PASS:-$(grep '^wpa_passphrase=' /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo '')}"
+    COUNTRY="${COUNTRY:-$(grep '^country_code=' /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo 'US')}"
+    if [[ "$_INSTALL_ACTION" != "reconfigure" ]]; then
+        # Upgrade / repair: skip all interactive prompts and re-use existing config
+        [[ -n "${AP_PASS:-}" ]] || \
+            die "Cannot read existing AP passphrase from /etc/hostapd/hostapd.conf. Use option 2 (Reconfigure) instead."
+        INSTALL_NONINTERACTIVE=1
+        export INSTALL_NONINTERACTIVE
+    fi
+fi
+
 # ── Config prompts ────────────────────────────────────────────────────────────
 section "Configuration"
 
 # ── Prompt helpers ─────────────────────────────────────────────────────────────
-# _yn  VAR "Question?"        "Tip (optional)"
-# _ask VAR "Prompt" "default" "Tip (optional)"  — skips if VAR already set
-# _secret VAR "Prompt"        "Tip (optional)"  — skips if VAR already set
+# _yn    VAR "Question?"          "Tip"    — in reconfigure mode shows current and accepts Enter to keep
+# _ask   VAR "Prompt" "default"   "Tip"    — in reconfigure mode prompts even when already set
+# _secret VAR "Prompt"            "Tip"    — in reconfigure mode shows "(Enter to keep)" hint
 
 _yn() {
     local v="${!1:-}"
-    [[ "$v" =~ ^[01]$ ]] && return
+    # Skip if already set — UNLESS we're reconfiguring (always re-prompt)
+    if [[ "$v" =~ ^[01]$ ]] && [[ "${_INSTALL_ACTION:-fresh}" != "reconfigure" ]]; then return; fi
     if [[ "${INSTALL_NONINTERACTIVE:-0}" == "1" ]]; then
-        printf -v "$1" '%s' "0"; return
+        [[ "$v" =~ ^[01]$ ]] || printf -v "$1" '%s' "0"; return
     fi
     [[ -n "${3:-}" ]] && echo -e "        ${C}ℹ${NC}  ${3}"
-    read -rp "  $2 [y/N] " _r
-    printf -v "$1" '%s' "$([[ "$_r" =~ ^[Yy]$ ]] && echo 1 || echo 0)"
+    local _yn_cur="${v:-0}"
+    local _yn_hint="[y/N]"
+    [[ "$_yn_cur" == "1" ]] && _yn_hint="[Y/n]"
+    read -rp "  $2 ${_yn_hint} " _r
+    if [[ -z "$_r" ]]; then
+        printf -v "$1" '%s' "$_yn_cur"          # Enter = keep current
+    else
+        printf -v "$1" '%s' "$([[ "$_r" =~ ^[Yy]$ ]] && echo 1 || echo 0)"
+    fi
 }
 
 _ask() {
     local cur="${!1:-}"
-    [[ -n "$cur" ]] && return
+    # Skip if already set — UNLESS we're reconfiguring
+    if [[ -n "$cur" ]] && [[ "${_INSTALL_ACTION:-fresh}" != "reconfigure" ]]; then return; fi
+    local default="${3:-$cur}"
     [[ -n "${4:-}" ]] && echo -e "        ${C}ℹ${NC}  ${4}"
-    if [[ -n "${3:-}" ]]; then
-        read -rp "  $2 [${3}]: " _r; printf -v "$1" '%s' "${_r:-${3}}"
+    if [[ -n "$default" ]]; then
+        read -rp "  $2 [${default}]: " _r; printf -v "$1" '%s' "${_r:-${default}}"
     else
         read -rp "  $2: " _r; printf -v "$1" '%s' "${_r:-}"
     fi
@@ -76,25 +239,38 @@ _ask() {
 
 _secret() {
     local cur="${!1:-}"
-    [[ -n "$cur" ]] && return
+    # Skip if already set — UNLESS we're reconfiguring
+    if [[ -n "$cur" ]] && [[ "${_INSTALL_ACTION:-fresh}" != "reconfigure" ]]; then return; fi
     [[ -n "${3:-}" ]] && echo -e "        ${C}ℹ${NC}  ${3}"
-    read -rsp "  $2: " _r; echo
+    if [[ -n "$cur" ]] && [[ "${_INSTALL_ACTION:-fresh}" == "reconfigure" ]]; then
+        read -rsp "  $2 (Enter to keep current): " _r; echo
+        [[ -z "$_r" ]] && return   # keep the existing value
+    else
+        read -rsp "  $2: " _r; echo
+    fi
     printf -v "$1" '%s' "${_r:-}"
 }
 
 if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
 
-    # ── Setup mode ──────────────────────────────────────────────────────────────
-    echo ""
-    echo -e "  ${BLD}Choose a setup mode:${NC}\n"
-    echo -e "  ${BLD}[1] Quick   ${NC}— just SSID + password; security features on by default    (2 min)"
-    echo -e "  ${BLD}[2] Standard${NC}— adds Tailscale, SSH key, and security choices             (5 min)"
-    echo -e "  ${BLD}[3] Expert  ${NC}— all options, grouped and explained                       (10 min)"
-    echo ""
-    read -rp "  Mode [1]: " _MODE
-    _MODE="${_MODE:-1}"
-    [[ "$_MODE" =~ ^[123]$ ]] || { warn "Invalid — defaulting to Quick"; _MODE="1"; }
-    echo ""
+    # ── Setup mode selector ─────────────────────────────────────────────────────
+    if [[ "${_INSTALL_ACTION:-fresh}" == "reconfigure" ]]; then
+        # Reconfigure: always show all groups so nothing is hidden
+        _MODE="3"
+        info "Showing all options. Press Enter on any prompt to keep the current value."
+        echo ""
+    else
+        echo ""
+        echo -e "  ${BLD}Choose a setup mode:${NC}\n"
+        echo -e "  ${BLD}[1] Quick   ${NC}— just SSID + password; security features on by default    (2 min)"
+        echo -e "  ${BLD}[2] Standard${NC}— adds Tailscale, SSH key, and security choices             (5 min)"
+        echo -e "  ${BLD}[3] Expert  ${NC}— all options, grouped and explained                       (10 min)"
+        echo ""
+        read -rp "  Mode [1]: " _MODE
+        _MODE="${_MODE:-1}"
+        [[ "$_MODE" =~ ^[123]$ ]] || { warn "Invalid — defaulting to Quick"; _MODE="1"; }
+        echo ""
+    fi
 
     # ── Group 1: WiFi (all modes) ───────────────────────────────────────────────
     echo -e "  ${BLD}── WiFi ──────────────────────────────────────${NC}"
@@ -105,7 +281,7 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
     fi
     _secret AP_PASS "AP passphrase (8–63 chars, no # character)" \
         "Secures all devices on your network. Must be 8–63 printable ASCII characters."
-    if printf '%s' "$AP_PASS" | LC_ALL=C grep -qP '[\x00-\x1f\x7f-\xff]'; then
+    if printf '%s' "${AP_PASS:-}" | LC_ALL=C grep -qP '[\x00-\x1f\x7f-\xff]'; then
         die "AP passphrase must use printable ASCII only (no control characters)"
     fi
     _ask COUNTRY "WiFi country code" "US" \
@@ -118,7 +294,7 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
         ENABLE_ADGUARD="${ENABLE_ADGUARD:-1}"
         ENABLE_DOT="${ENABLE_DOT:-1}"
         ENABLE_BLOCKLISTS="${ENABLE_BLOCKLISTS:-1}"
-        ENABLE_VPN_KILLSWITCH="${ENABLE_VPN_KILLSWITCH:-0}"   # off until VPN is configured
+        ENABLE_VPN_KILLSWITCH="${ENABLE_VPN_KILLSWITCH:-0}"
         echo -e "  ${G}✓${NC} Security defaults applied (AdGuard ON, DoT ON, auto-updates ON, blocklists ON)"
         echo -e "  ${C}→${NC} Re-run with mode 2 or 3 to customise Tailscale, SSH keys, and advanced features."
         echo ""
@@ -155,11 +331,11 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
     if [[ "$_MODE" == "3" ]]; then
         # ── Group 4: Privacy ─────────────────────────────────────────────────────
         echo -e "  ${BLD}── Privacy ───────────────────────────────────${NC}"
-        _yn ENABLE_TOR_TRANSPARENT  "Tor transparent proxy?"              \
+        _yn ENABLE_TOR_TRANSPARENT    "Tor transparent proxy?"           \
             "Routes all AP traffic through Tor. Adds a second 'TorAP' SSID. Slow but anonymous."
-        _yn ENABLE_HTTP_UA_REWRITE  "HTTP User-Agent normalisation?"      \
+        _yn ENABLE_HTTP_UA_REWRITE    "HTTP User-Agent normalisation?"   \
             "Rewrites browser fingerprints via privoxy. Reduces cross-site tracking."
-        _yn ENABLE_OPEN_WIFI_FALLBACK "Auto-join open WiFi networks?"     \
+        _yn ENABLE_OPEN_WIFI_FALLBACK "Auto-join open WiFi networks?"    \
             "Connects to any open AP when no known network is in range. Convenient but risky."
         echo ""
 
