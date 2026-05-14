@@ -90,35 +90,39 @@ _uninstall() {
     systemctl daemon-reload
     ok "Systemd units removed"
 
-    info "Removing scripts from /usr/local/sbin..."
+    info "Removing scripts from /usr/local/bin and /usr/local/sbin..."
     rm -f \
-        /usr/local/sbin/wan-watchdog \
-        /usr/local/sbin/failover-watchdog \
-        /usr/local/sbin/travel-router-firewall \
-        /usr/local/sbin/captive-check \
-        /usr/local/sbin/travel-status \
+        /usr/local/bin/wan-watchdog.sh \
+        /usr/local/bin/failover-watchdog.sh \
+        /usr/local/bin/travel-router-firewall.sh \
+        /usr/local/bin/captive-check.sh \
+        /usr/local/bin/travel-status.sh \
+        /usr/local/bin/travel-status \
+        /usr/local/bin/travel-diagnostic \
+        /usr/local/bin/update-router.sh \
+        /usr/local/bin/update-router \
+        /usr/local/bin/vnstat-metrics.sh \
+        /usr/local/bin/vnstat-push.sh \
+        /usr/local/bin/clone-mac.sh \
+        /usr/local/bin/start-tether.sh \
+        /usr/local/bin/stop-tether.sh \
+        /usr/local/bin/start-bt-tether.sh \
+        /usr/local/bin/stop-bt-tether.sh \
+        /usr/local/bin/apply-split-tunnel.sh \
+        /usr/local/bin/apply-cake.sh \
+        /usr/local/bin/tune-cake.sh \
+        /usr/local/bin/update-blocklists.sh \
+        /usr/local/bin/generate-bandwidth-report.sh \
+        /usr/local/bin/daily-digest.sh \
+        /usr/local/bin/notify-router.sh \
+        /usr/local/bin/setup-2fa.sh \
+        /usr/local/bin/install-adguard.sh \
         /usr/local/sbin/travel-tui \
-        /usr/local/sbin/travel-diagnostic \
-        /usr/local/sbin/update-router \
-        /usr/local/sbin/update-router.sh \
-        /usr/local/sbin/vnstat-metrics \
-        /usr/local/sbin/vnstat-push \
-        /usr/local/sbin/clone-mac \
-        /usr/local/sbin/start-tether \
-        /usr/local/sbin/stop-tether \
-        /usr/local/sbin/start-bt-tether \
-        /usr/local/sbin/stop-bt-tether \
-        /usr/local/sbin/apply-split-tunnel \
-        /usr/local/sbin/apply-cake \
-        /usr/local/sbin/tune-cake \
-        /usr/local/sbin/update-blocklists \
-        /usr/local/sbin/generate-bandwidth-report \
-        /usr/local/sbin/daily-digest \
-        /usr/local/sbin/notify-router \
+        /usr/local/sbin/travel-tui.py \
+        /usr/local/sbin/travel-tui-legacy \
         /usr/local/sbin/ota-update \
         /usr/local/sbin/ota-commit \
-        /usr/local/sbin/ota-rollback \
-        /usr/local/sbin/setup-2fa.sh
+        /usr/local/sbin/ota-rollback
     ok "Scripts removed"
 
     info "Removing config, data, and udev rules..."
@@ -921,6 +925,9 @@ for script in \
 done
 
 install_file scripts/travel-diagnostic.sh /usr/local/bin/travel-diagnostic 755
+ln -sfn update-router.sh /usr/local/bin/update-router
+ln -sfn travel-status.sh /usr/local/bin/travel-status
+ok "  command aliases: update-router, travel-status"
 
 # ── TUI: Python (preferred) + bash fallback ───────────────────────────────────
 # Install Python TUI

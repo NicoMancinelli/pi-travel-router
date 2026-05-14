@@ -54,7 +54,8 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 /etc/iptables/rules.v{4,6}      # Saved FORWARD/NAT firewall rules (iptables-persistent)
 /etc/nftables.conf.d/travel-router.nft  # nftables inet travel_mangle table (TTL/DSCP/hop-limit rules)
 /etc/tor/torrc                  # Tor transparent proxy config
-/usr/local/bin/                 # All router scripts
+/usr/local/bin/                 # Operational scripts and user command aliases
+/usr/local/sbin/                # Admin entrypoints: travel-tui and OTA tools
 /etc/systemd/system/            # All watchdog timers and services
 /etc/udev/rules.d/90-ipheth.rules
 /etc/udev/rules.d/99-apple-autosuspend.rules
@@ -110,7 +111,7 @@ install.sh          # Full installer for fresh Pi OS Bookworm
 README.md           # Architecture, features, usage
 IMPROVEMENTS.md     # Feature roadmap (deployed ✅ + roadmap items #1-50)
 GL-MT3000.md        # GL-MT3000 synergy guide (8 deployment scenarios)
-scripts/            # All /usr/local/bin/ scripts (run on the Pi)
+scripts/            # Runtime scripts installed to /usr/local/bin or /usr/local/sbin
 config/             # All config file templates
 systemd/            # All .service and .timer units
 tools/              # Helper scripts for external infrastructure (not the Pi itself)
@@ -123,16 +124,16 @@ build/              # pi-gen custom stage and config for the pre-built SD card i
 
 ## TUI Coverage Rule
 
-`scripts/travel-tui.sh` is the primary management interface. Every new feature **must** be reflected there:
+`scripts/travel-tui.py` is the primary management interface. Every new feature **must** be reflected there:
 
 | What you add | Where in TUI |
 |---|---|
-| New `ENABLE_*` flag in `config/travel-router-defaults` | Add to `flag_list` array in `show_features()` + add a `case` handler for service restart |
-| New config variable in `config/travel-router-defaults` | Add to `show_settings()` with a display line and a `case` handler calling `_cfg_edit` |
+| New `ENABLE_*` flag in `config/travel-router-defaults` | Add it to `FEATURE_FLAGS` and wire any immediate service action |
+| New config variable in `config/travel-router-defaults` | Add it to `SETTINGS_ITEMS` and the relevant settings screen behavior |
 | New user-triggerable script in `scripts/` | Add to `show_system()` (maintenance scripts) or `show_network()` (connectivity scripts) |
 | New systemd service worth monitoring | Add to `show_services()` service list |
 
-After adding to the TUI, run `bash -n scripts/travel-tui.sh` to verify syntax.
+After adding to the TUI, run `python3 -m py_compile scripts/travel-tui.py` to verify syntax.
 
 ## Important Notes
 

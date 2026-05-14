@@ -199,9 +199,9 @@ button.submit:hover{background:#2ea043}
 
 <div class="optgroup">
 <label for="rootpw" class="optional">New root password</label>
-<input id="rootpw" name="new_root_password" type="password" minlength="0" autocomplete="new-password" placeholder="Leave blank to keep default">
-<span class="hint">Image ships with <code>root</code>/<code>changeme</code>. Set a new password (8+ chars) to change it now, or leave blank.</span>
-<span class="hint" style="color:#ffa198">Strongly recommended — the default password is 'changeme'</span>
+<input id="rootpw" name="new_root_password" type="password" minlength="0" autocomplete="new-password" placeholder="Leave blank to keep current password">
+<span class="hint">The image writes a temporary console password to the boot partition. Set a new password (8+ chars) to change it now, or leave blank.</span>
+<span class="hint" style="color:#ffa198">Strongly recommended — replace the temporary password after first boot.</span>
 
 <label for="rootpw2" class="optional">Confirm new root password</label>
 <input id="rootpw2" name="new_root_password_confirm" type="password" autocomplete="new-password" placeholder="Re-enter to confirm">

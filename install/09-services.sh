@@ -16,6 +16,9 @@ run_services() {
     done
 
     install_file scripts/travel-diagnostic.sh /usr/local/bin/travel-diagnostic 755
+    ln -sfn update-router.sh /usr/local/bin/update-router
+    ln -sfn travel-status.sh /usr/local/bin/travel-status
+    ok "  command aliases: update-router, travel-status"
 
     # TUI: Python (preferred) + bash fallback
     cp "${REPO}/scripts/travel-tui.py" /usr/local/sbin/travel-tui.py
@@ -36,6 +39,11 @@ fi
 EOF
     chmod 0755 /usr/local/sbin/travel-tui
     ok "  travel-tui wrapper → /usr/local/sbin/travel-tui"
+
+    install -m 0755 "${REPO}/scripts/ota-update.sh" /usr/local/sbin/ota-update
+    install -m 0755 "${REPO}/scripts/ota-commit.sh" /usr/local/sbin/ota-commit
+    install -m 0755 "${REPO}/scripts/ota-rollback.sh" /usr/local/sbin/ota-rollback
+    ok "  ota-update / ota-commit / ota-rollback → /usr/local/sbin/"
 
     # Captive portal hooks directory
     mkdir -p /etc/travel-router/portals/examples

@@ -6,3 +6,4 @@ AGENTS.local.md
 .env.*.local
 __pycache__/
 *.pyc
+.claude/
