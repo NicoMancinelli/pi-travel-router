@@ -2,7 +2,8 @@
 # Auto-update travel router scripts from the latest GitHub release.
 # Runs weekly via update-router.timer. Safe to run manually at any time.
 #
-# What it updates:  scripts → /usr/local/bin/, systemd units, config templates
+# What it updates:  scripts → /usr/local/bin/, TUI → /usr/local/sbin/,
+#                   systemd units, config templates
 # What it never touches: /etc/default/travel-router, /etc/hostapd/hostapd.conf,
 #                         /etc/dnsmasq.d/, /etc/iptables/  (user-configured)
 
@@ -14,11 +15,49 @@ LOG="/var/log/update-router.log"
 LOGFILE="$LOG"
 readonly REPO VERSION_FILE LOG LOGFILE
 
-# shellcheck source=/dev/null
-source /etc/default/travel-router 2>/dev/null || true
+if [[ -f /etc/default/travel-router ]]; then
+    # shellcheck source=/dev/null
+    source /etc/default/travel-router
+fi
 
 log()    { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" | tee -a "$LOGFILE"; }
 notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || true; }
+
+# ── Install helpers ──────────────────────────────────────────────────────────
+
+write_tui_wrapper() {
+    local sbin_dir="${1:-/usr/local/sbin}"
+    local dest="${sbin_dir}/travel-tui"
+
+    mkdir -p "$sbin_dir"
+    cat > "${dest}.tmp" <<'EOF'
+#!/bin/bash
+if python3 -c "import textual" 2>/dev/null; then
+    exec python3 /usr/local/sbin/travel-tui.py "$@"
+else
+    exec /usr/local/sbin/travel-tui-legacy "$@"
+fi
+EOF
+    chmod 755 "${dest}.tmp"
+    if ! cmp -s "${dest}.tmp" "$dest"; then
+        mv "${dest}.tmp" "$dest"
+        return 0
+    fi
+    rm -f "${dest}.tmp"
+    return 1
+}
+
+ensure_command_alias() {
+    local dir="$1" alias_name="$2" target_name="$3"
+    local alias_path="${dir}/${alias_name}"
+
+    mkdir -p "$dir"
+    if [[ -L "$alias_path" && "$(readlink "$alias_path")" == "$target_name" ]]; then
+        return 1
+    fi
+    ln -sfn "$target_name" "$alias_path"
+    return 0
+}
 
 # ── Version helpers ──────────────────────────────────────────────────────────
 
@@ -79,6 +118,11 @@ download_release() {
 
 apply_update() {
     local src="$1"   # extracted repo root
+    local bin_dir="${UPDATE_ROUTER_BIN_DIR:-/usr/local/bin}"
+    local sbin_dir="${UPDATE_ROUTER_SBIN_DIR:-/usr/local/sbin}"
+    local portal_examples_dir="${UPDATE_ROUTER_PORTAL_EXAMPLES_DIR:-/etc/travel-router/portals/examples}"
+    local systemd_dir="${UPDATE_ROUTER_SYSTEMD_DIR:-/etc/systemd/system}"
+    local share_dir="${UPDATE_ROUTER_SHARE_DIR:-/usr/local/share/travel-router}"
 
     # T-H8: explicit allowlist — only install scripts whose names are known-good.
     # This prevents a compromised tarball from installing arbitrary executables.
@@ -86,9 +130,20 @@ apply_update() {
         failover-watchdog.sh wan-watchdog.sh captive-check.sh travel-router-firewall.sh
         apply-split-tunnel.sh start-tether.sh start-bt-tether.sh stop-bt-tether.sh
         stop-tether.sh clone-mac.sh ap-schedule.sh tailscale-watchdog.sh ups-monitor.sh notify-router.sh
-        travel-tui.sh travel-status.sh travel-diagnostic.sh generate-bandwidth-report.sh
+        travel-status.sh travel-diagnostic.sh generate-bandwidth-report.sh
         vnstat-push.sh vnstat-metrics.sh tune-cake.sh daily-digest.sh update-router.sh update-blocklists.sh
         setup-2fa.sh install-adguard.sh apply-cake.sh
+    )
+    TUI_SHELL_ALLOWLIST=(
+        travel-tui-legacy.sh
+    )
+    OTA_SCRIPT_ALLOWLIST=(
+        ota-update.sh
+        ota-commit.sh
+        ota-rollback.sh
+    )
+    PYTHON_SCRIPT_ALLOWLIST=(
+        travel-tui.py
     )
 
     # Scripts → /usr/local/bin/
@@ -109,9 +164,9 @@ apply_update() {
 
         # travel-diagnostic is installed without the .sh extension
         if [[ "$name" = "travel-diagnostic.sh" ]]; then
-            dest="/usr/local/bin/travel-diagnostic"
+            dest="${bin_dir}/travel-diagnostic"
         else
-            dest="/usr/local/bin/${name}"
+            dest="${bin_dir}/${name}"
         fi
         if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
             # C5: atomic write — copy to .tmp, chmod before mv so the file is
@@ -124,10 +179,88 @@ apply_update() {
     done
     shopt -u nullglob
 
+    shopt -s nullglob
+    for script in "${src}"/scripts/*.sh; do
+        name=$(basename "$script")
+
+        local _allowed=0
+        for _a in "${TUI_SHELL_ALLOWLIST[@]}"; do
+            [[ "$_a" = "$name" ]] && { _allowed=1; break; }
+        done
+        if [[ "$_allowed" -eq 0 ]]; then
+            continue
+        fi
+
+        dest="${sbin_dir}/travel-tui-legacy"
+        if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
+            cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
+            log "  updated TUI fallback: $name"
+            changed=1
+        fi
+    done
+    shopt -u nullglob
+
+    shopt -s nullglob
+    for script in "${src}"/scripts/*.py; do
+        name=$(basename "$script")
+
+        local _allowed=0
+        for _a in "${PYTHON_SCRIPT_ALLOWLIST[@]}"; do
+            [[ "$_a" = "$name" ]] && { _allowed=1; break; }
+        done
+        if [[ "$_allowed" -eq 0 ]]; then
+            log "  SKIP (not in allowlist): $name"
+            continue
+        fi
+
+        dest="${sbin_dir}/${name}"
+        if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
+            cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
+            log "  updated TUI script: $name"
+            changed=1
+        fi
+    done
+    shopt -u nullglob
+
+    if write_tui_wrapper "$sbin_dir"; then
+        log "  updated TUI wrapper"
+        changed=1
+    fi
+
+    shopt -s nullglob
+    for script in "${src}"/scripts/*.sh; do
+        name=$(basename "$script")
+
+        local _allowed=0
+        for _a in "${OTA_SCRIPT_ALLOWLIST[@]}"; do
+            [[ "$_a" = "$name" ]] && { _allowed=1; break; }
+        done
+        if [[ "$_allowed" -eq 0 ]]; then
+            continue
+        fi
+
+        dest="${sbin_dir}/${name%.sh}"
+        if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
+            cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
+            log "  updated OTA script: $name"
+            changed=1
+        fi
+    done
+    shopt -u nullglob
+
+    if ensure_command_alias "$bin_dir" "update-router" "update-router.sh"; then
+        log "  updated command alias: update-router"
+        changed=1
+    fi
+    if ensure_command_alias "$bin_dir" "travel-status" "travel-status.sh"; then
+        log "  updated command alias: travel-status"
+        changed=1
+    fi
+
     # H7: portal example scripts → /etc/travel-router/portals/examples/
     PORTAL_ALLOWLIST=(example-accept-terms.sh example-credentials.sh)
     if [ -d "${src}/scripts/portals" ]; then
-        mkdir -p /etc/travel-router/portals/examples
+        mkdir -p "$portal_examples_dir"
         shopt -s nullglob
         for portal in "${src}"/scripts/portals/*.sh; do
             [ -f "$portal" ] || continue
@@ -141,7 +274,7 @@ apply_update() {
                 log "  SKIP portal (not in allowlist): $pname"
                 continue
             fi
-            pdest="/etc/travel-router/portals/examples/${pname}"
+            pdest="${portal_examples_dir}/${pname}"
             if ! diff -q "$portal" "$pdest" >/dev/null 2>&1; then
                 cp "$portal" "${pdest}.tmp" && chmod 755 "${pdest}.tmp" && mv "${pdest}.tmp" "$pdest"
                 log "  updated portal example: $pname"
@@ -156,7 +289,7 @@ apply_update() {
     shopt -s nullglob
     for unit in "${src}"/systemd/*.service "${src}"/systemd/*.timer; do
         name=$(basename "$unit")
-        dest="/etc/systemd/system/${name}"
+        dest="${systemd_dir}/${name}"
         if ! diff -q "$unit" "$dest" >/dev/null 2>&1; then
             cp "$unit" "${dest}.tmp" && mv "${dest}.tmp" "$dest"
             log "  updated unit: $name"
@@ -182,13 +315,13 @@ apply_update() {
     fi
 
     # install.sh (for reference; never auto-executed)
-    if ! diff -q "${src}/install.sh" /usr/local/share/travel-router/install.sh >/dev/null 2>&1; then
-        mkdir -p /usr/local/share/travel-router
-        cp "${src}/install.sh" /usr/local/share/travel-router/install.sh.tmp \
-            && chmod 755 /usr/local/share/travel-router/install.sh.tmp \
-            && mv /usr/local/share/travel-router/install.sh.tmp \
-                  /usr/local/share/travel-router/install.sh
-        log "  updated install.sh (at /usr/local/share/travel-router/install.sh — not auto-run)"
+    if ! diff -q "${src}/install.sh" "${share_dir}/install.sh" >/dev/null 2>&1; then
+        mkdir -p "$share_dir"
+        cp "${src}/install.sh" "${share_dir}/install.sh.tmp" \
+            && chmod 755 "${share_dir}/install.sh.tmp" \
+            && mv "${share_dir}/install.sh.tmp" \
+                  "${share_dir}/install.sh"
+        log "  updated install.sh (at ${share_dir}/install.sh — not auto-run)"
         changed=1
     fi
 
@@ -197,42 +330,48 @@ apply_update() {
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
-log "=== update-router.sh start ==="
+main() {
+    log "=== update-router.sh start ==="
 
-current=$(current_version)
-log "Current version: $current"
+    current=$(current_version)
+    log "Current version: $current"
 
-latest=$(latest_version | tr -cd 'A-Za-z0-9._-' | head -c 40)
-if [ -z "$latest" ]; then
-    log "Could not determine latest version (no network or API error) — skipping"
-    exit 0
-fi
-log "Latest version:  $latest"
+    latest=$(latest_version | tr -cd 'A-Za-z0-9._-' | head -c 40)
+    if [ -z "$latest" ]; then
+        log "Could not determine latest version (no network or API error) — skipping"
+        exit 0
+    fi
+    log "Latest version:  $latest"
 
-if [ "$current" = "$latest" ]; then
-    log "Already up to date"
-    exit 0
-fi
+    if [ "$current" = "$latest" ]; then
+        log "Already up to date"
+        exit 0
+    fi
 
-log "Update available: $current → $latest"
+    log "Update available: $current → $latest"
 
-tmpdir=$(mktemp -d)
-# shellcheck disable=SC2064
-trap "rm -rf '$tmpdir'" EXIT INT TERM
+    tmpdir=$(mktemp -d)
+    # shellcheck disable=SC2064
+    trap "rm -rf '$tmpdir'" EXIT INT TERM
 
-if ! download_release "$latest" "$tmpdir"; then
-    log "Update aborted: download failed"
-    notify "Router update failed (download error) — still on $current" high
-    exit 1
-fi
+    if ! download_release "$latest" "$tmpdir"; then
+        log "Update aborted: download failed"
+        notify "Router update failed (download error) — still on $current" high
+        exit 1
+    fi
 
-changed=0
-apply_update "$tmpdir"
-if [[ "$changed" = "1" ]]; then
-    printf '%s\n' "$latest" > "${VERSION_FILE}.tmp" && mv "${VERSION_FILE}.tmp" "$VERSION_FILE"
-    log "Update complete: $current → $latest"
-    notify "Router updated: $current → $latest" low
-else
-    log "No files changed (already at $latest content)"
-    printf '%s\n' "$latest" > "${VERSION_FILE}.tmp" && mv "${VERSION_FILE}.tmp" "$VERSION_FILE"
+    changed=0
+    apply_update "$tmpdir"
+    if [[ "$changed" = "1" ]]; then
+        printf '%s\n' "$latest" > "${VERSION_FILE}.tmp" && mv "${VERSION_FILE}.tmp" "$VERSION_FILE"
+        log "Update complete: $current → $latest"
+        notify "Router updated: $current → $latest" low
+    else
+        log "No files changed (already at $latest content)"
+        printf '%s\n' "$latest" > "${VERSION_FILE}.tmp" && mv "${VERSION_FILE}.tmp" "$VERSION_FILE"
+    fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
 fi
