@@ -6,11 +6,13 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import time
+import urllib.parse
 from functools import wraps
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, Response, jsonify, request
 
 app = Flask(__name__)
 
@@ -21,6 +23,9 @@ DEFAULTS_FILE = "/etc/default/travel-router"
 COMBINED_LOG = "/var/log/travel-router/combined.log"
 UPS_STATUS_FILE = "/var/lib/travel-router/ups-status"
 WG_CONF = "/etc/wireguard/wg0.conf"
+ACTIVE_PROFILE_FILE = "/var/lib/travel-router/active-profile"
+APPLY_PROFILE_SCRIPT = "/usr/local/sbin/apply-privacy-profile.sh"
+VALID_PROFILES = {"vpn-only", "adblock-only", "tor", "direct"}
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -185,6 +190,87 @@ def _ap_clients():
     return clients
 
 
+def _wg_handshake_ago(seconds_ago):
+    """Convert seconds-since-handshake to human-readable string."""
+    if seconds_ago is None:
+        return "never"
+    s = int(seconds_ago)
+    if s < 5:
+        return "just now"
+    if s < 60:
+        return f"{s} seconds ago"
+    if s < 3600:
+        return f"{s // 60} minutes ago"
+    if s < 86400:
+        return f"{s // 3600} hours ago"
+    return f"{s // 86400} days ago"
+
+
+def _parse_wg_peers(wg_out):
+    """Parse `wg show wg0` output into a list of peer dicts with extended info."""
+    peers = []
+    current = {}
+    now = int(time.time())
+
+    for line in wg_out.splitlines():
+        line = line.strip()
+        if line.startswith("peer:"):
+            if current.get("public_key"):
+                peers.append(current)
+            current = {
+                "public_key": line.split(":", 1)[1].strip(),
+                "endpoint": None,
+                "allowed_ips": None,
+                "last_handshake_ago": "never",
+                "rx_bytes": None,
+                "tx_bytes": None,
+            }
+        elif line.startswith("endpoint:") and current:
+            current["endpoint"] = line.split(":", 1)[1].strip()
+        elif line.startswith("allowed ips:") and current:
+            current["allowed_ips"] = line.split(":", 1)[1].strip()
+        elif line.startswith("latest handshake:") and current:
+            hs_str = line.split(":", 1)[1].strip()
+            # wg show formats as e.g. "1 minute, 23 seconds ago" or a Unix timestamp
+            # wg show wg0 dump gives seconds; wg show gives human text
+            # Try to parse seconds from patterns like "X seconds ago", "X minutes ago", etc.
+            total_secs = None
+            m = re.match(
+                r"(?:(\d+)\s+days?,\s*)?(?:(\d+)\s+hours?,\s*)?(?:(\d+)\s+minutes?,\s*)?(?:(\d+)\s+seconds?)?",
+                hs_str,
+            )
+            if m and any(m.groups()):
+                d = int(m.group(1) or 0)
+                h = int(m.group(2) or 0)
+                mn = int(m.group(3) or 0)
+                s = int(m.group(4) or 0)
+                total_secs = d * 86400 + h * 3600 + mn * 60 + s
+            elif re.match(r"^\d+$", hs_str):
+                # raw unix timestamp from wg show dump
+                total_secs = now - int(hs_str)
+            current["last_handshake_ago"] = _wg_handshake_ago(total_secs)
+        elif line.startswith("transfer:") and current:
+            # "transfer: 1.23 MiB received, 4.56 MiB sent"
+            m = re.search(r"([\d.]+)\s*(\w+)\s+received,\s*([\d.]+)\s*(\w+)\s+sent", line)
+            if m:
+                def _to_bytes(val, unit):
+                    val = float(val)
+                    unit = unit.lower()
+                    if unit in ("kib", "kb"):
+                        return int(val * 1024)
+                    if unit in ("mib", "mb"):
+                        return int(val * 1024 * 1024)
+                    if unit in ("gib", "gb"):
+                        return int(val * 1024 * 1024 * 1024)
+                    return int(val)
+                current["rx_bytes"] = _to_bytes(m.group(1), m.group(2))
+                current["tx_bytes"] = _to_bytes(m.group(3), m.group(4))
+
+    if current.get("public_key"):
+        peers.append(current)
+    return peers
+
+
 def _vpn_state():
     ts_out, ts_rc = _run("tailscale status --json 2>/dev/null", timeout=5)
     ts_state = "unknown"
@@ -201,10 +287,11 @@ def _vpn_state():
 
     wg_out, wg_rc = _run("wg show wg0 2>/dev/null", timeout=5)
     wg_state = "up" if wg_rc == 0 and wg_out.strip() else "down"
+    wg_peers = _parse_wg_peers(wg_out) if wg_rc == 0 else []
 
     return {
         "tailscale": {"state": ts_state, "ip": ts_ip},
-        "wireguard": {"state": wg_state},
+        "wireguard": {"state": wg_state, "peers": wg_peers},
     }
 
 
@@ -489,6 +576,244 @@ def api_wg_add_peer():
     return jsonify({"ok": True, "public_key": public_key})
 
 
+# ── WireGuard peer helpers ─────────────────────────────────────────────────────
+
+
+def _read_wg_conf():
+    """Read wg0.conf; return list of lines. Raises OSError on failure."""
+    return Path(WG_CONF).read_text().splitlines(keepends=True)
+
+
+def _find_peer_block(lines, pubkey):
+    """Return (start, end) line indices (inclusive) for the [Peer] block matching
+    pubkey, or (None, None) if not found.  end includes any trailing blank line."""
+    start = None
+    in_block = False
+    found = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "[Peer]":
+            if in_block and not found:
+                # previous peer block didn't match — reset
+                pass
+            in_block = True
+            start = i
+            found = False
+        elif stripped.startswith("[") and stripped.endswith("]") and stripped != "[Peer]":
+            if in_block and found:
+                # end of matching block (next section started)
+                end = i - 1
+                # include trailing blank line before next section
+                while end > start and not lines[end].strip():
+                    end -= 1
+                return start, end
+            in_block = False
+            found = False
+            start = None
+        elif in_block:
+            m = re.match(r"^PublicKey\s*=\s*(.+)$", stripped)
+            if m and m.group(1).strip() == pubkey:
+                found = True
+
+    # EOF: flush last block
+    if in_block and found and start is not None:
+        end = len(lines) - 1
+        while end > start and not lines[end].strip():
+            end -= 1
+        return start, end
+
+    return None, None
+
+
+def _remove_peer_from_conf(pubkey):
+    """Remove the [Peer] block for pubkey from wg0.conf atomically.
+    Returns (True, None) on success, (False, error_str) on failure."""
+    try:
+        lines = _read_wg_conf()
+    except OSError as exc:
+        return False, f"Cannot read {WG_CONF}: {exc}"
+
+    start, end = _find_peer_block(lines, pubkey)
+    if start is None:
+        return False, f"Peer not found in {WG_CONF}"
+
+    # Remove the block (including one following blank line if present)
+    remove_end = end
+    if remove_end + 1 < len(lines) and not lines[remove_end + 1].strip():
+        remove_end += 1
+
+    new_lines = lines[:start] + lines[remove_end + 1:]
+
+    try:
+        conf_dir = str(Path(WG_CONF).parent)
+        fd, tmp = tempfile.mkstemp(dir=conf_dir, prefix="wg0.conf.")
+        try:
+            with os.fdopen(fd, "w") as fh:
+                fh.writelines(new_lines)
+            os.chmod(tmp, 0o600)
+            os.replace(tmp, WG_CONF)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    except OSError as exc:
+        return False, f"Cannot write {WG_CONF}: {exc}"
+
+    return True, None
+
+
+@app.route("/api/vpn/wireguard/peer/<path:pubkey_encoded>", methods=["DELETE"])
+@require_auth_always
+def api_wg_delete_peer(pubkey_encoded):
+    pubkey = urllib.parse.unquote(pubkey_encoded).strip()
+
+    if not re.match(r"^[A-Za-z0-9+/]{43}=$", pubkey):
+        return jsonify({"error": "Invalid public_key format"}), 400
+
+    ok, err = _remove_peer_from_conf(pubkey)
+    if not ok:
+        status = 404 if "not found" in (err or "").lower() else 503
+        return jsonify({"error": err}), status
+
+    # Remove live if wg0 is up
+    try:
+        result = subprocess.run(
+            ["ip", "link", "show", "wg0"], capture_output=True, timeout=3
+        )
+        if result.returncode == 0:
+            subprocess.run(
+                ["wg", "set", "wg0", "peer", pubkey, "remove"],
+                capture_output=True,
+                timeout=5,
+            )
+    except Exception:
+        pass  # best-effort; conf is already updated
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/vpn/wireguard/peer/<path:pubkey_encoded>/qr")
+@require_auth
+def api_wg_peer_qr(pubkey_encoded):
+    pubkey = urllib.parse.unquote(pubkey_encoded).strip()
+
+    if not re.match(r"^[A-Za-z0-9+/]{43}=$", pubkey):
+        return jsonify({"error": "Invalid public_key format"}), 400
+
+    # Read server public key
+    server_pubkey = ""
+    try:
+        server_pubkey = Path("/etc/wireguard/public.key").read_text().strip()
+    except OSError:
+        pass
+    if not server_pubkey:
+        try:
+            privkey_raw = ""
+            for line in Path(WG_CONF).read_text().splitlines():
+                m = re.match(r"^\s*PrivateKey\s*=\s*(.+)$", line)
+                if m:
+                    privkey_raw = m.group(1).strip()
+                    break
+            if privkey_raw:
+                result = subprocess.run(
+                    ["wg", "pubkey"],
+                    input=privkey_raw,
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode == 0:
+                    server_pubkey = result.stdout.strip()
+        except Exception:
+            pass
+
+    if not server_pubkey:
+        return jsonify({"error": "Cannot determine server public key"}), 503
+
+    # Read WG_ENDPOINT from /etc/default/travel-router
+    endpoint = ""
+    try:
+        for line in Path(DEFAULTS_FILE).read_text().splitlines():
+            m = re.match(r"^WG_ENDPOINT\s*=\s*[\"']?([^\"'\s]+)[\"']?", line)
+            if m:
+                endpoint = m.group(1).strip()
+                break
+    except OSError:
+        pass
+
+    # Fall back to detecting server IP
+    if not endpoint:
+        try:
+            out, rc = _run("curl -sf --max-time 3 https://api.ipify.org", timeout=5)
+            if rc == 0 and out.strip():
+                endpoint = out.strip()
+        except Exception:
+            pass
+    if not endpoint:
+        endpoint = "YOUR_SERVER_IP"
+
+    # Determine listen port
+    listen_port = "51820"
+    try:
+        for line in Path(WG_CONF).read_text().splitlines():
+            m = re.match(r"^\s*ListenPort\s*=\s*(\d+)$", line)
+            if m:
+                listen_port = m.group(1)
+                break
+    except OSError:
+        pass
+
+    # Find peer's AllowedIPs from wg0.conf
+    peer_allowed_ips = ""
+    try:
+        lines = _read_wg_conf()
+        start, end = _find_peer_block(lines, pubkey)
+        if start is not None:
+            for line in lines[start:end + 1]:
+                m = re.match(r"^\s*AllowedIPs\s*=\s*(.+)$", line.strip())
+                if m:
+                    peer_allowed_ips = m.group(1).strip()
+                    break
+    except OSError:
+        pass
+
+    if not peer_allowed_ips:
+        peer_allowed_ips = "10.0.0.X/32"  # placeholder if not found
+
+    client_conf = (
+        "[Interface]\n"
+        "PrivateKey = REPLACE_WITH_CLIENT_PRIVATE_KEY\n"
+        f"Address = {peer_allowed_ips}\n"
+        "DNS = 1.1.1.1\n"
+        "\n"
+        "[Peer]\n"
+        f"PublicKey = {server_pubkey}\n"
+        f"Endpoint = {endpoint}:{listen_port}\n"
+        "AllowedIPs = 0.0.0.0/0\n"
+        "PersistentKeepalive = 25\n"
+    )
+
+    try:
+        result = subprocess.run(
+            ["qrencode", "-t", "PNG", "-o", "-"],
+            input=client_conf,
+            capture_output=True,
+            text=False,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "qrencode not installed"}), 503
+    except Exception as exc:
+        return jsonify({"error": f"qrencode failed: {exc}"}), 503
+
+    if result.returncode != 0:
+        return jsonify({"error": "qrencode failed"}), 503
+
+    return Response(result.stdout, mimetype="image/png")
+
+
 # ── Serve index.html ──────────────────────────────────────────────────────────
 
 
@@ -499,13 +824,45 @@ def index():
     index_path = static_dir / "index.html"
     try:
         content = index_path.read_text()
-        from flask import Response
         return Response(content, mimetype="text/html")
     except OSError:
         return jsonify({"error": "index.html not found"}), 404
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
+
+@app.route("/api/privacy/profile", methods=["GET"])
+@require_auth
+def api_privacy_profile_get():
+    try:
+        active = Path(ACTIVE_PROFILE_FILE).read_text().strip()
+    except OSError:
+        active = "vpn-only"
+    return jsonify({"active": active, "profiles": sorted(VALID_PROFILES)})
+
+
+@app.route("/api/privacy/profile", methods=["POST"])
+@require_auth_always
+def api_privacy_profile_set():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+    profile = data.get("profile", "")
+    if profile not in VALID_PROFILES:
+        return jsonify({"error": f"Invalid profile: {profile}. Must be one of {sorted(VALID_PROFILES)}"}), 400
+    try:
+        result = subprocess.run(
+            [APPLY_PROFILE_SCRIPT, profile],
+            timeout=30,
+            capture_output=True,
+            text=True,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return jsonify({"error": str(exc)}), 503
+    if result.returncode != 0:
+        return jsonify({"error": result.stderr or result.stdout}), 503
+    return jsonify({"ok": True, "profile": profile})
+
 
 @app.route('/api/system/update-check', methods=['GET'])
 def update_check():

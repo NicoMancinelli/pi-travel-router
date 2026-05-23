@@ -108,6 +108,15 @@
   .config-val input { width: 100%; }
   @media (max-width: 600px) { .config-row { grid-template-columns: 1fr; } }
 
+  /* Privacy profile grid */
+  .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .profile-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px; background: var(--bg3); border: 2px solid var(--border); border-radius: 6px; cursor: pointer; transition: background 0.1s, border-color 0.1s; color: var(--text); font-family: var(--font); font-size: 14px; font-weight: 500; }
+  .profile-btn:hover { background: var(--border); border-color: var(--accent); }
+  .profile-btn.active { border-color: var(--green); background: rgba(63,185,80,.1); color: var(--green); }
+  .profile-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .profile-btn .profile-note { font-size: 10px; color: var(--text-dim); font-weight: 400; }
+  .profile-btn.active .profile-note { color: var(--green); opacity: 0.8; }
+
   /* Bandwidth mini chart */
   .bw-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; }
   .bw-label { width: 30px; color: var(--text-dim); font-family: var(--mono); text-align: right; }
@@ -139,6 +148,13 @@
   .wg-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   @media (max-width: 600px) { .wg-form { grid-template-columns: 1fr; } }
   .wg-form .full { grid-column: 1 / -1; }
+
+  /* QR modal */
+  #qr-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 500; align-items: center; justify-content: center; }
+  #qr-modal.open { display: flex; }
+  #qr-modal-inner { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 24px; max-width: 480px; width: 90%; text-align: center; }
+  #qr-modal-inner img { max-width: 100%; border-radius: 4px; margin: 12px 0; }
+  #qr-modal-note { font-size: 11px; color: var(--yellow); margin-bottom: 12px; font-family: var(--mono); word-break: break-all; }
 </style>
 </head>
 <body>
@@ -197,6 +213,28 @@
 
   <hr class="divider">
 
+  <!-- Privacy Profiles -->
+  <div class="card full-width">
+    <div class="card-title">&#x1F512; Privacy Profile <span id="privacy-active-badge" style="margin-left:6px;"></span></div>
+    <div class="profile-grid" id="privacy-grid">
+      <button class="profile-btn" id="profile-vpn-only" onclick="applyPrivacyProfile('vpn-only', this)">
+        &#x1F512; VPN Only
+      </button>
+      <button class="profile-btn" id="profile-adblock-only" onclick="applyPrivacyProfile('adblock-only', this)">
+        &#x1F6E1; Adblock Only
+      </button>
+      <button class="profile-btn" id="profile-tor" onclick="applyPrivacyProfile('tor', this)">
+        &#x1F9C5; Tor
+      </button>
+      <button class="profile-btn" id="profile-direct" onclick="applyPrivacyProfile('direct', this)">
+        &#x26A1; Direct
+        <span class="profile-note">(reverts in 10 min)</span>
+      </button>
+    </div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Logs -->
   <div class="card full-width">
     <div class="card-title">
@@ -250,7 +288,18 @@
 
   <hr class="divider">
 
-  <!-- WireGuard peer -->
+  <!-- WireGuard peers list -->
+  <div class="card full-width">
+    <div class="card-title">
+      WireGuard Peers
+      <button class="btn btn-sm" onclick="fetchWgPeers()" style="margin-left:8px;">&#x21BB; Refresh</button>
+    </div>
+    <div id="wg-peers-content"><span class="spinner"></span></div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- WireGuard add peer -->
   <div class="card full-width">
     <div class="card-title">Add WireGuard Peer</div>
     <div class="wg-form">
@@ -275,6 +324,17 @@
   </div>
 
 </div><!-- /#app -->
+
+<!-- QR code modal -->
+<div id="qr-modal" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title" onclick="closeQrModal(event)">
+  <div id="qr-modal-inner">
+    <div class="card-title" id="qr-modal-title" style="justify-content:center;margin-bottom:8px;">WireGuard Client QR Code</div>
+    <div id="qr-spinner" style="display:none"><span class="spinner"></span></div>
+    <img id="qr-img" src="" alt="WireGuard QR code" style="display:none">
+    <div id="qr-modal-note">Replace <strong>REPLACE_WITH_CLIENT_PRIVATE_KEY</strong> with your client's private key before scanning.</div>
+    <button class="btn" onclick="closeQrModal()">Close</button>
+  </div>
+</div>
 
 <div id="toast"></div>
 
@@ -637,6 +697,163 @@ async function addWgPeer() {
   }
 }
 
+// ── Privacy Profiles ──────────────────────────────────────────────────────────
+const PROFILE_IDS = ['vpn-only', 'adblock-only', 'tor', 'direct'];
+
+async function fetchPrivacyProfile() {
+  try {
+    const resp = await apiFetch('/api/privacy/profile');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    renderPrivacyProfile(d.active);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('Privacy profile error', e);
+  }
+}
+
+function renderPrivacyProfile(active) {
+  PROFILE_IDS.forEach(id => {
+    const btn = document.getElementById('profile-' + id);
+    if (!btn) return;
+    btn.classList.toggle('active', id === active);
+  });
+  const badgeEl = document.getElementById('privacy-active-badge');
+  if (badgeEl) {
+    badgeEl.innerHTML = active ? badge(escHtml(active), 'green') : '';
+  }
+}
+
+async function applyPrivacyProfile(profile, btn) {
+  if (btn && btn.classList.contains('active')) return;
+  // Disable all buttons while applying
+  PROFILE_IDS.forEach(id => {
+    const b = document.getElementById('profile-' + id);
+    if (b) b.disabled = true;
+  });
+  if (btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Applying&hellip;';
+    try {
+      const resp = await apiFetch('/api/privacy/profile', {
+        method: 'POST',
+        body: JSON.stringify({ profile }),
+      });
+      const d = await resp.json();
+      if (resp.ok) {
+        toast('Profile applied: ' + profile, 'ok');
+        await fetchPrivacyProfile();
+      } else {
+        toast('Failed: ' + (d.error || '?'), 'err');
+        btn.innerHTML = orig;
+      }
+    } catch (e) {
+      toast('Error: ' + e.message, 'err');
+      btn.innerHTML = orig;
+    } finally {
+      PROFILE_IDS.forEach(id => {
+        const b = document.getElementById('profile-' + id);
+        if (b) b.disabled = false;
+      });
+    }
+  }
+}
+
+// ── WireGuard peers ────────────────────────────────────────────────────────────
+async function fetchWgPeers() {
+  try {
+    const resp = await apiFetch('/api/status');
+    if (!resp.ok) { document.getElementById('wg-peers-content').innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const d = await resp.json();
+    const peers = (d.vpn && d.vpn.wireguard && d.vpn.wireguard.peers) || [];
+    renderWgPeers(peers);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') document.getElementById('wg-peers-content').innerHTML = '<span class="dim">Error loading peers</span>';
+  }
+}
+
+function renderWgPeers(peers) {
+  const el = document.getElementById('wg-peers-content');
+  if (!peers.length) {
+    el.innerHTML = '<table><thead><tr><th>Public Key</th><th>Allowed IPs</th><th>Last Handshake</th><th>RX</th><th>TX</th><th>Actions</th></tr></thead>' +
+      '<tbody><tr class="empty-row"><td colspan="6">No peers configured</td></tr></tbody></table>';
+    return;
+  }
+  let rows = peers.map(p => {
+    const key = escHtml(p.public_key || '');
+    const keyShort = escHtml((p.public_key || '').slice(0, 20) + '…');
+    const keyEnc = encodeURIComponent(p.public_key || '');
+    const ips = escHtml(p.allowed_ips || '—');
+    const hs = escHtml(p.last_handshake_ago || 'never');
+    const rx = fmtBytes(p.rx_bytes);
+    const tx = fmtBytes(p.tx_bytes);
+    return `<tr>
+      <td title="${key}" class="mono">${keyShort}</td>
+      <td>${ips}</td>
+      <td>${hs}</td>
+      <td>${rx}</td>
+      <td>${tx}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm" title="Show QR code" onclick="showWgQr('${keyEnc}')">&#x1F4F1; QR</button>
+        <button class="btn btn-sm btn-danger" title="Remove peer" onclick="removeWgPeer('${keyEnc}', '${keyShort}')">&#x1F5D1; Remove</button>
+      </td>
+    </tr>`;
+  }).join('');
+  el.innerHTML = `<table><thead><tr><th>Public Key</th><th>Allowed IPs</th><th>Last Handshake</th><th>RX</th><th>TX</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function removeWgPeer(keyEnc, keyLabel) {
+  if (!confirm(`Remove WireGuard peer ${keyLabel}?\nThis cannot be undone.`)) return;
+  try {
+    const resp = await apiFetch('/api/vpn/wireguard/peer/' + keyEnc, { method: 'DELETE' });
+    const d = await resp.json();
+    if (resp.ok) {
+      toast('Peer removed', 'ok');
+      fetchWgPeers();
+    } else {
+      toast('Remove failed: ' + (d.error || '?'), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+function showWgQr(keyEnc) {
+  const modal = document.getElementById('qr-modal');
+  const img = document.getElementById('qr-img');
+  const spinner = document.getElementById('qr-spinner');
+  img.style.display = 'none';
+  img.src = '';
+  spinner.style.display = '';
+  modal.classList.add('open');
+
+  const headers = {};
+  if (_token) headers['Authorization'] = 'Bearer ' + _token;
+  fetch('/api/vpn/wireguard/peer/' + keyEnc + '/qr', { headers })
+    .then(resp => {
+      if (!resp.ok) return resp.json().then(d => { throw new Error(d.error || 'QR failed'); });
+      return resp.blob();
+    })
+    .then(blob => {
+      img.src = URL.createObjectURL(blob);
+      img.style.display = '';
+      spinner.style.display = 'none';
+    })
+    .catch(e => {
+      spinner.style.display = 'none';
+      toast('QR error: ' + e.message, 'err');
+      modal.classList.remove('open');
+    });
+}
+
+function closeQrModal(evt) {
+  if (evt && evt.target !== document.getElementById('qr-modal')) return;
+  document.getElementById('qr-modal').classList.remove('open');
+  const img = document.getElementById('qr-img');
+  if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+  img.src = '';
+  img.style.display = 'none';
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -651,6 +868,8 @@ async function refreshAll() {
   fetchBandwidth();
   fetchLogs();
   fetchConfig();
+  fetchPrivacyProfile();
+  fetchWgPeers();
 }
 
 async function init() {

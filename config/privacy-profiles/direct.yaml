@@ -1,0 +1,9 @@
+name: Direct
+description: No VPN, no adblock. Maximum speed. Auto-reverts after 10 minutes.
+vpn: false
+adblock: false
+tor: false
+kill_switch: false
+revert_after: 600
+firewall_extra: []
+dns: system
