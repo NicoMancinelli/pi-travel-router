@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-05-23
+
+### Added
+
+- **`scripts/setup.sh`** — Pi one-liner bootstrap for fresh Raspberry Pi OS installs: `curl -fsSL .../setup.sh | sudo bash`. Detects architecture (aarch64/armv7l), reads `/proc/device-tree/model`, accepts any Debian/Raspberry Pi OS release by `ID=` rather than codename. Installs git, clones or updates `/opt/pi-travel-router`, then hands off to `install.sh`.
+- **`scripts/flash.sh`** — one-liner SD card flash script: downloads latest GitHub release image, SHA256-verifies it, unmounts the target disk, writes with `dd` (using fast `/dev/rdiskN` on macOS), and ejects.
+- **Tiered install TUI** (`install.sh`): three setup modes — **Quick** (WiFi only, security defaults on, country auto-detected from locale), **Standard** (adds remote access + security group), **Expert** (all 6 configuration groups). Passphrase confirm loop, SSID/country retry loops, locale-based country auto-detection (`LANG=en_GB.UTF-8 → GB`).
+- **Existing-install detection** (`install.sh`): detects fully-installed (`/etc/travel-router-version`) and partially-installed (`/etc/default/travel-router`) states. Fully-installed menu: Upgrade / Reconfigure / Repair / Uninstall / Exit. Partial menu: Resume / Fresh start / Exit. Reconfigure re-prompts all vars with current values as defaults.
+- **Pre-install summary card** (`install.sh`): box-drawn feature summary with explicit confirm before packages are installed.
+- **USB gadget mode troubleshooting table** (README): per-OS instructions and common failure modes for the USB-ethernet gadget.
+
+### Fixed
+
+- `scripts/setup.sh` + `install.sh`: stdin EOF when invoked via `curl | sudo bash` — setup.sh re-attaches stdin to `/dev/tty` before `exec`ing install.sh, enabling interactive prompts through a pipe.
+- `install.sh`: OS detection now uses the `ID=` field from `/etc/os-release` (accepts `debian` or `raspbian`) instead of matching codename — works on Bullseye, Bookworm, Trixie, and future releases without modification.
+- `install/01-packages.sh`: `libimobiledevice6` renamed to `libimobiledevice-1.0-6` on Debian 13 (Trixie); package name probed at runtime via `apt-cache show`.
+- `install/01-packages.sh`: log2ram APT repository pinned to `bookworm` suite for Trixie and later (upstream does not yet publish a Trixie suite).
+- `scripts/ota-update.sh`: corrected boot-slot path references; CI coverage for OTA module restored.
+
+### Improved
+
+- `install.sh`: numbered section counter (`── [1] ──`, `── [2] ──` …) gives clear progress feedback during install.
+- `install.sh`: post-install summary condensed to 3 numbered next-steps plus a useful-commands block.
+- README Quick Start restructured into three options: Option A (pre-built image flash), Option B (Pi one-liner), Option C (Raspberry Pi Imager).
+
 ## [2.1.0] - 2026-05-08
 
 ### Fixed — Critical Reliability
