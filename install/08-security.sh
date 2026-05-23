@@ -3,6 +3,20 @@
 # Defines run_security(). Source this file; do not execute directly.
 
 run_security() {
+    # ── fail2ban ─────────────────────────────────────────────────────────────────
+    section "fail2ban"
+
+    if ! command -v fail2ban-server > /dev/null 2>&1; then
+        run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y fail2ban
+    fi
+    install_file config/fail2ban/jail.d/travel-router.conf \
+        /etc/fail2ban/jail.d/travel-router.conf 644
+    install_file config/fail2ban/filter.d/travel-router-web.conf \
+        /etc/fail2ban/filter.d/travel-router-web.conf 644
+    run_or_dry systemctl enable fail2ban
+    run_or_dry systemctl restart fail2ban
+    ok "fail2ban configured (SSH + web dashboard jails active)"
+
     # ── SSH hardening ────────────────────────────────────────────────────────────
     section "SSH hardening"
 
@@ -76,6 +90,39 @@ run_security() {
     else
         ok "Auto security updates disabled (set ENABLE_AUTO_UPDATES=1 to activate)"
     fi
+
+    # ── WireGuard key rotation ───────────────────────────────────────────────────
+    section "WireGuard key rotation"
+
+    install_file scripts/wg-key-rotate.sh /usr/local/sbin/wg-key-rotate.sh 755
+    install_file systemd/wg-key-rotate.service /etc/systemd/system/wg-key-rotate.service 644
+    install_file systemd/wg-key-rotate.timer   /etc/systemd/system/wg-key-rotate.timer   644
+    run_or_dry systemctl daemon-reload
+    run_or_dry systemctl enable wg-key-rotate.timer
+    ok "WireGuard monthly key rotation timer enabled"
+
+    # ── AIDE file integrity ──────────────────────────────────────────────────────
+    section "AIDE file integrity"
+
+    if ! command -v aide > /dev/null 2>&1; then
+        run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y aide
+    fi
+    # Initialise AIDE database if it has never been run
+    if [[ ! -f /var/lib/aide/aide.db ]]; then
+        info "Initialising AIDE database (this may take a few minutes)"
+        run_or_dry aideinit -y -f 2>/dev/null || \
+            run_or_dry aide --init --config=/etc/aide/aide.conf 2>/dev/null || true
+        # The aideinit wrapper names the new db aide.db.new; rename to aide.db
+        if [[ -f /var/lib/aide/aide.db.new ]]; then
+            run_or_dry mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+        fi
+    fi
+    install_file scripts/aide-check.sh /usr/local/sbin/aide-check.sh 755
+    install_file systemd/aide-check.service /etc/systemd/system/aide-check.service 644
+    install_file systemd/aide-check.timer   /etc/systemd/system/aide-check.timer   644
+    run_or_dry systemctl daemon-reload
+    run_or_dry systemctl enable aide-check.timer
+    ok "AIDE daily integrity check timer enabled (runs at 03:00)"
 
     # ── Scheduled AP disable ─────────────────────────────────────────────────────
     section "Scheduled AP disable"

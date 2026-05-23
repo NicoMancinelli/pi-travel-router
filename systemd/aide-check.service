@@ -1,0 +1,7 @@
+[Unit]
+Description=AIDE file integrity check
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/aide-check.sh
