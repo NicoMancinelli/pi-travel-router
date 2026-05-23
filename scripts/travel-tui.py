@@ -1391,9 +1391,258 @@ class SystemScreen(Screen):
         )
 
 
+# ── WireGuard helpers ─────────────────────────────────────────────────────────
+WG_CONF_PATH = "/etc/wireguard/wg0.conf"
+
+
+def wg_parse_conf_peers() -> list[dict]:
+    """Parse /etc/wireguard/wg0.conf and return list of peer dicts with expiry."""
+    peers: list[dict] = []
+    current: dict = {}
+    try:
+        with open(WG_CONF_PATH) as fh:
+            lines = fh.readlines()
+    except OSError:
+        return peers
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "[Peer]":
+            if current.get("public_key"):
+                peers.append(current)
+            current = {"public_key": "", "allowed_ips": "", "endpoint": "", "expires": "none"}
+        elif stripped.startswith("[") and stripped.endswith("]"):
+            if current.get("public_key"):
+                peers.append(current)
+            current = {}
+        elif current is not None:
+            m = re.match(r"^PublicKey\s*=\s*(.+)$", stripped)
+            if m:
+                current["public_key"] = m.group(1).strip()
+            m = re.match(r"^AllowedIPs\s*=\s*(.+)$", stripped)
+            if m:
+                current["allowed_ips"] = m.group(1).strip()
+            m = re.match(r"^Endpoint\s*=\s*(.+)$", stripped)
+            if m:
+                current["endpoint"] = m.group(1).strip()
+            m = re.match(r"^#\s*expires:\s*(\d{4}-\d{2}-\d{2})", stripped)
+            if m:
+                current["expires"] = m.group(1)
+
+    if current.get("public_key"):
+        peers.append(current)
+    return peers
+
+
+def wg_remove_peer_from_conf(pubkey: str) -> str | None:
+    """Remove [Peer] block for pubkey from wg0.conf atomically.
+    Returns error string or None on success."""
+    try:
+        with open(WG_CONF_PATH) as fh:
+            lines = fh.readlines()
+    except OSError as exc:
+        return str(exc)
+
+    # Find block boundaries
+    start = None
+    found = False
+    in_block = False
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == "[Peer]":
+            if in_block and not found:
+                pass
+            in_block = True
+            start = i
+            found = False
+        elif stripped.startswith("[") and stripped.endswith("]") and stripped != "[Peer]":
+            if in_block and found and start is not None:
+                end = i - 1
+                while end > start and not lines[end].strip():
+                    end -= 1
+                # also swallow the trailing blank line
+                swallow = end + 1
+                if swallow < len(lines) and not lines[swallow].strip():
+                    swallow += 1
+                new_lines = lines[:start] + lines[swallow:]
+                break
+            in_block = False
+            found = False
+            start = None
+        elif in_block:
+            m = re.match(r"^PublicKey\s*=\s*(.+)$", stripped)
+            if m and m.group(1).strip() == pubkey:
+                found = True
+    else:
+        # EOF flush
+        if in_block and found and start is not None:
+            end = len(lines) - 1
+            while end > start and not lines[end].strip():
+                end -= 1
+            swallow = end + 1
+            if swallow < len(lines) and not lines[swallow].strip():
+                swallow += 1
+            new_lines = lines[:start] + lines[swallow:]
+        else:
+            return "Peer not found in wg0.conf"
+
+    import tempfile as _tf
+    tmp = WG_CONF_PATH + ".tmp"
+    try:
+        fd, tmp = _tf.mkstemp(dir=os.path.dirname(WG_CONF_PATH), prefix="wg0.conf.")
+        with os.fdopen(fd, "w") as fh:
+            fh.writelines(new_lines)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, WG_CONF_PATH)
+    except OSError as exc:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        return str(exc)
+    return None
+
+
+def wg_build_client_conf(pubkey: str, peers: list[dict]) -> str:
+    """Build a client wg config string for the given peer pubkey."""
+    # Server public key
+    server_pubkey = ""
+    try:
+        with open("/etc/wireguard/public.key") as fh:
+            server_pubkey = fh.read().strip()
+    except OSError:
+        pass
+
+    if not server_pubkey:
+        try:
+            privkey = ""
+            with open(WG_CONF_PATH) as fh:
+                for line in fh:
+                    m = re.match(r"^\s*PrivateKey\s*=\s*(.+)$", line.strip())
+                    if m:
+                        privkey = m.group(1).strip()
+                        break
+            if privkey:
+                rc2, out2, _ = run(["wg", "pubkey"], timeout=5)
+                # wg pubkey reads from stdin — use subprocess directly
+                import subprocess as _sp
+                r = _sp.run(["wg", "pubkey"], input=privkey, capture_output=True, text=True, timeout=5)
+                if r.returncode == 0:
+                    server_pubkey = r.stdout.strip()
+        except Exception:
+            pass
+
+    server_pubkey = server_pubkey or "REPLACE_WITH_SERVER_PUBLIC_KEY"
+
+    # Endpoint
+    endpoint = ""
+    try:
+        with open("/etc/default/travel-router") as fh:
+            for line in fh:
+                m = re.match(r"^WG_ENDPOINT\s*=\s*[\"']?([^\"'\s]+)[\"']?", line.strip())
+                if m:
+                    endpoint = m.group(1)
+                    break
+    except OSError:
+        pass
+
+    # Listen port
+    listen_port = "51820"
+    try:
+        with open(WG_CONF_PATH) as fh:
+            for line in fh:
+                m = re.match(r"^\s*ListenPort\s*=\s*(\d+)", line.strip())
+                if m:
+                    listen_port = m.group(1)
+                    break
+    except OSError:
+        pass
+
+    peer_allowed_ips = "10.0.0.X/32"
+    for p in peers:
+        if p.get("public_key") == pubkey and p.get("allowed_ips"):
+            peer_allowed_ips = p["allowed_ips"]
+            break
+
+    ep_str = f"{endpoint}:{listen_port}" if endpoint else f"YOUR_SERVER_IP:{listen_port}"
+    return (
+        "[Interface]\n"
+        "PrivateKey = REPLACE_WITH_CLIENT_PRIVATE_KEY\n"
+        f"Address = {peer_allowed_ips}\n"
+        "DNS = 1.1.1.1\n"
+        "\n"
+        "[Peer]\n"
+        f"PublicKey = {server_pubkey}\n"
+        f"Endpoint = {ep_str}\n"
+        "AllowedIPs = 0.0.0.0/0\n"
+        "PersistentKeepalive = 25\n"
+    )
+
+
+# ── WireGuard QR modal ────────────────────────────────────────────────────────
+class WgQrModal(ModalScreen):
+    """Display a WireGuard client config as a UTF-8 QR code."""
+
+    BINDINGS = [Binding("escape,q", "dismiss", "Close")]
+
+    def __init__(self, pubkey: str, peers: list[dict]) -> None:
+        super().__init__()
+        self._pubkey = pubkey
+        self._peers = peers
+
+    def compose(self) -> ComposeResult:
+        with Container(classes="modal-dialog"):
+            yield Label("WireGuard Client QR Code", classes="panel-title")
+            yield Static("Generating…", id="qr-output")
+            yield Static("")
+            yield Label(
+                "Replace [yellow]REPLACE_WITH_CLIENT_PRIVATE_KEY[/yellow] with your client's private key.",
+                classes="warning",
+            )
+            yield Static("")
+            yield Button("Close [Esc]", id="close-btn", variant="default")
+
+    def on_mount(self) -> None:
+        self.run_worker(self._generate_qr, thread=True)
+
+    def _generate_qr(self) -> None:
+        conf = wg_build_client_conf(self._pubkey, self._peers)
+        try:
+            import subprocess as _sp
+            r = _sp.run(
+                ["qrencode", "-t", "UTF8", "-"],
+                input=conf,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if r.returncode == 0:
+                output = r.stdout or "(empty output)"
+            else:
+                output = f"qrencode failed: {r.stderr[:120]}"
+        except FileNotFoundError:
+            output = "qrencode not installed — apt install qrencode"
+        except Exception as exc:
+            output = f"Error: {exc}"
+        self.call_from_thread(
+            lambda o=output: self.query_one("#qr-output", Static).update(o)
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss()
+
+
 # ── WireGuard screen ──────────────────────────────────────────────────────────
 class WireGuardScreen(Screen):
-    BINDINGS = [Binding("q,escape", "pop_screen", "Back"), Binding("r", "refresh", "Refresh")]
+    BINDINGS = [
+        Binding("escape", "pop_screen", "Back"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("d", "delete_peer", "Remove peer"),
+        Binding("q", "qr_peer", "QR code"),
+    ]
+
+    # Store parsed peers for keybinding actions
+    _peers: list[dict] = []
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -1414,7 +1663,7 @@ class WireGuardScreen(Screen):
             return
         try:
             t = self.query_one("#wg-table", DataTable)
-            t.add_columns("Peer", "Endpoint", "Allowed IPs", "Latest Handshake", "Tx/Rx")
+            t.add_columns("Peer (truncated)", "Allowed IPs", "Handshake", "Tx/Rx", "Expiry")
             self._load_wg()
         except Exception:
             pass
@@ -1434,30 +1683,57 @@ class WireGuardScreen(Screen):
             )
             return
 
-        # Parse wg show output
-        peers = []
+        # Parse wg show output for live stats
+        wg_peers: dict[str, dict] = {}
         current: dict = {}
         for line in out.splitlines():
             line = line.strip()
             if line.startswith("peer:"):
-                if current:
-                    peers.append(current)
-                current = {"peer": line.split(":", 1)[1].strip()}
-            elif line.startswith("endpoint:"):
-                current["endpoint"] = line.split(":", 1)[1].strip()
+                if current.get("key"):
+                    wg_peers[current["key"]] = current
+                current = {"key": line.split(":", 1)[1].strip()}
             elif line.startswith("allowed ips:"):
                 current["allowed_ips"] = line.split(":", 1)[1].strip()
             elif line.startswith("latest handshake:"):
                 current["handshake"] = line.split(":", 1)[1].strip()
             elif line.startswith("transfer:"):
                 current["transfer"] = line.split(":", 1)[1].strip()
+        if current.get("key"):
+            wg_peers[current["key"]] = current
 
-        if current:
-            peers.append(current)
+        # Parse conf for expiry annotations
+        conf_peers = wg_parse_conf_peers()
+        self._peers = conf_peers
 
-        self.call_from_thread(self._apply_wg, peers, out)
+        # Merge: use conf peers as source of truth for list, overlay live stats
+        merged = []
+        for cp in conf_peers:
+            key = cp.get("public_key", "")
+            live = wg_peers.get(key, {})
+            merged.append({
+                "peer": key,
+                "allowed_ips": live.get("allowed_ips") or cp.get("allowed_ips", "—"),
+                "handshake": live.get("handshake", "—"),
+                "transfer": live.get("transfer", "—"),
+                "expires": cp.get("expires", "none"),
+            })
+
+        # Also add any live peers not in conf (shouldn't happen but be safe)
+        conf_keys = {cp.get("public_key") for cp in conf_peers}
+        for key, live in wg_peers.items():
+            if key not in conf_keys:
+                merged.append({
+                    "peer": key,
+                    "allowed_ips": live.get("allowed_ips", "—"),
+                    "handshake": live.get("handshake", "—"),
+                    "transfer": live.get("transfer", "—"),
+                    "expires": "none",
+                })
+
+        self.call_from_thread(self._apply_wg, merged, out)
 
     def _apply_wg(self, peers: list, raw: str) -> None:
+        self._peers = wg_parse_conf_peers()
         try:
             t = self.query_one("#wg-table", DataTable)
             t.clear()
@@ -1466,15 +1742,67 @@ class WireGuardScreen(Screen):
             else:
                 for p in peers:
                     key = p.get("peer", "?")[:20]
+                    exp = p.get("expires", "none")
+                    exp_style = "[red]" + exp + "[/red]" if exp != "none" and exp < str(
+                        __import__("datetime").date.today()
+                    ) else exp
                     t.add_row(
                         key,
-                        p.get("endpoint", "—"),
                         p.get("allowed_ips", "—"),
                         p.get("handshake", "—"),
                         p.get("transfer", "—"),
+                        exp_style,
                     )
         except Exception:
             pass
+
+    def _selected_peer(self) -> dict | None:
+        try:
+            t = self.query_one("#wg-table", DataTable)
+            idx = t.cursor_row
+            if 0 <= idx < len(self._peers):
+                return self._peers[idx]
+        except Exception:
+            pass
+        return None
+
+    def action_delete_peer(self) -> None:
+        peer = self._selected_peer()
+        if not peer:
+            self.app.push_screen(MessageModal("Remove Peer", "No peer selected — move cursor to a peer row first.", "error"))
+            return
+        key = peer.get("public_key", "")
+        self.app.push_screen(
+            ConfirmModal("Remove Peer", f"Remove peer {key[:20]}…?\nThis will update wg0.conf and remove from live interface."),
+            lambda result, k=key: self._do_delete_peer(k) if result else None,
+        )
+
+    def _do_delete_peer(self, pubkey: str) -> None:
+        self.run_worker(lambda k=pubkey: self._delete_worker(k), thread=True)
+
+    def _delete_worker(self, pubkey: str) -> None:
+        err = wg_remove_peer_from_conf(pubkey)
+        if err:
+            self.call_from_thread(
+                lambda e=err: self.app.push_screen(MessageModal("Remove Peer", f"Failed: {e}", "error"))
+            )
+            return
+        # Remove live
+        rc, _, live_err = run(["ip", "link", "show", "wg0"], timeout=3)
+        if rc == 0:
+            run(["wg", "set", "wg0", "peer", pubkey, "remove"], timeout=5)
+        msg = f"Peer {pubkey[:20]}… removed from wg0.conf"
+        self.call_from_thread(
+            lambda m=msg: self.app.push_screen(MessageModal("Remove Peer", m, "success"))
+        )
+        self.call_from_thread(self._load_wg)
+
+    def action_qr_peer(self) -> None:
+        peer = self._selected_peer()
+        if not peer:
+            self.app.push_screen(MessageModal("QR Code", "No peer selected — move cursor to a peer row first.", "error"))
+            return
+        self.app.push_screen(WgQrModal(peer.get("public_key", ""), self._peers))
 
     def action_refresh(self) -> None:
         self._load_wg()
