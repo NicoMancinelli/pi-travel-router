@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-05-23
+
+### Added
+
+- **Security hardening** (`install/08-security.sh`): fail2ban jails for SSH and the web dashboard (5 failures in 60 s → 10-min ban); SSH hardening config (`MaxAuthTries 3`, `MaxStartups 3:50:10`, `LoginGraceTime 20`, `PermitRootLogin no`); monthly WireGuard key rotation timer; daily AIDE file integrity check with ntfy alert on changes.
+- **`scripts/wg-key-rotate.sh`** + `systemd/wg-key-rotate.{service,timer}` — regenerates WireGuard keypair monthly, atomically patches `wg0.conf`, restarts `wg-quick@wg0` if active, notifies via ntfy with new public key.
+- **`scripts/aide-check.sh`** + `systemd/aide-check.{service,timer}` — daily 03:00 AIDE integrity check; high-priority ntfy alert with truncated diff on any changes; exits 0 always.
+- **`config/fail2ban/`** — fail2ban jail and filter configs for SSH + Flask web dashboard.
+- **WireGuard peer management**: `DELETE /api/vpn/wireguard/peer/<pubkey>` removes peer from conf + live interface; `GET /api/vpn/wireguard/peer/<pubkey>/qr` returns PNG QR client config via qrencode; `/api/status` peers extended with `last_handshake_ago`, `rx_bytes`, `tx_bytes`.
+- **`scripts/wg-peer-expire.sh`** + `systemd/wg-peer-expire.{service,timer}` — daily timer removes peers with `# expires: YYYY-MM-DD` comment past today's date.
+- **Web UI peer management** (`web/static/index.html`): WireGuard peers table with Last Handshake/RX/TX columns, QR code modal, remove button with confirm dialog.
+- **TUI peer management** (`scripts/travel-tui.py`): `WireGuardScreen` gains Expiry column, `d` to remove peer (confirm modal), `q` to display QR code in terminal.
+- **Privacy profiles** (`config/privacy-profiles/`): four YAML profiles — VPN Only (kill switch on), Adblock Only, Tor (transparent proxy + DNS-over-Tor), Direct (auto-reverts after 10 min).
+- **`scripts/apply-privacy-profile.sh`** — atomically switches VPN/Tor/DNS/firewall state; saves previous profile for revert; background auto-revert timer for Direct mode.
+- **Privacy profile API** (`web/app.py`): `GET/POST /api/privacy/profile` — returns/sets active profile.
+- **Web UI privacy card** (`web/static/index.html`): 2×2 profile selector with active highlight, wired into `refreshAll()`.
+- **TUI privacy screen** (`scripts/travel-tui.py`): `PrivacyScreen` as first nav item (`P` key), active profile highlighted, applies in background worker.
+- **Integration test suite** (`tests/integration/`): `test_failover.bats` (7 tests), `test_ota.bats` (5 tests), `test_web_api.py` (19 tests), `conftest.py` session fixture.
+- **ARM64 native CI job** (`.github/workflows/unit-tests.yml`): `test-arm64` job on `ubuntu-24.04-arm` runs unit tests natively; `integration-tests` job added (non-blocking).
+
+### Improved
+
+- `web/app.py`: 5-second module-level status cache confirmed in place — prevents Pi Zero CPU spike under concurrent polling.
+
 ## [2.2.0] - 2026-05-23
 
 ### Added
