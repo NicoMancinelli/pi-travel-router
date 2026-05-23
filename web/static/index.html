@@ -108,6 +108,15 @@
   .config-val input { width: 100%; }
   @media (max-width: 600px) { .config-row { grid-template-columns: 1fr; } }
 
+  /* Privacy profile grid */
+  .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .profile-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px; background: var(--bg3); border: 2px solid var(--border); border-radius: 6px; cursor: pointer; transition: background 0.1s, border-color 0.1s; color: var(--text); font-family: var(--font); font-size: 14px; font-weight: 500; }
+  .profile-btn:hover { background: var(--border); border-color: var(--accent); }
+  .profile-btn.active { border-color: var(--green); background: rgba(63,185,80,.1); color: var(--green); }
+  .profile-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .profile-btn .profile-note { font-size: 10px; color: var(--text-dim); font-weight: 400; }
+  .profile-btn.active .profile-note { color: var(--green); opacity: 0.8; }
+
   /* Bandwidth mini chart */
   .bw-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 11px; }
   .bw-label { width: 30px; color: var(--text-dim); font-family: var(--mono); text-align: right; }
@@ -199,6 +208,28 @@
     <div class="card">
       <div class="card-title">Bandwidth (last 24h)</div>
       <div id="bw-content"><span class="spinner"></span></div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Privacy Profiles -->
+  <div class="card full-width">
+    <div class="card-title">&#x1F512; Privacy Profile <span id="privacy-active-badge" style="margin-left:6px;"></span></div>
+    <div class="profile-grid" id="privacy-grid">
+      <button class="profile-btn" id="profile-vpn-only" onclick="applyPrivacyProfile('vpn-only', this)">
+        &#x1F512; VPN Only
+      </button>
+      <button class="profile-btn" id="profile-adblock-only" onclick="applyPrivacyProfile('adblock-only', this)">
+        &#x1F6E1; Adblock Only
+      </button>
+      <button class="profile-btn" id="profile-tor" onclick="applyPrivacyProfile('tor', this)">
+        &#x1F9C5; Tor
+      </button>
+      <button class="profile-btn" id="profile-direct" onclick="applyPrivacyProfile('direct', this)">
+        &#x26A1; Direct
+        <span class="profile-note">(reverts in 10 min)</span>
+      </button>
     </div>
   </div>
 
@@ -666,6 +697,67 @@ async function addWgPeer() {
   }
 }
 
+// ── Privacy Profiles ──────────────────────────────────────────────────────────
+const PROFILE_IDS = ['vpn-only', 'adblock-only', 'tor', 'direct'];
+
+async function fetchPrivacyProfile() {
+  try {
+    const resp = await apiFetch('/api/privacy/profile');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    renderPrivacyProfile(d.active);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('Privacy profile error', e);
+  }
+}
+
+function renderPrivacyProfile(active) {
+  PROFILE_IDS.forEach(id => {
+    const btn = document.getElementById('profile-' + id);
+    if (!btn) return;
+    btn.classList.toggle('active', id === active);
+  });
+  const badgeEl = document.getElementById('privacy-active-badge');
+  if (badgeEl) {
+    badgeEl.innerHTML = active ? badge(escHtml(active), 'green') : '';
+  }
+}
+
+async function applyPrivacyProfile(profile, btn) {
+  if (btn && btn.classList.contains('active')) return;
+  // Disable all buttons while applying
+  PROFILE_IDS.forEach(id => {
+    const b = document.getElementById('profile-' + id);
+    if (b) b.disabled = true;
+  });
+  if (btn) {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner"></span> Applying&hellip;';
+    try {
+      const resp = await apiFetch('/api/privacy/profile', {
+        method: 'POST',
+        body: JSON.stringify({ profile }),
+      });
+      const d = await resp.json();
+      if (resp.ok) {
+        toast('Profile applied: ' + profile, 'ok');
+        await fetchPrivacyProfile();
+      } else {
+        toast('Failed: ' + (d.error || '?'), 'err');
+        btn.innerHTML = orig;
+      }
+    } catch (e) {
+      toast('Error: ' + e.message, 'err');
+      btn.innerHTML = orig;
+    } finally {
+      PROFILE_IDS.forEach(id => {
+        const b = document.getElementById('profile-' + id);
+        if (b) b.disabled = false;
+      });
+    }
+  }
+}
+
 // ── WireGuard peers ────────────────────────────────────────────────────────────
 async function fetchWgPeers() {
   try {
@@ -776,6 +868,7 @@ async function refreshAll() {
   fetchBandwidth();
   fetchLogs();
   fetchConfig();
+  fetchPrivacyProfile();
   fetchWgPeers();
 }
 

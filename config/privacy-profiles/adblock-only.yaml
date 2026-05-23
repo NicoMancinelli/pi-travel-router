@@ -1,0 +1,9 @@
+name: Adblock Only
+description: No VPN. AdGuard Home active. Kill switch disabled.
+vpn: false
+adblock: true
+tor: false
+kill_switch: false
+revert_after: 0
+firewall_extra: []
+dns: adguard

@@ -1,0 +1,11 @@
+name: Tor
+description: All traffic routed through Tor transparent proxy. DNS via Tor.
+vpn: false
+adblock: false
+tor: true
+kill_switch: true
+revert_after: 0
+firewall_extra:
+  - "-A PREROUTING -i uap0 -p tcp --dport 80 -j REDIRECT --to-port 9040"
+  - "-A PREROUTING -i uap0 -p tcp --dport 443 -j REDIRECT --to-port 9040"
+dns: tor
