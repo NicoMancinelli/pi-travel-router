@@ -21,6 +21,9 @@ DEFAULTS_FILE = "/etc/default/travel-router"
 COMBINED_LOG = "/var/log/travel-router/combined.log"
 UPS_STATUS_FILE = "/var/lib/travel-router/ups-status"
 WG_CONF = "/etc/wireguard/wg0.conf"
+ACTIVE_PROFILE_FILE = "/var/lib/travel-router/active-profile"
+APPLY_PROFILE_SCRIPT = "/usr/local/sbin/apply-privacy-profile.sh"
+VALID_PROFILES = {"vpn-only", "adblock-only", "tor", "direct"}
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -506,6 +509,39 @@ def index():
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
+
+@app.route("/api/privacy/profile", methods=["GET"])
+@require_auth
+def api_privacy_profile_get():
+    try:
+        active = Path(ACTIVE_PROFILE_FILE).read_text().strip()
+    except OSError:
+        active = "vpn-only"
+    return jsonify({"active": active, "profiles": sorted(VALID_PROFILES)})
+
+
+@app.route("/api/privacy/profile", methods=["POST"])
+@require_auth_always
+def api_privacy_profile_set():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+    profile = data.get("profile", "")
+    if profile not in VALID_PROFILES:
+        return jsonify({"error": f"Invalid profile: {profile}. Must be one of {sorted(VALID_PROFILES)}"}), 400
+    try:
+        result = subprocess.run(
+            [APPLY_PROFILE_SCRIPT, profile],
+            timeout=30,
+            capture_output=True,
+            text=True,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return jsonify({"error": str(exc)}), 503
+    if result.returncode != 0:
+        return jsonify({"error": result.stderr or result.stdout}), 503
+    return jsonify({"ok": True, "profile": profile})
+
 
 @app.route('/api/system/update-check', methods=['GET'])
 def update_check():

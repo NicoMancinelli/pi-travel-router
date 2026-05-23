@@ -3,6 +3,18 @@
 # Defines run_finalize(). Source this file; do not execute directly.
 
 run_finalize() {
+    # ── Privacy profiles ─────────────────────────────────────────────────────────
+    section "Privacy profiles"
+    mkdir -p /etc/travel-router/privacy-profiles
+    for _yaml in "${REPO}/config/privacy-profiles/"*.yaml; do
+        cp "${_yaml}" /etc/travel-router/privacy-profiles/
+    done
+    cp "${REPO}/scripts/apply-privacy-profile.sh" /usr/local/sbin/apply-privacy-profile.sh
+    chmod +x /usr/local/sbin/apply-privacy-profile.sh
+    mkdir -p /var/lib/travel-router
+    echo "vpn-only" > /var/lib/travel-router/active-profile
+    ok "Privacy profiles installed (default: vpn-only)"
+
     # ── Version stamp ────────────────────────────────────────────────────────────
     section "Version stamp"
     local _INSTALLED_VERSION

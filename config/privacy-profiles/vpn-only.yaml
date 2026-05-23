@@ -1,0 +1,9 @@
+name: VPN Only
+description: All traffic routed through WireGuard/Tailscale. Kill switch active.
+vpn: true
+adblock: false
+tor: false
+kill_switch: true
+revert_after: 0
+firewall_extra: []
+dns: system

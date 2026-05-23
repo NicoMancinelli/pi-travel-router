@@ -471,6 +471,7 @@ class DashboardScreen(Screen):
     """Main status overview with auto-refresh."""
 
     BINDINGS = [
+        Binding("p", "push_screen('privacy')", "Privacy"),
         Binding("1", "push_screen('services')", "Services"),
         Binding("2", "push_screen('features')", "Features"),
         Binding("3", "push_screen('logs')", "Logs"),
@@ -494,7 +495,7 @@ class DashboardScreen(Screen):
             yield Static(id="features-panel", classes="panel")
             yield Static(id="system-panel", classes="panel")
         yield Static(
-            "  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
+            "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
             "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [Q]Quit",
             id="nav-panel",
         )
@@ -605,6 +606,121 @@ class DashboardScreen(Screen):
 
     def action_quit_app(self) -> None:
         self.app.exit()
+
+
+# ── Privacy Profile screen ────────────────────────────────────────────────────
+PRIVACY_PROFILES = [
+    ("vpn-only",     "\U0001f512 VPN Only",     None),
+    ("adblock-only", "\U0001f6e1 Adblock Only", None),
+    ("tor",          "\U0001f9c5 Tor",           None),
+    ("direct",       "⚡ Direct",            "(auto-reverts in 10 min)"),
+]
+ACTIVE_PROFILE_FILE = "/var/lib/travel-router/active-profile"
+APPLY_PROFILE_CMD = "/usr/local/sbin/apply-privacy-profile.sh"
+
+
+class PrivacyScreen(Screen):
+    """Privacy profile selector — first item in nav."""
+
+    BINDINGS = [Binding("q,escape", "pop_screen", "Back"), Binding("r", "refresh", "Refresh")]
+
+    _active: reactive[str] = reactive("", layout=True)
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label("Privacy Profile  —  select to activate", classes="panel-title")
+        yield Static(id="privacy-status")
+        with ScrollableContainer():
+            for pid, label, subtitle in PRIVACY_PROFILES:
+                btn = Button(label, id=f"privacy-{pid}", variant="default")
+                yield btn
+                if subtitle:
+                    yield Label(f"  {subtitle}", classes="dimmed")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._load_active()
+
+    def _load_active(self) -> None:
+        self.run_worker(self._fetch_active, exclusive=True, thread=True)
+
+    def _fetch_active(self) -> None:
+        try:
+            with open(ACTIVE_PROFILE_FILE) as fh:
+                name = fh.read().strip()
+        except OSError:
+            name = "vpn-only"
+        self.call_from_thread(self._apply_active, name)
+
+    def _apply_active(self, name: str) -> None:
+        self._active = name
+        self._highlight_active(name)
+        try:
+            label = next(lbl for pid, lbl, _ in PRIVACY_PROFILES if pid == name)
+            self.query_one("#privacy-status", Static).update(
+                f"[@green]Active:[/] {label}"
+            )
+        except (StopIteration, Exception):
+            pass
+
+    def _highlight_active(self, name: str) -> None:
+        for pid, _, _ in PRIVACY_PROFILES:
+            try:
+                btn = self.query_one(f"#privacy-{pid}", Button)
+                btn.variant = "success" if pid == name else "default"
+            except Exception:
+                pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id or ""
+        if not bid.startswith("privacy-"):
+            return
+        profile = bid[len("privacy-"):]
+        if profile == self._active:
+            return
+        # Disable all buttons while applying
+        for pid, _, _ in PRIVACY_PROFILES:
+            try:
+                self.query_one(f"#privacy-{pid}", Button).disabled = True
+            except Exception:
+                pass
+        try:
+            self.query_one("#privacy-status", Static).update(
+                f"[@yellow]Applying {profile}…[/]"
+            )
+        except Exception:
+            pass
+        self.run_worker(
+            lambda p=profile: self._apply_worker(p),
+            thread=True,
+        )
+
+    def _apply_worker(self, profile: str) -> None:
+        rc, out, err = run([APPLY_PROFILE_CMD, profile], timeout=35)
+        msg = f"✓ Profile '{profile}' activated" if rc == 0 else f"✗ Failed: {err[:120]}"
+        variant = "success" if rc == 0 else "error"
+
+        def _done() -> None:
+            for pid, _, _ in PRIVACY_PROFILES:
+                try:
+                    self.query_one(f"#privacy-{pid}", Button).disabled = False
+                except Exception:
+                    pass
+            if rc == 0:
+                self._apply_active(profile)
+            else:
+                try:
+                    self.query_one("#privacy-status", Static).update(
+                        f"[@red]Error applying '{profile}'[/]"
+                    )
+                except Exception:
+                    pass
+            self.app.push_screen(MessageModal("Privacy Profile", msg, variant))
+
+        self.call_from_thread(_done)
+
+    def action_refresh(self) -> None:
+        self._load_active()
 
 
 # ── Services screen ───────────────────────────────────────────────────────────
@@ -1534,6 +1650,7 @@ class TravelRouterApp(App):
 
     SCREENS = {
         "dashboard": DashboardScreen,
+        "privacy": PrivacyScreen,
         "services": ServicesScreen,
         "features": FeaturesScreen,
         "logs": LogsScreen,
