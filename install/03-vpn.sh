@@ -88,6 +88,14 @@ with open(path, 'a') as f: f.write(peer_block)
 
         run_or_dry systemctl enable wg-quick@wg0 2>/dev/null || true
         ok "WireGuard configured (wg0); public key: $(cat /etc/wireguard/wg0.pub 2>/dev/null || echo 'unknown')"
+
+        # ── wg-peer-expire ─────────────────────────────────────────────────────
+        install -m 755 "${REPO}/scripts/wg-peer-expire.sh" /usr/local/sbin/wg-peer-expire.sh
+        install -m 644 "${REPO}/systemd/wg-peer-expire.service" /etc/systemd/system/wg-peer-expire.service
+        install -m 644 "${REPO}/systemd/wg-peer-expire.timer"   /etc/systemd/system/wg-peer-expire.timer
+        run_or_dry systemctl daemon-reload 2>/dev/null || true
+        run_or_dry systemctl enable --now wg-peer-expire.timer 2>/dev/null || true
+        ok "wg-peer-expire timer enabled (daily 02:00)"
     else
         systemctl disable wg-quick@wg0 2>/dev/null || true
         ok "WireGuard disabled (set ENABLE_WIREGUARD=1 to activate)"
