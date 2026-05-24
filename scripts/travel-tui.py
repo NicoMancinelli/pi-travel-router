@@ -487,6 +487,7 @@ class DashboardScreen(Screen):
         Binding("t", "push_screen('traceroute')", "Traceroute"),
         Binding("c", "push_screen('captive')", "Captive"),
         Binding("u", "push_screen('storage')", "Storage"),
+        Binding("k", "push_screen('wol')", "WoL"),
         Binding("q", "quit_app", "Quit"),
     ]
 
@@ -504,7 +505,7 @@ class DashboardScreen(Screen):
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
             "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  "
-            "[T]Traceroute  [C]Captive  [U]Storage  [Q]Quit",
+            "[T]Traceroute  [C]Captive  [U]Storage  [K]WoL  [Q]Quit",
             id="nav-panel",
         )
         yield Footer()
@@ -2992,6 +2993,145 @@ class CaptivePortalScreen(Screen):
             )
 
 
+# ── Wake-on-LAN screen ───────────────────────────────────────────────────────
+WOL_API_BASE = "http://127.0.0.1:8080/api/wol"
+
+
+class WolScreen(Screen):
+    """Wake-on-LAN management screen — press K from dashboard."""
+
+    BINDINGS = [
+        Binding("q,escape", "pop_screen", "Back"),
+        Binding("w", "wake_selected", "Wake"),
+        Binding("r", "refresh", "Refresh"),
+    ]
+
+    _targets: list = []
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label("Wake-on-LAN  —  [W] send magic packet  [R] refresh", classes="panel-title")
+        yield DataTable(id="wol-table", zebra_stripes=True)
+        yield Static(id="wol-msg")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        t = self.query_one("#wol-table", DataTable)
+        t.add_columns("Name", "MAC", "Broadcast")
+        self._load()
+
+    def _load(self) -> None:
+        self.run_worker(self._fetch, exclusive=True, thread=True)
+
+    def _fetch(self) -> None:
+        import json as _json
+        token = ""
+        try:
+            with open("/var/lib/travel-router/web-token") as fh:
+                token = fh.read().strip()
+        except OSError:
+            pass
+        cmd = ["curl", "-sf", "--max-time", "5", WOL_API_BASE]
+        if token:
+            cmd += ["-H", f"Authorization: Bearer {token}"]
+        rc, out, _ = run(cmd, timeout=8)
+        targets: list = []
+        if rc == 0 and out.strip():
+            try:
+                data = _json.loads(out)
+                targets = data.get("targets", [])
+            except (ValueError, _json.JSONDecodeError):
+                pass
+        self.call_from_thread(self._apply, targets)
+
+    def _apply(self, targets: list) -> None:
+        self._targets = targets
+        t = self.query_one("#wol-table", DataTable)
+        t.clear()
+        if not targets:
+            t.add_row("[dim]No targets saved[/dim]", "", "")
+        else:
+            for tgt in targets:
+                name = str(tgt.get("name", ""))
+                mac = str(tgt.get("mac", ""))
+                broadcast = str(tgt.get("broadcast", "255.255.255.255"))
+                t.add_row(
+                    f"[green]{name}[/green]",
+                    f"[cyan]{mac}[/cyan]",
+                    f"[dim]{broadcast}[/dim]",
+                )
+        try:
+            self.query_one("#wol-msg", Static).update("")
+        except Exception:
+            pass
+
+    def action_wake_selected(self) -> None:
+        try:
+            t = self.query_one("#wol-table", DataTable)
+            idx = t.cursor_row
+        except Exception:
+            return
+        if not self._targets or idx < 0 or idx >= len(self._targets):
+            self.app.push_screen(
+                MessageModal("Wake-on-LAN", "No target selected — move cursor to a target row first.", "error")
+            )
+            return
+        tgt = self._targets[idx]
+        mac = tgt.get("mac", "")
+        broadcast = tgt.get("broadcast", "255.255.255.255")
+        name = tgt.get("name", mac)
+        self.run_worker(
+            lambda m=mac, b=broadcast, n=name: self._wake_worker(m, b, n),
+            thread=True,
+        )
+
+    def _wake_worker(self, mac: str, broadcast: str, name: str) -> None:
+        import json as _json
+        token = ""
+        try:
+            with open("/var/lib/travel-router/web-token") as fh:
+                token = fh.read().strip()
+        except OSError:
+            pass
+        body = _json.dumps({"mac": mac, "broadcast": broadcast})
+        cmd = [
+            "curl", "-sf", "--max-time", "5",
+            "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", body,
+            f"{WOL_API_BASE}/send",
+        ]
+        if token:
+            cmd += ["-H", f"Authorization: Bearer {token}"]
+        rc, out, err = run(cmd, timeout=8)
+        if rc == 0:
+            try:
+                data = _json.loads(out)
+                ok = data.get("ok", False)
+            except (ValueError, _json.JSONDecodeError):
+                ok = False
+            if ok:
+                msg = f"Magic packet sent to {name} ({mac})"
+                variant = "success"
+            else:
+                err_msg = ""
+                try:
+                    err_msg = _json.loads(out).get("error", "")
+                except Exception:
+                    pass
+                msg = f"Failed to send magic packet: {err_msg or 'unknown error'}"
+                variant = "error"
+        else:
+            msg = f"Request failed (rc={rc})"
+            variant = "error"
+        self.call_from_thread(
+            lambda m=msg, v=variant: self.app.push_screen(MessageModal("Wake-on-LAN", m, v))
+        )
+
+    def action_refresh(self) -> None:
+        self._load()
+
+
 # ── Main App ──────────────────────────────────────────────────────────────────
 class TravelRouterApp(App):
     TITLE = "Pi Travel Router"
@@ -3014,6 +3154,7 @@ class TravelRouterApp(App):
         "traceroute": TracerouteScreen,
         "captive": CaptivePortalScreen,
         "storage": StorageScreen,
+        "wol": WolScreen,
     }
 
     BINDINGS = [

@@ -37,6 +37,7 @@ _BW_HISTORY_FILE = "/var/lib/travel-router/bw-history.json"
 DOH_SCRIPT = "/usr/local/sbin/set-doh-resolver.sh"
 DOH_PRESETS = ["cloudflare", "quad9", "nextdns", "adguard", "system"]
 MOUNT_STORAGE_SCRIPT = "/usr/local/sbin/mount-storage.sh"
+WOL_TARGETS_FILE = "/var/lib/travel-router/wol-targets.json"
 DATACAP_FILE = "/var/lib/travel-router/datacap.json"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
@@ -161,6 +162,63 @@ def _bw_sampler_loop():
 
 # Start background sampler when the module loads
 threading.Thread(target=_bw_sampler_loop, daemon=True).start()
+
+# ── Latency history sampler ───────────────────────────────────────────────────
+
+_LATENCY_HISTORY: list = []
+_LATENCY_LOCK = threading.Lock()
+_LATENCY_MAX_ENTRIES = 288   # 24h at 5-min intervals
+
+
+def _latency_sample_once():
+    """Ping the default gateway once and record RTT (or None on loss)."""
+    try:
+        gw_out, gw_rc = _run("ip route show default")
+        if gw_rc != 0 or not gw_out.strip():
+            return
+        m = re.search(r"via\s+(\S+)", gw_out)
+        if not m:
+            return
+        gateway = m.group(1)
+
+        rtt = None
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "2", gateway],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                tm = re.search(r"time=([\d.]+)\s*ms", result.stdout)
+                if tm:
+                    rtt = float(tm.group(1))
+            # If returncode != 0 (packet loss), rtt stays None
+        except FileNotFoundError:
+            # ping not available on this platform (e.g. macOS dev machine)
+            pass
+
+        entry = {"ts": int(time.time()), "rtt_ms": rtt, "gateway": gateway}
+        with _LATENCY_LOCK:
+            _LATENCY_HISTORY.append(entry)
+            if len(_LATENCY_HISTORY) > _LATENCY_MAX_ENTRIES:
+                del _LATENCY_HISTORY[:-_LATENCY_MAX_ENTRIES]
+    except Exception:
+        pass  # Never crash the background thread
+
+
+def _latency_sampler_loop():
+    """Background thread: sample latency every 300 seconds."""
+    while True:
+        time.sleep(300)
+        try:
+            _latency_sample_once()
+        except Exception:
+            pass
+
+
+# Start background latency sampler when the module loads
+threading.Thread(target=_latency_sampler_loop, daemon=True).start()
 
 # ── Config value validators ───────────────────────────────────────────────────
 import re as _re
@@ -2016,6 +2074,109 @@ def api_storage_unmount():
     return jsonify({"ok": True})
 
 
+# ── Wake-on-LAN ───────────────────────────────────────────────────────────────
+
+_MAC_RE = re.compile(r'^([0-9a-fA-F]{2}[:\-]?){5}[0-9a-fA-F]{2}$')
+
+
+def _read_wol_targets() -> list:
+    """Read WoL targets from JSON store. Returns [] on any error."""
+    try:
+        data = json.loads(Path(WOL_TARGETS_FILE).read_text())
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def _write_wol_targets(targets: list) -> None:
+    """Atomically write WoL targets list to disk."""
+    wol_dir = str(Path(WOL_TARGETS_FILE).parent)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=wol_dir, prefix="wol-targets.")
+    try:
+        with os.fdopen(tmp_fd, "w") as fh:
+            json.dump(targets, fh)
+        os.replace(tmp_path, WOL_TARGETS_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _send_magic_packet(mac: str, broadcast: str = "255.255.255.255") -> None:
+    """Send a Wake-on-LAN magic packet to the given MAC address."""
+    import socket
+    # Normalize: strip colons and hyphens
+    mac_clean = mac.replace(":", "").replace("-", "")
+    if len(mac_clean) != 12 or not all(c in "0123456789abcdefABCDEF" for c in mac_clean):
+        raise ValueError(f"Invalid MAC address: {mac!r}")
+    mac_bytes = bytes.fromhex(mac_clean)
+    magic = b'\xff' * 6 + mac_bytes * 16
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.sendto(magic, (broadcast, 9))
+
+
+@app.route("/api/wol", methods=["GET"])
+@require_auth
+def api_wol_get():
+    return jsonify({"targets": _read_wol_targets()})
+
+
+@app.route("/api/wol/send", methods=["POST"])
+@require_auth_always
+def api_wol_send():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+    mac = data.get("mac", "")
+    if not isinstance(mac, str) or not _MAC_RE.match(mac):
+        return jsonify({"error": "Invalid MAC address format"}), 400
+    broadcast = data.get("broadcast", "255.255.255.255")
+    if not isinstance(broadcast, str):
+        broadcast = "255.255.255.255"
+    try:
+        _send_magic_packet(mac, broadcast)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to send magic packet: {exc}"}), 503
+    return jsonify({"ok": True})
+
+
+@app.route("/api/wol/targets", methods=["POST"])
+@require_auth_always
+def api_wol_targets_post():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+    targets = data.get("targets", [])
+    if not isinstance(targets, list):
+        return jsonify({"error": "'targets' must be a list"}), 400
+    if len(targets) > 20:
+        return jsonify({"error": "Maximum 20 targets allowed"}), 400
+    validated = []
+    for i, t in enumerate(targets):
+        if not isinstance(t, dict):
+            return jsonify({"error": f"Target {i} must be an object"}), 400
+        name = t.get("name", "")
+        if not isinstance(name, str) or len(name) == 0 or len(name) > 64:
+            return jsonify({"error": f"Target {i}: 'name' must be a non-empty string (max 64 chars)"}), 400
+        mac = t.get("mac", "")
+        if not isinstance(mac, str) or not _MAC_RE.match(mac):
+            return jsonify({"error": f"Target {i}: invalid MAC address format"}), 400
+        broadcast = t.get("broadcast", "255.255.255.255")
+        if not isinstance(broadcast, str) or not re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', broadcast):
+            return jsonify({"error": f"Target {i}: invalid broadcast IPv4 address"}), 400
+        validated.append({"name": name, "mac": mac, "broadcast": broadcast})
+    try:
+        _write_wol_targets(validated)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to save targets: {exc}"}), 503
+    return jsonify({"ok": True})
+
+
 # ── Data cap / monthly budget tracker ────────────────────────────────────────
 
 _DATACAP_DEFAULT = {
@@ -2140,6 +2301,22 @@ def api_datacap_post():
     _write_datacap(existing)
 
     return jsonify({"ok": True})
+
+
+# ── Latency history endpoint ──────────────────────────────────────────────────
+
+
+@app.route("/api/latency/history")
+@require_auth
+def api_latency_history():
+    with _LATENCY_LOCK:
+        history = list(_LATENCY_HISTORY[-_LATENCY_MAX_ENTRIES:])
+    last_gateway = None
+    for entry in reversed(history):
+        if entry.get("gateway"):
+            last_gateway = entry["gateway"]
+            break
+    return jsonify({"history": history, "gateway": last_gateway})
 
 
 # ── Serve index.html ──────────────────────────────────────────────────────────

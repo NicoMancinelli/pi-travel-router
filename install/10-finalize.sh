@@ -73,6 +73,11 @@ run_finalize() {
     mkdir -p /var/lib/travel-router && touch /var/lib/travel-router/bw-history.json || true
     ok "Bandwidth history store initialised"
 
+    # ── Wake-on-LAN targets store ─────────────────────────────────────────────────
+    section "Wake-on-LAN"
+    touch /var/lib/travel-router/wol-targets.json 2>/dev/null || true
+    ok "Wake-on-LAN targets store initialised"
+
     # ── Data cap store ────────────────────────────────────────────────────────────
     section "Data cap store"
     touch /var/lib/travel-router/datacap.json 2>/dev/null || true
