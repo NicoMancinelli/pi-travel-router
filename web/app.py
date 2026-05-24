@@ -33,6 +33,9 @@ AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
 # ── Status cache ──────────────────────────────────────────────────────────────
 _STATUS_CACHE: dict = {"ts": 0.0, "data": {}}
+
+# ── Speed test cache ───────────────────────────────────────────────────────────
+_SPEEDTEST_RESULT: dict = {"ts": 0.0, "result": None}
 _STATUS_CACHE_TTL = 5  # seconds
 TAILSCALE_PREFIX = "100."
 
@@ -1185,6 +1188,65 @@ def api_diagnostic():
         return jsonify({"error": "Diagnostic script not found"}), 503
     except subprocess.TimeoutExpired:
         return jsonify({"error": "Diagnostic timed out"}), 504
+
+
+@app.route('/api/system/speedtest', methods=['GET'])
+@require_auth
+def api_speedtest_get():
+    """Return last cached speed test result without running a new test."""
+    cached = _SPEEDTEST_RESULT.get("result")
+    if cached is None:
+        return jsonify({"cached": False, "result": None})
+    age = int(time.time() - _SPEEDTEST_RESULT["ts"])
+    return jsonify({
+        "cached": True,
+        "age_seconds": age,
+        "download_mbps": cached.get("download_mbps"),
+        "upload_mbps": cached.get("upload_mbps"),
+        "ping_ms": cached.get("ping_ms"),
+        "server": cached.get("server"),
+        "method": cached.get("method"),
+        "ts": _SPEEDTEST_RESULT["ts"],
+    })
+
+
+@app.route('/api/system/speedtest', methods=['POST'])
+@require_auth_always
+def api_speedtest_post():
+    """Run a speed test synchronously and cache+return the result."""
+    script = "/usr/local/sbin/speedtest.sh"
+    try:
+        result = subprocess.run(
+            [script],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "speedtest.sh not found"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Speed test timed out"}), 504
+
+    if result.returncode != 0:
+        return jsonify({"error": result.stderr or "Speed test failed"}), 503
+
+    try:
+        data = json.loads(result.stdout.strip())
+    except (json.JSONDecodeError, ValueError):
+        return jsonify({"error": "Failed to parse speed test output"}), 503
+
+    _SPEEDTEST_RESULT["ts"] = time.time()
+    _SPEEDTEST_RESULT["result"] = data
+
+    return jsonify({
+        "ok": True,
+        "cached": False,
+        "download_mbps": data.get("download_mbps"),
+        "upload_mbps": data.get("upload_mbps"),
+        "ping_ms": data.get("ping_ms"),
+        "server": data.get("server"),
+        "method": data.get("method"),
+    })
 
 
 @app.route('/api/system/ota-update', methods=['POST'])

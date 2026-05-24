@@ -172,6 +172,17 @@
   #qr-modal-inner img { max-width: 100%; border-radius: 4px; margin: 12px 0; }
   #qr-modal-note { font-size: 11px; color: var(--yellow); margin-bottom: 12px; font-family: var(--mono); word-break: break-all; }
 
+  /* Speed test card */
+  .speedtest-metrics { display: flex; gap: 16px; flex-wrap: wrap; margin: 12px 0; }
+  .speedtest-metric { flex: 1; min-width: 100px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; text-align: center; }
+  .speedtest-metric-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .speedtest-metric-value { font-size: 24px; font-weight: 700; font-family: var(--mono); }
+  .speedtest-metric-unit { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .speedtest-meta { font-size: 11px; color: var(--text-dim); margin-top: 6px; }
+  .spd-green { color: var(--green); }
+  .spd-yellow { color: var(--yellow); }
+  .spd-red { color: var(--red); }
+
   /* System Health card */
   .health-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
   @media (max-width: 768px) { .health-grid { grid-template-columns: 1fr; } }
@@ -264,6 +275,23 @@
         <span id="diag-spinner" style="display:none"><span class="spinner"></span></span>
       </div>
       <pre class="diag-output" id="diag-output"></pre>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Speed Test -->
+  <div class="card full-width" id="card-speedtest">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x26A1; Speed Test</span>
+      <button class="btn btn-sm btn-primary" id="btn-speedtest" onclick="runSpeedTest()">&#x25B6; Run Speed Test</button>
+    </div>
+    <div id="speedtest-spinner" style="display:none; align-items:center; gap:8px; margin-bottom:10px;">
+      <span class="spinner"></span>
+      <span style="font-size:13px; color:var(--text-dim);">Testing&hellip; (up to 60s)</span>
+    </div>
+    <div id="speedtest-result">
+      <div style="color:var(--text-dim);font-size:13px;font-style:italic;">No test run yet</div>
     </div>
   </div>
 
@@ -1204,6 +1232,98 @@ async function toggleGuestNetwork(currentlyEnabled) {
   }
 }
 
+// ── Speed Test ────────────────────────────────────────────────────────────────
+function _spdClass(type, value) {
+  if (value == null) return '';
+  if (type === 'dl') return value >= 10 ? 'spd-green' : value >= 2 ? 'spd-yellow' : 'spd-red';
+  if (type === 'ul') return value >= 5 ? 'spd-green' : value >= 1 ? 'spd-yellow' : 'spd-red';
+  if (type === 'ping') return value <= 50 ? 'spd-green' : value <= 150 ? 'spd-yellow' : 'spd-red';
+  return '';
+}
+
+function _fmtAgo(ts) {
+  if (!ts) return '';
+  const secs = Math.round((Date.now() / 1000) - ts);
+  if (secs < 60) return secs + 's ago';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+  return Math.floor(secs / 3600) + 'h ago';
+}
+
+function renderSpeedTestResult(d, ts) {
+  const el = document.getElementById('speedtest-result');
+  if (!d || d.download_mbps == null) {
+    el.innerHTML = '<div style="color:var(--text-dim);font-size:13px;font-style:italic;">No test run yet</div>';
+    return;
+  }
+  const dl = d.download_mbps != null ? (+d.download_mbps).toFixed(1) : '—';
+  const ul = d.upload_mbps != null ? (+d.upload_mbps).toFixed(1) : '—';
+  const ping = d.ping_ms != null ? (+d.ping_ms).toFixed(0) : '—';
+  const dlCls = _spdClass('dl', d.download_mbps);
+  const ulCls = _spdClass('ul', d.upload_mbps);
+  const pingCls = _spdClass('ping', d.ping_ms);
+  const agoStr = ts ? 'Last tested: ' + _fmtAgo(ts) : '';
+  const server = d.server ? escHtml(d.server) : '';
+  const method = d.method ? escHtml(d.method) : '';
+  el.innerHTML = `
+    <div class="speedtest-metrics">
+      <div class="speedtest-metric">
+        <div class="speedtest-metric-label">Download</div>
+        <div class="speedtest-metric-value ${dlCls}">${dl}</div>
+        <div class="speedtest-metric-unit">Mbps</div>
+      </div>
+      <div class="speedtest-metric">
+        <div class="speedtest-metric-label">Upload</div>
+        <div class="speedtest-metric-value ${ulCls}">${ul}</div>
+        <div class="speedtest-metric-unit">Mbps</div>
+      </div>
+      <div class="speedtest-metric">
+        <div class="speedtest-metric-label">Ping</div>
+        <div class="speedtest-metric-value ${pingCls}">${ping}</div>
+        <div class="speedtest-metric-unit">ms</div>
+      </div>
+    </div>
+    <div class="speedtest-meta">${server ? 'Server: ' + server + '  &middot;  ' : ''}Method: ${method}${agoStr ? '  &middot;  ' + agoStr : ''}</div>
+  `;
+}
+
+async function fetchSpeedTestCached() {
+  try {
+    const resp = await apiFetch('/api/system/speedtest');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    if (d.cached && d.download_mbps != null) {
+      renderSpeedTestResult(d, d.ts);
+    }
+  } catch (e) {
+    // Non-critical
+  }
+}
+
+async function runSpeedTest() {
+  const btn = document.getElementById('btn-speedtest');
+  const spinnerEl = document.getElementById('speedtest-spinner');
+  const resultEl = document.getElementById('speedtest-result');
+
+  btn.disabled = true;
+  spinnerEl.style.display = 'flex';
+  resultEl.innerHTML = '';
+
+  try {
+    const resp = await apiFetch('/api/system/speedtest', { method: 'POST' });
+    const d = await resp.json();
+    if (resp.ok) {
+      renderSpeedTestResult(d, Date.now() / 1000);
+    } else {
+      resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + escHtml(d.error || 'Unknown error') + '</div>';
+    }
+  } catch (e) {
+    resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + escHtml(e.message) + '</div>';
+  } finally {
+    spinnerEl.style.display = 'none';
+    btn.disabled = false;
+  }
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1222,6 +1342,7 @@ async function refreshAll() {
   fetchPrivacyProfile();
   fetchWgPeers();
   fetchGuestNetwork();
+  fetchSpeedTestCached();
 }
 
 async function init() {
