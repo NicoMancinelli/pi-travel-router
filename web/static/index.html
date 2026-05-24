@@ -582,6 +582,18 @@
 
   <hr class="divider">
 
+  <!-- Upstream WiFi -->
+  <div class="card full-width" id="card-uplink-wifi">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4F6; Upstream WiFi</span>
+      <button class="btn btn-sm" onclick="fetchUplinkScan()">&#x1F50D; Scan Networks</button>
+    </div>
+    <div id="uplink-wifi-current" style="font-size:13px;margin-bottom:12px;color:var(--text-dim);">Loading&hellip;</div>
+    <div id="uplink-wifi-list"></div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Service controls -->
   <div class="card full-width">
     <div class="card-title">Service Controls</div>
@@ -1525,6 +1537,122 @@ async function reconnectUplink() {
   }
 }
 
+// ── Upstream WiFi Scanner ─────────────────────────────────────────────────────
+
+function _signalBars(dbm) {
+  // 5-bar Unicode signal strength
+  if (dbm >= -50) return '▂▄▆█▉';
+  if (dbm >= -60) return '▂▄▆█<span style="color:var(--text-dim)">▉</span>';
+  if (dbm >= -70) return '▂▄▆<span style="color:var(--text-dim)">█▉</span>';
+  if (dbm >= -80) return '▂▄<span style="color:var(--text-dim)">▆█▉</span>';
+  return '▂<span style="color:var(--text-dim)">▄▆█▉</span>';
+}
+
+function _securityBadge(sec) {
+  if (sec === 'WPA2') return '<span style="background:var(--green);color:#000;border-radius:4px;padding:1px 5px;font-size:11px;font-weight:600;">WPA2</span>';
+  if (sec === 'WPA')  return '<span style="background:var(--yellow,#f0a030);color:#000;border-radius:4px;padding:1px 5px;font-size:11px;font-weight:600;">WPA</span>';
+  return '<span style="background:var(--text-dim);color:#000;border-radius:4px;padding:1px 5px;font-size:11px;font-weight:600;">Open</span>';
+}
+
+async function fetchUplinkScan() {
+  const listEl = document.getElementById('uplink-wifi-list');
+  const curEl  = document.getElementById('uplink-wifi-current');
+  if (listEl) listEl.innerHTML = '<span class="spinner"></span> Scanning&hellip;';
+  try {
+    const resp = await apiFetch('/api/uplink/scan');
+    if (!resp.ok) { if (listEl) listEl.innerHTML = '<span class="dim">Scan failed.</span>'; return; }
+    const d = await resp.json();
+    // Current SSID
+    if (curEl) {
+      curEl.innerHTML = d.current_ssid
+        ? '&#x1F4F6; Connected to: <strong>' + _esc(d.current_ssid) + '</strong>'
+        : '<span class="dim">Not connected to any upstream WiFi</span>';
+      curEl.style.color = d.current_ssid ? 'var(--green)' : 'var(--text-dim)';
+    }
+    if (!d.networks || d.networks.length === 0) {
+      if (listEl) listEl.innerHTML = '<span class="dim">No networks found.</span>' + (d.error ? ' (' + _esc(d.error) + ')' : '');
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="color:var(--text-dim);text-align:left;">'
+          + '<th style="padding:4px 8px;">SSID</th>'
+          + '<th style="padding:4px 8px;">Signal</th>'
+          + '<th style="padding:4px 8px;">Security</th>'
+          + '<th style="padding:4px 8px;">Ch</th>'
+          + '<th style="padding:4px 8px;"></th>'
+          + '</tr></thead><tbody>';
+    d.networks.forEach((net, idx) => {
+      const rowId = 'wifi-row-' + idx;
+      const formId = 'wifi-form-' + idx;
+      const isOpen = net.security === 'Open';
+      html += `<tr id="${rowId}" style="border-top:1px solid var(--border);">
+        <td style="padding:6px 8px;font-weight:500;">${_esc(net.ssid)}</td>
+        <td style="padding:6px 8px;" title="${net.signal_dbm} dBm">${_signalBars(net.signal_dbm)}</td>
+        <td style="padding:6px 8px;">${_securityBadge(net.security)}</td>
+        <td style="padding:6px 8px;color:var(--text-dim);">${net.channel || '—'}</td>
+        <td style="padding:6px 8px;">
+          <button class="btn btn-sm" onclick="toggleWifiConnectForm(${idx}, ${JSON.stringify(_esc(net.ssid))}, ${isOpen})">Connect</button>
+        </td>
+      </tr>
+      <tr id="${formId}" style="display:none;background:var(--bg2,var(--bg));">
+        <td colspan="5" style="padding:8px 12px;">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            ${isOpen ? '' : `<input type="password" id="wifi-pass-${idx}" placeholder="Password" maxlength="64"
+              style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;padding:6px 10px;min-width:180px;">`}
+            <button class="btn btn-primary btn-sm" onclick="connectWifi(${JSON.stringify(_esc(net.ssid))}, ${isOpen}, ${idx})">&#x2714; Connect</button>
+            <button class="btn btn-sm" onclick="toggleWifiConnectForm(${idx})">Cancel</button>
+          </div>
+        </td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    if (listEl) listEl.innerHTML = html;
+  } catch (e) {
+    if (listEl) listEl.innerHTML = '<span class="dim">Error: ' + _esc(e.message) + '</span>';
+  }
+}
+
+function toggleWifiConnectForm(idx, ssid, isOpen) {
+  const formRow = document.getElementById('wifi-form-' + idx);
+  if (!formRow) return;
+  const visible = formRow.style.display !== 'none';
+  formRow.style.display = visible ? 'none' : 'table-row';
+  if (!visible && !isOpen) {
+    const passEl = document.getElementById('wifi-pass-' + idx);
+    if (passEl) passEl.focus();
+  }
+}
+
+async function connectWifi(ssid, isOpen, idx) {
+  const passEl = document.getElementById('wifi-pass-' + idx);
+  const password = (isOpen || !passEl) ? null : passEl.value;
+  try {
+    const resp = await apiFetch('/api/uplink/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ssid, password }),
+    });
+    const d = await resp.json();
+    if (resp.ok) {
+      toast('Connecting to ' + ssid + '…', 'ok');
+      // Close form
+      const formRow = document.getElementById('wifi-form-' + idx);
+      if (formRow) formRow.style.display = 'none';
+      // Refresh current SSID after a moment
+      setTimeout(fetchUplinkScan, 3000);
+    } else {
+      toast('Error: ' + (d.error || 'Unknown error'), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+function _esc(str) {
+  if (typeof str !== 'string') return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 // ── Scheduled Reboot ──────────────────────────────────────────────────────────
 async function fetchRebootSchedule() {
   try {
@@ -2455,6 +2583,7 @@ async function refreshAll() {
   fetchWolTargets();
   fetchDataCap();
   fetchLatencyHistory();
+  fetchUplinkScan();
 }
 
 async function init() {
