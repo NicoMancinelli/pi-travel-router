@@ -1925,6 +1925,162 @@ def api_uplink_reconnect():
     return jsonify({"ok": True, "message": "Reconnecting uplink…"})
 
 
+# ── Uplink WiFi scan ──────────────────────────────────────────────────────────
+
+
+@app.route("/api/uplink/scan", methods=["GET"])
+@require_auth
+def api_uplink_scan():
+    # Get current SSID
+    current_ssid = None
+    link_out, _ = _run(["iw", "dev", "wlan0", "link"])
+    for line in link_out.splitlines():
+        line = line.strip()
+        if line.startswith("SSID:"):
+            current_ssid = line[5:].strip()
+            break
+
+    # Run scan
+    scan_out, rc = _run(["iw", "dev", "wlan0", "scan"], timeout=20)
+    if rc != 0 and not scan_out:
+        return jsonify({"networks": [], "current_ssid": current_ssid,
+                        "error": "Scan failed (permission or interface error)"})
+
+    networks = []
+    current: dict = {}
+
+    for raw_line in scan_out.splitlines():
+        line = raw_line.strip()
+
+        # New BSS block — save previous if it has an SSID
+        if line.startswith("BSS "):
+            if current.get("ssid"):
+                networks.append(current)
+            bssid_match = re.match(r"BSS ([0-9a-f:]{17})", line)
+            current = {
+                "ssid": "",
+                "bssid": bssid_match.group(1) if bssid_match else "",
+                "signal_dbm": -100,
+                "security": "Open",
+                "channel": 0,
+            }
+            continue
+
+        if line.startswith("SSID:"):
+            ssid = line[5:].strip()
+            if ssid:
+                current["ssid"] = ssid
+
+        elif line.startswith("signal:"):
+            # e.g. "signal: -65.00 dBm"
+            m = re.search(r"(-?\d+(?:\.\d+)?)", line)
+            if m:
+                current["signal_dbm"] = int(float(m.group(1)))
+
+        elif line.startswith("* primary channel:"):
+            m = re.search(r"(\d+)", line)
+            if m:
+                current["channel"] = int(m.group(1))
+
+        elif line.startswith("RSN:"):
+            current["security"] = "WPA2"
+
+        elif line.startswith("WPA:") and current.get("security") != "WPA2":
+            current["security"] = "WPA"
+
+    # Don't forget last block
+    if current.get("ssid"):
+        networks.append(current)
+
+    # Sort by signal descending, cap at 20
+    networks.sort(key=lambda n: n["signal_dbm"], reverse=True)
+    networks = networks[:20]
+
+    return jsonify({"networks": networks, "current_ssid": current_ssid})
+
+
+# ── Uplink WiFi connect ───────────────────────────────────────────────────────
+
+
+WPA_SUPPLICANT_CONF = "/etc/wpa_supplicant/wpa_supplicant-wlan0.conf"
+WPA_SUPPLICANT_HEADER = (
+    "ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev\n"
+    "update_config=1\n"
+    "country=US\n"
+)
+
+
+@app.route("/api/uplink/connect", methods=["POST"])
+@require_auth_always
+def api_uplink_connect():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    ssid = data.get("ssid", "")
+    if not isinstance(ssid, str) or not ssid:
+        return jsonify({"error": "Missing or invalid 'ssid'"}), 400
+    if len(ssid) > 64:
+        return jsonify({"error": "'ssid' too long (max 64 chars)"}), 400
+    if "\x00" in ssid:
+        return jsonify({"error": "Invalid characters in 'ssid'"}), 400
+
+    password = data.get("password") or None
+    if password is not None:
+        if not isinstance(password, str):
+            return jsonify({"error": "Invalid 'password'"}), 400
+        if len(password) > 64:
+            return jsonify({"error": "'password' too long (max 64 chars)"}), 400
+        if "\x00" in password:
+            return jsonify({"error": "Invalid characters in 'password'"}), 400
+
+    # Build network block
+    if password:
+        try:
+            result = subprocess.run(
+                ["wpa_passphrase", ssid, password],
+                capture_output=True, text=True, timeout=10,
+            )
+        except FileNotFoundError:
+            return jsonify({"error": "wpa_passphrase not found"}), 503
+        except subprocess.TimeoutExpired:
+            return jsonify({"error": "wpa_passphrase timed out"}), 504
+        if result.returncode != 0:
+            return jsonify({"error": "wpa_passphrase failed: " + (result.stderr or "unknown")}), 500
+        network_block = result.stdout
+    else:
+        network_block = f'network={{\n\tssid="{ssid}"\n\tkey_mgmt=NONE\n}}\n'
+
+    conf_content = WPA_SUPPLICANT_HEADER + "\n" + network_block
+
+    # Write atomically
+    conf_path = Path(WPA_SUPPLICANT_CONF)
+    try:
+        dir_ = str(conf_path.parent)
+        fd, tmp_path = tempfile.mkstemp(dir=dir_, prefix=".wpa_tmp_")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(conf_content)
+            os.replace(tmp_path, str(conf_path))
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    except PermissionError:
+        return jsonify({"error": "Permission denied writing wpa_supplicant config"}), 503
+    except OSError as exc:
+        return jsonify({"error": f"Failed to write config: {exc}"}), 500
+
+    # Reconfigure
+    _run(["wpa_cli", "-i", "wlan0", "reconfigure"], timeout=10)
+
+    _push_event("uplink_connect", {"ssid": ssid})
+
+    return jsonify({"ok": True, "ssid": ssid})
+
+
 # ── DNS-over-HTTPS resolver ───────────────────────────────────────────────────
 
 
