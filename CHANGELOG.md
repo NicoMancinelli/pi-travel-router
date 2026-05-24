@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-05-24
+
+### Added
+
+- **Uplink signal quality card** (`web/app.py`, `web/static/index.html`, `scripts/travel-tui.py`): `GET /api/signal` parses `iwconfig`/`iw dev link` for WiFi quality%, dBm, SSID, channel; parses `mmcli` for LTE signal, operator, state (all fields nullable). Dashboard adds a 4th card in the top status row with color-coded quality bar (green ≥70%, yellow ≥40%, red <40%). TUI dashboard panel shows Unicode block-character bars.
+- **DNS-over-HTTPS resolver selector** (`scripts/set-doh-resolver.sh`, `web/app.py`, `web/static/index.html`): preset choices (cloudflare/quad9/nextdns/adguard/system) or custom `https://` URL. Configures `systemd-resolved` when active. `GET/POST /api/doh`. Dashboard DNS Resolver card with `<select>` + custom URL input. `DOH_RESOLVER=system` default in config.
+- **Scheduled daily reboot** (`scripts/schedule-reboot.sh`, `web/app.py`, `web/static/index.html`): `set HH:MM [--skip-if-clients]` / `clear` / `status` subcommands; writes `/etc/cron.d/travel-router-reboot`. `GET/POST /api/schedule/reboot`, `POST /api/uplink/reconnect` (best-effort wlan1 bounce + wpa_supplicant restart). Dashboard Scheduled Reboot card with time picker and skip-if-clients checkbox; Reconnect Uplink button.
+
 ## [2.7.0] - 2026-05-24
 
 ### Added
