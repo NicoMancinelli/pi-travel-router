@@ -32,9 +32,11 @@ VALID_PROFILES = {"vpn-only", "adblock-only", "tor", "direct"}
 QOS_LIMITS_FILE = "/var/lib/travel-router/qos-limits.json"
 APPLY_QOS_SCRIPT = "/usr/local/sbin/apply-qos.sh"
 CAPTIVE_JSON = "/var/lib/travel-router/captive-portal.json"
+CAPTIVE_CREDS_FILE = "/var/lib/travel-router/captive-creds.json"
 _BW_HISTORY_FILE = "/var/lib/travel-router/bw-history.json"
 DOH_SCRIPT = "/usr/local/sbin/set-doh-resolver.sh"
 DOH_PRESETS = ["cloudflare", "quad9", "nextdns", "adguard", "system"]
+MOUNT_STORAGE_SCRIPT = "/usr/local/sbin/mount-storage.sh"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -1413,6 +1415,33 @@ def api_system_restore():
 # ── Captive portal ────────────────────────────────────────────────────────────
 
 
+def _load_captive_creds() -> dict:
+    """Read saved captive portal credentials. Returns {} on any error."""
+    try:
+        return json.loads(Path(CAPTIVE_CREDS_FILE).read_text())
+    except Exception:
+        return {}
+
+
+def _save_captive_creds(url: str, username: str, password: str) -> None:
+    """Atomically write captive portal credentials to disk."""
+    try:
+        data = {"url": url, "username": username, "password": password, "ts": int(time.time())}
+        creds_dir = str(Path(CAPTIVE_CREDS_FILE).parent)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=creds_dir, prefix="captive-creds.")
+        try:
+            with os.fdopen(tmp_fd, "w") as fh:
+                json.dump(data, fh)
+            os.replace(tmp_path, CAPTIVE_CREDS_FILE)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
 @app.route("/api/captive")
 @require_auth
 def api_captive_get():
@@ -1422,6 +1451,46 @@ def api_captive_get():
     except (OSError, json.JSONDecodeError):
         data = {"detected": False}
     return jsonify(data)
+
+
+@app.route("/api/captive/credentials", methods=["GET"])
+@require_auth
+def api_captive_credentials_get():
+    """Return saved captive portal credentials (or {} if none)."""
+    return jsonify(_load_captive_creds())
+
+
+@app.route("/api/captive/credentials", methods=["POST"])
+@require_auth_always
+def api_captive_credentials_post():
+    """Save captive portal credentials."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+    url = body.get("url", "")
+    username = body.get("username", "")
+    password = body.get("password", "")
+    if not (isinstance(url, str) and url.strip()):
+        return jsonify({"error": "Missing or empty 'url' field"}), 400
+    if not (isinstance(username, str) and username.strip()):
+        return jsonify({"error": "Missing or empty 'username' field"}), 400
+    if not (isinstance(password, str) and password.strip()):
+        return jsonify({"error": "Missing or empty 'password' field"}), 400
+    _save_captive_creds(url.strip(), username.strip(), password.strip())
+    return jsonify({"ok": True})
+
+
+@app.route("/api/captive/credentials", methods=["DELETE"])
+@require_auth_always
+def api_captive_credentials_delete():
+    """Remove saved captive portal credentials."""
+    try:
+        os.unlink(CAPTIVE_CREDS_FILE)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        return jsonify({"error": f"Could not remove credentials file: {exc}"}), 503
+    return jsonify({"ok": True})
 
 
 @app.route("/api/captive/bypass", methods=["POST"])
@@ -1468,6 +1537,10 @@ def api_captive_bypass():
 
     if result.returncode != 0:
         return jsonify({"error": f"curl failed (rc={result.returncode}): {result.stderr[:200]}"}), 503
+
+    # Auto-save credentials on successful bypass
+    if url and username and password:
+        _save_captive_creds(url, username, password)
 
     output = (result.stdout or "")[:1000]
     return jsonify({"ok": True, "output": output})
@@ -1727,6 +1800,152 @@ def api_doh_post():
         return jsonify({"error": result.stderr or result.stdout or "Script failed"}), 503
 
     _push_event("doh_change", {"resolver": resolver})
+    return jsonify({"ok": True})
+
+
+# ── Storage (USB/SD) ─────────────────────────────────────────────────────────
+
+_DEVICE_RE = re.compile(r'^[a-z0-9]+$')
+
+
+def _parse_df_travel_data():
+    """Run df -h /media/travel-data and return (used_gb, free_gb, total_gb) or (None, None, None)."""
+    out, rc = _run("df -h /media/travel-data 2>/dev/null")
+    if rc != 0 or not out.strip():
+        return None, None, None
+    try:
+        lines = out.strip().splitlines()
+        if len(lines) < 2:
+            return None, None, None
+        parts = lines[1].split()
+        # df -h columns: Filesystem  Size  Used  Avail  Use%  Mounted
+        if len(parts) < 5:
+            return None, None, None
+
+        def _to_gb(s):
+            s = s.upper()
+            if s.endswith("G"):
+                return round(float(s[:-1]), 1)
+            if s.endswith("M"):
+                return round(float(s[:-1]) / 1024, 2)
+            if s.endswith("K"):
+                return round(float(s[:-1]) / (1024 * 1024), 3)
+            if s.endswith("T"):
+                return round(float(s[:-1]) * 1024, 1)
+            try:
+                return round(float(s) / 1e9, 1)
+            except ValueError:
+                return None
+
+        total_gb = _to_gb(parts[1])
+        used_gb = _to_gb(parts[2])
+        free_gb = _to_gb(parts[3])
+        return used_gb, free_gb, total_gb
+    except Exception:
+        return None, None, None
+
+
+@app.route("/api/storage")
+@require_auth
+def api_storage_get():
+    """Return removable block devices and current mount status of /media/travel-data."""
+    # Run lsblk to list devices
+    devices = []
+    lsblk_out, lsblk_rc = _run(
+        "lsblk -J -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,LABEL,RM 2>/dev/null"
+    )
+    if lsblk_rc == 0 and lsblk_out.strip():
+        try:
+            data = json.loads(lsblk_out)
+            for bd in data.get("blockdevices", []):
+                def _add_device(dev):
+                    """Recursively collect removable partitions/disks."""
+                    dev_type = dev.get("type", "")
+                    removable = str(dev.get("rm", "false")).lower() in ("true", "1")
+                    if removable and dev_type in ("part", "disk"):
+                        devices.append({
+                            "name": dev.get("name", ""),
+                            "size": dev.get("size", ""),
+                            "fstype": dev.get("fstype") or "",
+                            "label": dev.get("label") or "",
+                            "removable": True,
+                            "mountpoint": dev.get("mountpoint") or "",
+                        })
+                    for child in dev.get("children", []):
+                        _add_device(child)
+                _add_device(bd)
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+    # Check if /media/travel-data is mounted
+    mount_check_out, mount_check_rc = _run(
+        "findmnt -n /media/travel-data 2>/dev/null"
+    )
+    mounted = mount_check_rc == 0 and bool(mount_check_out.strip())
+
+    used_gb, free_gb, total_gb = _parse_df_travel_data() if mounted else (None, None, None)
+
+    return jsonify({
+        "mounted": mounted,
+        "mount_point": "/media/travel-data",
+        "used_gb": used_gb,
+        "free_gb": free_gb,
+        "total_gb": total_gb,
+        "devices": devices,
+    })
+
+
+@app.route("/api/storage/mount", methods=["POST"])
+@require_auth_always
+def api_storage_mount():
+    """Mount a removable device to /media/travel-data."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    device = str(body.get("device", "")).strip()
+    if not device:
+        return jsonify({"error": "Missing 'device' field"}), 400
+    if not _DEVICE_RE.match(device) or len(device) > 20:
+        return jsonify({"error": "Invalid device name — only [a-z0-9], max 20 chars"}), 400
+
+    try:
+        result = subprocess.run(
+            [MOUNT_STORAGE_SCRIPT, "mount", device],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "mount-storage.sh not installed"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Mount timed out"}), 504
+
+    if result.returncode != 0:
+        return jsonify({"error": (result.stderr or result.stdout or "Mount failed").strip()}), 503
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/storage/unmount", methods=["POST"])
+@require_auth_always
+def api_storage_unmount():
+    """Unmount /media/travel-data."""
+    try:
+        result = subprocess.run(
+            [MOUNT_STORAGE_SCRIPT, "unmount"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "mount-storage.sh not installed"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Unmount timed out"}), 504
+
+    if result.returncode != 0:
+        return jsonify({"error": (result.stderr or result.stdout or "Unmount failed").strip()}), 503
+
     return jsonify({"ok": True})
 
 
