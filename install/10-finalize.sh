@@ -37,6 +37,11 @@ run_finalize() {
     fi
     ok "apply-qos.sh installed; QoS store initialised"
 
+    # ── Bandwidth history store ───────────────────────────────────────────────────
+    section "Bandwidth history"
+    mkdir -p /var/lib/travel-router && touch /var/lib/travel-router/bw-history.json || true
+    ok "Bandwidth history store initialised"
+
     # ── Version stamp ────────────────────────────────────────────────────────────
     section "Version stamp"
     local _INSTALLED_VERSION
