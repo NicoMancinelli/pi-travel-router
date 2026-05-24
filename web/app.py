@@ -2986,6 +2986,90 @@ def api_portforward_delete(rule_id):
     return jsonify({"ok": True})
 
 
+# ── Client connection history ─────────────────────────────────────────────────
+
+CLIENT_HISTORY_FILE = "/var/lib/travel-router/client-history.json"
+_DHCP_LEASES_FILE = "/var/lib/misc/dnsmasq.leases"
+_CLIENT_HISTORY_MAX = 200  # max events to keep
+_client_history_lock = threading.Lock()
+
+
+def _read_client_history() -> list:
+    try:
+        text = Path(CLIENT_HISTORY_FILE).read_text().strip()
+        if not text:
+            return []
+        return json.loads(text)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _append_client_event(mac: str, ip: str, hostname: str, event: str) -> None:
+    """Append a connect/disconnect event to client history."""
+    with _client_history_lock:
+        history = _read_client_history()
+        history.append({
+            "ts": int(time.time()),
+            "mac": mac.lower(),
+            "ip": ip,
+            "hostname": hostname or "",
+            "event": event,  # "connect" or "disconnect"
+        })
+        # Keep only the most recent N events
+        if len(history) > _CLIENT_HISTORY_MAX:
+            history = history[-_CLIENT_HISTORY_MAX:]
+        try:
+            d = str(Path(CLIENT_HISTORY_FILE).parent)
+            fd, tmp = tempfile.mkstemp(dir=d)
+            with os.fdopen(fd, "w") as fh:
+                json.dump(history, fh)
+            os.replace(tmp, CLIENT_HISTORY_FILE)
+        except Exception:
+            pass
+
+
+_LAST_LEASES: dict = {}  # mac -> {ip, hostname, expiry}
+
+
+def _leases_sampler_loop() -> None:
+    global _LAST_LEASES
+    while True:
+        time.sleep(30)
+        try:
+            text = Path(_DHCP_LEASES_FILE).read_text()
+        except OSError:
+            continue
+        current: dict = {}
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            expiry, mac, ip, hostname = parts[0], parts[1], parts[2], parts[3]
+            current[mac.lower()] = {"ip": ip, "hostname": hostname, "expiry": expiry}
+        # Detect new connections
+        for mac, info in current.items():
+            if mac not in _LAST_LEASES:
+                _append_client_event(mac, info["ip"], info["hostname"], "connect")
+        # Detect disconnections (lease expired/removed)
+        for mac, info in _LAST_LEASES.items():
+            if mac not in current:
+                _append_client_event(mac, info["ip"], info["hostname"], "disconnect")
+        _LAST_LEASES = current
+
+
+threading.Thread(target=_leases_sampler_loop, daemon=True).start()
+
+
+@app.route("/api/clients/history", methods=["GET"])
+@require_auth
+def api_clients_history():
+    """Return recent client connection/disconnection events."""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    history = _read_client_history()
+    # Return most recent events first
+    return jsonify({"events": list(reversed(history[-limit:]))})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])

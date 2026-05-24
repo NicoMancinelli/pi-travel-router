@@ -99,6 +99,11 @@ run_finalize() {
     touch /var/lib/travel-router/datacap.json 2>/dev/null || true
     ok "Data cap store initialised"
 
+    # ── Client history store ──────────────────────────────────────────────────────
+    section "Client history store"
+    touch /var/lib/travel-router/client-history.json 2>/dev/null || true
+    ok "Client history store initialised"
+
     # ── Version stamp ────────────────────────────────────────────────────────────
     section "Version stamp"
     local _INSTALLED_VERSION
