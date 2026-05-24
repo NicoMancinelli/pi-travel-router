@@ -1869,7 +1869,6 @@ def api_traceroute():
     return jsonify({"ok": True, "target": target, "hops": hops})
 
 
-
 # ── Storage (USB/SD) ─────────────────────────────────────────────────────────
 
 _DEVICE_RE = re.compile(r'^[a-z0-9]+$')

@@ -3,6 +3,14 @@
 # Defines run_finalize(). Source this file; do not execute directly.
 
 run_finalize() {
+    # ── USB/SD storage mount manager ─────────────────────────────────────────────
+    section "Storage mount manager"
+    cp "${REPO}/scripts/mount-storage.sh" /usr/local/sbin/mount-storage.sh
+    chmod +x /usr/local/sbin/mount-storage.sh
+    mkdir -p /media/travel-data
+    ok "mount-storage.sh installed to /usr/local/sbin/mount-storage.sh"
+    ok "/media/travel-data created"
+
     # ── Scheduled reboot ──────────────────────────────────────────────────────────
     section "Scheduled reboot"
     cp "${REPO}/scripts/schedule-reboot.sh" /usr/local/sbin/schedule-reboot.sh
