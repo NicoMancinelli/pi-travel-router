@@ -31,8 +31,10 @@
   header .subtitle { color: var(--text-dim); font-size: 12px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
   .full-width { grid-column: 1 / -1; }
-  @media (max-width: 768px) { .grid, .grid-3 { grid-template-columns: 1fr; } }
+  @media (max-width: 768px) { .grid, .grid-3, .grid-4 { grid-template-columns: 1fr; } }
+  @media (max-width: 1100px) and (min-width: 769px) { .grid-4 { grid-template-columns: repeat(2, 1fr); } }
 
   /* Cards */
   .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 16px; }
@@ -206,6 +208,17 @@
   .update-badge:hover { background: rgba(210,153,34,.25); }
   .diag-output { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 10px; max-height: 400px; overflow-y: auto; font-family: var(--mono); font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: var(--text-dim); margin-top: 10px; }
 
+  /* Signal quality bar */
+  .sig-bar-wrap { background: var(--bg3); border-radius: 3px; height: 8px; overflow: hidden; margin: 4px 0 2px; }
+  .sig-bar { height: 100%; border-radius: 3px; transition: width 0.4s; }
+  .sig-bar-green { background: var(--green); }
+  .sig-bar-yellow { background: var(--yellow); }
+  .sig-bar-red { background: var(--red); }
+  .sig-meta { font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+  .sig-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; }
+  .sig-label-name { font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; }
+  .sig-pct { font-size: 13px; font-weight: 600; font-family: var(--mono); }
+
   /* QoS popover */
   .qos-popover { display: none; position: absolute; z-index: 200; background: var(--bg2); border: 1px solid var(--accent); border-radius: 6px; padding: 12px; min-width: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
   .qos-popover.open { display: block; }
@@ -243,7 +256,7 @@
   </header>
 
   <!-- Status row -->
-  <div class="grid-3">
+  <div class="grid-4">
     <div class="card" id="card-uplink">
       <div class="card-title">Uplink</div>
       <div id="uplink-content"><span class="spinner"></span></div>
@@ -255,6 +268,10 @@
     <div class="card" id="card-sys">
       <div class="card-title">System</div>
       <div id="sys-content"><span class="spinner"></span></div>
+    </div>
+    <div class="card" id="card-signal">
+      <div class="card-title">Signal Quality</div>
+      <div id="signal-content"><span class="spinner"></span></div>
     </div>
   </div>
 
@@ -477,6 +494,28 @@
     <hr class="divider" style="margin: 16px 0;">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
       <button class="btn btn-danger" onclick="confirmReboot()">&#x23FB; Reboot Router</button>
+      <button class="btn" id="btn-reconnect-uplink" onclick="reconnectUplink()">&#x21BA; Reconnect Uplink</button>
+    </div>
+  </div>
+
+  <!-- Scheduled Reboot -->
+  <div class="card full-width" style="margin-top:16px;">
+    <div class="card-title">&#x23F0; Scheduled Reboot</div>
+    <div id="reboot-schedule-status" style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">Loading&hellip;</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+      <div class="field" style="margin:0;">
+        <label>Reboot time</label>
+        <input type="time" id="reboot-time" value="04:00" style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;padding:6px 10px;">
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <label class="checkbox-label" style="margin:0;">
+          <input type="checkbox" id="reboot-enabled"> Enable daily reboot
+        </label>
+        <label class="checkbox-label" style="margin:0;">
+          <input type="checkbox" id="reboot-skip-clients"> Skip if clients connected
+        </label>
+      </div>
+      <button class="btn btn-primary" onclick="saveRebootSchedule()">Save Schedule</button>
     </div>
   </div>
 
@@ -758,6 +797,83 @@ async function fetchUpdateCheck() {
   } catch (e) {
     // Non-critical — silently ignore
   }
+}
+
+// ── Signal quality ────────────────────────────────────────────────────────────
+async function fetchSignal() {
+  try {
+    const resp = await apiFetch('/api/signal');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    renderSignal(d);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      document.getElementById('signal-content').innerHTML = '<span class="dim">Unavailable</span>';
+    }
+  }
+}
+
+function _sigBarClass(pct) {
+  if (pct == null) return 'sig-bar-red';
+  return pct >= 70 ? 'sig-bar-green' : pct >= 40 ? 'sig-bar-yellow' : 'sig-bar-red';
+}
+
+function _sigPctColor(pct) {
+  if (pct == null) return 'var(--text-dim)';
+  return pct >= 70 ? 'var(--green)' : pct >= 40 ? 'var(--yellow)' : 'var(--red)';
+}
+
+function renderSignal(d) {
+  const el = document.getElementById('signal-content');
+  if (!d || (!d.wifi && !d.lte)) {
+    el.innerHTML = '<span class="dim">No signal data</span>';
+    return;
+  }
+  let html = '';
+  const wifi = d.wifi;
+  if (wifi) {
+    const pct = wifi.quality_pct;
+    const barCls = _sigBarClass(pct);
+    const pctColor = _sigPctColor(pct);
+    const pctStr = pct != null ? pct + '%' : '—';
+    const barW = pct != null ? pct : 0;
+    const metaParts = [];
+    if (wifi.signal_dbm != null) metaParts.push(wifi.signal_dbm + ' dBm');
+    if (wifi.ssid) metaParts.push(escHtml(wifi.ssid));
+    if (wifi.channel != null) metaParts.push('ch ' + wifi.channel);
+    if (wifi.bitrate_mbps != null) metaParts.push(wifi.bitrate_mbps + ' Mbps');
+    const isActive = d.active === 'wifi';
+    html += `
+      <div class="sig-label-row">
+        <span class="sig-label-name">WiFi${isActive ? ' <span style="color:var(--green);font-size:10px;">&#x25CF; active</span>' : ''}</span>
+        <span class="sig-pct" style="color:${pctColor}">${pctStr}</span>
+      </div>
+      <div class="sig-bar-wrap"><div class="sig-bar ${barCls}" style="width:${barW}%"></div></div>
+      <div class="sig-meta">${metaParts.join(' &nbsp;·&nbsp; ') || '—'}</div>`;
+  }
+  const lte = d.lte;
+  if (lte) {
+    const pct = lte.quality_pct;
+    const barCls = _sigBarClass(pct);
+    const pctColor = _sigPctColor(pct);
+    const pctStr = pct != null ? pct + '%' : '—';
+    const barW = pct != null ? pct : 0;
+    const lteMeta = [];
+    if (lte.operator) lteMeta.push(escHtml(lte.operator));
+    if (lte.state) lteMeta.push(lte.state);
+    const isActive = d.active === 'lte';
+    html += `
+      <div class="sig-label-row" style="margin-top:10px;">
+        <span class="sig-label-name">LTE${isActive ? ' <span style="color:var(--green);font-size:10px;">&#x25CF; active</span>' : ''}</span>
+        <span class="sig-pct" style="color:${pctColor}">${pctStr}</span>
+      </div>
+      <div class="sig-bar-wrap"><div class="sig-bar ${barCls}" style="width:${barW}%"></div></div>
+      <div class="sig-meta">${lteMeta.join(' &nbsp;·&nbsp; ') || '—'}</div>`;
+  }
+  if (!wifi && !lte) {
+    html = '<span class="dim">No signal data</span>';
+  }
+  el.innerHTML = html;
 }
 
 async function runDiagnostic() {
@@ -1201,6 +1317,71 @@ function confirmReboot() {
     .then(r => r.json())
     .then(() => toast('Rebooting…', 'ok'))
     .catch(e => toast('Error: ' + e.message, 'err'));
+}
+
+// ── Reconnect Uplink ──────────────────────────────────────────────────────────
+async function reconnectUplink() {
+  const btn = document.getElementById('btn-reconnect-uplink');
+  if (btn) btn.disabled = true;
+  try {
+    const resp = await apiFetch('/api/uplink/reconnect', { method: 'POST' });
+    const d = await resp.json();
+    if (resp.ok) {
+      toast(d.message || 'Reconnecting…', 'ok');
+    } else {
+      toast('Error: ' + (d.error || '?'), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  } finally {
+    if (btn) { setTimeout(() => { btn.disabled = false; }, 5000); }
+  }
+}
+
+// ── Scheduled Reboot ──────────────────────────────────────────────────────────
+async function fetchRebootSchedule() {
+  try {
+    const resp = await apiFetch('/api/schedule/reboot');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    const statusEl = document.getElementById('reboot-schedule-status');
+    const enabledCb = document.getElementById('reboot-enabled');
+    const skipCb = document.getElementById('reboot-skip-clients');
+    const timeInput = document.getElementById('reboot-time');
+    if (enabledCb) enabledCb.checked = !!d.enabled;
+    if (skipCb) skipCb.checked = !!d.skip_if_clients;
+    if (timeInput && d.time) timeInput.value = d.time;
+    if (statusEl) {
+      if (d.enabled && d.time) {
+        statusEl.textContent = 'Scheduled daily at ' + d.time + (d.skip_if_clients ? ' (skip if clients connected)' : '');
+        statusEl.style.color = 'var(--green)';
+      } else {
+        statusEl.textContent = 'Not scheduled';
+        statusEl.style.color = 'var(--text-dim)';
+      }
+    }
+  } catch (_) { /* ignore */ }
+}
+
+async function saveRebootSchedule() {
+  const enabled = document.getElementById('reboot-enabled').checked;
+  const time = document.getElementById('reboot-time').value;
+  const skip_if_clients = document.getElementById('reboot-skip-clients').checked;
+  try {
+    const resp = await apiFetch('/api/schedule/reboot', {
+      method: 'POST',
+      body: JSON.stringify({ enabled, time, skip_if_clients }),
+    });
+    const d = await resp.json();
+    if (resp.ok) {
+      toast(enabled ? 'Reboot scheduled at ' + time : 'Scheduled reboot cleared', 'ok');
+      fetchRebootSchedule();
+    } else {
+      toast('Error: ' + (d.error || '?'), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
 }
 
 // ── WireGuard peer ─────────────────────────────────────────────────────────────
@@ -1784,6 +1965,8 @@ async function refreshAll() {
   fetchGuestNetwork();
   fetchSpeedTestCached();
   fetchCaptiveStatus();
+  fetchSignal();
+  fetchRebootSchedule();
 }
 
 async function init() {

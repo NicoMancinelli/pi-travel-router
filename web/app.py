@@ -1471,6 +1471,213 @@ def api_captive_bypass():
     return jsonify({"ok": True, "output": output})
 
 
+# ── Signal quality ────────────────────────────────────────────────────────────
+
+
+def _parse_iwconfig(iface: str) -> dict:
+    """Run iwconfig <iface> and parse quality/signal fields."""
+    result: dict = {}
+    try:
+        out, rc = _run(f"iwconfig {iface} 2>/dev/null")
+        if rc != 0 or not out.strip():
+            return result
+        m = re.search(r"Link Quality=(\d+)/(\d+)", out)
+        if m:
+            num, denom = int(m.group(1)), int(m.group(2))
+            result["quality_pct"] = int(num / denom * 100) if denom else None
+        m = re.search(r"Signal level=(-?\d+)", out)
+        if m:
+            result["signal_dbm"] = int(m.group(1))
+    except Exception:
+        pass
+    return result
+
+
+def _parse_iw_link(iface: str) -> dict:
+    """Run iw dev <iface> link and parse SSID, bitrate, channel."""
+    result: dict = {}
+    try:
+        out, rc = _run(["iw", "dev", iface, "link"])
+        if rc != 0 or not out.strip():
+            return result
+        m = re.search(r"SSID: (.+)", out)
+        if m:
+            result["ssid"] = m.group(1).strip()
+        m = re.search(r"tx bitrate: ([\d.]+)", out)
+        if m:
+            result["bitrate_mbps"] = float(m.group(1))
+        m = re.search(r"channel (\d+)", out)
+        if m:
+            result["channel"] = int(m.group(1))
+    except Exception:
+        pass
+    return result
+
+
+def _parse_mmcli() -> dict:
+    """Run mmcli -m 0 --output-keyvalue and parse LTE signal/operator/state."""
+    result: dict = {}
+    try:
+        # Check if mmcli is available
+        which_out, which_rc = _run("which mmcli")
+        if which_rc != 0 or not which_out.strip():
+            return result
+        out, rc = _run("mmcli -m 0 --output-keyvalue 2>/dev/null", timeout=8)
+        if rc != 0 or not out.strip():
+            return result
+        for line in out.splitlines():
+            line = line.strip()
+            if "|" not in line:
+                continue
+            key, _, val = line.partition("|")
+            key = key.strip()
+            val = val.strip()
+            if key == "signal-quality.value":
+                try:
+                    result["quality_pct"] = int(val)
+                except ValueError:
+                    pass
+            elif key == "m3gpp.operator-name":
+                result["operator"] = val
+            elif key == "m3gpp.registration-state":
+                result["state"] = val
+    except Exception:
+        pass
+    return result
+
+
+@app.route("/api/signal")
+@require_auth
+def api_signal():
+    """Return WiFi uplink signal quality and optional LTE modem signal info."""
+    try:
+        # Determine active WiFi uplink iface: try wlan1 (client-mode) first, then wlan0
+        wifi_iface = None
+        for candidate in ("wlan1", "wlan0"):
+            chk_out, chk_rc = _run(["ip", "link", "show", candidate])
+            if chk_rc == 0 and chk_out.strip():
+                wifi_iface = candidate
+                break
+
+        wifi: dict = {"quality_pct": None, "signal_dbm": None, "ssid": None,
+                      "channel": None, "bitrate_mbps": None}
+        if wifi_iface:
+            iw_data = _parse_iwconfig(wifi_iface)
+            wifi.update(iw_data)
+            link_data = _parse_iw_link(wifi_iface)
+            wifi.update(link_data)
+
+        # LTE modem via ModemManager
+        lte_raw = _parse_mmcli()
+        lte: dict | None = None
+        if lte_raw:
+            lte = {
+                "quality_pct": lte_raw.get("quality_pct"),
+                "operator": lte_raw.get("operator"),
+                "state": lte_raw.get("state"),
+            }
+
+        # Determine active uplink type
+        active = "wifi"
+        uplink_out, _ = _run("ip route show default")
+        m = re.search(r"dev\s+(\S+)", uplink_out)
+        if m:
+            dev = m.group(1)
+            if dev in ("usb0", "rndis0") or dev.startswith("enx"):
+                active = "usb"
+            elif dev == wifi_iface:
+                active = "wifi"
+            elif lte and dev in ("wwan0",):
+                active = "lte"
+
+        return jsonify({"wifi": wifi, "lte": lte, "active": active})
+    except Exception:
+        return jsonify({"wifi": None, "lte": None, "active": None})
+
+
+# ── Scheduled reboot ─────────────────────────────────────────────────────────
+
+SCHEDULE_REBOOT_SCRIPT = "/usr/local/sbin/schedule-reboot.sh"
+
+
+@app.route("/api/schedule/reboot", methods=["GET"])
+@require_auth
+def api_schedule_reboot_get():
+    out, rc = _run([SCHEDULE_REBOOT_SCRIPT, "status"], timeout=5)
+    try:
+        data = json.loads(out.strip())
+    except (json.JSONDecodeError, ValueError):
+        data = {"enabled": False, "time": None, "skip_if_clients": False}
+    return jsonify(data)
+
+
+@app.route("/api/schedule/reboot", methods=["POST"])
+@require_auth_always
+def api_schedule_reboot_post():
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    enabled = body.get("enabled", False)
+
+    if not enabled:
+        _run([SCHEDULE_REBOOT_SCRIPT, "clear"], timeout=5)
+        return jsonify({"ok": True})
+
+    time_str = body.get("time", "")
+    if not re.match(r'^\d{2}:\d{2}$', str(time_str)):
+        return jsonify({"error": "Invalid time format — expected HH:MM"}), 400
+
+    parts = str(time_str).split(":")
+    hh, mm = int(parts[0]), int(parts[1])
+    if not (0 <= hh <= 23):
+        return jsonify({"error": "Hour must be 0-23"}), 400
+    if not (0 <= mm <= 59):
+        return jsonify({"error": "Minute must be 0-59"}), 400
+
+    skip_if_clients = bool(body.get("skip_if_clients", False))
+    cmd = [SCHEDULE_REBOOT_SCRIPT, "set", str(time_str)]
+    if skip_if_clients:
+        cmd.append("--skip-if-clients")
+
+    out, rc = _run(cmd, timeout=5)
+    if rc != 0:
+        return jsonify({"error": f"schedule-reboot.sh failed (rc={rc})"}), 503
+
+    return jsonify({"ok": True})
+
+
+# ── Uplink reconnect ──────────────────────────────────────────────────────────
+
+
+@app.route("/api/uplink/reconnect", methods=["POST"])
+@require_auth_always
+def api_uplink_reconnect():
+    try:
+        subprocess.run(
+            ["ip", "link", "set", "wlan1", "down"],
+            capture_output=True, timeout=5,
+        )
+        import time as _t
+        _t.sleep(2)
+        subprocess.run(
+            ["ip", "link", "set", "wlan1", "up"],
+            capture_output=True, timeout=5,
+        )
+    except Exception:
+        pass  # best-effort
+
+    try:
+        subprocess.run(
+            ["systemctl", "restart", "wpa_supplicant@wlan1"],
+            capture_output=True, timeout=10,
+        )
+    except Exception:
+        pass  # best-effort
+
+    return jsonify({"ok": True, "message": "Reconnecting uplink…"})
+
+
 # ── Serve index.html ──────────────────────────────────────────────────────────
 
 

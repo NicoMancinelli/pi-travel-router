@@ -498,6 +498,7 @@ class DashboardScreen(Screen):
             yield Static(id="ap-panel", classes="panel")
             yield Static(id="features-panel", classes="panel")
             yield Static(id="system-panel", classes="panel")
+            yield Static(id="signal-panel", classes="panel")
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
             "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  "
@@ -512,9 +513,81 @@ class DashboardScreen(Screen):
         self._refresh_timer: Timer = self.set_interval(5, self._refresh_status)
         self._refresh_status()
         self._event_timer: Timer = self.set_interval(10, self._poll_events)
+        self._signal_timer: Timer = self.set_interval(15, self._refresh_signal)
+        self.run_worker(self._fetch_signal_worker, exclusive=False, thread=True)
 
     def _poll_events(self) -> None:
         self.run_worker(self._fetch_events, exclusive=False, thread=True)
+
+    def _refresh_signal(self) -> None:
+        self.run_worker(self._fetch_signal_worker, exclusive=False, thread=True)
+
+    def _fetch_signal_worker(self) -> None:
+        """Fetch /api/signal and update the signal panel."""
+        import json as _json
+        try:
+            token = ""
+            try:
+                with open("/var/lib/travel-router/web-token") as fh:
+                    token = fh.read().strip()
+            except OSError:
+                pass
+            cmd = ["curl", "-sf", "--max-time", "5", "http://127.0.0.1:8080/api/signal"]
+            if token:
+                cmd += ["-H", f"Authorization: Bearer {token}"]
+            rc, out, _ = run(cmd, timeout=8)
+            if rc != 0 or not out.strip():
+                return
+            data = _json.loads(out)
+            self.call_from_thread(self._render_signal_panel, data)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _signal_bar(pct: int | None, width: int = 10) -> str:
+        """Return a Unicode block progress bar string coloured by quality."""
+        if pct is None:
+            return "[@dim]" + "░" * width + "[/]"
+        filled = max(0, min(width, round(pct / 100 * width)))
+        empty = width - filled
+        bar = "█" * filled + "░" * empty
+        color = "green" if pct >= 70 else "yellow" if pct >= 40 else "red"
+        return f"[@{color}]{bar}[/]"
+
+    def _render_signal_panel(self, data: dict) -> None:
+        lines = ["[@cyan bold]SIGNAL[/]"]
+        wifi = data.get("wifi") or {}
+        lte = data.get("lte")
+        active = data.get("active", "wifi")
+
+        wifi_pct = wifi.get("quality_pct")
+        wifi_dbm = wifi.get("signal_dbm")
+        wifi_ssid = wifi.get("ssid") or ""
+        active_marker = "  [@green]●[/]" if active == "wifi" else ""
+
+        bar = self._signal_bar(wifi_pct)
+        pct_str = f"{wifi_pct}%" if wifi_pct is not None else "—"
+        dbm_str = f"  {wifi_dbm}dBm" if wifi_dbm is not None else ""
+        ssid_str = f"  {wifi_ssid}" if wifi_ssid else ""
+        lines.append(
+            f"  WiFi:{active_marker} {bar} {pct_str}{dbm_str}{ssid_str}"
+        )
+
+        if lte:
+            lte_pct = lte.get("quality_pct")
+            lte_op = lte.get("operator") or ""
+            lte_active = "  [@green]●[/]" if active == "lte" else ""
+            lte_bar = self._signal_bar(lte_pct)
+            lte_pct_str = f"{lte_pct}%" if lte_pct is not None else "—"
+            lte_meta = f"  {lte_op}" if lte_op else ""
+            lines.append(
+                f"  LTE:{lte_active} {lte_bar} {lte_pct_str}{lte_meta}"
+            )
+
+        try:
+            self.query_one("#signal-panel", Static).update("\n".join(lines))
+        except Exception:
+            pass
 
     def _fetch_events(self) -> None:
         """Poll /api/events and show a modal for critical event types."""
