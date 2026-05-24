@@ -485,6 +485,7 @@ class DashboardScreen(Screen):
         Binding("g", "push_screen('guest')", "Guest"),
         Binding("s", "push_screen('speedtest')", "SpeedTest"),
         Binding("c", "push_screen('captive')", "Captive"),
+        Binding("u", "push_screen('storage')", "Storage"),
         Binding("q", "quit_app", "Quit"),
     ]
 
@@ -502,7 +503,7 @@ class DashboardScreen(Screen):
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
             "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  "
-            "[C]Captive  [Q]Quit",
+            "[C]Captive  [U]Storage  [Q]Quit",
             id="nav-panel",
         )
         yield Footer()
@@ -2345,6 +2346,208 @@ class GuestNetworkScreen(Screen):
         self._load()
 
 
+# ── Storage screen ────────────────────────────────────────────────────────────
+STORAGE_API_BASE = "http://127.0.0.1:8080/api/storage"
+
+
+class StorageScreen(Screen):
+    """USB/SD storage mount manager — press U from dashboard."""
+
+    BINDINGS = [
+        Binding("q,escape", "pop_screen", "Back"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("m", "mount_selected", "Mount"),
+        Binding("u", "unmount", "Unmount"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label("USB / SD Storage", classes="panel-title")
+        yield Static(id="storage-status-line")
+        yield DataTable(id="storage-table", zebra_stripes=True)
+        with Horizontal():
+            yield Button("Mount [M]", id="storage-mount-btn", classes="action")
+            yield Button("Unmount [U]", id="storage-unmount-btn", classes="action")
+            yield Button("Refresh [R]", id="storage-refresh-btn", classes="action")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        t = self.query_one("#storage-table", DataTable)
+        t.add_columns("Device", "Size", "FS", "Label", "Mountpoint")
+        self._load()
+
+    def _load(self) -> None:
+        self.run_worker(self._fetch, exclusive=True, thread=True)
+
+    def _fetch(self) -> None:
+        import json as _json
+        token = ""
+        try:
+            with open("/var/lib/travel-router/web-token") as fh:
+                token = fh.read().strip()
+        except OSError:
+            pass
+        cmd = ["curl", "-sf", "--max-time", "8", STORAGE_API_BASE]
+        if token:
+            cmd += ["-H", f"Authorization: Bearer {token}"]
+        rc, out, _err = run(cmd)
+        if rc != 0 or not out.strip():
+            self.call_from_thread(self._apply, False, None, None, None, [])
+            return
+        try:
+            data = _json.loads(out)
+        except (ValueError, _json.JSONDecodeError):
+            self.call_from_thread(self._apply, False, None, None, None, [])
+            return
+        mounted = bool(data.get("mounted", False))
+        used_gb = data.get("used_gb")
+        free_gb = data.get("free_gb")
+        total_gb = data.get("total_gb")
+        devices = data.get("devices", [])
+        self.call_from_thread(self._apply, mounted, used_gb, free_gb, total_gb, devices)
+
+    def _apply(
+        self,
+        mounted: bool,
+        used_gb,
+        free_gb,
+        total_gb,
+        devices: list,
+    ) -> None:
+        try:
+            if mounted:
+                free_str = f"{free_gb} GB free" if free_gb is not None else ""
+                total_str = f" of {total_gb} GB" if total_gb is not None else ""
+                self.query_one("#storage-status-line", Static).update(
+                    f"[@green]✓ Mounted at /media/travel-data[/]"
+                    + (f" — [@dim]{free_str}{total_str}[/]" if free_str else "")
+                )
+            else:
+                self.query_one("#storage-status-line", Static).update(
+                    "[@dim]Not mounted — select a device and press [M] to mount[/]"
+                )
+        except Exception:
+            pass
+
+        t = self.query_one("#storage-table", DataTable)
+        t.clear()
+        if not devices:
+            t.add_row("[dim]No removable devices detected[/dim]", "", "", "", "")
+        else:
+            for dev in devices:
+                name = str(dev.get("name", ""))
+                size = str(dev.get("size", "") or "?")
+                fstype = str(dev.get("fstype", "") or "?")
+                label = str(dev.get("label", "") or "")
+                mp = str(dev.get("mountpoint", "") or "")
+                t.add_row(f"[cyan]{name}[/cyan]", size, fstype, label, mp)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == "storage-mount-btn":
+            self.action_mount_selected()
+        elif bid == "storage-unmount-btn":
+            self.action_unmount()
+        elif bid == "storage-refresh-btn":
+            self._load()
+
+    def action_mount_selected(self) -> None:
+        t = self.query_one("#storage-table", DataTable)
+        row_key = t.cursor_row
+        try:
+            cell = t.get_cell_at((row_key, 0))
+        except Exception:
+            self.app.push_screen(MessageModal("Storage", "No device selected", "error"))
+            return
+        # Strip markup
+        raw = str(cell)
+        import re as _re
+        name = _re.sub(r'\[.*?\]', '', raw).strip()
+        if not name or not _re.match(r'^[a-z0-9]+$', name):
+            self.app.push_screen(MessageModal("Storage", f"Invalid device name: {raw!r}", "error"))
+            return
+        self.run_worker(lambda n=name: self._mount_worker(n), thread=True)
+
+    def _mount_worker(self, name: str) -> None:
+        import json as _json
+        token = ""
+        try:
+            with open("/var/lib/travel-router/web-token") as fh:
+                token = fh.read().strip()
+        except OSError:
+            pass
+        body = _json.dumps({"device": name})
+        cmd = [
+            "curl", "-sf", "--max-time", "15",
+            "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", body,
+            f"{STORAGE_API_BASE}/mount",
+        ]
+        if token:
+            cmd += ["-H", f"Authorization: Bearer {token}"]
+        rc, out, _err = run(cmd, timeout=20)
+        try:
+            data = _json.loads(out) if out.strip() else {}
+        except (ValueError, _json.JSONDecodeError):
+            data = {}
+        if rc == 0 and data.get("ok"):
+            self.call_from_thread(
+                lambda: self.app.push_screen(
+                    MessageModal("Storage", f"Mounted /dev/{name} at /media/travel-data", "success")
+                )
+            )
+        else:
+            err_msg = data.get("error", f"curl rc={rc}")
+            self.call_from_thread(
+                lambda e=err_msg: self.app.push_screen(
+                    MessageModal("Storage", f"Mount failed: {e}", "error")
+                )
+            )
+        self.call_from_thread(self._load)
+
+    def action_unmount(self) -> None:
+        self.run_worker(self._unmount_worker, thread=True)
+
+    def _unmount_worker(self) -> None:
+        import json as _json
+        token = ""
+        try:
+            with open("/var/lib/travel-router/web-token") as fh:
+                token = fh.read().strip()
+        except OSError:
+            pass
+        cmd = [
+            "curl", "-sf", "--max-time", "10",
+            "-X", "POST",
+            f"{STORAGE_API_BASE}/unmount",
+        ]
+        if token:
+            cmd += ["-H", f"Authorization: Bearer {token}"]
+        rc, out, _err = run(cmd, timeout=15)
+        try:
+            data = _json.loads(out) if out.strip() else {}
+        except (ValueError, _json.JSONDecodeError):
+            data = {}
+        if rc == 0 and data.get("ok"):
+            self.call_from_thread(
+                lambda: self.app.push_screen(
+                    MessageModal("Storage", "Unmounted /media/travel-data", "success")
+                )
+            )
+        else:
+            err_msg = data.get("error", f"curl rc={rc}")
+            self.call_from_thread(
+                lambda e=err_msg: self.app.push_screen(
+                    MessageModal("Storage", f"Unmount failed: {e}", "error")
+                )
+            )
+        self.call_from_thread(self._load)
+
+    def action_refresh(self) -> None:
+        self._load()
+
+
 # ── Speed Test screen ─────────────────────────────────────────────────────────
 SPEEDTEST_SCRIPT = "/usr/local/sbin/speedtest.sh"
 SPEEDTEST_API = "http://127.0.0.1:8080/api/system/speedtest"
@@ -2521,6 +2724,7 @@ class SpeedTestScreen(Screen):
 
 # ── Captive Portal screen ─────────────────────────────────────────────────────
 CAPTIVE_JSON_PATH = "/var/lib/travel-router/captive-portal.json"
+CAPTIVE_CREDS_PATH = "/var/lib/travel-router/captive-creds.json"
 CAPTIVE_CHECK_CMD = "/usr/local/sbin/captive-check.sh"
 
 
@@ -2531,6 +2735,7 @@ class CaptivePortalScreen(Screen):
         Binding("q,escape", "pop_screen", "Back"),
         Binding("r", "refresh_status", "Refresh"),
         Binding("o", "open_portal", "Open in browser"),
+        Binding("f", "forget_creds", "Forget saved creds"),
     ]
 
     _detected: reactive[bool] = reactive(False, layout=True)
@@ -2541,9 +2746,11 @@ class CaptivePortalScreen(Screen):
         yield Label("Captive Portal", classes="panel-title")
         yield Static(id="captive-status-line")
         yield Static(id="captive-url-line")
+        yield Static(id="captive-creds-line")
         with ScrollableContainer():
             yield Button("Re-run captive-check.sh  [R]", id="cp-recheck-btn", classes="action")
             yield Button("Open portal URL in browser  [O]", id="cp-open-btn", classes="action")
+            yield Button("Forget saved credentials  [F]", id="cp-forget-btn", classes="action")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -2555,6 +2762,7 @@ class CaptivePortalScreen(Screen):
     def _fetch_status(self) -> None:
         detected = False
         url = ""
+        creds_line = ""
         try:
             import json as _json
             with open(CAPTIVE_JSON_PATH) as fh:
@@ -2563,9 +2771,24 @@ class CaptivePortalScreen(Screen):
             url = str(data.get("url", "") or "")
         except (OSError, ValueError):
             pass
-        self.call_from_thread(self._apply_status, detected, url)
+        try:
+            import json as _json
+            with open(CAPTIVE_CREDS_PATH) as fh:
+                creds = _json.load(fh)
+            saved_user = str(creds.get("username", "") or "")
+            saved_url = str(creds.get("url", "") or "")
+            if saved_user:
+                try:
+                    from urllib.parse import urlparse as _urlparse
+                    host = _urlparse(saved_url).hostname or saved_url
+                except Exception:
+                    host = saved_url
+                creds_line = f"[@dim]Saved:[/] [@cyan]{saved_user}[/] [@dim]@[/] [@cyan]{host}[/]  [@dim](press F to forget)[/]"
+        except (OSError, ValueError):
+            pass
+        self.call_from_thread(self._apply_status, detected, url, creds_line)
 
-    def _apply_status(self, detected: bool, url: str) -> None:
+    def _apply_status(self, detected: bool, url: str, creds_line: str) -> None:
         self._detected = detected
         self._portal_url = url
         try:
@@ -2581,6 +2804,7 @@ class CaptivePortalScreen(Screen):
                     "[@green]✓ No captive portal detected — internet clear[/]"
                 )
                 self.query_one("#captive-url-line", Static).update("")
+            self.query_one("#captive-creds-line", Static).update(creds_line)
         except Exception:
             pass
 
@@ -2590,6 +2814,8 @@ class CaptivePortalScreen(Screen):
             self.action_refresh_status()
         elif bid == "cp-open-btn":
             self.action_open_portal()
+        elif bid == "cp-forget-btn":
+            self.action_forget_creds()
 
     def action_refresh_status(self) -> None:
         try:
@@ -2601,6 +2827,16 @@ class CaptivePortalScreen(Screen):
     def _run_check(self) -> None:
         run([CAPTIVE_CHECK_CMD], timeout=30)
         self._fetch_status()
+
+    def action_forget_creds(self) -> None:
+        try:
+            import os as _os
+            _os.unlink(CAPTIVE_CREDS_PATH)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+        self._load_status()
 
     def action_open_portal(self) -> None:
         url = self._portal_url
@@ -2636,6 +2872,7 @@ class TravelRouterApp(App):
         "guest": GuestNetworkScreen,
         "speedtest": SpeedTestScreen,
         "captive": CaptivePortalScreen,
+        "storage": StorageScreen,
     }
 
     BINDINGS = [

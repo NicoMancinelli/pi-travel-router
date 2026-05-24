@@ -3,6 +3,14 @@
 # Defines run_finalize(). Source this file; do not execute directly.
 
 run_finalize() {
+    # ── USB/SD storage mount manager ─────────────────────────────────────────────
+    section "Storage mount manager"
+    cp "${REPO}/scripts/mount-storage.sh" /usr/local/sbin/mount-storage.sh
+    chmod +x /usr/local/sbin/mount-storage.sh
+    mkdir -p /media/travel-data
+    ok "mount-storage.sh installed to /usr/local/sbin/mount-storage.sh"
+    ok "/media/travel-data created"
+
     # ── Scheduled reboot ──────────────────────────────────────────────────────────
     section "Scheduled reboot"
     cp "${REPO}/scripts/schedule-reboot.sh" /usr/local/sbin/schedule-reboot.sh
@@ -47,6 +55,7 @@ run_finalize() {
     if [[ ! -f /var/lib/travel-router/captive-portal.json ]]; then
         echo '{"detected":false}' > /var/lib/travel-router/captive-portal.json
     fi
+    touch /var/lib/travel-router/captive-creds.json 2>/dev/null || true
     ok "captive-check.sh installed; captive-portal.json initialised"
 
     # ── Per-device QoS ───────────────────────────────────────────────────────────
