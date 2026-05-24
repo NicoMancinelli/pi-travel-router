@@ -344,6 +344,39 @@
 
   <hr class="divider">
 
+  <!-- Backup & Restore -->
+  <div class="card full-width" id="card-backup">
+    <div class="card-title">&#x1F4BE; Backup &amp; Restore</div>
+    <div style="display:flex;flex-direction:column;gap:16px;">
+      <!-- Download backup -->
+      <div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Configuration Backup</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">
+          Downloads a <code>.tar.gz</code> containing feature flags, AP config, WireGuard, and privacy profiles.<br>
+          Tokens, certificates, and logs are not included.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" id="btn-backup-download" onclick="downloadBackup()">&#x2B73; Download Backup</button>
+          <span id="backup-last" style="font-size:12px;color:var(--text-dim);"></span>
+        </div>
+      </div>
+      <!-- Restore -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Restore from Backup</div>
+        <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">
+          Upload a previously downloaded backup file. Current config will be backed up first.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <input type="file" id="restore-file" accept=".tar.gz,.tgz" style="font-size:13px;color:var(--text);">
+          <button class="btn" id="btn-restore" onclick="restoreBackup()">&#x2B06; Restore</button>
+        </div>
+        <div id="restore-result" style="margin-top:10px;font-size:12px;display:none;"></div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Logs -->
   <div class="card full-width">
     <div class="card-title">
@@ -1324,6 +1357,95 @@ async function runSpeedTest() {
   }
 }
 
+// ── Backup & Restore ──────────────────────────────────────────────────────────
+function _updateBackupTimestamp() {
+  const ts = localStorage.getItem('travel-router-last-backup');
+  const el = document.getElementById('backup-last');
+  if (!el) return;
+  el.textContent = ts ? 'Last backup: ' + new Date(parseInt(ts, 10)).toLocaleString() : 'Last backup: Never';
+}
+
+async function downloadBackup() {
+  const btn = document.getElementById('btn-backup-download');
+  if (btn) btn.disabled = true;
+  try {
+    const headers = {};
+    if (_token) headers['Authorization'] = 'Bearer ' + _token;
+    const resp = await fetch('/api/system/backup', { headers });
+    if (resp.status === 401) {
+      document.getElementById('auth-banner').style.display = 'flex';
+      throw new Error('Unauthorized');
+    }
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      toast('Backup failed: ' + (d.error || resp.statusText), 'err');
+      return;
+    }
+    const blob = await resp.blob();
+    const filename = (resp.headers.get('Content-Disposition') || '')
+      .match(/filename=([^\s;]+)/)?.[1] || 'travel-router-backup.tar.gz';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    localStorage.setItem('travel-router-last-backup', Date.now().toString());
+    _updateBackupTimestamp();
+    toast('Backup downloaded', 'ok');
+  } catch (e) {
+    if (e.message !== 'Unauthorized') toast('Backup error: ' + e.message, 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function restoreBackup() {
+  const fileInput = document.getElementById('restore-file');
+  const resultEl = document.getElementById('restore-result');
+  const btn = document.getElementById('btn-restore');
+  if (!fileInput || !fileInput.files || !fileInput.files.length) {
+    toast('Select a backup file first', 'err');
+    return;
+  }
+  if (!confirm('Restore will overwrite current config. Continue?')) return;
+
+  if (btn) btn.disabled = true;
+  if (resultEl) { resultEl.style.display = ''; resultEl.style.color = 'var(--text-dim)'; resultEl.textContent = 'Uploading and restoring…'; }
+
+  try {
+    const form = new FormData();
+    form.append('backup', fileInput.files[0]);
+    const headers = {};
+    if (_token) headers['Authorization'] = 'Bearer ' + _token;
+    const resp = await fetch('/api/system/restore', { method: 'POST', headers, body: form });
+    if (resp.status === 401) {
+      document.getElementById('auth-banner').style.display = 'flex';
+      throw new Error('Unauthorized');
+    }
+    const d = await resp.json();
+    if (resp.ok && d.ok) {
+      if (resultEl) {
+        resultEl.style.color = 'var(--green)';
+        resultEl.textContent = 'Restore complete. Restart services or reboot for changes to take effect.';
+      }
+      toast('Restore complete', 'ok');
+    } else {
+      if (resultEl) { resultEl.style.color = 'var(--red)'; resultEl.textContent = 'Error: ' + (d.error || 'Unknown error'); }
+      toast('Restore failed: ' + (d.error || '?'), 'err');
+    }
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      if (resultEl) { resultEl.style.color = 'var(--red)'; resultEl.textContent = 'Error: ' + e.message; }
+      toast('Restore error: ' + e.message, 'err');
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1347,6 +1469,7 @@ async function refreshAll() {
 
 async function init() {
   renderServices();
+  _updateBackupTimestamp();
   await refreshAll();
   // Fetch update check once (calls GitHub API — not repeated on every refresh)
   fetchUpdateCheck();

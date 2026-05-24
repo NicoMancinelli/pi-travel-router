@@ -1102,6 +1102,87 @@ def api_guest_network_post():
     return jsonify({"ok": True, "enabled": new_enabled})
 
 
+# ── Config backup / restore ───────────────────────────────────────────────────
+
+CONFIG_BACKUP_SCRIPT = "/usr/local/sbin/config-backup.sh"
+
+
+@app.route("/api/system/backup", methods=["GET"])
+@require_auth_always
+def api_system_backup():
+    """Run config-backup.sh and return the archive as a download."""
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tar.gz", prefix="travel-router-backup-")
+    os.close(tmp_fd)
+    try:
+        result = subprocess.run(
+            [CONFIG_BACKUP_SCRIPT, "backup", tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return jsonify({"error": result.stderr or "Backup script failed"}), 503
+
+        filename = "travel-router-backup-" + datetime.now().strftime("%Y%m%d") + ".tar.gz"
+        with open(tmp_path, "rb") as fh:
+            data = fh.read()
+    except FileNotFoundError:
+        return jsonify({"error": "config-backup.sh not installed"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Backup timed out"}), 504
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    return Response(
+        data,
+        mimetype="application/gzip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.route("/api/system/restore", methods=["POST"])
+@require_auth_always
+def api_system_restore():
+    """Accept a multipart backup upload and run config-backup.sh restore."""
+    if "backup" not in request.files:
+        return jsonify({"error": "Missing 'backup' file field"}), 400
+
+    upload = request.files["backup"]
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tar.gz", prefix="travel-router-restore-")
+    os.close(tmp_fd)
+    try:
+        upload.save(tmp_path)
+        os.chmod(tmp_path, 0o600)
+
+        result = subprocess.run(
+            [CONFIG_BACKUP_SCRIPT, "restore", tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            return jsonify({"error": result.stderr or result.stdout or "Restore script failed"}), 503
+
+        restored_lines = [
+            line.strip()
+            for line in (result.stdout + result.stderr).splitlines()
+            if line.strip()
+        ]
+        return jsonify({"ok": True, "restored_files": restored_lines})
+    except FileNotFoundError:
+        return jsonify({"error": "config-backup.sh not installed"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Restore timed out"}), 504
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
 # ── Serve index.html ──────────────────────────────────────────────────────────
 
 
