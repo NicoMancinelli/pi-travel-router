@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-05-23
+
+### Added
+
+- **Guest WiFi network** (`config/hostapd-guest.conf`, `systemd/hostapd-guest.service`): isolated second SSID (`TravelRouter-Guest`) on `uap1` virtual interface; guests get `192.168.5.0/24`, blocked from reaching primary AP clients and management ports (22, 8080). `ENABLE_GUEST_NETWORK=0/1` feature flag, optional `GUEST_PASS` (empty = open network).
+- **Enhanced log viewer** (`web/app.py`, `web/static/index.html`): `GET /api/logs` gains `level`, `since`, `q`, `limit` query params for server-side filtering; `GET /api/logs/levels`; UI filter bar with level dropdown, text search (debounced), pause toggle, auto-scroll; log lines color-coded by severity.
+- **Rich AP client table** (`web/app.py`, `web/static/index.html`): `GET /api/clients` returns hostname (from dnsmasq.leases), IP, signal (colored indicator), connected time, RX/TX bytes. Replaces bare MAC list.
+
+### Fixed
+
+- `tests/integration/test_web_api.py`: profile names corrected to `vpn-only/adblock-only/tor` (were `private/paranoid/standard`)
+- `tests/integration/conftest.py`: patch `ACTIVE_PROFILE_FILE` + `APPLY_PROFILE_SCRIPT` to tmp stubs so privacy profile tests don't 503 in CI
+
 ## [2.4.0] - 2026-05-23
 
 ### Added
