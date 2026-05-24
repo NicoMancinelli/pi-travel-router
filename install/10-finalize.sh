@@ -27,6 +27,16 @@ run_finalize() {
     echo "vpn-only" > /var/lib/travel-router/active-profile
     ok "Privacy profiles installed (default: vpn-only)"
 
+    # ── Per-device QoS ───────────────────────────────────────────────────────────
+    section "Per-device QoS (apply-qos.sh)"
+    cp "${REPO}/scripts/apply-qos.sh" /usr/local/sbin/apply-qos.sh
+    chmod +x /usr/local/sbin/apply-qos.sh
+    # Initialise empty QoS store if not already present
+    if [[ ! -f /var/lib/travel-router/qos-limits.json ]]; then
+        echo "[]" > /var/lib/travel-router/qos-limits.json
+    fi
+    ok "apply-qos.sh installed; QoS store initialised"
+
     # ── Version stamp ────────────────────────────────────────────────────────────
     section "Version stamp"
     local _INSTALLED_VERSION
