@@ -655,6 +655,7 @@
         </label>
       </div>
     </div>
+    <div id="log-filter-banner" style="display:none;background:#2d3a1e;color:#8bc34a;padding:4px 8px;border-radius:4px;margin-bottom:6px;font-size:0.85em;"></div>
     <div class="log-panel" id="log-panel">
       <div class="log-line dim">Loading logs&hellip;</div>
     </div>
@@ -1533,11 +1534,19 @@ function _classifyLogLine(line) {
   return '';
 }
 
+function highlightSearch(text, term) {
+  if (!term) return escHtml(text);
+  const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return escHtml(text).replace(new RegExp(esc, 'gi'), m => '<mark style="background:#665500;color:#fff;">' + m + '</mark>');
+}
+
 async function fetchLogs() {
   if (_logPaused) return;
   const service = document.getElementById('log-service').value.trim();
   const level = document.getElementById('log-level').value;
   const q = document.getElementById('log-search').value.trim();
+  const search = (document.getElementById('log-search')?.value || '').trim();
+  const filterLevel = document.getElementById('log-level')?.value || '';
   const limit = parseInt(document.getElementById('log-lines').value) || 200;
   document.getElementById('log-spinner').style.display = '';
   try {
@@ -1545,6 +1554,8 @@ async function fetchLogs() {
     if (service) params.set('service', service);
     if (level) params.set('level', level);
     if (q) params.set('q', q);
+    if (search) params.set('search', search);
+    if (filterLevel) params.set('level', filterLevel);
     const resp = await apiFetch('/api/logs?' + params);
     if (!resp.ok) { document.getElementById('log-panel').innerHTML = '<div class="log-line dim">Error fetching logs</div>'; return; }
     const d = await resp.json();
@@ -1552,10 +1563,24 @@ async function fetchLogs() {
     const autoScroll = document.getElementById('log-autoscroll').checked;
     const atBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 40;
     const lines = d.lines || [];
-    panel.innerHTML = lines.map(l => {
-      const cls = _classifyLogLine(l);
-      return `<div class="log-line${cls ? ' ' + cls : ''}">${escHtml(l)}</div>`;
-    }).join('') || '<div class="log-line dim">No log entries found</div>';
+    const banner = document.getElementById('log-filter-banner');
+    if (d.filtered && banner) {
+      banner.style.display = '';
+      banner.textContent = 'Filtered: ' + lines.length + ' line' + (lines.length !== 1 ? 's' : '') + ' matched';
+    } else if (banner) {
+      banner.style.display = 'none';
+    }
+    if (search) {
+      panel.innerHTML = lines.map(l => {
+        const cls = _classifyLogLine(l);
+        return `<div class="log-line${cls ? ' ' + cls : ''}">${highlightSearch(l, search)}</div>`;
+      }).join('') || '<div class="log-line dim">No log entries found</div>';
+    } else {
+      panel.innerHTML = lines.map(l => {
+        const cls = _classifyLogLine(l);
+        return `<div class="log-line${cls ? ' ' + cls : ''}">${escHtml(l)}</div>`;
+      }).join('') || '<div class="log-line dim">No log entries found</div>';
+    }
     if (autoScroll && atBottom) panel.scrollTop = panel.scrollHeight;
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('Log error', e);
@@ -1569,6 +1594,14 @@ function clearLogFilters() {
   document.getElementById('log-service').value = '';
   document.getElementById('log-search').value = '';
   document.getElementById('log-lines').value = '200';
+  fetchLogs();
+}
+
+function clearLogSearch() {
+  const si = document.getElementById('log-search');
+  const li = document.getElementById('log-level');
+  if (si) si.value = '';
+  if (li) li.value = '';
   fetchLogs();
 }
 
@@ -2835,6 +2868,7 @@ async function refreshAll() {
 async function init() {
   renderServices();
   _updateBackupTimestamp();
+  document.getElementById('log-search')?.addEventListener('keydown', e => { if (e.key === 'Enter') fetchLogs(); });
   await refreshAll();
   // Fetch update check once (calls GitHub API — not repeated on every refresh)
   fetchUpdateCheck();
