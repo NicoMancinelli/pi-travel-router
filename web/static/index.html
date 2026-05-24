@@ -624,6 +624,17 @@
     </div>
   </div>
 
+  <!-- Scheduled Tasks -->
+  <div class="card full-width" id="card-cron" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x23F2; Scheduled Tasks</span>
+      <button class="btn btn-sm" onclick="fetchCronJobs()">&#x21BB; Refresh</button>
+    </div>
+    <div id="cron-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <!-- DNS Overrides -->
   <div class="card full-width" id="card-dns-hosts" style="margin-top:16px;">
     <div class="card-title" style="justify-content:space-between;">
@@ -3024,6 +3035,7 @@ async function refreshAll() {
   fetchFirewallRules();
   fetchTailscalePeers();
   fetchMdnsServices();
+  fetchCronJobs();
   fetchDnsHosts();
   fetchUpdateCheck();
 }
@@ -3352,6 +3364,39 @@ async function fetchMdnsServices() {
   }
 }
 
+// ── Scheduled Tasks (Cron) ───────────────────────────────────────────────────
+
+async function fetchCronJobs() {
+  const el = document.getElementById('cron-content');
+  try {
+    const r = await apiFetch('/api/cron/jobs');
+    const data = await r.json();
+    const jobs = data.jobs || [];
+    if (jobs.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No scheduled tasks found (cron jobs will appear here after install)</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Schedule</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Command</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">File</th>';
+    html += '</tr></thead><tbody>';
+    for (const job of jobs) {
+      const scriptName = job.command.split('/').pop();
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);white-space:nowrap;">' + (job.schedule || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;" title="' + job.command.replace(/"/g, '&quot;') + '">' + scriptName + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);font-family:monospace;">' + job.file + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed to load: ' + e + '</span>';
+  }
+}
+
 // ── DNS Overrides ─────────────────────────────────────────────────────────────
 
 async function fetchDnsHosts() {
@@ -3419,7 +3464,6 @@ async function deleteDnsHost(hostname) {
     toast('Error: ' + e, 'err');
   }
 }
-
 // ── Firewall Rules ─────────────────────────────────────────────────────────────
 
 let _fwActiveTab = 'filter';
