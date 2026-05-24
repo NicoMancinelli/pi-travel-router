@@ -35,6 +35,9 @@ AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
 # ── Status cache ──────────────────────────────────────────────────────────────
 _STATUS_CACHE: dict = {"ts": 0.0, "data": {}}
+
+# ── Speed test cache ───────────────────────────────────────────────────────────
+_SPEEDTEST_RESULT: dict = {"ts": 0.0, "result": None}
 _STATUS_CACHE_TTL = 5  # seconds
 TAILSCALE_PREFIX = "100."
 
@@ -1154,6 +1157,87 @@ def api_clients_qos_post():
     return jsonify({"ok": True})
 
 
+# ── Config backup / restore ───────────────────────────────────────────────────
+
+CONFIG_BACKUP_SCRIPT = "/usr/local/sbin/config-backup.sh"
+
+
+@app.route("/api/system/backup", methods=["GET"])
+@require_auth_always
+def api_system_backup():
+    """Run config-backup.sh and return the archive as a download."""
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tar.gz", prefix="travel-router-backup-")
+    os.close(tmp_fd)
+    try:
+        result = subprocess.run(
+            [CONFIG_BACKUP_SCRIPT, "backup", tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return jsonify({"error": result.stderr or "Backup script failed"}), 503
+
+        filename = "travel-router-backup-" + datetime.now().strftime("%Y%m%d") + ".tar.gz"
+        with open(tmp_path, "rb") as fh:
+            data = fh.read()
+    except FileNotFoundError:
+        return jsonify({"error": "config-backup.sh not installed"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Backup timed out"}), 504
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    return Response(
+        data,
+        mimetype="application/gzip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.route("/api/system/restore", methods=["POST"])
+@require_auth_always
+def api_system_restore():
+    """Accept a multipart backup upload and run config-backup.sh restore."""
+    if "backup" not in request.files:
+        return jsonify({"error": "Missing 'backup' file field"}), 400
+
+    upload = request.files["backup"]
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".tar.gz", prefix="travel-router-restore-")
+    os.close(tmp_fd)
+    try:
+        upload.save(tmp_path)
+        os.chmod(tmp_path, 0o600)
+
+        result = subprocess.run(
+            [CONFIG_BACKUP_SCRIPT, "restore", tmp_path],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode != 0:
+            return jsonify({"error": result.stderr or result.stdout or "Restore script failed"}), 503
+
+        restored_lines = [
+            line.strip()
+            for line in (result.stdout + result.stderr).splitlines()
+            if line.strip()
+        ]
+        return jsonify({"ok": True, "restored_files": restored_lines})
+    except FileNotFoundError:
+        return jsonify({"error": "config-backup.sh not installed"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Restore timed out"}), 504
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
 # ── Serve index.html ──────────────────────────────────────────────────────────
 
 
@@ -1240,6 +1324,65 @@ def api_diagnostic():
         return jsonify({"error": "Diagnostic script not found"}), 503
     except subprocess.TimeoutExpired:
         return jsonify({"error": "Diagnostic timed out"}), 504
+
+
+@app.route('/api/system/speedtest', methods=['GET'])
+@require_auth
+def api_speedtest_get():
+    """Return last cached speed test result without running a new test."""
+    cached = _SPEEDTEST_RESULT.get("result")
+    if cached is None:
+        return jsonify({"cached": False, "result": None})
+    age = int(time.time() - _SPEEDTEST_RESULT["ts"])
+    return jsonify({
+        "cached": True,
+        "age_seconds": age,
+        "download_mbps": cached.get("download_mbps"),
+        "upload_mbps": cached.get("upload_mbps"),
+        "ping_ms": cached.get("ping_ms"),
+        "server": cached.get("server"),
+        "method": cached.get("method"),
+        "ts": _SPEEDTEST_RESULT["ts"],
+    })
+
+
+@app.route('/api/system/speedtest', methods=['POST'])
+@require_auth_always
+def api_speedtest_post():
+    """Run a speed test synchronously and cache+return the result."""
+    script = "/usr/local/sbin/speedtest.sh"
+    try:
+        result = subprocess.run(
+            [script],
+            capture_output=True,
+            text=True,
+            timeout=90,
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "speedtest.sh not found"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Speed test timed out"}), 504
+
+    if result.returncode != 0:
+        return jsonify({"error": result.stderr or "Speed test failed"}), 503
+
+    try:
+        data = json.loads(result.stdout.strip())
+    except (json.JSONDecodeError, ValueError):
+        return jsonify({"error": "Failed to parse speed test output"}), 503
+
+    _SPEEDTEST_RESULT["ts"] = time.time()
+    _SPEEDTEST_RESULT["result"] = data
+
+    return jsonify({
+        "ok": True,
+        "cached": False,
+        "download_mbps": data.get("download_mbps"),
+        "upload_mbps": data.get("upload_mbps"),
+        "ping_ms": data.get("ping_ms"),
+        "server": data.get("server"),
+        "method": data.get("method"),
+    })
 
 
 @app.route('/api/system/ota-update', methods=['POST'])
