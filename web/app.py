@@ -3317,6 +3317,104 @@ def api_mdns_services():
     return jsonify({"services": services[:50]})
 
 
+# ── Scheduled tasks viewer ────────────────────────────────────────────────────
+
+import glob as _glob
+
+
+@app.route("/api/cron/jobs", methods=["GET"])
+@require_auth
+def api_cron_jobs():
+    """Return parsed cron jobs from /etc/cron.d/travel-router-* files."""
+    jobs = []
+    pattern = "/etc/cron.d/travel-router-*"
+    try:
+        files = sorted(_glob.glob(pattern))
+    except Exception:
+        files = []
+
+    for fpath in files:
+        try:
+            content = Path(fpath).read_text()
+        except OSError:
+            continue
+        fname = fpath.rsplit("/", 1)[-1]
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # cron format: min hour dom month dow user command
+            parts = line.split(None, 6)
+            if len(parts) < 7:
+                continue
+            minute, hour, dom, month, dow, user, command = parts
+            # Build human-readable schedule string
+            schedule = _cron_human(minute, hour, dom, month, dow)
+            jobs.append({
+                "file": fname,
+                "minute": minute,
+                "hour": hour,
+                "dom": dom,
+                "month": month,
+                "dow": dow,
+                "user": user,
+                "command": command[:128],
+                "schedule": schedule,
+            })
+
+    # Also check /etc/cron.d/travel-router (without suffix) if exists
+    try:
+        extra = Path("/etc/cron.d/travel-router").read_text()
+        for line in extra.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(None, 6)
+            if len(parts) < 7:
+                continue
+            minute, hour, dom, month, dow, user, command = parts
+            jobs.append({
+                "file": "travel-router",
+                "minute": minute, "hour": hour, "dom": dom,
+                "month": month, "dow": dow, "user": user,
+                "command": command[:128],
+                "schedule": _cron_human(minute, hour, dom, month, dow),
+            })
+    except OSError:
+        pass
+
+    return jsonify({"jobs": jobs})
+
+
+def _cron_human(minute: str, hour: str, dom: str, month: str, dow: str) -> str:
+    """Convert cron fields to a human-readable string."""
+    days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    if minute == "*/5" and hour == "*":
+        return "Every 5 minutes"
+    if minute == "*/10" and hour == "*":
+        return "Every 10 minutes"
+    if minute == "*/15" and hour == "*":
+        return "Every 15 minutes"
+    if minute == "*/30" and hour == "*":
+        return "Every 30 minutes"
+    if minute == "*" and hour == "*":
+        return "Every minute"
+    if hour == "*" and minute.isdigit():
+        return f"At :{minute.zfill(2)} every hour"
+    if hour.isdigit() and minute.isdigit():
+        t = f"{int(hour):02d}:{int(minute):02d}"
+        if dom == "*" and dow == "*":
+            return f"Daily at {t}"
+        if dow != "*" and dom == "*":
+            try:
+                day_name = days[int(dow) % 7]
+                return f"Weekly on {day_name} at {t}"
+            except (ValueError, IndexError):
+                return f"Weekly ({dow}) at {t}"
+        return f"At {t} ({dom}/{month} dow={dow})"
+    return f"{minute} {hour} {dom} {month} {dow}"
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
