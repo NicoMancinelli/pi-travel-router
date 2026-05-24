@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-05-23
+
+### Added
+
+- **System Health card** (`web/static/index.html`): CPU temperature (color-coded green/yellow/red), uptime (human format), disk usage (progress bar + GB) — all live-polled from `/api/status`.
+- **`GET /api/status`**: `system.cpu_temp_c`, `system.uptime_seconds`, `system.disk` (used_gb/total_gb/percent) fields added.
+- **`GET /api/system/update-check`**: lightweight GitHub release check (no download); shows update badge in web UI on init.
+- **`POST /api/system/diagnostic`**: runs `travel-diagnostic.sh` server-side; web UI shows spinner + scrollable monospace output panel.
+- **Unit tests** (`tests/unit/`): 34 new bats tests for all v2.3 scripts — `test_wg_peer_expire.bats` (10), `test_apply_privacy_profile.bats` (9), `test_aide_check.bats` (7), `test_wg_key_rotate.bats` (8).
+- **Unit tests** (`tests/unit/`): 16 new bats tests for watchdog scripts — `test_wireguard_watchdog.bats` (6), `test_tailscale_watchdog.bats` (5), `test_wan_watchdog.bats` (5).
+- **README roadmap**: full v2.0–v2.3 shipped table (21 features), v2.4 up-next list, updated Management and wizard sections.
+
+### Fixed
+
+- `web/app.py`: removed duplicate route handlers for `DELETE /api/vpn/wireguard/peer` and `GET/POST /api/privacy/profile` introduced by integration-test agent; duplicate used wrong profile names (`standard/private/paranoid`).
+
 ## [2.3.0] - 2026-05-23
 
 ### Added
