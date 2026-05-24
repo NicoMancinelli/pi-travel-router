@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-05-24
+
+### Added
+
+- **Bandwidth history sparkline** (`web/app.py`, `web/static/index.html`): background sampler thread reads `/proc/net/dev` every 5 min, persists up to 288 entries (24h) in `/var/lib/travel-router/bw-history.json`. `GET /api/bandwidth/history` endpoint. Dashboard bandwidth card replaced with pure inline SVG sparkline (rx=green, tx=blue); shows "Collecting data…" until 2+ samples exist.
+- **Captive portal detection & auto-login** (`scripts/captive-check.sh`, `web/app.py`, `web/static/index.html`, `scripts/travel-tui.py`): probes Firefox detectportal + Google 204 on uplink, writes detection state to `/var/lib/travel-router/captive-portal.json`. `GET /api/captive`, `POST /api/captive/bypass` (curl form-submit, 15s timeout). Dashboard Captive Portal card with warning banner + auto-login form. TUI `CaptivePortalScreen` (press `C`).
+- **SSE event notifications** (`web/app.py`, `web/static/index.html`, `scripts/travel-tui.py`): module-level `_event_queue` + `_push_event()` helper; `GET /api/events/stream` (SSE, 2s heartbeat, 5-min lifetime, token auth via `?token=` query param); `GET /api/events` polling fallback. Privacy change, QoS update, WireGuard peer add, and reboot events push toasts to the dashboard. Reboot event triggers 30s countdown in the header. TUI polls every 10s and shows modal for critical events.
+
+### Fixed
+
+- `scripts/ci-preflight.sh`: fixed SIGPIPE/exit-141 bug where `bats | tail` under `pipefail` caused the bats check to report failure even when all tests passed.
+
 ## [2.6.0] - 2026-05-23
 
 ### Added
