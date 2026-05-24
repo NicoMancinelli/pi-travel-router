@@ -47,6 +47,7 @@ run_finalize() {
     if [[ ! -f /var/lib/travel-router/captive-portal.json ]]; then
         echo '{"detected":false}' > /var/lib/travel-router/captive-portal.json
     fi
+    touch /var/lib/travel-router/captive-creds.json 2>/dev/null || true
     ok "captive-check.sh installed; captive-portal.json initialised"
 
     # ── Per-device QoS ───────────────────────────────────────────────────────────
