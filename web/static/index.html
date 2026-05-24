@@ -372,6 +372,14 @@
 
   <hr class="divider">
 
+  <!-- Data Cap -->
+  <div class="card full-width" id="card-datacap">
+    <div class="card-title">Data Cap / Monthly Budget</div>
+    <div id="datacap-content"><span class="spinner"></span></div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Privacy Profiles -->
   <div class="card full-width">
     <div class="card-title">&#x1F512; Privacy Profile <span id="privacy-active-badge" style="margin-left:6px;"></span></div>
@@ -2201,6 +2209,7 @@ async function refreshAll() {
   fetchSignal();
   fetchRebootSchedule();
   fetchStorage();
+  fetchDataCap();
 }
 
 async function init() {
@@ -2313,6 +2322,108 @@ async function unmountStorage() {
     }
   } catch (e) {
     alert('Unmount request failed: ' + e);
+  }
+}
+
+// ── Data Cap ──────────────────────────────────────────────────────────────────
+async function fetchDataCap() {
+  const el = document.getElementById('datacap-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/datacap');
+    if (!r.ok) { el.innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const d = await r.json();
+    _renderDataCap(d);
+  } catch (e) {
+    el.innerHTML = '<span class="dim">Error loading data cap</span>';
+  }
+}
+
+function _renderDataCap(d) {
+  const el = document.getElementById('datacap-content');
+  if (!el) return;
+
+  const capMb = d.cap_mb || 0;
+  const usedMb = d.used_mb || 0;
+  const pct = d.pct || 0;
+  const iface = d.iface || 'wlan1';
+  const resetDay = d.reset_day || 1;
+
+  let barColor = 'var(--green)';
+  if (pct >= 80) barColor = 'var(--red, #e05252)';
+  else if (pct >= 60) barColor = 'var(--yellow, #e0b252)';
+
+  let progressHtml = '';
+  if (capMb === 0) {
+    progressHtml = '<div style="color:var(--text-dim);font-size:13px;">No cap set</div>';
+  } else {
+    const barPct = Math.min(pct, 100);
+    progressHtml = `
+      <div style="background:var(--card-bg,#333);border-radius:4px;height:12px;overflow:hidden;margin-bottom:6px;">
+        <div style="width:${barPct}%;height:100%;background:${barColor};transition:width 0.3s;"></div>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);">
+        ${usedMb.toFixed(1)} MB used of ${capMb} MB cap (${pct}%) — resets day ${resetDay} each month
+      </div>`;
+    if (d.warning) {
+      progressHtml += `<div style="color:${barColor};font-size:12px;margin-top:4px;font-weight:600;">Warning: approaching data cap</div>`;
+    }
+  }
+
+  const settingsHtml = `
+    <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+      <div>
+        <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:2px;">Cap (MB, 0=none)</label>
+        <input id="datacap-input-cap" type="number" min="0" max="100000" value="${capMb}"
+          style="width:90px;padding:4px 6px;background:var(--input-bg,#222);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:2px;">Interface</label>
+        <select id="datacap-input-iface"
+          style="padding:4px 6px;background:var(--input-bg,#222);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;">
+          <option value="wlan0"${iface==='wlan0'?' selected':''}>wlan0</option>
+          <option value="wlan1"${iface==='wlan1'?' selected':''}>wlan1</option>
+          <option value="usb0"${iface==='usb0'?' selected':''}>usb0</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:2px;">Reset day</label>
+        <input id="datacap-input-reset-day" type="number" min="1" max="28" value="${resetDay}"
+          style="width:60px;padding:4px 6px;background:var(--input-bg,#222);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;">
+      </div>
+      <button class="btn btn-sm" onclick="saveDataCap()" style="margin-bottom:1px;">Save</button>
+    </div>`;
+
+  el.innerHTML = progressHtml + settingsHtml;
+}
+
+async function saveDataCap() {
+  const capEl = document.getElementById('datacap-input-cap');
+  const ifaceEl = document.getElementById('datacap-input-iface');
+  const resetDayEl = document.getElementById('datacap-input-reset-day');
+  if (!capEl || !ifaceEl || !resetDayEl) return;
+
+  const cap_mb = parseInt(capEl.value, 10);
+  const iface = ifaceEl.value;
+  const reset_day = parseInt(resetDayEl.value, 10);
+
+  if (isNaN(cap_mb) || cap_mb < 0 || cap_mb > 100000) { alert('cap_mb must be 0-100000'); return; }
+  if (isNaN(reset_day) || reset_day < 1 || reset_day > 28) { alert('reset_day must be 1-28'); return; }
+
+  try {
+    const r = await apiFetch('/api/datacap', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cap_mb, iface, reset_day}),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      await fetchDataCap();
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Save request failed: ' + e);
   }
 }
 </script>

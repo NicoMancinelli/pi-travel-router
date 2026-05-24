@@ -73,6 +73,11 @@ run_finalize() {
     mkdir -p /var/lib/travel-router && touch /var/lib/travel-router/bw-history.json || true
     ok "Bandwidth history store initialised"
 
+    # ── Data cap store ────────────────────────────────────────────────────────────
+    section "Data cap store"
+    touch /var/lib/travel-router/datacap.json 2>/dev/null || true
+    ok "Data cap store initialised"
+
     # ── Version stamp ────────────────────────────────────────────────────────────
     section "Version stamp"
     local _INSTALLED_VERSION
