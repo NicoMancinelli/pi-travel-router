@@ -8,6 +8,7 @@ Requires python3-textual (apt install python3-textual).
 Falls back to travel-tui-legacy if Textual is not installed.
 """
 
+import asyncio
 import os
 import re
 import subprocess
@@ -482,6 +483,7 @@ class DashboardScreen(Screen):
         Binding("w", "push_screen('wireguard')", "WireGuard"),
         Binding("r", "push_screen('routes')", "Routes"),
         Binding("g", "push_screen('guest')", "Guest"),
+        Binding("s", "push_screen('speedtest')", "SpeedTest"),
         Binding("q", "quit_app", "Quit"),
     ]
 
@@ -497,7 +499,7 @@ class DashboardScreen(Screen):
             yield Static(id="system-panel", classes="panel")
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
-            "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [Q]Quit",
+            "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  [Q]Quit",
             id="nav-panel",
         )
         yield Footer()
@@ -2090,6 +2092,180 @@ class GuestNetworkScreen(Screen):
         self._load()
 
 
+# ── Speed Test screen ─────────────────────────────────────────────────────────
+SPEEDTEST_SCRIPT = "/usr/local/sbin/speedtest.sh"
+SPEEDTEST_API = "http://127.0.0.1:8080/api/system/speedtest"
+
+
+class SpeedTestScreen(Screen):
+    """Speed test screen — press S from main nav."""
+
+    BINDINGS = [
+        Binding("q,escape", "pop_screen", "Back"),
+        Binding("r", "run_test", "Run Test"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label("Speed Test", classes="panel-title")
+        yield Static(id="speedtest-status")
+        yield Static(id="speedtest-result")
+        with Horizontal():
+            yield Button("Run Test [R]", id="run-btn", classes="action")
+            yield Button("Back [Q]", id="back-btn")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        try:
+            self.query_one("#speedtest-status", Static).update(
+                "[@dim]Loading cached result…[/]"
+            )
+        except Exception:
+            pass
+        self.run_worker(self._fetch_cached, exclusive=True, thread=True)
+
+    def _fetch_cached(self) -> None:
+        """Load last cached result from the web API via curl."""
+        try:
+            token_file = "/var/lib/travel-router/web-token"
+            token = ""
+            try:
+                with open(token_file) as fh:
+                    token = fh.read().strip()
+            except OSError:
+                pass
+
+            cmd = ["curl", "-sf", "--max-time", "5", SPEEDTEST_API]
+            if token:
+                cmd += ["-H", f"Authorization: Bearer {token}"]
+            rc, out, _ = run(cmd, timeout=8)
+            if rc == 0 and out.strip():
+                import json as _json
+                data = _json.loads(out)
+                if data.get("cached") and data.get("download_mbps") is not None:
+                    self.call_from_thread(self._render_result, data, cached=True)
+                    return
+        except Exception:
+            pass
+        self.call_from_thread(self._render_no_result)
+
+    def _render_no_result(self) -> None:
+        try:
+            self.query_one("#speedtest-status", Static).update("")
+            self.query_one("#speedtest-result", Static).update(
+                "[@dim]No cached result — press [R] or 'Run Test' to start.[/]"
+            )
+        except Exception:
+            pass
+
+    def _render_result(self, data: dict, cached: bool = False) -> None:
+        import json as _json  # noqa: F401
+
+        dl = data.get("download_mbps")
+        ul = data.get("upload_mbps")
+        ping = data.get("ping_ms")
+        server = data.get("server") or ""
+        method = data.get("method") or ""
+        age = data.get("age_seconds")
+
+        def _dl_color(v: float | None) -> str:
+            if v is None:
+                return "dim"
+            if v >= 10:
+                return "green"
+            if v >= 2:
+                return "yellow"
+            return "red"
+
+        def _ping_color(v: float | None) -> str:
+            if v is None:
+                return "dim"
+            if v <= 50:
+                return "green"
+            if v <= 150:
+                return "yellow"
+            return "red"
+
+        dl_str = f"{dl:.1f}" if dl is not None else "—"
+        ul_str = f"{ul:.1f}" if ul is not None else "—"
+        ping_str = f"{ping:.0f}" if ping is not None else "—"
+
+        age_str = ""
+        if cached and age is not None:
+            if age < 60:
+                age_str = f" (cached {age}s ago)"
+            elif age < 3600:
+                age_str = f" (cached {age // 60}m ago)"
+            else:
+                age_str = f" (cached {age // 3600}h ago)"
+
+        result_text = (
+            f"[@cyan bold]SPEED TEST RESULTS[/]{age_str}\n\n"
+            f"  [@dim]Download:[/]  [{_dl_color(dl)}]{dl_str} Mbps[/{_dl_color(dl)}]\n"
+            f"  [@dim]Upload:  [/]  [{_dl_color(ul)}]{ul_str} Mbps[/{_dl_color(ul)}]\n"
+            f"  [@dim]Ping:    [/]  [{_ping_color(ping)}]{ping_str} ms[/{_ping_color(ping)}]\n"
+        )
+        if server:
+            result_text += f"\n  [@dim]Server:[/]  {server}"
+        if method:
+            result_text += f"\n  [@dim]Method:[/]  {method}"
+
+        try:
+            self.query_one("#speedtest-status", Static).update("")
+            self.query_one("#speedtest-result", Static).update(result_text)
+        except Exception:
+            pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "run-btn":
+            self.action_run_test()
+        elif event.button.id == "back-btn":
+            self.action_pop_screen()
+
+    def action_run_test(self) -> None:
+        try:
+            self.query_one("#speedtest-status", Static).update(
+                "[@yellow]Running speed test… (up to 60s)[/]"
+            )
+            self.query_one("#speedtest-result", Static).update("")
+            btn = self.query_one("#run-btn", Button)
+            btn.disabled = True
+        except Exception:
+            pass
+        self.run_worker(self._run_test_worker, exclusive=True, thread=True)
+
+    def _run_test_worker(self) -> None:
+        rc, out, err = run([SPEEDTEST_SCRIPT], timeout=90)
+        if rc != 0 or not out.strip():
+            msg = f"[@red]Speed test failed: {(err or 'no output')[:120]}[/]"
+            self.call_from_thread(self._show_error, msg)
+            return
+
+        import json as _json
+        try:
+            data = _json.loads(out.strip())
+        except Exception as exc:
+            self.call_from_thread(self._show_error, f"[@red]Parse error: {exc}[/]")
+            return
+
+        self.call_from_thread(self._render_result, data, False)
+        self.call_from_thread(self._re_enable_btn)
+
+    def _show_error(self, msg: str) -> None:
+        try:
+            self.query_one("#speedtest-status", Static).update(msg)
+            self.query_one("#speedtest-result", Static).update("")
+        except Exception:
+            pass
+        self._re_enable_btn()
+
+    def _re_enable_btn(self) -> None:
+        try:
+            self.query_one("#run-btn", Button).disabled = False
+        except Exception:
+            pass
+
+
 # ── Main App ──────────────────────────────────────────────────────────────────
 class TravelRouterApp(App):
     TITLE = "Pi Travel Router"
@@ -2108,6 +2284,7 @@ class TravelRouterApp(App):
         "wireguard": WireGuardScreen,
         "routes": RoutesScreen,
         "guest": GuestNetworkScreen,
+        "speedtest": SpeedTestScreen,
     }
 
     BINDINGS = [

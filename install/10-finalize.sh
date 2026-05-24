@@ -3,6 +3,16 @@
 # Defines run_finalize(). Source this file; do not execute directly.
 
 run_finalize() {
+    # ── Speed test script + optional speedtest-cli ───────────────────────────────
+    section "Speed test setup"
+    cp "${REPO}/scripts/speedtest.sh" /usr/local/sbin/speedtest.sh
+    chmod +x /usr/local/sbin/speedtest.sh
+    # Best-effort: try to install speedtest-cli (Python). Failure is non-fatal.
+    apt-get install -y python3-speedtest-cli 2>/dev/null \
+        || pip3 install speedtest-cli 2>/dev/null \
+        || true
+    ok "speedtest.sh installed to /usr/local/sbin/speedtest.sh"
+
     # ── Privacy profiles ─────────────────────────────────────────────────────────
     section "Privacy profiles"
     mkdir -p /etc/travel-router/privacy-profiles
