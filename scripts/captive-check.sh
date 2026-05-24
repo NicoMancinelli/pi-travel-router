@@ -22,6 +22,17 @@ TAILSCALE_UP_ARGS="${TAILSCALE_UP_ARGS:---advertise-routes=10.3.141.0/24 --accep
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOGFILE"; }
 notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || true; }
 
+_write_captive_json() {
+    local detected="$1" url="${2:-}"
+    local ts; ts=$(date +%s)
+    local json_path="${_STATE_DIR}/captive-portal.json"
+    if [ "$detected" = "true" ]; then
+        printf '{"detected":true,"url":"%s","ts":%s}\n' "$url" "$ts" > "$json_path"
+    else
+        printf '{"detected":false,"ts":%s}\n' "$ts" > "$json_path"
+    fi
+}
+
 restore_tailscale() {
     local args=()
     if [ -n "$TAILSCALE_UP_ARGS" ]; then
@@ -203,6 +214,7 @@ case "$RESULT_A" in
 esac
 
 if [ "$PORTAL_RESULT" = "clear" ]; then
+    _write_captive_json false
     # Clear internet — re-enable Tailscale if we paused it
     if [ -f "$STATE_FILE" ]; then
         log "Captive portal cleared — re-enabling Tailscale"
@@ -217,6 +229,7 @@ if [ "$PORTAL_RESULT" = "clear" ]; then
 elif [ "$PORTAL_RESULT" = "noconn" ]; then
     log "No layer-3 connectivity on wlan0 — skipping captive portal check"
 else
+    _write_captive_json true "${REDIRECT_URL:-}"
     # Captive portal detected
     if [ ! -f "$STATE_FILE" ]; then
         log "Captive portal detected (redirect='${REDIRECT_URL:-none}') — pausing Tailscale"

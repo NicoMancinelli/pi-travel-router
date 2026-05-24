@@ -484,6 +484,7 @@ class DashboardScreen(Screen):
         Binding("r", "push_screen('routes')", "Routes"),
         Binding("g", "push_screen('guest')", "Guest"),
         Binding("s", "push_screen('speedtest')", "SpeedTest"),
+        Binding("c", "push_screen('captive')", "Captive"),
         Binding("q", "quit_app", "Quit"),
     ]
 
@@ -499,7 +500,8 @@ class DashboardScreen(Screen):
             yield Static(id="system-panel", classes="panel")
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
-            "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  [Q]Quit",
+            "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  "
+            "[C]Captive  [Q]Quit",
             id="nav-panel",
         )
         yield Footer()
@@ -2387,6 +2389,103 @@ class SpeedTestScreen(Screen):
             pass
 
 
+# ── Captive Portal screen ─────────────────────────────────────────────────────
+CAPTIVE_JSON_PATH = "/var/lib/travel-router/captive-portal.json"
+CAPTIVE_CHECK_CMD = "/usr/local/sbin/captive-check.sh"
+
+
+class CaptivePortalScreen(Screen):
+    """Captive portal status and auto-login helper."""
+
+    BINDINGS = [
+        Binding("q,escape", "pop_screen", "Back"),
+        Binding("r", "refresh_status", "Refresh"),
+        Binding("o", "open_portal", "Open in browser"),
+    ]
+
+    _detected: reactive[bool] = reactive(False, layout=True)
+    _portal_url: reactive[str] = reactive("", layout=True)
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label("Captive Portal", classes="panel-title")
+        yield Static(id="captive-status-line")
+        yield Static(id="captive-url-line")
+        with ScrollableContainer():
+            yield Button("Re-run captive-check.sh  [R]", id="cp-recheck-btn", classes="action")
+            yield Button("Open portal URL in browser  [O]", id="cp-open-btn", classes="action")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._load_status()
+
+    def _load_status(self) -> None:
+        self.run_worker(self._fetch_status, exclusive=True, thread=True)
+
+    def _fetch_status(self) -> None:
+        detected = False
+        url = ""
+        try:
+            import json as _json
+            with open(CAPTIVE_JSON_PATH) as fh:
+                data = _json.load(fh)
+            detected = bool(data.get("detected", False))
+            url = str(data.get("url", "") or "")
+        except (OSError, ValueError):
+            pass
+        self.call_from_thread(self._apply_status, detected, url)
+
+    def _apply_status(self, detected: bool, url: str) -> None:
+        self._detected = detected
+        self._portal_url = url
+        try:
+            if detected:
+                self.query_one("#captive-status-line", Static).update(
+                    "[@yellow bold]⚠ Captive portal detected — internet blocked[/]"
+                )
+                self.query_one("#captive-url-line", Static).update(
+                    f"[@dim]Portal URL:[/] [@cyan]{url or '(unknown)'}[/]"
+                )
+            else:
+                self.query_one("#captive-status-line", Static).update(
+                    "[@green]✓ No captive portal detected — internet clear[/]"
+                )
+                self.query_one("#captive-url-line", Static).update("")
+        except Exception:
+            pass
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        bid = event.button.id
+        if bid == "cp-recheck-btn":
+            self.action_refresh_status()
+        elif bid == "cp-open-btn":
+            self.action_open_portal()
+
+    def action_refresh_status(self) -> None:
+        try:
+            self.query_one("#captive-status-line", Static).update("[@dim]Running captive-check.sh…[/]")
+        except Exception:
+            pass
+        self.run_worker(self._run_check, exclusive=True, thread=True)
+
+    def _run_check(self) -> None:
+        run([CAPTIVE_CHECK_CMD], timeout=30)
+        self._fetch_status()
+
+    def action_open_portal(self) -> None:
+        url = self._portal_url
+        if not url:
+            self.app.push_screen(
+                MessageModal("Captive Portal", "No portal URL available", "error")
+            )
+            return
+        rc, out, err = run(["xdg-open", url], timeout=5)
+        if rc != 0:
+            self.app.push_screen(
+                MessageModal("Open Portal", f"xdg-open failed: {err[:80]}", "error")
+            )
+
+
 # ── Main App ──────────────────────────────────────────────────────────────────
 class TravelRouterApp(App):
     TITLE = "Pi Travel Router"
@@ -2406,6 +2505,7 @@ class TravelRouterApp(App):
         "routes": RoutesScreen,
         "guest": GuestNetworkScreen,
         "speedtest": SpeedTestScreen,
+        "captive": CaptivePortalScreen,
     }
 
     BINDINGS = [

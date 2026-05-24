@@ -1658,6 +1658,69 @@ function escAttr(s) {
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// ── Captive Portal ────────────────────────────────────────────────────────────
+async function fetchCaptiveStatus() {
+  const el = document.getElementById('captive-content');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/captive');
+    if (!resp.ok) { el.innerHTML = '<span class="dim">Unable to fetch captive portal status</span>'; return; }
+    const d = await resp.json();
+    if (d.detected) {
+      const safeUrl = esc(d.url || '');
+      const safeUrlAttr = escAttr(d.url || '');
+      el.innerHTML = `
+        <div style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:6px;padding:10px 14px;margin-bottom:12px;">
+          <span style="color:var(--red);font-weight:600;">&#x26A0; Captive portal detected &mdash; internet blocked</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Portal URL</span>
+          <a href="${safeUrlAttr}" target="_blank" rel="noopener noreferrer" style="color:var(--accent);font-size:12px;font-family:var(--mono);word-break:break-all;">${safeUrl || '(unknown)'}</a>
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;">Attempt Auto-Login</div>
+          <div class="field"><label>Username</label><input type="text" id="captive-username" placeholder="username or email"></div>
+          <div class="field"><label>Password</label><input type="password" id="captive-password" placeholder="password"></div>
+          <button class="btn btn-primary" onclick="captiveBypass()">Attempt Auto-Login</button>
+          <div id="captive-result" style="margin-top:10px;font-size:12px;display:none;"></div>
+        </div>`;
+    } else {
+      el.innerHTML = '<span style="color:var(--green);">&#x2713; No captive portal detected</span>';
+    }
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span class="dim">Error checking captive portal status</span>';
+  }
+}
+
+async function captiveBypass() {
+  const resEl = document.getElementById('captive-result');
+  const btn = document.querySelector('#card-captive .btn-primary');
+  const url = document.querySelector('#card-captive a')?.href || '';
+  const username = document.getElementById('captive-username')?.value || '';
+  const password = document.getElementById('captive-password')?.value || '';
+  if (btn) btn.disabled = true;
+  if (resEl) { resEl.style.display = 'block'; resEl.style.color = 'var(--text-dim)'; resEl.textContent = 'Submitting…'; }
+  try {
+    const resp = await apiFetch('/api/captive/bypass', {
+      method: 'POST',
+      body: JSON.stringify({ url, username, password }),
+    });
+    const d = await resp.json();
+    if (resp.ok && d.ok) {
+      if (resEl) { resEl.style.color = 'var(--green)'; resEl.textContent = '✓ Login submitted — recheck connectivity in a moment'; }
+      toast('Login submitted', 'ok');
+    } else {
+      if (resEl) { resEl.style.color = 'var(--red)'; resEl.textContent = 'Error: ' + (d.error || 'unknown error'); }
+      toast('Login failed: ' + (d.error || 'error'), 'err');
+    }
+  } catch (e) {
+    if (resEl) { resEl.style.color = 'var(--red)'; resEl.textContent = 'Request failed: ' + e.message; }
+    if (e.message !== 'Unauthorized') toast('Bypass error: ' + e.message, 'err');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function refreshAll() {
   await fetchStatus();
@@ -1670,6 +1733,7 @@ async function refreshAll() {
   fetchWgPeers();
   fetchGuestNetwork();
   fetchSpeedTestCached();
+  fetchCaptiveStatus();
 }
 
 async function init() {
