@@ -190,6 +190,17 @@
   .update-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(210,153,34,.15); border: 1px solid rgba(210,153,34,.3); border-radius: 6px; color: var(--yellow); font-size: 12px; font-weight: 500; text-decoration: none; margin-top: 10px; }
   .update-badge:hover { background: rgba(210,153,34,.25); }
   .diag-output { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 10px; max-height: 400px; overflow-y: auto; font-family: var(--mono); font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: var(--text-dim); margin-top: 10px; }
+
+  /* QoS popover */
+  .qos-popover { display: none; position: absolute; z-index: 200; background: var(--bg2); border: 1px solid var(--accent); border-radius: 6px; padding: 12px; min-width: 220px; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+  .qos-popover.open { display: block; }
+  .qos-popover label { font-size: 11px; color: var(--text-dim); display: block; margin-bottom: 2px; margin-top: 8px; }
+  .qos-popover label:first-of-type { margin-top: 0; }
+  .qos-popover input[type=number] { width: 100%; }
+  .qos-popover .qos-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+  .qos-popover .qos-remove { font-size: 11px; color: var(--red); cursor: pointer; background: none; border: none; padding: 0; text-decoration: underline; }
+  .badge-throttled { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 500; background: rgba(210,153,34,.15); color: var(--yellow); border: 1px solid rgba(210,153,34,.3); margin-left: 4px; font-family: var(--font); }
+  td { position: relative; }
 </style>
 </head>
 <body>
@@ -457,6 +468,8 @@ let _logDebounce = null;
 let _configData = {};
 let _updateCheckResult = null; // fetched once on init
 let _logPaused = false;        // pause log auto-refresh
+let _qosLimits = {};           // mac.toLowerCase() → {down_kbps, up_kbps}
+let _openQosPopover = null;    // currently open popover element
 
 const SERVICES = [
   'hostapd', 'NetworkManager', 'adguardhome',
@@ -710,13 +723,21 @@ function renderClients(clients) {
       '<div style="font-size:13px;">No clients connected</div></div>';
     return;
   }
-  let rows = clients.map(c => {
+  let rows = clients.map((c, idx) => {
     const hostname = c.hostname ? escHtml(c.hostname) : null;
     const mac = escHtml(c.mac || '?');
+    const macRaw = (c.mac || '').toLowerCase();
+    const limit = _qosLimits[macRaw];
+    const throttledBadge = limit
+      ? `<span class="badge-throttled">&#x1F512; throttled</span>`
+      : '';
     const nameCell = hostname
-      ? `<span title="${mac}" style="cursor:default;">${hostname}</span><br><span class="dim" style="font-size:10px;">${mac}</span>`
-      : `<span class="mono">${mac}</span>`;
+      ? `<span title="${mac}" style="cursor:default;">${hostname}</span>${throttledBadge}<br><span class="dim" style="font-size:10px;">${mac}</span>`
+      : `<span class="mono">${mac}</span>${throttledBadge}`;
     const ip = c.ip ? escHtml(c.ip) : '<span class="dim">—</span>';
+    const popoverId = `qos-pop-${idx}`;
+    const downVal = limit ? limit.down_kbps : 2048;
+    const upVal = limit ? limit.up_kbps : 1024;
     return `<tr>
       <td>${nameCell}</td>
       <td class="mono">${ip}</td>
@@ -724,10 +745,111 @@ function renderClients(clients) {
       <td class="mono">${fmtConnected(c.connected_since)}</td>
       <td class="mono">&#x2193; ${fmtBytes(c.rx_bytes)}</td>
       <td class="mono">&#x2191; ${fmtBytes(c.tx_bytes)}</td>
+      <td style="white-space:nowrap;position:relative;">
+        <button class="btn btn-sm" onclick="toggleQosPopover(event,'${popoverId}')">&#x1F4CA; Limit</button>
+        <div class="qos-popover" id="${popoverId}" data-mac="${escAttr(c.mac || '')}">
+          <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text);">Bandwidth Limit</div>
+          <label>Download (Kbps)</label>
+          <input type="number" id="${popoverId}-down" value="${downVal}" min="64" max="100000" style="width:100%">
+          <label>Upload (Kbps)</label>
+          <input type="number" id="${popoverId}-up" value="${upVal}" min="64" max="100000" style="width:100%">
+          <div class="qos-actions">
+            <button class="btn btn-sm btn-primary" onclick="setQosLimit('${escAttr(c.mac || '')}','${popoverId}')">Set Limit</button>
+            ${limit ? `<button class="qos-remove" onclick="clearQosLimit('${escAttr(c.mac || '')}','${popoverId}')">Remove limit</button>` : ''}
+            <button class="btn btn-sm" onclick="closeQosPopover('${popoverId}')">Cancel</button>
+          </div>
+        </div>
+      </td>
     </tr>`;
   }).join('');
   document.getElementById('clients-content').innerHTML =
-    `<table><thead><tr><th>Hostname</th><th>IP</th><th>Signal</th><th>Connected</th><th>RX</th><th>TX</th></tr></thead><tbody>${rows}</tbody></table>`;
+    `<table><thead><tr><th>Hostname</th><th>IP</th><th>Signal</th><th>Connected</th><th>RX</th><th>TX</th><th>QoS</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function fetchQosLimits() {
+  try {
+    const resp = await apiFetch('/api/clients/qos');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    _qosLimits = {};
+    (d.limits || []).forEach(l => { if (l.mac) _qosLimits[l.mac.toLowerCase()] = l; });
+  } catch (e) {
+    // Non-critical
+  }
+}
+
+function toggleQosPopover(evt, id) {
+  evt.stopPropagation();
+  const pop = document.getElementById(id);
+  if (!pop) return;
+  if (_openQosPopover && _openQosPopover !== pop) {
+    _openQosPopover.classList.remove('open');
+  }
+  pop.classList.toggle('open');
+  _openQosPopover = pop.classList.contains('open') ? pop : null;
+}
+
+function closeQosPopover(id) {
+  const pop = document.getElementById(id);
+  if (pop) pop.classList.remove('open');
+  if (_openQosPopover === pop) _openQosPopover = null;
+}
+
+document.addEventListener('click', () => {
+  if (_openQosPopover) {
+    _openQosPopover.classList.remove('open');
+    _openQosPopover = null;
+  }
+});
+
+async function setQosLimit(mac, popoverId) {
+  const downEl = document.getElementById(popoverId + '-down');
+  const upEl = document.getElementById(popoverId + '-up');
+  const down_kbps = parseInt(downEl ? downEl.value : '2048');
+  const up_kbps = parseInt(upEl ? upEl.value : '1024');
+  if (!down_kbps || !up_kbps || down_kbps < 64 || up_kbps < 64) {
+    toast('Kbps must be at least 64', 'err'); return;
+  }
+  if (down_kbps > 100000 || up_kbps > 100000) {
+    toast('Kbps must be at most 100000', 'err'); return;
+  }
+  try {
+    const resp = await apiFetch('/api/clients/qos', {
+      method: 'POST',
+      body: JSON.stringify({ mac, down_kbps, up_kbps }),
+    });
+    const d = await resp.json();
+    if (resp.ok) {
+      toast('Limit set for ' + mac, 'ok');
+      closeQosPopover(popoverId);
+      await fetchQosLimits();
+      fetchClients();
+    } else {
+      toast('Error: ' + (d.error || '?'), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+async function clearQosLimit(mac, popoverId) {
+  try {
+    const resp = await apiFetch('/api/clients/qos', {
+      method: 'POST',
+      body: JSON.stringify({ mac, clear: true }),
+    });
+    const d = await resp.json();
+    if (resp.ok) {
+      toast('Limit removed for ' + mac, 'ok');
+      closeQosPopover(popoverId);
+      await fetchQosLimits();
+      fetchClients();
+    } else {
+      toast('Error: ' + (d.error || '?'), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
 }
 
 async function fetchClients() {
@@ -1215,6 +1337,7 @@ function escAttr(s) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function refreshAll() {
   await fetchStatus();
+  await fetchQosLimits();
   fetchClients();
   fetchBandwidth();
   fetchLogs();
@@ -1230,7 +1353,7 @@ async function init() {
   // Fetch update check once (calls GitHub API — not repeated on every refresh)
   fetchUpdateCheck();
   // Auto-refresh status + clients every 10s
-  _statusInterval = setInterval(() => { fetchStatus(); fetchClients(); }, 10000);
+  _statusInterval = setInterval(async () => { fetchStatus(); await fetchQosLimits(); fetchClients(); }, 10000);
   // Auto-refresh logs every 5s (independently)
   _autoLogInterval = setInterval(fetchLogs, 5000);
 }

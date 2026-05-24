@@ -180,6 +180,19 @@ if [ "$ENABLE_GUEST_NETWORK" = "1" ]; then
     ipt_add nat POSTROUTING -s 192.168.5.0/24 -o "$_wan" -j MASQUERADE
 fi
 
+# Restore per-device QoS limits if any are configured
+if [[ -f /var/lib/travel-router/qos-limits.json ]] && command -v tc &>/dev/null; then
+    python3 -c "
+import json, subprocess, sys
+try:
+    limits = json.load(open('/var/lib/travel-router/qos-limits.json'))
+except Exception:
+    limits = []
+for l in limits:
+    subprocess.run(['/usr/local/sbin/apply-qos.sh', l.get('interface','uap0'), l['mac'], str(l['down_kbps']), str(l['up_kbps'])], check=False)
+" 2>/dev/null || true
+fi
+
 if [ "${1:-}" = "--save" ]; then
     save_rules
 fi

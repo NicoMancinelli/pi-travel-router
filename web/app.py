@@ -28,6 +28,8 @@ WG_CONF = "/etc/wireguard/wg0.conf"
 ACTIVE_PROFILE_FILE = "/var/lib/travel-router/active-profile"
 APPLY_PROFILE_SCRIPT = "/usr/local/sbin/apply-privacy-profile.sh"
 VALID_PROFILES = {"vpn-only", "adblock-only", "tor", "direct"}
+QOS_LIMITS_FILE = "/var/lib/travel-router/qos-limits.json"
+APPLY_QOS_SCRIPT = "/usr/local/sbin/apply-qos.sh"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -1097,6 +1099,59 @@ def api_guest_network_post():
         pass  # Best-effort; config is already updated
 
     return jsonify({"ok": True, "enabled": new_enabled})
+
+
+# ── QoS endpoints ─────────────────────────────────────────────────────────────
+
+
+def _read_qos_limits():
+    """Read QoS limits from JSON store. Returns list."""
+    try:
+        return json.loads(Path(QOS_LIMITS_FILE).read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+@app.route("/api/clients/qos", methods=["GET"])
+@require_auth
+def api_clients_qos_get():
+    limits = _read_qos_limits()
+    return jsonify({"limits": limits})
+
+
+@app.route("/api/clients/qos", methods=["POST"])
+@require_auth_always
+def api_clients_qos_post():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    mac = data.get("mac", "")
+    if not re.match(r'^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$', mac):
+        return jsonify({"error": "Invalid MAC address format"}), 400
+
+    if data.get("clear"):
+        out, rc = _run([APPLY_QOS_SCRIPT, "uap0", mac, "clear"], timeout=10)
+        if rc != 0:
+            return jsonify({"error": f"apply-qos.sh failed (rc={rc})"}), 503
+        return jsonify({"ok": True})
+
+    down_kbps = data.get("down_kbps")
+    up_kbps = data.get("up_kbps")
+    if not isinstance(down_kbps, int) or not isinstance(up_kbps, int):
+        return jsonify({"error": "down_kbps and up_kbps must be integers"}), 400
+    if not (64 <= down_kbps <= 100000):
+        return jsonify({"error": "down_kbps must be between 64 and 100000"}), 400
+    if not (64 <= up_kbps <= 100000):
+        return jsonify({"error": "up_kbps must be between 64 and 100000"}), 400
+
+    out, rc = _run(
+        [APPLY_QOS_SCRIPT, "uap0", mac, str(down_kbps), str(up_kbps)],
+        timeout=10,
+    )
+    if rc != 0:
+        return jsonify({"error": f"apply-qos.sh failed (rc={rc})"}), 503
+    return jsonify({"ok": True})
 
 
 # ── Serve index.html ──────────────────────────────────────────────────────────

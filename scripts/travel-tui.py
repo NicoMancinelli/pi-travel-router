@@ -1034,19 +1034,95 @@ class LogViewScreen(Screen):
         self._load_log()
 
 
+# ── QoS helpers ───────────────────────────────────────────────────────────────
+QOS_LIMITS_FILE = "/var/lib/travel-router/qos-limits.json"
+APPLY_QOS_CMD = "/usr/local/sbin/apply-qos.sh"
+
+
+def read_qos_limits() -> dict:
+    """Return dict of mac.lower() → {down_kbps, up_kbps} from QoS store."""
+    import json as _json
+    try:
+        with open(QOS_LIMITS_FILE) as fh:
+            limits = _json.load(fh)
+        return {e["mac"].lower(): e for e in limits if "mac" in e}
+    except (OSError, (ValueError, KeyError)):
+        return {}
+
+
+class QosModal(ModalScreen):
+    """Enter download/upload Kbps for a client MAC and apply via apply-qos.sh."""
+
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, mac: str, current: dict | None = None) -> None:
+        super().__init__()
+        self._mac = mac
+        self._current = current or {}
+
+    def compose(self) -> ComposeResult:
+        cur_down = str(self._current.get("down_kbps", "2048"))
+        cur_up = str(self._current.get("up_kbps", "1024"))
+        with Container(classes="modal-dialog"):
+            yield Label(f"QoS Limit — {self._mac}", classes="panel-title")
+            yield Static("")
+            yield Label("Download limit (Kbps):", classes="status-label")
+            yield Input(value=cur_down, id="inp-down", placeholder="e.g. 2048")
+            yield Label("Upload limit (Kbps):", classes="status-label")
+            yield Input(value=cur_up, id="inp-up", placeholder="e.g. 1024")
+            yield Static("")
+            with Horizontal():
+                yield Button("Set Limit [Enter]", id="set-btn", variant="primary")
+                if self._current:
+                    yield Button("Remove Limit", id="clear-btn", variant="error")
+                yield Button("Cancel [Esc]", id="cancel-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "set-btn":
+            try:
+                down = int(self.query_one("#inp-down", Input).value)
+                up = int(self.query_one("#inp-up", Input).value)
+                if not (64 <= down <= 100000) or not (64 <= up <= 100000):
+                    raise ValueError("out of range")
+                self.dismiss(("set", down, up))
+            except (ValueError, TypeError):
+                self.app.push_screen(
+                    MessageModal("QoS", "Kbps must be an integer between 64 and 100000", "error")
+                )
+        elif event.button.id == "clear-btn":
+            self.dismiss(("clear", 0, 0))
+        else:
+            self.dismiss(None)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.on_button_pressed(
+            type("FakeEvt", (), {"button": type("B", (), {"id": "set-btn"})()})()
+        )
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
 # ── Clients screen ────────────────────────────────────────────────────────────
 class ClientsScreen(Screen):
-    BINDINGS = [Binding("q,escape", "pop_screen", "Back"), Binding("r", "refresh", "Refresh")]
+    BINDINGS = [
+        Binding("escape", "pop_screen", "Back"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("q", "set_qos", "QoS limit"),
+    ]
+
+    # rows stored for keybinding lookup: list of (mac, ip, hostname, signal)
+    _rows: list = []
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield Label("AP Clients", classes="panel-title")
+        yield Label("AP Clients  —  [Q] to set bandwidth limit", classes="panel-title")
         yield DataTable(id="clients-table", zebra_stripes=True)
         yield Footer()
 
     def on_mount(self) -> None:
         t = self.query_one("#clients-table", DataTable)
-        t.add_columns("MAC", "IP", "Hostname", "Signal")
+        t.add_columns("MAC", "IP", "Hostname", "Signal", "QoS")
         self._load_clients()
 
     def _load_clients(self) -> None:
@@ -1102,7 +1178,8 @@ class ClientsScreen(Screen):
             hostname = self._lookup_hostname(ip)
             rows.append((current_mac, ip, hostname, current_signal))
 
-        self.call_from_thread(self._apply_clients, rows)
+        qos = read_qos_limits()
+        self.call_from_thread(self._apply_clients, rows, qos)
 
     def _lookup_hostname(self, ip: str) -> str:
         if ip in ("unknown", ""):
@@ -1117,22 +1194,66 @@ class ClientsScreen(Screen):
             pass
         return ""
 
-    def _apply_clients(self, rows: list) -> None:
+    def _apply_clients(self, rows: list, qos: dict) -> None:
+        self._rows = rows
         t = self.query_one("#clients-table", DataTable)
         t.clear()
         if not rows:
-            t.add_row("No clients connected", "", "", "")
+            t.add_row("No clients connected", "", "", "", "")
         else:
             for mac, ip, hostname, signal in rows:
+                limit = qos.get(mac.lower())
+                if limit:
+                    qos_str = f"[yellow]↓{limit['down_kbps']}k ↑{limit['up_kbps']}k[/yellow]"
+                else:
+                    qos_str = "[dim]—[/dim]"
                 t.add_row(
                     f"[green]{mac}[/green]",
                     f"[dim]{ip}[/dim]",
                     hostname,
                     signal,
+                    qos_str,
                 )
 
     def action_refresh(self) -> None:
         self._load_clients()
+
+    def action_set_qos(self) -> None:
+        try:
+            t = self.query_one("#clients-table", DataTable)
+            idx = t.cursor_row
+        except Exception:
+            return
+        if not self._rows or idx < 0 or idx >= len(self._rows):
+            self.app.push_screen(
+                MessageModal("QoS", "No client selected — move cursor to a client row first.", "error")
+            )
+            return
+        mac = self._rows[idx][0]
+        current = read_qos_limits().get(mac.lower())
+        self.app.push_screen(
+            QosModal(mac, current),
+            lambda result, m=mac: self._handle_qos_result(m, result),
+        )
+
+    def _handle_qos_result(self, mac: str, result: tuple | None) -> None:
+        if result is None:
+            return
+        action, down, up = result
+        self.run_worker(lambda a=action, m=mac, d=down, u=up: self._qos_worker(a, m, d, u), thread=True)
+
+    def _qos_worker(self, action: str, mac: str, down: int, up: int) -> None:
+        if action == "clear":
+            rc, out = run_shell([APPLY_QOS_CMD, "uap0", mac, "clear"], timeout=10)
+            msg = f"✓ Limit removed for {mac}" if rc == 0 else f"✗ Failed: {out[:120]}"
+        else:
+            rc, out = run_shell([APPLY_QOS_CMD, "uap0", mac, str(down), str(up)], timeout=10)
+            msg = f"✓ Limit set: ↓{down}k ↑{up}k for {mac}" if rc == 0 else f"✗ Failed: {out[:120]}"
+        variant = "success" if rc == 0 else "error"
+        self.call_from_thread(
+            lambda m=msg, v=variant: self.app.push_screen(MessageModal("QoS", m, v))
+        )
+        self.call_from_thread(self._load_clients)
 
 
 # ── Network screen ────────────────────────────────────────────────────────────
