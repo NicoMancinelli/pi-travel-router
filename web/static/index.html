@@ -629,6 +629,30 @@
     <div id="uplink-wifi-list"></div>
   </div>
 
+  <!-- Port Forwarding -->
+  <div class="card">
+    <div class="card-title">Port Forwarding</div>
+    <table id="portfwd-table" style="width:100%;border-collapse:collapse;font-size:0.85em;">
+      <thead><tr style="color:#888;">
+        <th style="text-align:left;padding:2px 6px;">Proto</th>
+        <th style="text-align:left;padding:2px 6px;">Ext Port</th>
+        <th style="text-align:left;padding:2px 6px;">→ Internal</th>
+        <th style="text-align:left;padding:2px 6px;">Comment</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="portfwd-body"><tr><td colspan="5" style="color:#666;padding:4px 6px;">Loading…</td></tr></tbody>
+    </table>
+    <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;">
+      <select id="pf-proto" style="padding:4px;background:#1e1e1e;color:#e0e0e0;border:1px solid #444;border-radius:4px;"><option>tcp</option><option>udp</option></select>
+      <input id="pf-ext" type="number" placeholder="Ext port" min="1" max="65535" style="width:90px;padding:4px;background:#1e1e1e;color:#e0e0e0;border:1px solid #444;border-radius:4px;">
+      <input id="pf-ip" type="text" placeholder="Internal IP" style="width:120px;padding:4px;background:#1e1e1e;color:#e0e0e0;border:1px solid #444;border-radius:4px;">
+      <input id="pf-int" type="number" placeholder="Int port" min="1" max="65535" style="width:90px;padding:4px;background:#1e1e1e;color:#e0e0e0;border:1px solid #444;border-radius:4px;">
+      <input id="pf-comment" type="text" placeholder="Comment (optional)" style="flex:1;min-width:80px;padding:4px;background:#1e1e1e;color:#e0e0e0;border:1px solid #444;border-radius:4px;">
+      <button class="btn btn-sm btn-primary" onclick="addPortForwardRule()">Add</button>
+    </div>
+    <div id="portfwd-msg" style="margin-top:6px;font-size:0.85em;color:#8bc34a;display:none;"></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Service controls -->
@@ -1825,6 +1849,61 @@ async function addWgPeer() {
   }
 }
 
+// ── Port Forwarding ───────────────────────────────────────────────────────────
+async function fetchPortForwardRules() {
+  try {
+    const r = await fetch('/api/portforward');
+    if (!r.ok) return;
+    const data = await r.json();
+    const tbody = document.getElementById('portfwd-body');
+    if (!tbody) return;
+    if (!data.rules || data.rules.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:#666;padding:4px 6px;">No rules configured.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.rules.map(r => `
+      <tr>
+        <td style="padding:2px 6px;">${r.proto.toUpperCase()}</td>
+        <td style="padding:2px 6px;">${r.ext_port}</td>
+        <td style="padding:2px 6px;">${r.int_ip}:${r.int_port}</td>
+        <td style="padding:2px 6px;color:#aaa;">${r.comment || ''}</td>
+        <td style="padding:2px 6px;"><button class="btn btn-sm" style="background:#5a1a1a;" onclick="deletePortForwardRule('${r.id}')">&#x2715;</button></td>
+      </tr>`).join('');
+  } catch (_) {}
+}
+
+async function addPortForwardRule() {
+  const proto = document.getElementById('pf-proto')?.value;
+  const ext_port = parseInt(document.getElementById('pf-ext')?.value);
+  const int_ip = document.getElementById('pf-ip')?.value?.trim();
+  const int_port = parseInt(document.getElementById('pf-int')?.value);
+  const comment = document.getElementById('pf-comment')?.value?.trim() || '';
+  const msg = document.getElementById('portfwd-msg');
+  if (!proto || !ext_port || !int_ip || !int_port) {
+    if (msg) { msg.textContent = 'All fields except comment are required.'; msg.style.color='#ef5350'; msg.style.display=''; }
+    return;
+  }
+  try {
+    const r = await fetch('/api/portforward', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({proto, ext_port, int_ip, int_port, comment})});
+    const data = await r.json();
+    if (!r.ok) {
+      if (msg) { msg.textContent = data.error || 'Error'; msg.style.color='#ef5350'; msg.style.display=''; }
+      return;
+    }
+    if (msg) { msg.textContent = 'Rule added.'; msg.style.color='#8bc34a'; msg.style.display=''; }
+    fetchPortForwardRules();
+  } catch (e) {
+    if (msg) { msg.textContent = String(e); msg.style.color='#ef5350'; msg.style.display=''; }
+  }
+}
+
+async function deletePortForwardRule(id) {
+  if (!confirm('Delete this port forwarding rule?')) return;
+  await fetch('/api/portforward/' + id, {method:'DELETE'});
+  fetchPortForwardRules();
+}
+
 // ── Privacy Profiles ──────────────────────────────────────────────────────────
 const PROFILE_IDS = ['vpn-only', 'adblock-only', 'tor', 'direct'];
 
@@ -2683,6 +2762,7 @@ async function refreshAll() {
   fetchLatencyHistory();
   fetchResourceStats();
   fetchUplinkScan();
+  fetchPortForwardRules();
 }
 
 async function init() {
