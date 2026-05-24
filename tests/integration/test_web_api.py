@@ -236,14 +236,14 @@ class TestPrivacyProfile:
         """POST /api/privacy/profile with a valid name returns 200."""
         resp = requests.post(
             f"{api_server['base_url']}/api/privacy/profile",
-            json={"profile": "private"},
+            json={"profile": "adblock-only"},
             headers=auth_headers(api_server["token"]),
             timeout=5,
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data.get("ok") is True
-        assert data.get("active") == "private"
+        assert data.get("profile") == "adblock-only"
 
     def test_set_invalid_profile_returns_400(self, api_server):
         """POST /api/privacy/profile with unknown name returns 400."""
@@ -260,7 +260,7 @@ class TestPrivacyProfile:
         """After setting a profile, GET returns the updated active profile."""
         requests.post(
             f"{api_server['base_url']}/api/privacy/profile",
-            json={"profile": "paranoid"},
+            json={"profile": "tor"},
             headers=auth_headers(api_server["token"]),
             timeout=5,
         )
@@ -270,13 +270,13 @@ class TestPrivacyProfile:
             timeout=5,
         )
         assert resp.status_code == 200
-        assert resp.json()["active"] == "paranoid"
+        assert resp.json()["active"] == "tor"
 
     def test_set_profile_without_auth_returns_401(self, api_server):
         """POST /api/privacy/profile without auth returns 401."""
         resp = requests.post(
             f"{api_server['base_url']}/api/privacy/profile",
-            json={"profile": "standard"},
+            json={"profile": "vpn-only"},
             timeout=5,
         )
         assert resp.status_code == 401

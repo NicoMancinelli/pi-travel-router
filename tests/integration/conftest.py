@@ -67,6 +67,17 @@ def api_server(tmp_fs):
     privacy_state_dir = tmp_fs / "privacy"
     privacy_state_dir.mkdir(exist_ok=True)
 
+    # Stub apply-privacy-profile.sh: writes profile to ACTIVE_PROFILE_FILE and exits 0
+    active_profile_file = privacy_state_dir / "active-profile"
+    active_profile_file.write_text("vpn-only\n")
+    stub_apply = tmp_fs / "apply-privacy-profile.sh"
+    stub_apply.write_text(
+        "#!/bin/bash\n"
+        f"echo \"$1\" > '{active_profile_file}'\n"
+        "exit 0\n"
+    )
+    stub_apply.chmod(0o755)
+
     # ── Patch app module constants before import ───────────────────────────
     # We add web/ to sys.path and import app, then monkey-patch its constants.
     sys.path.insert(0, str(_WEB_DIR))
@@ -86,7 +97,8 @@ def api_server(tmp_fs):
     app_module.COMBINED_LOG = str(combined_log)
     app_module.WG_CONF = str(wg_conf)
     app_module.UPS_STATUS_FILE = str(tmp_fs / "ups-status")
-    app_module._PRIVACY_STATE_FILE = str(privacy_state_dir / "privacy-profile")
+    app_module.ACTIVE_PROFILE_FILE = str(active_profile_file)
+    app_module.APPLY_PROFILE_SCRIPT = str(stub_apply)
 
     # ── Start Flask in a daemon thread ─────────────────────────────────────
     port = find_free_port()
