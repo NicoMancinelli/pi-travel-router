@@ -373,6 +373,16 @@
 
   <hr class="divider">
 
+  <!-- DNS Resolver -->
+  <div class="card full-width" id="card-doh">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F310; DNS Resolver <span id="doh-active-badge" style="margin-left:6px;"></span></span>
+    </div>
+    <div id="doh-content"><span class="spinner"></span></div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Guest Network -->
   <div class="card full-width" id="card-guest-network">
     <div class="card-title" style="justify-content:space-between;">
@@ -1474,6 +1484,99 @@ async function applyPrivacyProfile(profile, btn) {
   }
 }
 
+// ── DNS-over-HTTPS Resolver ────────────────────────────────────────────────────
+const DOH_PRESETS = ['cloudflare', 'quad9', 'nextdns', 'adguard', 'system'];
+const DOH_PRESET_LABELS = {
+  cloudflare: 'Cloudflare (1.1.1.1)',
+  quad9: 'Quad9',
+  nextdns: 'NextDNS',
+  adguard: 'AdGuard DNS',
+  system: 'System (DHCP / no DoH)',
+};
+
+async function fetchDohResolver() {
+  try {
+    const resp = await apiFetch('/api/doh');
+    if (!resp.ok) { document.getElementById('doh-content').innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const d = await resp.json();
+    renderDohResolver(d.resolver);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') document.getElementById('doh-content').innerHTML = '<span class="dim">Error loading DoH config</span>';
+  }
+}
+
+function renderDohResolver(current) {
+  const el = document.getElementById('doh-content');
+  const badgeEl = document.getElementById('doh-active-badge');
+  const isPreset = DOH_PRESETS.includes(current);
+  const label = DOH_PRESET_LABELS[current] || current;
+  if (badgeEl) {
+    const color = (current === 'system') ? 'gray' : 'green';
+    badgeEl.innerHTML = badge(escHtml(label), color);
+  }
+
+  const selectOptions = DOH_PRESETS.map(p =>
+    `<option value="${escHtml(p)}"${current === p ? ' selected' : ''}>${escHtml(DOH_PRESET_LABELS[p] || p)}</option>`
+  ).join('');
+  const customSelected = !isPreset && current ? ' selected' : '';
+
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:12px;max-width:480px;">
+      <div style="font-size:12px;color:var(--text-dim);">
+        Route DNS queries over HTTPS for privacy and security. Requires systemd-resolved.
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="doh-select" style="font-size:13px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);" onchange="dohSelectChanged()">
+          ${selectOptions}
+          <option value="custom"${customSelected}>Custom URL&hellip;</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="saveDohResolver()">Save</button>
+        <span id="doh-save-status" style="font-size:12px;color:var(--text-dim);"></span>
+      </div>
+      <div id="doh-custom-row" style="display:${isPreset ? 'none' : 'flex'};gap:8px;align-items:center;">
+        <input id="doh-custom-url" type="text" placeholder="https://your-doh.example.com/dns-query"
+          value="${escHtml(!isPreset && current ? current : '')}"
+          style="font-size:13px;padding:4px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);width:100%;max-width:360px;">
+      </div>
+    </div>`;
+}
+
+function dohSelectChanged() {
+  const sel = document.getElementById('doh-select');
+  const row = document.getElementById('doh-custom-row');
+  if (!sel || !row) return;
+  row.style.display = sel.value === 'custom' ? 'flex' : 'none';
+}
+
+async function saveDohResolver() {
+  const sel = document.getElementById('doh-select');
+  const statusEl = document.getElementById('doh-save-status');
+  if (!sel) return;
+  let resolver = sel.value;
+  if (resolver === 'custom') {
+    const inp = document.getElementById('doh-custom-url');
+    resolver = inp ? inp.value.trim() : '';
+    if (!resolver) { toast('Please enter a custom DoH URL', 'err'); return; }
+    if (!resolver.startsWith('https://')) { toast('Custom URL must start with https://', 'err'); return; }
+  }
+  if (statusEl) statusEl.textContent = 'Saving…';
+  try {
+    const resp = await apiFetch('/api/doh', { method: 'POST', body: JSON.stringify({ resolver }) });
+    const d = await resp.json();
+    if (resp.ok) {
+      toast('DNS resolver updated', 'ok');
+      if (statusEl) statusEl.textContent = '';
+      fetchDohResolver();
+    } else {
+      toast('Failed: ' + (d.error || '?'), 'err');
+      if (statusEl) statusEl.textContent = '';
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+    if (statusEl) statusEl.textContent = '';
+  }
+}
+
 // ── WireGuard peers ────────────────────────────────────────────────────────────
 async function fetchWgPeers() {
   try {
@@ -1961,6 +2064,7 @@ async function refreshAll() {
   fetchLogs();
   fetchConfig();
   fetchPrivacyProfile();
+  fetchDohResolver();
   fetchWgPeers();
   fetchGuestNetwork();
   fetchSpeedTestCached();

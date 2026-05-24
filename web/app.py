@@ -33,6 +33,8 @@ QOS_LIMITS_FILE = "/var/lib/travel-router/qos-limits.json"
 APPLY_QOS_SCRIPT = "/usr/local/sbin/apply-qos.sh"
 CAPTIVE_JSON = "/var/lib/travel-router/captive-portal.json"
 _BW_HISTORY_FILE = "/var/lib/travel-router/bw-history.json"
+DOH_SCRIPT = "/usr/local/sbin/set-doh-resolver.sh"
+DOH_PRESETS = ["cloudflare", "quad9", "nextdns", "adguard", "system"]
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -1676,6 +1678,56 @@ def api_uplink_reconnect():
         pass  # best-effort
 
     return jsonify({"ok": True, "message": "Reconnecting uplink…"})
+
+
+# ── DNS-over-HTTPS resolver ───────────────────────────────────────────────────
+
+
+@app.route("/api/doh", methods=["GET"])
+@require_auth
+def api_doh_get():
+    resolver = _read_defaults_value("DOH_RESOLVER", "system")
+    return jsonify({"resolver": resolver or "system", "presets": DOH_PRESETS})
+
+
+@app.route("/api/doh", methods=["POST"])
+@require_auth_always
+def api_doh_post():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    resolver = data.get("resolver", "").strip()
+    if not resolver:
+        return jsonify({"error": "Missing 'resolver' field"}), 400
+
+    # Validate: must be a known preset or a https:// URL
+    if resolver not in DOH_PRESETS:
+        if not resolver.startswith("https://"):
+            return jsonify({"error": "resolver must be a preset name or a https:// URL"}), 400
+        # Reject shell metacharacters in URL
+        if re.search(r'[;&|`$\'\"\\<>]', resolver):
+            return jsonify({"error": "Invalid characters in resolver URL"}), 400
+        if len(resolver) > 512:
+            return jsonify({"error": "resolver URL too long"}), 400
+
+    try:
+        result = subprocess.run(
+            [DOH_SCRIPT, resolver],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "set-doh-resolver.sh not installed"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "set-doh-resolver.sh timed out"}), 504
+
+    if result.returncode != 0:
+        return jsonify({"error": result.stderr or result.stdout or "Script failed"}), 503
+
+    _push_event("doh_change", {"resolver": resolver})
+    return jsonify({"ok": True})
 
 
 # ── Serve index.html ──────────────────────────────────────────────────────────

@@ -108,3 +108,7 @@ LTE_NM_PROFILE=lte-modem
 ENABLE_GUEST_NETWORK=0
 GUEST_SSID=TravelRouter-Guest
 GUEST_PASS=
+
+# DNS-over-HTTPS resolver. Presets: cloudflare, quad9, nextdns, adguard, system.
+# Set to 'system' to use DHCP-provided DNS (DoH disabled).
+DOH_RESOLVER=system
