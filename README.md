@@ -228,7 +228,9 @@ A condensed view of what you get after the install completes. Full feature list 
 - **Privacy opt-ins:** Tor transparent SSID, Firehol L1 blocklist, MAC randomization, HTTP UA rewrite
 - **QoS:** CAKE bufferbloat (with optional weekly auto-tune), TCP BBR, per-client fairness
 - **Reliability:** hardware watchdog, log2ram, log rotation, unattended security updates
-- **Observability:** `travel-tui` dashboard, `travel-status`, ntfy push, daily digest, Tailscale peer watchdog, optional Prometheus exporter, optional bandwidth HTML dashboard
+- **Observability:** `travel-tui` dashboard, web dashboard (`:8080`), `travel-status`, ntfy push, daily digest, Tailscale peer watchdog, optional Prometheus exporter, optional bandwidth HTML dashboard
+- **Security:** fail2ban (SSH + web dashboard brute-force protection), AIDE file integrity monitoring (daily scan, ntfy alert on changes), WireGuard key rotation (monthly systemd timer)
+- **Privacy profiles:** VPN-only, Adblock, Tor transparent proxy, Direct (no VPN) — switchable from TUI or web dashboard
 - **Hardware:** optional PiSugar 3 UPS monitor with safe shutdown
 - **2FA:** optional SSH TOTP via `setup-2fa.sh`
 
@@ -236,11 +238,19 @@ A condensed view of what you get after the install completes. Full feature list 
 
 ## Management
 
+Three management interfaces are available:
+
+**SSH terminal**
+
 ```sh
-sudo travel-tui          # interactive dashboard: uplink, AP clients, feature toggles, logs
+sudo travel-tui          # interactive TUI dashboard: uplink, AP clients, feature toggles, logs
 sudo travel-status       # one-shot status snapshot
 sudo update-router.sh    # pull latest from GitHub and re-run changed install steps
 ```
+
+**Web dashboard** — available at `http://192.168.7.1:8080` (or `http://travelrouter.local:8080`). Provides a dark-UI browser interface for uplink status, peer management, privacy profile switching, and system diagnostics. No additional install needed — the Flask server starts automatically.
+
+**TUI** (`travel-tui`) — SSH in and run `sudo travel-tui` for a full-screen terminal dashboard.
 
 Single config file: `/etc/default/travel-router`. The TUI's Features screen toggles any `ENABLE_*` flag live, reloading the firewall when the change requires it.
 
@@ -505,6 +515,42 @@ The USB gadget interface (`192.168.7.1`) is always available regardless of WiFi/
 ---
 
 ## Project status / roadmap
+
+**Current version: v2.3.0** — all planned features shipped.
+
+### ✅ Shipped (v2.0–v2.3)
+
+| Feature | Version |
+|---|---|
+| WireGuard VPN + kill switch | v2.0 |
+| Web management dashboard (Flask + dark UI) | v2.0 |
+| Python/Textual TUI | v2.0 |
+| Modular installer (`--dry-run`, `--module`, `--skip`) | v2.0 |
+| OTA A/B slot updates with GPG verify | v2.0 |
+| Captive portal auto-login (5 templates) | v2.0 |
+| 4G/LTE modem support (ModemManager) | v2.0 |
+| IPv6 first-class (SLAAC, DHCPv6, ip6tables) | v2.0 |
+| Observability (structured logs, ntfy alerts, log rotation) | v2.0 |
+| `curl \| bash` one-liner setup (`scripts/setup.sh`) | v2.2 |
+| SD card flash script (`scripts/flash.sh`) | v2.2 |
+| Quick/Standard/Expert installer TUI | v2.2 |
+| Existing-install detection (upgrade/reconfigure/repair) | v2.2 |
+| Debian Trixie / any Pi OS release compatibility | v2.2 |
+| fail2ban (SSH + web dashboard brute-force protection) | v2.3 |
+| WireGuard key rotation (monthly timer) | v2.3 |
+| AIDE file integrity monitoring (daily, ntfy alert) | v2.3 |
+| WireGuard peer management (expiry, QR, remove, TUI) | v2.3 |
+| Privacy profiles (VPN-only / Adblock / Tor / Direct) | v2.3 |
+| Integration test suite (31 tests: failover, OTA, API) | v2.3 |
+| ARM64 native CI | v2.3 |
+
+### 🗺 Up next (v2.4)
+
+- **Captive portal improvements**: auto-detect network type, retry on failure
+- **Mobile app companion**: iOS/Android shortcut to switch privacy profiles
+- **Headscale integration**: self-hosted mesh VPN (WireGuard-based)
+- **Per-device bandwidth quotas**: QoS rules per connected client MAC
+- **Guest network**: isolated VLAN for untrusted devices
 
 Full deployed feature list and outstanding roadmap items live in [`IMPROVEMENTS.md`](IMPROVEMENTS.md). Image build pipeline docs: [`build/README.md`](build/README.md). Firstboot wizard internals: [`firstboot/README.md`](firstboot/README.md).
 
