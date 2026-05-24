@@ -14,6 +14,7 @@ import urllib.parse
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
+from uuid import uuid4
 
 from flask import Flask, Response, jsonify, request
 
@@ -40,6 +41,7 @@ MOUNT_STORAGE_SCRIPT = "/usr/local/sbin/mount-storage.sh"
 WOL_TARGETS_FILE = "/var/lib/travel-router/wol-targets.json"
 DATACAP_FILE = "/var/lib/travel-router/datacap.json"
 ALIASES_FILE = "/var/lib/travel-router/aliases.json"
+PORT_FORWARD_FILE = "/var/lib/travel-router/portforward.json"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -2821,6 +2823,151 @@ def index():
         return Response(content, mimetype="text/html")
     except OSError:
         return jsonify({"error": "index.html not found"}), 404
+
+
+# ── Port forwarding ──────────────────────────────────────────────────────────
+
+_PF_IP_RE = re.compile(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$')
+
+
+def _read_portforward() -> list:
+    """Read port-forward rules from JSON store. Returns [] on any error."""
+    try:
+        text = Path(PORT_FORWARD_FILE).read_text().strip()
+        if not text:
+            return []
+        data = json.loads(text)
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def _write_portforward(rules: list) -> None:
+    """Atomically write port-forward rules list to disk."""
+    pf_dir = str(Path(PORT_FORWARD_FILE).parent)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=pf_dir, prefix="portforward.")
+    try:
+        with os.fdopen(tmp_fd, "w") as fh:
+            json.dump(rules, fh)
+        os.replace(tmp_path, PORT_FORWARD_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _apply_portforward_rules(rules: list) -> None:
+    """Flush and reapply all iptables DNAT rules from the rules list."""
+    # Flush existing chains (ignore errors — chains may not exist yet)
+    _run(["iptables", "-t", "nat", "-F", "TRAVEL_PORTFWD"])
+    _run(["iptables", "-F", "TRAVEL_PORTFWD"])
+    # Create chains if not present
+    _run(["iptables", "-t", "nat", "-N", "TRAVEL_PORTFWD"])
+    _run(["iptables", "-N", "TRAVEL_PORTFWD"])
+    # Ensure jump from PREROUTING and FORWARD
+    out, rc = _run(["iptables", "-t", "nat", "-C", "PREROUTING", "-j", "TRAVEL_PORTFWD"])
+    if rc != 0:
+        _run(["iptables", "-t", "nat", "-I", "PREROUTING", "1", "-j", "TRAVEL_PORTFWD"])
+    out, rc = _run(["iptables", "-C", "FORWARD", "-j", "TRAVEL_PORTFWD"])
+    if rc != 0:
+        _run(["iptables", "-I", "FORWARD", "1", "-j", "TRAVEL_PORTFWD"])
+    # Add rules
+    for rule in rules:
+        proto = rule.get("proto", "tcp")
+        ext_port = str(rule.get("ext_port", ""))
+        int_ip = rule.get("int_ip", "")
+        int_port = str(rule.get("int_port", ""))
+        _run([
+            "iptables", "-t", "nat", "-A", "TRAVEL_PORTFWD",
+            "-p", proto, "--dport", ext_port,
+            "-j", "DNAT", "--to-destination", f"{int_ip}:{int_port}",
+        ])
+        _run([
+            "iptables", "-A", "TRAVEL_PORTFWD",
+            "-p", proto, "-d", int_ip, "--dport", int_port,
+            "-j", "ACCEPT",
+        ])
+
+
+@app.route("/api/portforward", methods=["GET"])
+@require_auth
+def api_portforward_get():
+    return jsonify({"rules": _read_portforward()})
+
+
+@app.route("/api/portforward", methods=["POST"])
+@require_auth_always
+def api_portforward_post():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    proto = data.get("proto", "")
+    if proto not in ("tcp", "udp"):
+        return jsonify({"error": "proto must be 'tcp' or 'udp'"}), 400
+
+    ext_port = data.get("ext_port")
+    if not isinstance(ext_port, int) or not (1 <= ext_port <= 65535):
+        return jsonify({"error": "ext_port must be an integer 1–65535"}), 400
+
+    int_ip = data.get("int_ip", "")
+    if not isinstance(int_ip, str) or not _PF_IP_RE.match(int_ip):
+        return jsonify({"error": "int_ip must be a valid IPv4 address"}), 400
+    # Validate each octet <= 255
+    if any(int(o) > 255 for o in int_ip.split(".")):
+        return jsonify({"error": "int_ip octet out of range"}), 400
+
+    int_port = data.get("int_port")
+    if not isinstance(int_port, int) or not (1 <= int_port <= 65535):
+        return jsonify({"error": "int_port must be an integer 1–65535"}), 400
+
+    comment = data.get("comment", "")
+    if not isinstance(comment, str):
+        comment = ""
+    comment = re.sub(r'<[^>]*>', '', comment).strip()
+    if len(comment) > 64:
+        return jsonify({"error": "comment must be at most 64 characters"}), 400
+
+    rules = _read_portforward()
+    # Check for duplicate ext_port + proto
+    for r in rules:
+        if r.get("proto") == proto and r.get("ext_port") == ext_port:
+            return jsonify({"error": f"Rule for {proto}/{ext_port} already exists"}), 409
+
+    rule = {
+        "id": uuid4().hex[:8],
+        "proto": proto,
+        "ext_port": ext_port,
+        "int_ip": int_ip,
+        "int_port": int_port,
+        "comment": comment,
+    }
+    rules.append(rule)
+    try:
+        _write_portforward(rules)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to save rules: {exc}"}), 503
+    _apply_portforward_rules(rules)
+    return jsonify({"ok": True, "rule": rule})
+
+
+@app.route("/api/portforward/<rule_id>", methods=["DELETE"])
+@require_auth_always
+def api_portforward_delete(rule_id):
+    rules = _read_portforward()
+    new_rules = [r for r in rules if r.get("id") != rule_id]
+    if len(new_rules) == len(rules):
+        return jsonify({"error": "Rule not found"}), 404
+    try:
+        _write_portforward(new_rules)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to save rules: {exc}"}), 503
+    _apply_portforward_rules(new_rules)
+    return jsonify({"ok": True})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

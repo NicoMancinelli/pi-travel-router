@@ -83,6 +83,11 @@ run_finalize() {
     touch /var/lib/travel-router/aliases.json 2>/dev/null || true
     ok "Device alias store initialised"
 
+    # ── Port forwarding store ─────────────────────────────────────────────────────
+    section "Port forwarding store"
+    touch /var/lib/travel-router/portforward.json 2>/dev/null || true
+    ok "Port forwarding store initialised"
+
     # ── Data cap store ────────────────────────────────────────────────────────────
     section "Data cap store"
     touch /var/lib/travel-router/datacap.json 2>/dev/null || true
