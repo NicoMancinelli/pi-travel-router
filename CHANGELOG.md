@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-05-24
+
+### Added
+
+- **Scheduled tasks viewer** (`web/app.py`, `web/static/index.html`): `GET /api/cron/jobs` reads all `/etc/cron.d/travel-router-*` files, parses cron schedule fields, and converts them to human-readable descriptions (e.g. "Daily at 03:00", "Weekly on Sunday at 08:00"). Dashboard "Scheduled Tasks" card with table showing schedule, command name, and source file; Refresh button.
+- **Client connection history** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`): background daemon watches `/var/lib/misc/dnsmasq.leases` for changes (inotify-style polling every 5s), appending timestamped `{mac, ip, hostname, seen}` entries to `client-history.json` (capped at 500). `GET /api/clients/history` returns entries sorted newest-first with optional `?limit=` param. Dashboard "Client History" card shows last-seen table with relative timestamps.
+
 ## [2.13.0] - 2026-05-24
 
 ### Added
