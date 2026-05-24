@@ -1005,6 +1005,100 @@ def api_wg_peer_qr(pubkey_encoded):
     return Response(result.stdout, mimetype="image/png")
 
 
+# ── Guest network ─────────────────────────────────────────────────────────────
+
+
+def _read_defaults_value(key: str, default: str = "") -> str:
+    """Read a single key from the defaults file."""
+    try:
+        for line in Path(DEFAULTS_FILE).read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                m = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)=(.*)', line)
+                if m and m.group(1) == key:
+                    return m.group(2).strip('"').strip("'")
+    except OSError:
+        pass
+    return default
+
+
+def _guest_clients():
+    """Return list of clients connected to the guest AP (uap1)."""
+    out, rc = _run("iw dev uap1 station dump")
+    if rc != 0:
+        return []
+    clients = []
+    current: dict = {}
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("Station"):
+            if current:
+                clients.append(current)
+            parts = line.split()
+            current = {"mac": parts[1] if len(parts) > 1 else "?"}
+        elif "signal:" in line:
+            m = re.search(r"signal:\s*([-\d]+)", line)
+            if m and current:
+                current["signal"] = int(m.group(1))
+    if current:
+        clients.append(current)
+    return clients
+
+
+@app.route("/api/guest-network", methods=["GET"])
+@require_auth
+def api_guest_network_get():
+    enabled_str = _read_defaults_value("ENABLE_GUEST_NETWORK", "0")
+    ssid = _read_defaults_value("GUEST_SSID", "TravelRouter-Guest")
+    enabled = enabled_str == "1"
+    clients = _guest_clients() if enabled else []
+    return jsonify({"enabled": enabled, "ssid": ssid, "clients": clients})
+
+
+@app.route("/api/guest-network", methods=["POST"])
+@require_auth_always
+def api_guest_network_post():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    if "enabled" not in data:
+        return jsonify({"error": "Missing 'enabled' field"}), 400
+
+    new_enabled = bool(data["enabled"])
+    new_val = "1" if new_enabled else "0"
+
+    # Write to defaults file using the existing config write pattern
+    try:
+        content = Path(DEFAULTS_FILE).read_text()
+    except OSError as e:
+        return jsonify({"error": f"Cannot read config file: {e}"}), 503
+
+    pattern = re.compile(r'^(ENABLE_GUEST_NETWORK=).*$', re.MULTILINE)
+    replacement = f'ENABLE_GUEST_NETWORK="{new_val}"'
+    if pattern.search(content):
+        content = pattern.sub(replacement, content)
+    else:
+        content += f'\n{replacement}\n'
+
+    try:
+        Path(DEFAULTS_FILE).write_text(content)
+    except OSError as e:
+        return jsonify({"error": f"Write failed: {e}"}), 503
+
+    # Start or stop the guest hostapd service
+    svc = "hostapd-guest"
+    try:
+        if new_enabled:
+            _run(["systemctl", "start", svc], timeout=15)
+        else:
+            _run(["systemctl", "stop", svc], timeout=15)
+    except Exception:
+        pass  # Best-effort; config is already updated
+
+    return jsonify({"ok": True, "enabled": new_enabled})
+
+
 # ── Serve index.html ──────────────────────────────────────────────────────────
 
 

@@ -298,6 +298,35 @@ EOF
 EOF
     ok "Log rotation configured (daily, 7-day retention, compressed)"
 
+    # ── Guest network ─────────────────────────────────────────────────────────────
+    section "Guest network"
+    if [[ "${ENABLE_GUEST_NETWORK:-0}" == "1" ]]; then
+        info "Setting up guest network (${GUEST_SSID:-TravelRouter-Guest})"
+        # Install guest hostapd config
+        cp "${SCRIPT_DIR}/../config/hostapd-guest.conf" /etc/hostapd/hostapd-guest.conf
+        # Set SSID and passphrase
+        sed -i "s/^ssid=.*/ssid=${GUEST_SSID:-TravelRouter-Guest}/" /etc/hostapd/hostapd-guest.conf
+        if [[ -n "${GUEST_PASS:-}" ]]; then
+            # Add passphrase if not already present
+            grep -q "^wpa_passphrase=" /etc/hostapd/hostapd-guest.conf || \
+                echo "wpa_passphrase=${GUEST_PASS}" >> /etc/hostapd/hostapd-guest.conf
+        else
+            # Open network: remove WPA lines
+            sed -i '/^wpa=/d;/^wpa_key_mgmt=/d;/^rsn_pairwise=/d;/^wpa_passphrase=/d' \
+                /etc/hostapd/hostapd-guest.conf
+            sed -i 's/^auth_algs=1/auth_algs=1/' /etc/hostapd/hostapd-guest.conf
+        fi
+        # Install guest dnsmasq config
+        cp "${SCRIPT_DIR}/../config/dnsmasq-guest.conf" /etc/dnsmasq.d/guest.conf
+        # Install and enable systemd service
+        cp "${SCRIPT_DIR}/../systemd/hostapd-guest.service" /etc/systemd/system/
+        run_or_dry systemctl daemon-reload
+        run_or_dry systemctl enable hostapd-guest.service
+        ok "Guest network configured: ${GUEST_SSID:-TravelRouter-Guest}"
+    else
+        ok "Guest network disabled (set ENABLE_GUEST_NETWORK=1 to activate)"
+    fi
+
     # ── usbmuxd hardening ─────────────────────────────────────────────────────────
     section "usbmuxd hardening"
     mkdir -p /etc/systemd/system/usbmuxd.service.d

@@ -1,0 +1,17 @@
+[Unit]
+Description=Guest WiFi Access Point
+After=hostapd.service
+Requires=network.target
+ConditionPathExists=/etc/hostapd/hostapd-guest.conf
+
+[Service]
+Type=forking
+PIDFile=/run/hostapd-guest.pid
+ExecStartPre=/sbin/iw dev wlan0 interface add uap1 type __ap 2>/dev/null || true
+ExecStart=/usr/sbin/hostapd -B -P /run/hostapd-guest.pid /etc/hostapd/hostapd-guest.conf
+ExecStop=/bin/kill $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

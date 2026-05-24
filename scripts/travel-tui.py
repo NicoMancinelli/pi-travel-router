@@ -481,6 +481,7 @@ class DashboardScreen(Screen):
         Binding("7", "push_screen('system')", "System"),
         Binding("w", "push_screen('wireguard')", "WireGuard"),
         Binding("r", "push_screen('routes')", "Routes"),
+        Binding("g", "push_screen('guest')", "Guest"),
         Binding("q", "quit_app", "Quit"),
     ]
 
@@ -496,7 +497,7 @@ class DashboardScreen(Screen):
             yield Static(id="system-panel", classes="panel")
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
-            "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [Q]Quit",
+            "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [Q]Quit",
             id="nav-panel",
         )
         yield Footer()
@@ -1971,6 +1972,124 @@ class RoutesScreen(Screen):
         self._load_routes()
 
 
+# ── Guest Network screen ──────────────────────────────────────────────────────
+GUEST_IFACE = "uap1"
+
+
+class GuestNetworkScreen(Screen):
+    """Toggle the guest WiFi network on/off and show connected clients."""
+
+    BINDINGS = [
+        Binding("q,escape", "pop_screen", "Back"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("t", "toggle_guest", "Toggle"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label("Guest Network  (uap1 / 192.168.5.0/24)", classes="panel-title")
+        yield Static(id="guest-status")
+        yield DataTable(id="guest-table", zebra_stripes=True)
+        with Horizontal():
+            yield Button("Toggle ON/OFF [T]", id="toggle-btn", classes="action")
+            yield Button("Refresh [R]", id="refresh-btn", classes="action")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        t = self.query_one("#guest-table", DataTable)
+        t.add_columns("MAC", "Signal")
+        self._load()
+
+    def _load(self) -> None:
+        self.run_worker(self._fetch, exclusive=True, thread=True)
+
+    def _fetch(self) -> None:
+        cfg = read_defaults()
+        enabled = cfg.get("ENABLE_GUEST_NETWORK", "0") == "1"
+        ssid = cfg.get("GUEST_SSID", "TravelRouter-Guest")
+
+        # Guest clients
+        clients: list[tuple[str, str]] = []
+        if enabled:
+            _, out, _ = run(["iw", "dev", GUEST_IFACE, "station", "dump"])
+            mac = ""
+            signal = "?"
+            for line in out.splitlines():
+                if line.startswith("Station "):
+                    if mac:
+                        clients.append((mac, signal))
+                    parts = line.split()
+                    mac = parts[1] if len(parts) > 1 else "?"
+                    signal = "?"
+                elif "signal:" in line:
+                    parts2 = line.strip().split()
+                    if len(parts2) >= 2:
+                        signal = " ".join(parts2[1:3])
+            if mac:
+                clients.append((mac, signal))
+
+        svc_active_flag = svc_active("hostapd-guest")
+        self.call_from_thread(self._apply, enabled, ssid, clients, svc_active_flag)
+
+    def _apply(self, enabled: bool, ssid: str, clients: list, svc: bool) -> None:
+        dot = "[@green]●[/]" if enabled else "[@red]○[/]"
+        svc_str = "[@green]active[/]" if svc else "[@dim]inactive[/]"
+        client_word = "client" if len(clients) == 1 else "clients"
+        try:
+            self.query_one("#guest-status", Static).update(
+                f"{dot} SSID: [@green]{ssid}[/]  |  Service: {svc_str}  |  "
+                f"[@dim]{len(clients)} {client_word}[/]"
+            )
+        except Exception:
+            pass
+
+        t = self.query_one("#guest-table", DataTable)
+        t.clear()
+        if not clients:
+            t.add_row("[dim]No guests connected[/dim]", "")
+        else:
+            for mac, sig in clients:
+                t.add_row(f"[green]{mac}[/green]", sig)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "toggle-btn":
+            self.action_toggle_guest()
+        elif event.button.id == "refresh-btn":
+            self._load()
+
+    def action_toggle_guest(self) -> None:
+        cfg = read_defaults()
+        cur = cfg.get("ENABLE_GUEST_NETWORK", "0")
+        new_val = "0" if cur == "1" else "1"
+        self.run_worker(
+            lambda v=new_val: self._toggle_worker(v),
+            thread=True,
+        )
+
+    def _toggle_worker(self, new_val: str) -> None:
+        err = write_default("ENABLE_GUEST_NETWORK", new_val)
+        if err:
+            self.call_from_thread(
+                lambda e=err: self.app.push_screen(
+                    MessageModal("Error", e, "error")
+                )
+            )
+            return
+        enable = new_val == "1"
+        if enable:
+            run(["systemctl", "start", "hostapd-guest"], timeout=10)
+        else:
+            run(["systemctl", "stop", "hostapd-guest"], timeout=10)
+        msg = f"Guest network {'enabled' if enable else 'disabled'}"
+        self.call_from_thread(
+            lambda m=msg: self.app.push_screen(MessageModal("Guest Network", m, "success"))
+        )
+        self.call_from_thread(self._load)
+
+    def action_refresh(self) -> None:
+        self._load()
+
+
 # ── Main App ──────────────────────────────────────────────────────────────────
 class TravelRouterApp(App):
     TITLE = "Pi Travel Router"
@@ -1988,6 +2107,7 @@ class TravelRouterApp(App):
         "system": SystemScreen,
         "wireguard": WireGuardScreen,
         "routes": RoutesScreen,
+        "guest": GuestNetworkScreen,
     }
 
     BINDINGS = [

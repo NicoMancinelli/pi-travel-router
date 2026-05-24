@@ -149,6 +149,37 @@ else
     iptables -t mangle -X VPN_DEVICES 2>/dev/null || true
 fi
 
+ENABLE_GUEST_NETWORK="${ENABLE_GUEST_NETWORK:-0}"
+
+if [ "$ENABLE_GUEST_NETWORK" = "1" ]; then
+    # Determine WAN interface from default route
+    _wan=$(ip route show default 2>/dev/null | awk '/^default/ {print $5; exit}')
+    _wan="${_wan:-wlan0}"
+
+    # Assign gateway IP to guest interface (idempotent)
+    ip addr add 192.168.5.1/24 dev uap1 2>/dev/null || true
+
+    # Allow DHCP and DNS from guest subnet
+    ipt_add filter INPUT -i uap1 -p udp --dport 67 -j ACCEPT
+    ipt_add filter INPUT -i uap1 -p udp --dport 53 -j ACCEPT
+
+    # Forward guest traffic to WAN (non-kill-switch path only)
+    ipt_add filter FORWARD -i uap1 -o "$_wan" -j ACCEPT
+    ipt_add filter FORWARD -i "$_wan" -o uap1 \
+        -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+    # Block guest <-> primary AP cross-traffic
+    ipt_add filter FORWARD -i uap1 -o uap0 -j DROP
+    ipt_add filter FORWARD -i uap0 -o uap1 -j DROP
+
+    # Block guest → router management interfaces
+    ipt_add filter INPUT -i uap1 -p tcp --dport 8080 -j DROP
+    ipt_add filter INPUT -i uap1 -p tcp --dport 22 -j DROP
+
+    # NAT masquerade for guest subnet
+    ipt_add nat POSTROUTING -s 192.168.5.0/24 -o "$_wan" -j MASQUERADE
+fi
+
 if [ "${1:-}" = "--save" ]; then
     save_rules
 fi
