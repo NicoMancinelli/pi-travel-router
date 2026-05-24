@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-05-24
+
+### Added
+
+- **Firewall rule viewer** (`web/app.py`, `web/static/index.html`): `GET /api/firewall/rules` runs `iptables -L -n -v --line-numbers` for filter and nat tables, returning raw text + parsed chain dicts. Dashboard "Firewall Rules" card with Filter/NAT tab toggle, monospace scrollable `<pre>` block, refresh button, and last-updated timestamp.
+- **Port forwarding manager** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`): `GET/POST /api/portforward` and `DELETE /api/portforward/<id>`. Rules persist to `portforward.json`; applied via a custom `TRAVEL_PORTFWD` iptables chain (DNAT + ACCEPT). Dashboard card with rule table (Proto/Ext port/Internal/Comment/Delete) and inline add form with validation.
+- **Log search and level filter** (`web/app.py`, `web/static/index.html`): `search=` and `level=` query params on `GET /api/logs`. Dashboard log viewer gains search text input, level dropdown (err/warning/info/debug), Search/Clear buttons, filtered-results banner, and highlighted match display using `<mark>` tags with safe HTML escaping.
+
 ## [2.11.0] - 2026-05-24
 
 ### Added
