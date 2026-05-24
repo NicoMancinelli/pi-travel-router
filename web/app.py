@@ -862,6 +862,16 @@ def api_logs():
     level_filter = request.args.get("level", "").lower()
     since_str = request.args.get("since", "")
     q_filter = request.args.get("q", "").lower()
+    search_term = request.args.get("search", "").strip()
+    filter_level = request.args.get("level", "").strip().lower()
+
+    if len(search_term) > 128:
+        return jsonify({"error": "search param too long (max 128 chars)"}), 400
+
+    valid_levels = {"emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"}
+    if filter_level and filter_level not in valid_levels:
+        return jsonify({"error": f"invalid level; choose from {sorted(valid_levels)}"}), 400
+
     try:
         limit = max(1, min(int(request.args.get("limit", request.args.get("lines", "200"))), 1000))
     except ValueError:
@@ -903,7 +913,13 @@ def api_logs():
     if q_filter:
         all_lines = [l for l in all_lines if q_filter in l.lower()]
 
-    return jsonify({"lines": all_lines[-limit:], "total": len(all_lines)})
+    if search_term:
+        all_lines = [l for l in all_lines if search_term.lower() in l.lower()]
+    if filter_level and filter_level in valid_levels:
+        all_lines = [l for l in all_lines if filter_level in l.lower()]
+    filtered = bool(search_term or filter_level)
+
+    return jsonify({"lines": all_lines[-limit:], "total": len(all_lines), "filtered": filtered})
 
 
 @app.route("/api/clients")
