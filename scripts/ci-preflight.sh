@@ -101,11 +101,8 @@ fi
 _section "Bats unit tests"
 
 if command -v bats &>/dev/null; then
-    if bats tests/unit/ 2>&1 | tail -5; then
-        _ok "bats: all tests passed"
-    else
-        _fail "bats: test failures (see above)"
-    fi
+    _bats_out="$(bats tests/unit/ 2>&1)" || { echo "${_bats_out}" | tail -5; _fail "bats: test failures (see above)"; _bats_out=""; }
+    [ -n "${_bats_out}" ] && { echo "${_bats_out}" | tail -5; _ok "bats: all tests passed"; }
 else
     echo "  (bats not installed — skipping; install with: brew install bats-core)"
 fi
