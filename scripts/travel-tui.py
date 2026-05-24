@@ -484,6 +484,7 @@ class DashboardScreen(Screen):
         Binding("r", "push_screen('routes')", "Routes"),
         Binding("g", "push_screen('guest')", "Guest"),
         Binding("s", "push_screen('speedtest')", "SpeedTest"),
+        Binding("t", "push_screen('traceroute')", "Traceroute"),
         Binding("c", "push_screen('captive')", "Captive"),
         Binding("q", "quit_app", "Quit"),
     ]
@@ -502,7 +503,7 @@ class DashboardScreen(Screen):
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
             "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  "
-            "[C]Captive  [Q]Quit",
+            "[T]Traceroute  [C]Captive  [Q]Quit",
             id="nav-panel",
         )
         yield Footer()
@@ -2519,6 +2520,145 @@ class SpeedTestScreen(Screen):
             pass
 
 
+# ── Traceroute screen ─────────────────────────────────────────────────────────
+TRACEROUTE_API = "http://127.0.0.1:8080/api/traceroute"
+
+
+class TracerouteScreen(Screen):
+    """Traceroute screen — press T from dashboard."""
+
+    BINDINGS = [
+        Binding("q,escape", "pop_screen", "Back"),
+        Binding("r", "run_trace", "Run"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label("Traceroute", classes="panel-title")
+        with Horizontal():
+            yield Label("Target: ", id="tr-target-label")
+            yield Input(value="1.1.1.1", id="tr-target-input", placeholder="hostname or IP")
+        yield Static(id="tr-status")
+        yield DataTable(id="tr-table", zebra_stripes=True)
+        with Horizontal():
+            yield Button("Run [R]", id="tr-run-btn", classes="action")
+            yield Button("Back [Q]", id="tr-back-btn")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        table = self.query_one("#tr-table", DataTable)
+        table.add_columns("Hop", "IP", "Avg RTT")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "tr-run-btn":
+            self.action_run_trace()
+        elif event.button.id == "tr-back-btn":
+            self.action_pop_screen()
+
+    def action_run_trace(self) -> None:
+        try:
+            target_input = self.query_one("#tr-target-input", Input)
+            target = target_input.value.strip() or "1.1.1.1"
+        except Exception:
+            target = "1.1.1.1"
+        try:
+            self.query_one("#tr-status", Static).update(
+                f"[@yellow]Tracing route to {target}… (up to 60s)[/]"
+            )
+            table = self.query_one("#tr-table", DataTable)
+            table.clear()
+            btn = self.query_one("#tr-run-btn", Button)
+            btn.disabled = True
+        except Exception:
+            pass
+        self.run_worker(
+            lambda t=target: self._run_trace_worker(t),
+            exclusive=True,
+            thread=True,
+        )
+
+    def _run_trace_worker(self, target: str) -> None:
+        import json as _json
+
+        token = ""
+        try:
+            with open("/var/lib/travel-router/web-token") as fh:
+                token = fh.read().strip()
+        except OSError:
+            pass
+
+        cmd = [
+            "curl", "-sf", "--max-time", "65",
+            "-X", "POST",
+            "-H", "Content-Type: application/json",
+            "-d", _json.dumps({"target": target}),
+            TRACEROUTE_API,
+        ]
+        if token:
+            cmd += ["-H", f"Authorization: Bearer {token}"]
+
+        rc, out, err = run(cmd, timeout=70)
+        if rc != 0 or not out.strip():
+            self.call_from_thread(self._show_error, f"[@red]Request failed: {(err or 'no output')[:120]}[/]")
+            return
+
+        try:
+            data = _json.loads(out)
+        except Exception as exc:
+            self.call_from_thread(self._show_error, f"[@red]Parse error: {exc}[/]")
+            return
+
+        if "error" in data:
+            self.call_from_thread(self._show_error, f"[@red]Error: {data['error']}[/]")
+            return
+
+        self.call_from_thread(self._render_hops, data.get("hops", []))
+
+    def _render_hops(self, hops: list) -> None:
+        try:
+            table = self.query_one("#tr-table", DataTable)
+            table.clear()
+            for hop in hops:
+                hop_num = str(hop.get("hop", "?"))
+                ip = hop.get("ip", "*")
+                rtts = hop.get("rtts_ms", [])
+                if not rtts:
+                    rtt_str = "—"
+                else:
+                    avg = sum(rtts) / len(rtts)
+                    if avg < 20:
+                        color = "green"
+                    elif avg < 100:
+                        color = "yellow"
+                    else:
+                        color = "red"
+                    rtt_str = f"[@{color}]{avg:.1f} ms[/]"
+                if ip == "*":
+                    ip_str = "[@dim]*[/]"
+                else:
+                    ip_str = ip
+                table.add_row(hop_num, ip_str, rtt_str)
+            self.query_one("#tr-status", Static).update(
+                f"[@green]Done — {len(hops)} hop(s)[/]"
+            )
+        except Exception:
+            pass
+        self._re_enable_btn()
+
+    def _show_error(self, msg: str) -> None:
+        try:
+            self.query_one("#tr-status", Static).update(msg)
+        except Exception:
+            pass
+        self._re_enable_btn()
+
+    def _re_enable_btn(self) -> None:
+        try:
+            self.query_one("#tr-run-btn", Button).disabled = False
+        except Exception:
+            pass
+
+
 # ── Captive Portal screen ─────────────────────────────────────────────────────
 CAPTIVE_JSON_PATH = "/var/lib/travel-router/captive-portal.json"
 CAPTIVE_CREDS_PATH = "/var/lib/travel-router/captive-creds.json"
@@ -2668,6 +2808,7 @@ class TravelRouterApp(App):
         "routes": RoutesScreen,
         "guest": GuestNetworkScreen,
         "speedtest": SpeedTestScreen,
+        "traceroute": TracerouteScreen,
         "captive": CaptivePortalScreen,
     }
 

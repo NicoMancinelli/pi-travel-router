@@ -335,6 +335,27 @@
 
   <hr class="divider">
 
+  <!-- Traceroute -->
+  <div class="card full-width" id="card-traceroute">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F310; Traceroute</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="text" id="traceroute-target" value="1.1.1.1" placeholder="hostname or IP"
+          style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg3);color:var(--text);font-family:var(--mono);font-size:12px;width:160px;">
+        <button class="btn btn-sm btn-primary" id="btn-traceroute" onclick="runTraceroute()">&#x25B6; Run Traceroute</button>
+      </div>
+    </div>
+    <div id="traceroute-spinner" style="display:none; align-items:center; gap:8px; margin-bottom:10px;">
+      <span class="spinner"></span>
+      <span style="font-size:13px; color:var(--text-dim);">Tracing route&hellip; (up to 60s)</span>
+    </div>
+    <div id="traceroute-result">
+      <div style="color:var(--text-dim);font-size:13px;font-style:italic;">Enter a target and click Run Traceroute</div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
   <!-- AP Clients + Bandwidth -->
   <div class="grid">
     <div class="card">
@@ -1850,6 +1871,64 @@ async function runSpeedTest() {
     } else {
       resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + escHtml(d.error || 'Unknown error') + '</div>';
     }
+  } catch (e) {
+    resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + escHtml(e.message) + '</div>';
+  } finally {
+    spinnerEl.style.display = 'none';
+    btn.disabled = false;
+  }
+}
+
+// ── Traceroute ────────────────────────────────────────────────────────────────
+async function runTraceroute() {
+  const btn = document.getElementById('btn-traceroute');
+  const spinnerEl = document.getElementById('traceroute-spinner');
+  const resultEl = document.getElementById('traceroute-result');
+  const targetInput = document.getElementById('traceroute-target');
+  const target = (targetInput ? targetInput.value.trim() : '') || '1.1.1.1';
+
+  btn.disabled = true;
+  spinnerEl.style.display = 'flex';
+  resultEl.innerHTML = '';
+
+  try {
+    const resp = await apiFetch('/api/traceroute', {
+      method: 'POST',
+      body: JSON.stringify({ target }),
+    });
+    const d = await resp.json();
+    if (!resp.ok) {
+      resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + escHtml(d.error || 'Unknown error') + '</div>';
+      return;
+    }
+    if (!d.hops || d.hops.length === 0) {
+      resultEl.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No hops returned.</div>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>'
+      + '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;">Hop</th>'
+      + '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;">IP</th>'
+      + '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;">Avg RTT</th>'
+      + '</tr></thead><tbody>';
+    for (const hop of d.hops) {
+      const ip = hop.ip === '*' ? '<span style="color:var(--text-dim)">*</span>' : escHtml(hop.ip);
+      let rttCell = '<span style="color:var(--text-dim)">—</span>';
+      if (hop.rtts_ms && hop.rtts_ms.length > 0) {
+        const avg = hop.rtts_ms.reduce((a, b) => a + b, 0) / hop.rtts_ms.length;
+        let color = 'var(--green)';
+        if (avg >= 100) color = 'var(--red)';
+        else if (avg >= 20) color = 'var(--yellow)';
+        rttCell = '<span style="color:' + color + ';font-family:var(--mono);">' + avg.toFixed(1) + ' ms</span>';
+      }
+      html += '<tr>'
+        + '<td style="padding:3px 8px;font-family:var(--mono);">' + escHtml(String(hop.hop)) + '</td>'
+        + '<td style="padding:3px 8px;font-family:var(--mono);">' + ip + '</td>'
+        + '<td style="padding:3px 8px;">' + rttCell + '</td>'
+        + '</tr>';
+    }
+    html += '</tbody></table>';
+    resultEl.innerHTML = html;
   } catch (e) {
     resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + escHtml(e.message) + '</div>';
   } finally {

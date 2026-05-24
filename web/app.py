@@ -1803,6 +1803,73 @@ def api_doh_post():
     return jsonify({"ok": True})
 
 
+# ── Traceroute ────────────────────────────────────────────────────────────────
+
+
+@app.route("/api/traceroute", methods=["POST"])
+@require_auth_always
+def api_traceroute():
+    """Run traceroute to a target host/IP and return per-hop latency."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    target = data.get("target", "")
+    if not isinstance(target, str) or not target:
+        return jsonify({"error": "Missing or invalid 'target' field"}), 400
+
+    # Reject shell metacharacters
+    if re.search(r'[;&|`$\'"\\<>\n]', target):
+        return jsonify({"error": "Invalid characters in target"}), 400
+
+    # Length limit
+    if len(target) > 253:
+        return jsonify({"error": "Target too long (max 253 chars)"}), 400
+
+    # Must look like a hostname or IP
+    if not re.match(r'^[a-zA-Z0-9.\-]+$', target):
+        return jsonify({"error": "Invalid target format"}), 400
+
+    try:
+        result = subprocess.run(
+            ["traceroute", "-n", "-m", "15", "-w", "2", target],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "traceroute not installed"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "traceroute timed out"}), 504
+
+    hops = []
+    for line in result.stdout.splitlines():
+        # Match lines like: " 1  10.0.0.1  1.234 ms  1.345 ms  1.456 ms"
+        # or star hops:     " 2  * * *"
+        m = re.match(r'^\s*(\d+)\s+(.*)', line)
+        if not m:
+            continue
+        hop_num = int(m.group(1))
+        rest = m.group(2).strip()
+        # Extract IP: first token (may be * or an IP address)
+        tokens = rest.split()
+        if not tokens:
+            continue
+        first = tokens[0]
+        # Star hop
+        if first == "*":
+            hops.append({"hop": hop_num, "ip": "*", "rtts_ms": []})
+            continue
+        # Valid IP
+        ip = first
+        # Extract all RTT values (floats before " ms")
+        rtts = [float(v) for v in re.findall(r'([\d.]+)\s+ms', rest)]
+        hops.append({"hop": hop_num, "ip": ip, "rtts_ms": rtts})
+
+    return jsonify({"ok": True, "target": target, "hops": hops})
+
+
+
 # ── Storage (USB/SD) ─────────────────────────────────────────────────────────
 
 _DEVICE_RE = re.compile(r'^[a-z0-9]+$')
