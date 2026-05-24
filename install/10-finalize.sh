@@ -11,6 +11,8 @@ run_finalize() {
     done
     cp "${REPO}/scripts/apply-privacy-profile.sh" /usr/local/sbin/apply-privacy-profile.sh
     chmod +x /usr/local/sbin/apply-privacy-profile.sh
+    cp "${REPO}/scripts/config-backup.sh" /usr/local/sbin/config-backup.sh
+    chmod +x /usr/local/sbin/config-backup.sh
     mkdir -p /var/lib/travel-router
     echo "vpn-only" > /var/lib/travel-router/active-profile
     ok "Privacy profiles installed (default: vpn-only)"
