@@ -38,6 +38,7 @@ DOH_SCRIPT = "/usr/local/sbin/set-doh-resolver.sh"
 DOH_PRESETS = ["cloudflare", "quad9", "nextdns", "adguard", "system"]
 MOUNT_STORAGE_SCRIPT = "/usr/local/sbin/mount-storage.sh"
 WOL_TARGETS_FILE = "/var/lib/travel-router/wol-targets.json"
+DATACAP_FILE = "/var/lib/travel-router/datacap.json"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -161,6 +162,63 @@ def _bw_sampler_loop():
 
 # Start background sampler when the module loads
 threading.Thread(target=_bw_sampler_loop, daemon=True).start()
+
+# ── Latency history sampler ───────────────────────────────────────────────────
+
+_LATENCY_HISTORY: list = []
+_LATENCY_LOCK = threading.Lock()
+_LATENCY_MAX_ENTRIES = 288   # 24h at 5-min intervals
+
+
+def _latency_sample_once():
+    """Ping the default gateway once and record RTT (or None on loss)."""
+    try:
+        gw_out, gw_rc = _run("ip route show default")
+        if gw_rc != 0 or not gw_out.strip():
+            return
+        m = re.search(r"via\s+(\S+)", gw_out)
+        if not m:
+            return
+        gateway = m.group(1)
+
+        rtt = None
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "2", gateway],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                tm = re.search(r"time=([\d.]+)\s*ms", result.stdout)
+                if tm:
+                    rtt = float(tm.group(1))
+            # If returncode != 0 (packet loss), rtt stays None
+        except FileNotFoundError:
+            # ping not available on this platform (e.g. macOS dev machine)
+            pass
+
+        entry = {"ts": int(time.time()), "rtt_ms": rtt, "gateway": gateway}
+        with _LATENCY_LOCK:
+            _LATENCY_HISTORY.append(entry)
+            if len(_LATENCY_HISTORY) > _LATENCY_MAX_ENTRIES:
+                del _LATENCY_HISTORY[:-_LATENCY_MAX_ENTRIES]
+    except Exception:
+        pass  # Never crash the background thread
+
+
+def _latency_sampler_loop():
+    """Background thread: sample latency every 300 seconds."""
+    while True:
+        time.sleep(300)
+        try:
+            _latency_sample_once()
+        except Exception:
+            pass
+
+
+# Start background latency sampler when the module loads
+threading.Thread(target=_latency_sampler_loop, daemon=True).start()
 
 # ── Config value validators ───────────────────────────────────────────────────
 import re as _re
@@ -2117,6 +2175,148 @@ def api_wol_targets_post():
     except Exception as exc:
         return jsonify({"error": f"Failed to save targets: {exc}"}), 503
     return jsonify({"ok": True})
+
+
+# ── Data cap / monthly budget tracker ────────────────────────────────────────
+
+_DATACAP_DEFAULT = {
+    "cap_mb": 0,
+    "iface": "wlan1",
+    "reset_day": 1,
+    "baseline_bytes": 0,
+    "reset_ts": 0,
+}
+
+
+def _read_datacap() -> dict:
+    try:
+        data = json.loads(Path(DATACAP_FILE).read_text())
+        if isinstance(data, dict):
+            result = dict(_DATACAP_DEFAULT)
+            result.update(data)
+            return result
+    except Exception:
+        pass
+    return dict(_DATACAP_DEFAULT)
+
+
+def _write_datacap(data: dict) -> None:
+    try:
+        cap_dir = str(Path(DATACAP_FILE).parent)
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=cap_dir, prefix="datacap.")
+        try:
+            with os.fdopen(tmp_fd, "w") as fh:
+                json.dump(data, fh)
+            os.replace(tmp_path, DATACAP_FILE)
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
+def _current_rx_bytes(iface: str) -> int:
+    try:
+        text = Path("/proc/net/dev").read_text()
+        for line in text.splitlines()[2:]:
+            parts = line.split(":")
+            if len(parts) != 2:
+                continue
+            if parts[0].strip() == iface:
+                fields = parts[1].split()
+                if fields:
+                    return int(fields[0])
+    except Exception:
+        pass
+    return 0
+
+
+@app.route("/api/datacap", methods=["GET"])
+@require_auth
+def api_datacap_get():
+    cfg = _read_datacap()
+    cap_mb = cfg.get("cap_mb", 0)
+    iface = cfg.get("iface", "wlan1")
+    reset_day = cfg.get("reset_day", 1)
+    baseline_bytes = cfg.get("baseline_bytes", 0)
+    reset_ts = cfg.get("reset_ts", 0)
+
+    now = int(time.time())
+    now_dt = datetime.fromtimestamp(now, tz=timezone.utc)
+    reset_dt = datetime.fromtimestamp(reset_ts, tz=timezone.utc) if reset_ts else None
+
+    # Auto-reset if today >= reset_day and last reset was from a previous month
+    if now_dt.day >= reset_day and (
+        reset_dt is None
+        or (reset_dt.year, reset_dt.month) < (now_dt.year, now_dt.month)
+    ):
+        baseline_bytes = _current_rx_bytes(iface)
+        reset_ts = now
+        cfg["baseline_bytes"] = baseline_bytes
+        cfg["reset_ts"] = reset_ts
+        _write_datacap(cfg)
+
+    current_rx = _current_rx_bytes(iface)
+    raw_used = current_rx - baseline_bytes
+    used_mb = max(0.0, raw_used / 1024 / 1024)
+
+    pct = 0.0
+    if cap_mb and cap_mb > 0:
+        pct = round(used_mb / cap_mb * 100, 1)
+
+    return jsonify({
+        "cap_mb": cap_mb,
+        "used_mb": round(used_mb, 2),
+        "iface": iface,
+        "reset_day": reset_day,
+        "pct": pct,
+        "warning": bool(cap_mb and used_mb > cap_mb * 0.8),
+    })
+
+
+@app.route("/api/datacap", methods=["POST"])
+@require_auth_always
+def api_datacap_post():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    cap_mb = data.get("cap_mb")
+    iface = data.get("iface", "wlan1")
+    reset_day = data.get("reset_day", 1)
+
+    if not isinstance(cap_mb, int) or not (0 <= cap_mb <= 100000):
+        return jsonify({"error": "cap_mb must be an integer between 0 and 100000"}), 400
+    if not isinstance(reset_day, int) or not (1 <= reset_day <= 28):
+        return jsonify({"error": "reset_day must be an integer between 1 and 28"}), 400
+    if not isinstance(iface, str) or not re.match(r'^[a-z0-9]+$', iface) or len(iface) > 15:
+        return jsonify({"error": "iface must be lowercase alphanumeric, max 15 chars"}), 400
+
+    existing = _read_datacap()
+    existing["cap_mb"] = cap_mb
+    existing["iface"] = iface
+    existing["reset_day"] = reset_day
+    _write_datacap(existing)
+
+    return jsonify({"ok": True})
+
+
+# ── Latency history endpoint ──────────────────────────────────────────────────
+
+
+@app.route("/api/latency/history")
+@require_auth
+def api_latency_history():
+    with _LATENCY_LOCK:
+        history = list(_LATENCY_HISTORY[-_LATENCY_MAX_ENTRIES:])
+    last_gateway = None
+    for entry in reversed(history):
+        if entry.get("gateway"):
+            last_gateway = entry["gateway"]
+            break
+    return jsonify({"history": history, "gateway": last_gateway})
 
 
 # ── Serve index.html ──────────────────────────────────────────────────────────

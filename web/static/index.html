@@ -370,6 +370,22 @@
     </div>
   </div>
 
+  <!-- Latency History -->
+  <div class="card full-width" id="card-latency" style="margin-top:16px;">
+    <div class="card-title">Latency History (last 24h)</div>
+    <div id="latency-sparkline" style="margin-bottom:8px;"></div>
+    <div id="latency-stats" style="font-size:11px;color:var(--text-dim);font-family:var(--mono);margin-bottom:4px;"></div>
+    <div id="latency-gateway" style="font-size:11px;color:var(--text-dim);font-family:var(--mono);"></div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Data Cap -->
+  <div class="card full-width" id="card-datacap">
+    <div class="card-title">Data Cap / Monthly Budget</div>
+    <div id="datacap-content"><span class="spinner"></span></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Privacy Profiles -->
@@ -1232,6 +1248,98 @@ function renderBandwidth(data) {
   html += `<div class="bw-legend"><div class="bw-legend-item"><div class="bw-legend-dot" style="background:var(--green)"></div>RX</div><div class="bw-legend-item"><div class="bw-legend-dot" style="background:var(--accent)"></div>TX</div></div>`;
   html += `<div class="dim" style="font-size:11px;margin-top:6px;">Interface: ${iface.name || 'unknown'}</div>`;
   document.getElementById('bw-content').innerHTML = html;
+}
+
+// ── Latency History ───────────────────────────────────────────────────────────
+async function fetchLatencyHistory() {
+  try {
+    const resp = await apiFetch('/api/latency/history');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    renderLatencySparkline(d.history || [], 'latency-sparkline');
+    const gatewayEl = document.getElementById('latency-gateway');
+    if (gatewayEl) {
+      gatewayEl.textContent = d.gateway ? 'Gateway: ' + d.gateway : '';
+    }
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      const el = document.getElementById('latency-sparkline');
+      if (el) el.innerHTML = '<span class="dim" style="font-size:11px;">Unavailable</span>';
+    }
+  }
+}
+
+function renderLatencySparkline(data, containerId) {
+  const container = document.getElementById(containerId);
+  const statsEl = document.getElementById('latency-stats');
+  if (!container) return;
+
+  const validPoints = (data || []).filter(d => d.rtt_ms != null);
+  const totalPoints = (data || []).length;
+  const lossCount = totalPoints - validPoints.length;
+
+  if (!data || data.length < 2) {
+    container.innerHTML = '<span class="dim" style="font-size:11px;">Collecting data…</span>';
+    if (statsEl) statsEl.textContent = '';
+    return;
+  }
+
+  if (validPoints.length === 0) {
+    container.innerHTML = '<span class="dim" style="font-size:11px;">No data yet</span>';
+    if (statsEl) statsEl.textContent = 'No data yet';
+    return;
+  }
+
+  const rtts = validPoints.map(d => d.rtt_ms);
+  const avg = rtts.reduce((a, b) => a + b, 0) / rtts.length;
+  const minRtt = Math.min(...rtts);
+  const maxRtt = Math.max(...rtts);
+  const lossPct = totalPoints > 0 ? Math.round((lossCount / totalPoints) * 100) : 0;
+
+  // Pick line color based on average RTT
+  let lineColor = 'var(--green)';
+  if (avg >= 100) lineColor = 'var(--red)';
+  else if (avg >= 20) lineColor = 'var(--yellow)';
+
+  const W = 300;
+  const H = 60;
+  const pad = 2;
+  const n = data.length;
+  const maxVal = Math.max(maxRtt, 1);
+
+  // Build polyline — skip null RTT points (gap in line by splitting into segments)
+  const segments = [];
+  let currentSeg = [];
+  data.forEach((point, i) => {
+    const x = pad + (i / (n - 1)) * (W - 2 * pad);
+    if (point.rtt_ms != null) {
+      const y = H - pad - ((point.rtt_ms / maxVal) * (H - 2 * pad));
+      currentSeg.push(x.toFixed(1) + ',' + y.toFixed(1));
+    } else {
+      if (currentSeg.length > 0) {
+        segments.push(currentSeg.join(' '));
+        currentSeg = [];
+      }
+    }
+  });
+  if (currentSeg.length > 0) segments.push(currentSeg.join(' '));
+
+  const polylines = segments.map(pts =>
+    `<polyline points="${pts}" stroke="${lineColor}" />`
+  ).join('');
+
+  container.innerHTML =
+    `<svg class="bw-sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` +
+    polylines +
+    `</svg>`;
+
+  if (statsEl) {
+    statsEl.textContent =
+      'Avg: ' + avg.toFixed(1) + 'ms  ' +
+      'Min: ' + minRtt.toFixed(1) + 'ms  ' +
+      'Max: ' + maxRtt.toFixed(1) + 'ms  ' +
+      'Loss: ' + lossPct + '%';
+  }
 }
 
 // ── Logs ──────────────────────────────────────────────────────────────────────
@@ -2337,6 +2445,8 @@ async function refreshAll() {
   fetchRebootSchedule();
   fetchStorage();
   fetchWolTargets();
+  fetchDataCap();
+  fetchLatencyHistory();
 }
 
 async function init() {
@@ -2449,6 +2559,108 @@ async function unmountStorage() {
     }
   } catch (e) {
     alert('Unmount request failed: ' + e);
+  }
+}
+
+// ── Data Cap ──────────────────────────────────────────────────────────────────
+async function fetchDataCap() {
+  const el = document.getElementById('datacap-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/datacap');
+    if (!r.ok) { el.innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const d = await r.json();
+    _renderDataCap(d);
+  } catch (e) {
+    el.innerHTML = '<span class="dim">Error loading data cap</span>';
+  }
+}
+
+function _renderDataCap(d) {
+  const el = document.getElementById('datacap-content');
+  if (!el) return;
+
+  const capMb = d.cap_mb || 0;
+  const usedMb = d.used_mb || 0;
+  const pct = d.pct || 0;
+  const iface = d.iface || 'wlan1';
+  const resetDay = d.reset_day || 1;
+
+  let barColor = 'var(--green)';
+  if (pct >= 80) barColor = 'var(--red, #e05252)';
+  else if (pct >= 60) barColor = 'var(--yellow, #e0b252)';
+
+  let progressHtml = '';
+  if (capMb === 0) {
+    progressHtml = '<div style="color:var(--text-dim);font-size:13px;">No cap set</div>';
+  } else {
+    const barPct = Math.min(pct, 100);
+    progressHtml = `
+      <div style="background:var(--card-bg,#333);border-radius:4px;height:12px;overflow:hidden;margin-bottom:6px;">
+        <div style="width:${barPct}%;height:100%;background:${barColor};transition:width 0.3s;"></div>
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);">
+        ${usedMb.toFixed(1)} MB used of ${capMb} MB cap (${pct}%) — resets day ${resetDay} each month
+      </div>`;
+    if (d.warning) {
+      progressHtml += `<div style="color:${barColor};font-size:12px;margin-top:4px;font-weight:600;">Warning: approaching data cap</div>`;
+    }
+  }
+
+  const settingsHtml = `
+    <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end;">
+      <div>
+        <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:2px;">Cap (MB, 0=none)</label>
+        <input id="datacap-input-cap" type="number" min="0" max="100000" value="${capMb}"
+          style="width:90px;padding:4px 6px;background:var(--input-bg,#222);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:2px;">Interface</label>
+        <select id="datacap-input-iface"
+          style="padding:4px 6px;background:var(--input-bg,#222);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;">
+          <option value="wlan0"${iface==='wlan0'?' selected':''}>wlan0</option>
+          <option value="wlan1"${iface==='wlan1'?' selected':''}>wlan1</option>
+          <option value="usb0"${iface==='usb0'?' selected':''}>usb0</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--text-dim);display:block;margin-bottom:2px;">Reset day</label>
+        <input id="datacap-input-reset-day" type="number" min="1" max="28" value="${resetDay}"
+          style="width:60px;padding:4px 6px;background:var(--input-bg,#222);color:var(--text);border:1px solid var(--border);border-radius:4px;font-size:13px;">
+      </div>
+      <button class="btn btn-sm" onclick="saveDataCap()" style="margin-bottom:1px;">Save</button>
+    </div>`;
+
+  el.innerHTML = progressHtml + settingsHtml;
+}
+
+async function saveDataCap() {
+  const capEl = document.getElementById('datacap-input-cap');
+  const ifaceEl = document.getElementById('datacap-input-iface');
+  const resetDayEl = document.getElementById('datacap-input-reset-day');
+  if (!capEl || !ifaceEl || !resetDayEl) return;
+
+  const cap_mb = parseInt(capEl.value, 10);
+  const iface = ifaceEl.value;
+  const reset_day = parseInt(resetDayEl.value, 10);
+
+  if (isNaN(cap_mb) || cap_mb < 0 || cap_mb > 100000) { alert('cap_mb must be 0-100000'); return; }
+  if (isNaN(reset_day) || reset_day < 1 || reset_day > 28) { alert('reset_day must be 1-28'); return; }
+
+  try {
+    const r = await apiFetch('/api/datacap', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cap_mb, iface, reset_day}),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      await fetchDataCap();
+    } else {
+      alert('Save failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Save request failed: ' + e);
   }
 }
 </script>
