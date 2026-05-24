@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import urllib.parse
 from datetime import datetime, timezone
@@ -30,6 +31,8 @@ APPLY_PROFILE_SCRIPT = "/usr/local/sbin/apply-privacy-profile.sh"
 VALID_PROFILES = {"vpn-only", "adblock-only", "tor", "direct"}
 QOS_LIMITS_FILE = "/var/lib/travel-router/qos-limits.json"
 APPLY_QOS_SCRIPT = "/usr/local/sbin/apply-qos.sh"
+CAPTIVE_JSON = "/var/lib/travel-router/captive-portal.json"
+_BW_HISTORY_FILE = "/var/lib/travel-router/bw-history.json"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -40,6 +43,105 @@ _STATUS_CACHE: dict = {"ts": 0.0, "data": {}}
 _SPEEDTEST_RESULT: dict = {"ts": 0.0, "result": None}
 _STATUS_CACHE_TTL = 5  # seconds
 TAILSCALE_PREFIX = "100."
+
+# ── Bandwidth history sampler ─────────────────────────────────────────────────
+
+_BW_SAMPLE_INTERVAL = 300   # 5 minutes
+_BW_MAX_ENTRIES = 288       # 24 hours at 5-min intervals
+_BW_UPLINK_IFACES = ("wlan0", "eth0", "usb0")
+_bw_prev_sample: dict = {}   # {"iface": str, "rx": int, "tx": int}
+
+
+def _read_proc_net_dev():
+    """Return dict of iface -> (rx_bytes, tx_bytes) from /proc/net/dev."""
+    result = {}
+    try:
+        text = Path("/proc/net/dev").read_text()
+        for line in text.splitlines()[2:]:  # skip 2-line header
+            parts = line.split(":")
+            if len(parts) != 2:
+                continue
+            iface = parts[0].strip()
+            fields = parts[1].split()
+            if len(fields) >= 9:
+                rx = int(fields[0])
+                tx = int(fields[8])
+                result[iface] = (rx, tx)
+    except Exception:
+        pass
+    return result
+
+
+def _bw_sample_once():
+    """Take one bandwidth sample and append to the history file."""
+    global _bw_prev_sample
+    try:
+        dev_stats = _read_proc_net_dev()
+        # Pick the first available uplink interface
+        iface = None
+        for candidate in _BW_UPLINK_IFACES:
+            if candidate in dev_stats:
+                iface = candidate
+                break
+        if iface is None:
+            return
+
+        rx_now, tx_now = dev_stats[iface]
+        now_ts = int(time.time())
+
+        prev = _bw_prev_sample.get(iface)
+        if prev is not None:
+            # Handle 32-bit counter rollover
+            rx_delta = (rx_now - prev["rx"]) % (2 ** 32)
+            tx_delta = (tx_now - prev["tx"]) % (2 ** 32)
+
+            entry = {
+                "ts": now_ts,
+                "rx_bytes": rx_delta,
+                "tx_bytes": tx_delta,
+                "iface": iface,
+            }
+
+            # Read existing history (tolerate missing / corrupt file)
+            try:
+                history = json.loads(Path(_BW_HISTORY_FILE).read_text())
+                if not isinstance(history, list):
+                    history = []
+            except Exception:
+                history = []
+
+            history.append(entry)
+            # Trim to max entries
+            history = history[-_BW_MAX_ENTRIES:]
+
+            # Atomic write: tmp then rename
+            hist_dir = str(Path(_BW_HISTORY_FILE).parent)
+            tmp_fd, tmp_path = tempfile.mkstemp(dir=hist_dir, prefix="bw-history.")
+            try:
+                with os.fdopen(tmp_fd, "w") as fh:
+                    json.dump(history, fh)
+                os.replace(tmp_path, _BW_HISTORY_FILE)
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+        # Update previous sample regardless (so next interval has a baseline)
+        _bw_prev_sample[iface] = {"rx": rx_now, "tx": tx_now}
+    except Exception:
+        pass  # Never crash the background thread
+
+
+def _bw_sampler_loop():
+    """Background thread: sample bandwidth every _BW_SAMPLE_INTERVAL seconds."""
+    while True:
+        time.sleep(_BW_SAMPLE_INTERVAL)
+        _bw_sample_once()
+
+
+# Start background sampler when the module loads
+threading.Thread(target=_bw_sampler_loop, daemon=True).start()
 
 # ── Config value validators ───────────────────────────────────────────────────
 import re as _re
@@ -591,6 +693,18 @@ def api_bandwidth():
     except json.JSONDecodeError:
         return jsonify({"error": "Failed to parse vnstat output"}), 503
     return jsonify(data)
+
+
+@app.route("/api/bandwidth/history")
+@require_auth
+def api_bandwidth_history():
+    try:
+        history = json.loads(Path(_BW_HISTORY_FILE).read_text())
+        if not isinstance(history, list):
+            history = []
+    except (OSError, json.JSONDecodeError):
+        history = []
+    return jsonify(history)
 
 
 @app.route("/api/config", methods=["GET", "POST"])
@@ -1236,6 +1350,69 @@ def api_system_restore():
             os.unlink(tmp_path)
         except OSError:
             pass
+
+
+# ── Captive portal ────────────────────────────────────────────────────────────
+
+
+@app.route("/api/captive")
+@require_auth
+def api_captive_get():
+    """Return captive portal detection state from captive-portal.json."""
+    try:
+        data = json.loads(Path(CAPTIVE_JSON).read_text())
+    except (OSError, json.JSONDecodeError):
+        data = {"detected": False}
+    return jsonify(data)
+
+
+@app.route("/api/captive/bypass", methods=["POST"])
+@require_auth_always
+def api_captive_bypass():
+    """Attempt auto-login to a captive portal using provided credentials."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    url = body.get("url", "").strip()
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+
+    if not url:
+        return jsonify({"error": "Missing 'url' field"}), 400
+    # Basic URL sanity check — must start with http
+    if not url.startswith("http"):
+        return jsonify({"error": "Invalid URL — must start with http"}), 400
+    # Reject shell metacharacters in all inputs
+    for field_val in (url, username, password):
+        if re.search(r'[;&|`$\'\"\\]', field_val):
+            return jsonify({"error": "Invalid characters in request fields"}), 400
+
+    cmd = [
+        "curl", "-L",
+        "-c", "/tmp/captive-cookies.txt",
+        "-b", "/tmp/captive-cookies.txt",
+        "--max-time", "15",
+        "--data", f"username={username}&password={password}",
+        url,
+    ]
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Request timed out"}), 504
+    except OSError as exc:
+        return jsonify({"error": f"curl not available: {exc}"}), 503
+
+    if result.returncode != 0:
+        return jsonify({"error": f"curl failed (rc={result.returncode}): {result.stderr[:200]}"}), 503
+
+    output = (result.stdout or "")[:1000]
+    return jsonify({"ok": True, "output": output})
 
 
 # ── Serve index.html ──────────────────────────────────────────────────────────

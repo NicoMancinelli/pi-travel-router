@@ -145,6 +145,10 @@
   .bw-legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-dim); }
   .bw-legend-dot { width: 10px; height: 10px; border-radius: 2px; }
 
+  /* Sparkline chart */
+  .bw-sparkline-svg { display: block; width: 100%; height: 60px; overflow: visible; }
+  .bw-sparkline-svg polyline { fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
   /* Toast */
   #toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg3); border: 1px solid var(--border); color: var(--text); padding: 10px 16px; border-radius: 6px; font-size: 13px; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 1000; max-width: 300px; }
   #toast.show { opacity: 1; }
@@ -254,6 +258,12 @@
     </div>
   </div>
 
+  <!-- Captive Portal -->
+  <div class="card full-width" id="card-captive" style="margin-top:16px;">
+    <div class="card-title">&#x1F310; Captive Portal</div>
+    <div id="captive-content"><span class="spinner"></span></div>
+  </div>
+
   <hr class="divider">
 
   <!-- System Health -->
@@ -316,6 +326,8 @@
     </div>
     <div class="card">
       <div class="card-title">Bandwidth (last 24h)</div>
+      <div id="bw-sparkline" style="margin-bottom:8px;"></div>
+      <div id="bw-latest" style="font-size:11px;color:var(--text-dim);font-family:var(--mono);margin-bottom:8px;"></div>
       <div id="bw-content"><span class="spinner"></span></div>
     </div>
   </div>
@@ -925,7 +937,77 @@ async function fetchClients() {
 }
 
 // ── Bandwidth ─────────────────────────────────────────────────────────────────
+async function fetchBandwidthHistory() {
+  try {
+    const resp = await apiFetch('/api/bandwidth/history');
+    if (!resp.ok) return [];
+    return await resp.json();
+  } catch (e) {
+    return [];
+  }
+}
+
+function fmtBytesK(b) {
+  if (b == null) return '-';
+  if (b < 1024) return b + 'B';
+  if (b < 1024 * 1024) return Math.round(b / 1024) + 'k';
+  return (b / 1024 / 1024).toFixed(1) + 'M';
+}
+
+function renderSparkline(data, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  if (!data || data.length < 2) {
+    container.innerHTML = '<span class="dim" style="font-size:11px;">Collecting data…</span>';
+    return;
+  }
+
+  const W = 300; // viewBox width; CSS makes it 100%
+  const H = 60;
+  const pad = 2;
+
+  const rxVals = data.map(d => d.rx_bytes || 0);
+  const txVals = data.map(d => d.tx_bytes || 0);
+  const maxVal = Math.max(...rxVals, ...txVals, 1);
+
+  function toPoints(vals) {
+    const n = vals.length;
+    return vals.map((v, i) => {
+      const x = pad + (i / (n - 1)) * (W - 2 * pad);
+      const y = H - pad - ((v / maxVal) * (H - 2 * pad));
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+  }
+
+  const rxPts = toPoints(rxVals);
+  const txPts = toPoints(txVals);
+
+  container.innerHTML =
+    `<svg class="bw-sparkline-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">` +
+    `<polyline points="${rxPts}" stroke="var(--green)" />` +
+    `<polyline points="${txPts}" stroke="var(--accent)" />` +
+    `</svg>`;
+}
+
 async function fetchBandwidth() {
+  const history = await fetchBandwidthHistory();
+
+  // Render sparkline chart
+  renderSparkline(history, 'bw-sparkline');
+
+  // Show latest 5-min sample stats
+  const latestEl = document.getElementById('bw-latest');
+  if (latestEl) {
+    if (history && history.length > 0) {
+      const last = history[history.length - 1];
+      latestEl.textContent = '↓ ' + fmtBytesK(last.rx_bytes) + ' rx  ↑ ' + fmtBytesK(last.tx_bytes) + ' tx';
+    } else {
+      latestEl.textContent = '';
+    }
+  }
+
+  // Also fetch vnstat for the daily bar chart (keep existing behaviour)
   try {
     const resp = await apiFetch('/api/bandwidth');
     if (!resp.ok) { document.getElementById('bw-content').innerHTML = '<span class="dim">vnstat unavailable</span>'; return; }
