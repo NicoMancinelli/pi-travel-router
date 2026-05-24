@@ -2662,6 +2662,123 @@ def api_clients_aliases_post():
     return jsonify({"ok": True, "aliases": aliases})
 
 
+# ── Firewall rules endpoint ───────────────────────────────────────────────────
+
+_RAW_CAP = 4096
+
+
+def _parse_iptables_output(raw: str) -> list:
+    """Parse iptables -L -n -v --line-numbers output into chain dicts.
+
+    Returns a list of:
+        {"chain": str, "policy": str|None, "rules": [{"num", "target", "prot",
+         "source", "destination", "options", "pkts", "bytes"}, ...]}
+    """
+    chains = []
+    current: dict | None = None
+
+    for line in raw.splitlines():
+        # New chain header: "Chain INPUT (policy ACCEPT)" or "Chain FORWARD (2 references)"
+        m = re.match(r"^Chain\s+(\S+)\s+\((.+)\)", line)
+        if m:
+            if current is not None:
+                chains.append(current)
+            chain_name = m.group(1)
+            policy_str = m.group(2)
+            policy_m = re.search(r"policy\s+(\S+)", policy_str)
+            policy = policy_m.group(1) if policy_m else None
+            current = {"chain": chain_name, "policy": policy, "rules": []}
+            continue
+
+        if current is None:
+            continue
+
+        # Skip column header lines
+        if re.match(r"^\s*(pkts|num)\s", line):
+            continue
+
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Parse rule line: num pkts bytes target prot opt in out source destination [options...]
+        # e.g.: "1  12345  1234567  ACCEPT  all  --  *  *  0.0.0.0/0  0.0.0.0/0  state RELATED,ESTABLISHED"
+        parts = stripped.split(None, 10)
+        if len(parts) < 9:
+            continue
+
+        # Determine if first field is a line number (digit) or pkts counter
+        try:
+            int(parts[0])
+        except ValueError:
+            continue  # skip non-rule lines
+
+        # With --line-numbers: num pkts bytes target prot opt in out source destination [options]
+        # Without: pkts bytes target prot opt in out source destination [options]
+        # We always use --line-numbers so we have 10+ fields
+        if len(parts) >= 10:
+            rule: dict = {
+                "num": parts[0],
+                "pkts": parts[1],
+                "bytes": parts[2],
+                "target": parts[3],
+                "prot": parts[4],
+                "source": parts[8],
+                "destination": parts[9],
+                "options": parts[10].strip() if len(parts) > 10 else "",
+            }
+            current["rules"].append(rule)
+
+    if current is not None:
+        chains.append(current)
+
+    return chains
+
+
+@app.route("/api/firewall/rules")
+@require_auth
+def api_firewall_rules():
+    """Return current iptables rules for filter and nat tables."""
+    raw_filter = ""
+    raw_nat = ""
+    error = None
+
+    try:
+        out_filter, rc_filter = _run(
+            ["iptables", "-L", "-n", "-v", "--line-numbers"], timeout=10
+        )
+        raw_filter = (out_filter or "")[:_RAW_CAP]
+    except FileNotFoundError:
+        error = "iptables not available on this host"
+    except Exception as exc:
+        error = str(exc)
+
+    if error is None:
+        try:
+            out_nat, rc_nat = _run(
+                ["iptables", "-t", "nat", "-L", "-n", "-v", "--line-numbers"], timeout=10
+            )
+            raw_nat = (out_nat or "")[:_RAW_CAP]
+        except Exception:
+            raw_nat = ""
+
+    filter_chains = _parse_iptables_output(raw_filter) if raw_filter else []
+    nat_chains = _parse_iptables_output(raw_nat) if raw_nat else []
+
+    result: dict = {
+        "tables": {
+            "filter": filter_chains,
+            "nat": nat_chains,
+        },
+        "raw_filter": raw_filter,
+        "raw_nat": raw_nat,
+    }
+    if error:
+        result["error"] = error
+
+    return jsonify(result)
+
+
 # ── Latency history endpoint ──────────────────────────────────────────────────
 
 
