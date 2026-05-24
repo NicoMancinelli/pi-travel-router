@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-05-24
+
+### Added
+
+- **System resource monitor** (`web/app.py`, `web/static/index.html`): background daemon thread samples `/proc/stat`, `/proc/meminfo`, `os.statvfs('/')`, and `/sys/class/thermal/thermal_zone0/temp` every 30s, storing up to 120 entries. `GET /api/system/resources` returns current + 60-entry history. Dashboard card shows four SVG arc gauges (CPU%, RAM%, disk%, CPU temp) with green/yellow/red thresholds; auto-refreshes every 30s.
+- **WiFi uplink scanner** (`web/app.py`, `web/static/index.html`): `GET /api/uplink/scan` runs `iw dev wlan0 scan`, parses SSID/BSSID/signal/security/channel into a sorted list (cap 20). `POST /api/uplink/connect` writes wpa_supplicant config atomically and runs `wpa_cli reconfigure`. Dashboard "Upstream WiFi" card with signal-strength bars, security badges, and inline connect form with password field.
+- **LAN device alias manager** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`, `scripts/travel-tui.py`): `GET/POST /api/clients/aliases` persists friendly names to `/var/lib/travel-router/aliases.json`. Clients table shows alias in bold with MAC below; ✏ pencil opens inline edit. TUI `AliasesScreen` (press `A`) lists, adds, and deletes aliases.
+
+### Fixed
+
+- `tests/unit/test_wg_key_rotate.bats`: wg pubkey mock now drains stdin (`cat > /dev/null`) before printing, preventing SIGPIPE on `tee` under bash `pipefail` that caused flaky test failures.
+
 ## [2.10.0] - 2026-05-24
 
 ### Added
