@@ -102,3 +102,9 @@ WG_INTERFACE=wg0
 ENABLE_LTE_MODEM=0
 LTE_APN=internet
 LTE_NM_PROFILE=lte-modem
+
+# Guest WiFi network (second SSID on uap1, isolated from primary AP clients)
+# Set GUEST_PASS to a passphrase (8-63 chars) or leave empty for open network.
+ENABLE_GUEST_NETWORK=0
+GUEST_SSID=TravelRouter-Guest
+GUEST_PASS=

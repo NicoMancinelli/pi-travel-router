@@ -289,6 +289,17 @@
 
   <hr class="divider">
 
+  <!-- Guest Network -->
+  <div class="card full-width" id="card-guest-network">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F465; Guest Network</span>
+      <span id="guest-network-badge"></span>
+    </div>
+    <div id="guest-network-content"><span class="spinner"></span></div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Logs -->
   <div class="card full-width">
     <div class="card-title">
@@ -1002,6 +1013,86 @@ function closeQrModal(evt) {
   img.style.display = 'none';
 }
 
+// ── Guest Network ─────────────────────────────────────────────────────────────
+async function fetchGuestNetwork() {
+  try {
+    const resp = await apiFetch('/api/guest-network');
+    if (!resp.ok) {
+      document.getElementById('guest-network-content').innerHTML = '<span class="dim">Unavailable</span>';
+      return;
+    }
+    const d = await resp.json();
+    renderGuestNetwork(d);
+  } catch (e) {
+    if (e.message !== 'Unauthorized')
+      document.getElementById('guest-network-content').innerHTML = '<span class="dim">Error loading guest network</span>';
+  }
+}
+
+function renderGuestNetwork(d) {
+  const enabled = d.enabled === true;
+  const ssid = escHtml(d.ssid || 'TravelRouter-Guest');
+  const clients = Array.isArray(d.clients) ? d.clients : [];
+
+  const badgeEl = document.getElementById('guest-network-badge');
+  if (badgeEl) {
+    badgeEl.innerHTML = enabled ? badge('Enabled', 'green') : badge('Disabled', 'red');
+  }
+
+  let html = `
+    <div class="status-row">
+      <span class="status-label">SSID</span>
+      <span class="status-value mono">${ssid}</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">State</span>
+      <span>${enabled ? badge('Enabled', 'green') : badge('Disabled', 'red')}</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Guests</span>
+      <span class="status-value">${enabled ? clients.length + ' connected' : '—'}</span>
+    </div>`;
+
+  if (enabled && clients.length > 0) {
+    html += `<table style="margin-top:10px;"><thead><tr><th>MAC</th><th>Signal</th></tr></thead><tbody>`;
+    clients.forEach(c => {
+      html += `<tr><td>${escHtml(c.mac || '?')}</td><td>${fmtSignal(c.signal)}</td></tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  html += `<div style="margin-top:12px;">
+    <button class="btn ${enabled ? 'btn-danger' : 'btn-primary'}" id="btn-guest-toggle"
+      onclick="toggleGuestNetwork(${enabled})">
+      ${enabled ? '&#x23F9; Disable Guest Network' : '&#x25B6; Enable Guest Network'}
+    </button>
+  </div>`;
+
+  document.getElementById('guest-network-content').innerHTML = html;
+}
+
+async function toggleGuestNetwork(currentlyEnabled) {
+  const btn = document.getElementById('btn-guest-toggle');
+  if (btn) btn.disabled = true;
+  try {
+    const resp = await apiFetch('/api/guest-network', {
+      method: 'POST',
+      body: JSON.stringify({ enabled: !currentlyEnabled }),
+    });
+    const d = await resp.json();
+    if (resp.ok) {
+      toast('Guest network ' + (d.enabled ? 'enabled' : 'disabled'), 'ok');
+      await fetchGuestNetwork();
+    } else {
+      toast('Error: ' + (d.error || '?'), 'err');
+      if (btn) btn.disabled = false;
+    }
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+    if (btn) btn.disabled = false;
+  }
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1018,6 +1109,7 @@ async function refreshAll() {
   fetchConfig();
   fetchPrivacyProfile();
   fetchWgPeers();
+  fetchGuestNetwork();
 }
 
 async function init() {
