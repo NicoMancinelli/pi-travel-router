@@ -3136,6 +3136,54 @@ def ota_update():
     return jsonify({"status": "started", "message": "OTA update running in background. Check logs for progress."})
 
 
+# ── Tailscale peer map ────────────────────────────────────────────────────────
+
+@app.route("/api/tailscale/peers", methods=["GET"])
+@require_auth
+def api_tailscale_peers():
+    """Return Tailscale peer info from 'tailscale status --json'."""
+    try:
+        out, rc = _run(["tailscale", "status", "--json"], timeout=10)
+    except FileNotFoundError:
+        return jsonify({"peers": [], "self": None, "error": "tailscale not available"}), 200
+
+    if not out:
+        return jsonify({"peers": [], "self": None, "error": "no output from tailscale"}), 200
+
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        return jsonify({"peers": [], "self": None, "error": "failed to parse tailscale output"}), 200
+
+    def _peer_dict(k, v):
+        addrs = v.get("TailscaleIPs") or v.get("Addrs") or []
+        last_seen = v.get("LastSeen") or v.get("LastWrite") or ""
+        return {
+            "id": k[:12],
+            "hostname": v.get("HostName") or v.get("DNSName", "").split(".")[0],
+            "dns_name": v.get("DNSName", ""),
+            "ips": addrs[:2],  # max 2 IPs (IPv4 + IPv6)
+            "online": v.get("Online", False),
+            "os": v.get("OS", ""),
+            "last_seen": last_seen,
+            "relay": v.get("Relay", ""),
+            "exit_node": v.get("ExitNode", False),
+        }
+
+    peers = []
+    for node_key, peer in (data.get("Peer") or {}).items():
+        peers.append(_peer_dict(node_key, peer))
+
+    # Sort: online first, then alphabetically
+    peers.sort(key=lambda p: (not p["online"], p["hostname"].lower()))
+
+    self_info = None
+    if data.get("Self"):
+        self_info = _peer_dict("self", data["Self"])
+
+    return jsonify({"peers": peers, "self": self_info})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

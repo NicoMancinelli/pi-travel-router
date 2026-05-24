@@ -732,6 +732,17 @@
 
   <hr class="divider">
 
+  <!-- Tailscale peer map -->
+  <div class="card full-width">
+    <div class="card-title">
+      Tailscale Peers
+      <button class="btn btn-sm" onclick="fetchTailscalePeers()" style="margin-left:8px;">&#x21BB; Refresh</button>
+    </div>
+    <div id="tailscale-peers-content"><span class="spinner"></span></div>
+  </div>
+
+  <hr class="divider">
+
   <!-- WireGuard add peer -->
   <div class="card full-width">
     <div class="card-title">Add WireGuard Peer</div>
@@ -2163,6 +2174,84 @@ function closeQrModal(evt) {
   img.style.display = 'none';
 }
 
+// ── Tailscale peers ────────────────────────────────────────────────────────────
+
+function relTime(isoStr) {
+  if (!isoStr) return '—';
+  const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return Math.floor(diff/86400) + 'd ago';
+}
+
+async function fetchTailscalePeers() {
+  const el = document.getElementById('tailscale-peers-content');
+  try {
+    const resp = await apiFetch('/api/tailscale/peers');
+    if (!resp.ok) { el.innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const d = await resp.json();
+    renderTailscalePeers(d);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span class="dim">Error loading Tailscale peers</span>';
+  }
+}
+
+function renderTailscalePeers(d) {
+  const el = document.getElementById('tailscale-peers-content');
+  if (d.error) {
+    el.innerHTML = '<span class="dim">Tailscale not running or not configured</span>';
+    return;
+  }
+
+  let html = '';
+
+  // Self node at top
+  if (d.self) {
+    const s = d.self;
+    const ip = (s.ips && s.ips[0]) ? escHtml(s.ips[0]) : '—';
+    const statusDot = s.online
+      ? '<span style="color:#3fb950">&#9679;</span> Online'
+      : '<span style="color:#6e7681">&#9679;</span> Offline';
+    html += `<div style="margin-bottom:8px;padding:6px 8px;background:var(--card-header-bg,#161b22);border-radius:6px;display:flex;align-items:center;gap:8px;">
+      <strong>${escHtml(s.hostname || '(this device)')}</strong>
+      <span class="badge" style="background:#1f6feb;color:#fff;padding:1px 6px;border-radius:10px;font-size:0.75em;">This device</span>
+      <span class="dim" style="font-size:0.85em;">${ip}</span>
+      <span class="dim" style="font-size:0.85em;margin-left:auto;">${escHtml(s.os || '')}</span>
+    </div>`;
+  }
+
+  const peers = (d.peers || []).slice(0, 20);
+  if (!peers.length) {
+    html += '<span class="dim">No peers</span>';
+    el.innerHTML = html;
+    return;
+  }
+
+  let rows = peers.map(p => {
+    const name = escHtml(p.hostname || '—');
+    const ip = (p.ips && p.ips[0]) ? escHtml(p.ips[0]) : '—';
+    const statusDot = p.online
+      ? '<span style="color:#3fb950">&#9679;</span> <span style="color:#3fb950">Online</span>'
+      : '<span style="color:#6e7681">&#9679;</span> <span style="color:#6e7681">Offline</span>';
+    const os = escHtml(p.os || '—');
+    const seen = escHtml(relTime(p.last_seen));
+    const exitBadge = p.exit_node
+      ? ' <span class="badge" style="background:#d29922;color:#fff;padding:1px 5px;border-radius:10px;font-size:0.75em;">Exit Node</span>'
+      : '';
+    return `<tr>
+      <td>${name}${exitBadge}</td>
+      <td class="mono">${ip}</td>
+      <td>${statusDot}</td>
+      <td>${os}</td>
+      <td>${seen}</td>
+    </tr>`;
+  }).join('');
+
+  html += `<table><thead><tr><th>Hostname</th><th>IP</th><th>Status</th><th>OS</th><th>Last Seen</th></tr></thead><tbody>${rows}</tbody></table>`;
+  el.innerHTML = html;
+}
+
 // ── Guest Network ─────────────────────────────────────────────────────────────
 async function fetchGuestNetwork() {
   try {
@@ -2863,6 +2952,7 @@ async function refreshAll() {
   fetchResourceStats();
   fetchUplinkScan();
   fetchFirewallRules();
+  fetchTailscalePeers();
 }
 
 async function init() {
