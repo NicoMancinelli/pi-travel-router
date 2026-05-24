@@ -27,6 +27,16 @@ run_finalize() {
     echo "vpn-only" > /var/lib/travel-router/active-profile
     ok "Privacy profiles installed (default: vpn-only)"
 
+    # ── Captive portal check ─────────────────────────────────────────────────────
+    section "Captive portal check"
+    cp "${REPO}/scripts/captive-check.sh" /usr/local/sbin/captive-check.sh
+    chmod +x /usr/local/sbin/captive-check.sh
+    mkdir -p /var/lib/travel-router
+    if [[ ! -f /var/lib/travel-router/captive-portal.json ]]; then
+        echo '{"detected":false}' > /var/lib/travel-router/captive-portal.json
+    fi
+    ok "captive-check.sh installed; captive-portal.json initialised"
+
     # ── Per-device QoS ───────────────────────────────────────────────────────────
     section "Per-device QoS (apply-qos.sh)"
     cp "${REPO}/scripts/apply-qos.sh" /usr/local/sbin/apply-qos.sh
