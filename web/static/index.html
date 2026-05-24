@@ -155,6 +155,25 @@
   #qr-modal-inner { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 24px; max-width: 480px; width: 90%; text-align: center; }
   #qr-modal-inner img { max-width: 100%; border-radius: 4px; margin: 12px 0; }
   #qr-modal-note { font-size: 11px; color: var(--yellow); margin-bottom: 12px; font-family: var(--mono); word-break: break-all; }
+
+  /* System Health card */
+  .health-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 768px) { .health-grid { grid-template-columns: 1fr; } }
+  .health-metric { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+  .health-metric-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .health-metric-value { font-size: 20px; font-weight: 600; font-family: var(--mono); }
+  .health-metric-sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .temp-green { color: var(--green); }
+  .temp-yellow { color: var(--yellow); }
+  .temp-red { color: var(--red); }
+  .disk-bar-wrap { background: var(--bg); border-radius: 2px; height: 6px; overflow: hidden; margin-top: 6px; }
+  .disk-bar { height: 100%; border-radius: 2px; transition: width 0.3s; }
+  .disk-green { background: var(--green); }
+  .disk-yellow { background: var(--yellow); }
+  .disk-red { background: var(--red); }
+  .update-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: rgba(210,153,34,.15); border: 1px solid rgba(210,153,34,.3); border-radius: 6px; color: var(--yellow); font-size: 12px; font-weight: 500; text-decoration: none; margin-top: 10px; }
+  .update-badge:hover { background: rgba(210,153,34,.25); }
+  .diag-output { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 10px; max-height: 400px; overflow-y: auto; font-family: var(--mono); font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; color: var(--text-dim); margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -194,6 +213,41 @@
     <div class="card" id="card-sys">
       <div class="card-title">System</div>
       <div id="sys-content"><span class="spinner"></span></div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- System Health -->
+  <div class="card full-width" id="card-health">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>System Health</span>
+      <button class="btn btn-sm" id="btn-diagnostic" onclick="runDiagnostic()">&#x1F50D; Run Diagnostic</button>
+    </div>
+    <div class="health-grid">
+      <div class="health-metric">
+        <div class="health-metric-label">CPU Temp</div>
+        <div class="health-metric-value" id="health-temp">—</div>
+        <div class="health-metric-sub" id="health-temp-sub"></div>
+      </div>
+      <div class="health-metric">
+        <div class="health-metric-label">Uptime</div>
+        <div class="health-metric-value" id="health-uptime">—</div>
+      </div>
+      <div class="health-metric">
+        <div class="health-metric-label">Disk Usage</div>
+        <div class="health-metric-value" id="health-disk">—</div>
+        <div class="disk-bar-wrap"><div class="disk-bar" id="health-disk-bar" style="width:0%"></div></div>
+        <div class="health-metric-sub" id="health-disk-sub"></div>
+      </div>
+    </div>
+    <div id="health-update-badge"></div>
+    <div id="diag-output-wrap" style="display:none">
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;">
+        <span style="font-size:12px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;">Diagnostic Output</span>
+        <span id="diag-spinner" style="display:none"><span class="spinner"></span></span>
+      </div>
+      <pre class="diag-output" id="diag-output"></pre>
     </div>
   </div>
 
@@ -345,6 +399,7 @@ let _autoLogInterval = null;
 let _statusInterval = null;
 let _logDebounce = null;
 let _configData = {};
+let _updateCheckResult = null; // fetched once on init
 
 const SERVICES = [
   'hostapd', 'NetworkManager', 'adguardhome',
@@ -401,6 +456,11 @@ function fmtSignal(s) {
 function badge(text, type) {
   return `<span class="badge badge-${type}"><span class="dot"></span>${text}</span>`;
 }
+function fmtUptime(s) {
+  if (!s) return '—';
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return [d && `${d}d`, h && `${h}h`, `${m}m`].filter(Boolean).join(' ');
+}
 
 // ── Status ────────────────────────────────────────────────────────────────────
 async function fetchStatus() {
@@ -411,6 +471,7 @@ async function fetchStatus() {
     renderUplink(d.uplink, d.system, d.battery);
     renderVPN(d.vpn);
     renderSystem(d.system);
+    renderHealth(d.system);
     renderClients(d.ap_clients);
     const ts = new Date(d.timestamp * 1000);
     document.getElementById('last-refresh').textContent =
@@ -482,6 +543,93 @@ function renderSystem(sys) {
       <span class="status-value">${mem.percent_used || 0}% of ${fmtBytes((mem.total_kb || 0) * 1024)}</span>
     </div>`;
   document.getElementById('sys-content').innerHTML = html;
+}
+
+function renderHealth(sys) {
+  if (!sys) return;
+
+  // CPU temp
+  const temp = sys.cpu_temp_c;
+  const tempEl = document.getElementById('health-temp');
+  if (temp != null) {
+    const cls = temp < 60 ? 'temp-green' : temp < 75 ? 'temp-yellow' : 'temp-red';
+    tempEl.textContent = temp + '°C';
+    tempEl.className = 'health-metric-value ' + cls;
+  } else {
+    tempEl.textContent = '—';
+    tempEl.className = 'health-metric-value temp-green';
+  }
+
+  // Uptime
+  const uptimeEl = document.getElementById('health-uptime');
+  uptimeEl.textContent = fmtUptime(sys.uptime_seconds);
+
+  // Disk
+  const disk = sys.disk;
+  const diskEl = document.getElementById('health-disk');
+  const diskBarEl = document.getElementById('health-disk-bar');
+  const diskSubEl = document.getElementById('health-disk-sub');
+  if (disk) {
+    const pct = disk.percent;
+    const diskCls = pct < 70 ? 'disk-green' : pct < 85 ? 'disk-yellow' : 'disk-red';
+    diskEl.textContent = pct + '%';
+    diskBarEl.style.width = pct + '%';
+    diskBarEl.className = 'disk-bar ' + diskCls;
+    diskSubEl.textContent = disk.used_gb + ' GB / ' + disk.total_gb + ' GB';
+  } else {
+    diskEl.textContent = '—';
+  }
+
+  // Update badge (uses cached result from init)
+  renderUpdateBadge(_updateCheckResult);
+}
+
+function renderUpdateBadge(result) {
+  const el = document.getElementById('health-update-badge');
+  if (!el) return;
+  if (result && result.update_available) {
+    el.innerHTML = `<a class="update-badge" href="${escAttr(result.release_url)}" target="_blank" rel="noopener">&#x1F4E6; Update available: v${escHtml(result.latest_version)}</a>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+async function fetchUpdateCheck() {
+  try {
+    const resp = await apiFetch('/api/system/update-check');
+    if (!resp.ok) return;
+    _updateCheckResult = await resp.json();
+    renderUpdateBadge(_updateCheckResult);
+  } catch (e) {
+    // Non-critical — silently ignore
+  }
+}
+
+async function runDiagnostic() {
+  const btn = document.getElementById('btn-diagnostic');
+  const wrap = document.getElementById('diag-output-wrap');
+  const spinner = document.getElementById('diag-spinner');
+  const output = document.getElementById('diag-output');
+
+  btn.disabled = true;
+  wrap.style.display = '';
+  spinner.style.display = '';
+  output.textContent = 'Running diagnostic…';
+
+  try {
+    const resp = await apiFetch('/api/system/diagnostic', { method: 'POST' });
+    const d = await resp.json();
+    if (resp.ok) {
+      output.textContent = d.output || '(no output)';
+    } else {
+      output.textContent = 'Error: ' + (d.error || 'Unknown error');
+    }
+  } catch (e) {
+    output.textContent = 'Error: ' + e.message;
+  } finally {
+    spinner.style.display = 'none';
+    btn.disabled = false;
+  }
 }
 
 function renderClients(clients) {
@@ -875,6 +1023,8 @@ async function refreshAll() {
 async function init() {
   renderServices();
   await refreshAll();
+  // Fetch update check once (calls GitHub API — not repeated on every refresh)
+  fetchUpdateCheck();
   // Auto-refresh status every 10s
   _statusInterval = setInterval(fetchStatus, 10000);
 }

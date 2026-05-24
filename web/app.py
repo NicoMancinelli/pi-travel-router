@@ -5,6 +5,7 @@ import ast
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -325,7 +326,36 @@ def _system_stats():
             "available_kb": mem_avail,
             "percent_used": round(100 * mem_used / mem_total, 1) if mem_total else 0,
         },
+        "cpu_temp_c": _cpu_temp(),
+        "disk": _disk_usage(),
     }
+
+
+def _cpu_temp():
+    try:
+        raw = Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()
+        return round(int(raw) / 1000, 1)  # millidegrees → °C
+    except Exception:
+        return None
+
+
+def _disk_usage():
+    try:
+        u = shutil.disk_usage("/")
+        return {
+            "total_gb": round(u.total / 1e9, 1),
+            "used_gb": round(u.used / 1e9, 1),
+            "percent": round(u.used / u.total * 100, 1),
+        }
+    except Exception:
+        return None
+
+
+def _uptime_seconds():
+    try:
+        return int(float(Path("/proc/uptime").read_text().split()[0]))
+    except Exception:
+        return None
 
 
 def _battery_info():
@@ -865,19 +895,41 @@ def api_privacy_profile_set():
 
 
 @app.route('/api/system/update-check', methods=['GET'])
+@require_auth
 def update_check():
-    """Check GitHub for latest release version."""
+    """Check latest available version from GitHub releases without downloading."""
+    import urllib.request as _urllib_req
     try:
-        import urllib.request as _urllib
         url = "https://api.github.com/repos/NicoMancinelli/pi-travel-router/releases/latest"
-        req = _urllib.Request(url, headers={"User-Agent": "travel-router-ota"})
-        with _urllib.urlopen(req, timeout=5) as r:
-            data = json.loads(r.read())
-        version_file = "/etc/travel-router-image-version"
-        current = Path(version_file).read_text().strip() if os.path.exists(version_file) else "unknown"
-        return jsonify({"latest": data.get("tag_name"), "current": current, "url": data.get("html_url")})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        req = _urllib_req.Request(url, headers={"User-Agent": "pi-travel-router"})
+        with _urllib_req.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+        latest = data.get("tag_name", "").lstrip("v")
+        current = Path("/etc/travel-router-version").read_text().strip() if Path("/etc/travel-router-version").exists() else "unknown"
+        return jsonify({
+            "current_version": current,
+            "latest_version": latest,
+            "update_available": latest != current and latest != "",
+            "release_url": data.get("html_url", ""),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 503
+
+
+@app.route('/api/system/diagnostic', methods=['POST'])
+@require_auth_always
+def api_diagnostic():
+    """Run travel-diagnostic.sh and return its output."""
+    try:
+        result = subprocess.run(
+            ["/usr/local/sbin/travel-diagnostic.sh"],
+            capture_output=True, text=True, timeout=30
+        )
+        return jsonify({"output": result.stdout + result.stderr, "exit_code": result.returncode})
+    except FileNotFoundError:
+        return jsonify({"error": "Diagnostic script not found"}), 503
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Diagnostic timed out"}), 504
 
 
 @app.route('/api/system/ota-update', methods=['POST'])
