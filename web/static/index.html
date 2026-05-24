@@ -677,6 +677,7 @@ let _updateCheckResult = null; // fetched once on init
 let _logPaused = false;        // pause log auto-refresh
 let _qosLimits = {};           // mac.toLowerCase() → {down_kbps, up_kbps}
 let _openQosPopover = null;    // currently open popover element
+let _aliases = {};             // mac.toLowerCase() → friendly name
 
 const SERVICES = [
   'hostapd', 'NetworkManager', 'adguardhome',
@@ -1012,6 +1013,7 @@ function renderClients(clients) {
     const mac = escHtml(c.mac || '?');
     const macRaw = (c.mac || '').toLowerCase();
     const limit = _qosLimits[macRaw];
+    const alias = c.alias || _aliases[macRaw] || '';
     const throttledBadge = limit
       ? `<span class="badge-throttled">&#x1F512; throttled</span>`
       : '';
@@ -1020,10 +1022,21 @@ function renderClients(clients) {
       : `<span class="mono">${mac}</span>${throttledBadge}`;
     const ip = c.ip ? escHtml(c.ip) : '<span class="dim">—</span>';
     const popoverId = `qos-pop-${idx}`;
+    const aliasEditId = `alias-edit-${idx}`;
     const downVal = limit ? limit.down_kbps : 2048;
     const upVal = limit ? limit.up_kbps : 1024;
+    // Alias cell: show alias in bold + MAC below, or MAC + pencil to add alias
+    const aliasCell = alias
+      ? `<span style="font-weight:600;cursor:pointer;" onclick="openAliasEdit('${aliasEditId}','${escAttr(c.mac || '')}')" title="Click to edit alias">${escHtml(alias)}</span><br><span class="dim" style="font-size:10px;">${mac}</span>`
+      : `<span class="mono dim" style="font-size:11px;">${mac}</span> <button class="btn btn-sm" style="padding:1px 5px;font-size:11px;" onclick="openAliasEdit('${aliasEditId}','${escAttr(c.mac || '')}')" title="Assign friendly name">&#x270F;</button>`;
+    const aliasEditBlock = `<div id="${aliasEditId}" style="display:none;margin-top:4px;">
+      <input type="text" id="${aliasEditId}-inp" value="${escAttr(alias)}" maxlength="32" placeholder="Friendly name" style="font-size:12px;padding:2px 6px;width:130px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+      <button class="btn btn-sm btn-primary" style="padding:1px 6px;" onclick="saveAlias('${escAttr(c.mac || '')}','${aliasEditId}')">Save</button>
+      <button class="btn btn-sm" style="padding:1px 6px;" onclick="cancelAliasEdit('${aliasEditId}')">Cancel</button>
+    </div>`;
     return `<tr>
       <td>${nameCell}</td>
+      <td><div>${aliasCell}</div>${aliasEditBlock}</td>
       <td class="mono">${ip}</td>
       <td>${fmtSignalWithDot(c.signal)}</td>
       <td class="mono">${fmtConnected(c.connected_since)}</td>
@@ -1047,7 +1060,54 @@ function renderClients(clients) {
     </tr>`;
   }).join('');
   document.getElementById('clients-content').innerHTML =
-    `<table><thead><tr><th>Hostname</th><th>IP</th><th>Signal</th><th>Connected</th><th>RX</th><th>TX</th><th>QoS</th></tr></thead><tbody>${rows}</tbody></table>`;
+    `<table><thead><tr><th>Hostname</th><th>Alias</th><th>IP</th><th>Signal</th><th>Connected</th><th>RX</th><th>TX</th><th>QoS</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function openAliasEdit(editId, mac) {
+  const block = document.getElementById(editId);
+  if (!block) return;
+  block.style.display = 'block';
+  const inp = document.getElementById(editId + '-inp');
+  if (inp) { inp.focus(); inp.select(); }
+}
+
+function cancelAliasEdit(editId) {
+  const block = document.getElementById(editId);
+  if (block) block.style.display = 'none';
+}
+
+async function saveAlias(mac, editId) {
+  const inp = document.getElementById(editId + '-inp');
+  const name = inp ? inp.value.trim() : '';
+  try {
+    const resp = await apiFetch('/api/clients/aliases', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mac, name }),
+    });
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      toast((d.error || 'Failed to save alias'), 'error');
+      return;
+    }
+    const d = await resp.json();
+    _aliases = d.aliases || _aliases;
+    toast(name ? 'Alias saved' : 'Alias removed', 'ok');
+    await fetchClients();
+  } catch (e) {
+    toast('Failed to save alias', 'error');
+  }
+}
+
+async function fetchAliases() {
+  try {
+    const resp = await apiFetch('/api/clients/aliases');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    _aliases = d.aliases || {};
+  } catch (e) {
+    // Non-critical
+  }
 }
 
 async function fetchQosLimits() {
@@ -2439,6 +2499,7 @@ async function removeWolTarget(index) {
 async function refreshAll() {
   await fetchStatus();
   await fetchQosLimits();
+  await fetchAliases();
   fetchClients();
   fetchBandwidth();
   fetchLogs();

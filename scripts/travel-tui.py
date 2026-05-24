@@ -54,6 +54,7 @@ except ImportError:
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
 DEFAULTS_FILE = "/etc/default/travel-router"
+ALIASES_FILE = "/var/lib/travel-router/aliases.json"
 AP_IFACE = os.environ.get("AP_IFACE", "uap0")
 
 
@@ -488,6 +489,7 @@ class DashboardScreen(Screen):
         Binding("c", "push_screen('captive')", "Captive"),
         Binding("u", "push_screen('storage')", "Storage"),
         Binding("k", "push_screen('wol')", "WoL"),
+        Binding("a", "push_screen('aliases')", "Aliases"),
         Binding("q", "quit_app", "Quit"),
     ]
 
@@ -505,7 +507,7 @@ class DashboardScreen(Screen):
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
             "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  "
-            "[T]Traceroute  [C]Captive  [U]Storage  [K]WoL  [Q]Quit",
+            "[T]Traceroute  [C]Captive  [U]Storage  [K]WoL  [A]Aliases  [Q]Quit",
             id="nav-panel",
         )
         yield Footer()
@@ -3132,6 +3134,212 @@ class WolScreen(Screen):
         self._load()
 
 
+# ── Aliases screen ───────────────────────────────────────────────────────────
+class AliasesScreen(Screen):
+    """Device alias manager — press A from dashboard."""
+
+    BINDINGS = [
+        Binding("q,escape", "pop_screen", "Back"),
+        Binding("n", "new_alias", "New"),
+        Binding("d", "delete_alias", "Delete"),
+        Binding("r", "refresh", "Refresh"),
+    ]
+
+    _aliases: list = []  # list of (mac, name) tuples
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label(
+            "Device Aliases  —  [N] new  [D] delete selected  [R] refresh  [Q] back",
+            classes="panel-title",
+        )
+        yield DataTable(id="aliases-table", zebra_stripes=True)
+        yield Static(id="aliases-msg")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        t = self.query_one("#aliases-table", DataTable)
+        t.add_columns("MAC Address", "Friendly Name")
+        self._load()
+
+    def _load(self) -> None:
+        self.run_worker(self._fetch, exclusive=True, thread=True)
+
+    def _fetch(self) -> None:
+        import json as _json
+        aliases: list = []
+        try:
+            with open(ALIASES_FILE) as fh:
+                raw = fh.read().strip()
+            if raw:
+                data = _json.loads(raw)
+                if isinstance(data, dict):
+                    aliases = sorted(data.items())
+        except (OSError, ValueError, _json.JSONDecodeError):
+            pass
+        self.call_from_thread(self._apply, aliases)
+
+    def _apply(self, aliases: list) -> None:
+        self._aliases = aliases
+        t = self.query_one("#aliases-table", DataTable)
+        t.clear()
+        if not aliases:
+            t.add_row("[dim]No aliases defined[/dim]", "[dim]Press [N] to add one[/dim]")
+        else:
+            for mac, name in aliases:
+                t.add_row(f"[cyan]{mac}[/cyan]", f"[green]{name}[/green]")
+        try:
+            self.query_one("#aliases-msg", Static).update("")
+        except Exception:
+            pass
+
+    def _write_aliases(self, aliases_dict: dict) -> str | None:
+        """Write aliases dict to ALIASES_FILE atomically. Returns error str or None."""
+        import json as _json
+        import tempfile as _tmp
+        import os as _os
+        from pathlib import Path as _Path
+        try:
+            d = str(_Path(ALIASES_FILE).parent)
+            fd, tmp = _tmp.mkstemp(dir=d, prefix="aliases.")
+            try:
+                with _os.fdopen(fd, "w") as fh:
+                    _json.dump(aliases_dict, fh)
+                _os.replace(tmp, ALIASES_FILE)
+            except Exception:
+                try:
+                    _os.unlink(tmp)
+                except OSError:
+                    pass
+                raise
+            return None
+        except Exception as exc:
+            return str(exc)
+
+    def action_new_alias(self) -> None:
+        def _got_mac(mac_val: str | None) -> None:
+            if not mac_val:
+                return
+            mac_val = mac_val.strip()
+
+            def _got_name(name_val: str | None) -> None:
+                if not name_val:
+                    return
+                name_val = name_val.strip()
+                self.run_worker(
+                    lambda m=mac_val, n=name_val: self._save_alias_worker(m, n),
+                    thread=True,
+                )
+
+            self.app.push_screen(
+                InputModal("New Alias", "Friendly name (max 32 chars):"),
+                _got_name,
+            )
+
+        self.app.push_screen(
+            InputModal("New Alias", "MAC address (AA:BB:CC:DD:EE:FF):"),
+            _got_mac,
+        )
+
+    def _save_alias_worker(self, mac: str, name: str) -> None:
+        import json as _json
+        import re as _re
+        # Validate MAC
+        if not _re.match(r'^([0-9a-fA-F]{2}[:\-]?){5}[0-9a-fA-F]{2}$', mac):
+            self.call_from_thread(
+                lambda: self.app.push_screen(
+                    MessageModal("Aliases", f"Invalid MAC address: {mac}", "error")
+                )
+            )
+            return
+        # Normalize
+        mac_norm = mac.lower().replace("-", ":").replace(" ", "")
+        if ":" not in mac_norm:
+            mac_norm = ":".join(mac_norm[i:i+2] for i in range(0, 12, 2))
+        # Validate name
+        name = name.strip()[:32]
+        if _re.search(r'[<>"]', name):
+            self.call_from_thread(
+                lambda: self.app.push_screen(
+                    MessageModal("Aliases", 'Name must not contain <, >, or "', "error")
+                )
+            )
+            return
+        # Load existing
+        aliases_dict: dict = {}
+        try:
+            with open(ALIASES_FILE) as fh:
+                raw = fh.read().strip()
+            if raw:
+                data = _json.loads(raw)
+                if isinstance(data, dict):
+                    aliases_dict = data
+        except (OSError, ValueError, _json.JSONDecodeError):
+            pass
+        aliases_dict[mac_norm] = name
+        err = self._write_aliases(aliases_dict)
+        if err:
+            self.call_from_thread(
+                lambda e=err: self.app.push_screen(
+                    MessageModal("Aliases", f"Save failed: {e}", "error")
+                )
+            )
+        else:
+            self.call_from_thread(self._load)
+
+    def action_delete_alias(self) -> None:
+        try:
+            t = self.query_one("#aliases-table", DataTable)
+            idx = t.cursor_row
+        except Exception:
+            return
+        if not self._aliases or idx < 0 or idx >= len(self._aliases):
+            self.app.push_screen(
+                MessageModal("Aliases", "No alias selected — move cursor to a row first.", "error")
+            )
+            return
+        mac, name = self._aliases[idx]
+
+        def _confirmed(result: bool) -> None:
+            if not result:
+                return
+            self.run_worker(
+                lambda m=mac: self._delete_alias_worker(m),
+                thread=True,
+            )
+
+        self.app.push_screen(
+            ConfirmModal("Delete Alias", f"Remove alias '{name}' for {mac}?"),
+            _confirmed,
+        )
+
+    def _delete_alias_worker(self, mac: str) -> None:
+        import json as _json
+        aliases_dict: dict = {}
+        try:
+            with open(ALIASES_FILE) as fh:
+                raw = fh.read().strip()
+            if raw:
+                data = _json.loads(raw)
+                if isinstance(data, dict):
+                    aliases_dict = data
+        except (OSError, ValueError, _json.JSONDecodeError):
+            pass
+        aliases_dict.pop(mac, None)
+        err = self._write_aliases(aliases_dict)
+        if err:
+            self.call_from_thread(
+                lambda e=err: self.app.push_screen(
+                    MessageModal("Aliases", f"Delete failed: {e}", "error")
+                )
+            )
+        else:
+            self.call_from_thread(self._load)
+
+    def action_refresh(self) -> None:
+        self._load()
+
+
 # ── Main App ──────────────────────────────────────────────────────────────────
 class TravelRouterApp(App):
     TITLE = "Pi Travel Router"
@@ -3155,6 +3363,7 @@ class TravelRouterApp(App):
         "captive": CaptivePortalScreen,
         "storage": StorageScreen,
         "wol": WolScreen,
+        "aliases": AliasesScreen,
     }
 
     BINDINGS = [

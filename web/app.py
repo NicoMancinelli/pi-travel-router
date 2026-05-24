@@ -39,6 +39,7 @@ DOH_PRESETS = ["cloudflare", "quad9", "nextdns", "adguard", "system"]
 MOUNT_STORAGE_SCRIPT = "/usr/local/sbin/mount-storage.sh"
 WOL_TARGETS_FILE = "/var/lib/travel-router/wol-targets.json"
 DATACAP_FILE = "/var/lib/travel-router/datacap.json"
+ALIASES_FILE = "/var/lib/travel-router/aliases.json"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -796,6 +797,10 @@ def api_logs():
 @require_auth
 def api_clients():
     clients = _ap_clients_rich()
+    aliases = _read_aliases()
+    for c in clients:
+        mac_key = c.get("mac", "").lower().replace("-", ":").replace(" ", "")
+        c["alias"] = aliases.get(mac_key, "")
     return jsonify({"clients": clients, "count": len(clients)})
 
 
@@ -2301,6 +2306,91 @@ def api_datacap_post():
     _write_datacap(existing)
 
     return jsonify({"ok": True})
+
+
+# ── Device aliases ────────────────────────────────────────────────────────────
+
+_ALIAS_MAC_RE = re.compile(r'^([0-9a-fA-F]{2}[:\-]?){5}[0-9a-fA-F]{2}$')
+
+
+def _read_aliases() -> dict:
+    """Returns {mac_lower: friendly_name} dict."""
+    try:
+        text = Path(ALIASES_FILE).read_text().strip()
+        if not text:
+            return {}
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _write_aliases(aliases: dict) -> None:
+    """Atomically writes aliases dict to ALIASES_FILE."""
+    aliases_dir = str(Path(ALIASES_FILE).parent)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=aliases_dir, prefix="aliases.")
+    try:
+        with os.fdopen(tmp_fd, "w") as fh:
+            json.dump(aliases, fh)
+        os.replace(tmp_path, ALIASES_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+@app.route("/api/clients/aliases", methods=["GET"])
+@require_auth
+def api_clients_aliases_get():
+    return jsonify({"aliases": _read_aliases()})
+
+
+@app.route("/api/clients/aliases", methods=["POST"])
+@require_auth_always
+def api_clients_aliases_post():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    mac = data.get("mac", "")
+    if not isinstance(mac, str) or not _ALIAS_MAC_RE.match(mac):
+        return jsonify({"error": "Invalid MAC address format"}), 400
+
+    # Normalize MAC to lowercase colon-separated
+    mac_norm = mac.lower().replace("-", ":").replace(" ", "")
+    # Ensure proper colon-separated format (handle no-separator input)
+    if ":" not in mac_norm:
+        mac_norm = ":".join(mac_norm[i:i+2] for i in range(0, 12, 2))
+
+    name = data.get("name", "")
+    if not isinstance(name, str):
+        return jsonify({"error": "name must be a string"}), 400
+    name = name.strip()
+
+    # Validate name
+    if len(name) > 32:
+        return jsonify({"error": "name must be at most 32 characters"}), 400
+    if re.search(r'[<>"]', name):
+        return jsonify({"error": "name must not contain <, >, or \" characters"}), 400
+
+    aliases = _read_aliases()
+
+    if not name:
+        # Empty/blank name → delete the alias
+        aliases.pop(mac_norm, None)
+    else:
+        aliases[mac_norm] = name
+
+    try:
+        _write_aliases(aliases)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to save aliases: {exc}"}), 503
+
+    return jsonify({"ok": True, "aliases": aliases})
 
 
 # ── Latency history endpoint ──────────────────────────────────────────────────

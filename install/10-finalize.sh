@@ -78,6 +78,11 @@ run_finalize() {
     touch /var/lib/travel-router/wol-targets.json 2>/dev/null || true
     ok "Wake-on-LAN targets store initialised"
 
+    # ── Device alias store ────────────────────────────────────────────────────────
+    section "Device alias store"
+    touch /var/lib/travel-router/aliases.json 2>/dev/null || true
+    ok "Device alias store initialised"
+
     # ── Data cap store ────────────────────────────────────────────────────────────
     section "Data cap store"
     touch /var/lib/travel-router/datacap.json 2>/dev/null || true
