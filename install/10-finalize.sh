@@ -88,6 +88,12 @@ run_finalize() {
     touch /var/lib/travel-router/portforward.json 2>/dev/null || true
     ok "Port forwarding store initialised"
 
+    # ── DNS hosts override store ──────────────────────────────────────────────────
+    section "DNS hosts override store"
+    touch /var/lib/travel-router/dns-hosts.json 2>/dev/null || true
+    touch /etc/hosts.travel-router 2>/dev/null || true
+    ok "DNS hosts override store initialised"
+
     # ── Data cap store ────────────────────────────────────────────────────────────
     section "Data cap store"
     touch /var/lib/travel-router/datacap.json 2>/dev/null || true
