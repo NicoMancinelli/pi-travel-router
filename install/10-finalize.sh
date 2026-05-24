@@ -3,6 +3,12 @@
 # Defines run_finalize(). Source this file; do not execute directly.
 
 run_finalize() {
+    # ── Scheduled reboot ──────────────────────────────────────────────────────────
+    section "Scheduled reboot"
+    cp "${REPO}/scripts/schedule-reboot.sh" /usr/local/sbin/schedule-reboot.sh
+    chmod +x /usr/local/sbin/schedule-reboot.sh
+    ok "schedule-reboot.sh installed to /usr/local/sbin/schedule-reboot.sh"
+
     # ── Speed test script + optional speedtest-cli ───────────────────────────────
     section "Speed test setup"
     cp "${REPO}/scripts/speedtest.sh" /usr/local/sbin/speedtest.sh
