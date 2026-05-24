@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-05-23
+
+### Added
+
+- **Speed test** (`scripts/speedtest.sh`, `web/app.py`, `web/static/index.html`, `scripts/travel-tui.py`): tries speedtest-cli → Ookla CLI → curl/Cloudflare fallback; `GET /api/system/speedtest` returns cached result, `POST` runs a new test (90s timeout). Web UI Speed Test card shows color-coded Download/Upload/Ping tiles (green/yellow/red). TUI `SpeedTestScreen` (press `S`).
+- **Config backup & restore** (`scripts/config-backup.sh`, `web/app.py`, `web/static/index.html`): `backup` subcommand collects `/etc/default/travel-router`, hostapd, WireGuard, privacy profiles into a `chmod 600` tar.gz with a safety pre-restore backup. `GET /api/system/backup` streams download; `POST /api/system/restore` accepts multipart upload. Backup & Restore card in web UI shows last-backup timestamp.
+- **Per-device bandwidth limits** (`scripts/apply-qos.sh`, `web/app.py`, `web/static/index.html`, `scripts/travel-tui.py`): tc HTB + iptables MARK per MAC; supports `set`/`clear`/`list`/`clear-all`; limits persisted to `/var/lib/travel-router/qos-limits.json` and restored on firewall reload. `GET/POST /api/clients/qos`. Web UI client table gains Limit button per row with popover; throttled clients show badge. TUI `ClientsScreen` gains `q` binding → `QosModal`.
+- `install/10-finalize.sh` updated to install `speedtest.sh`, `config-backup.sh`, `apply-qos.sh` to `/usr/local/sbin/`.
+
 ## [2.5.0] - 2026-05-23
 
 ### Added
