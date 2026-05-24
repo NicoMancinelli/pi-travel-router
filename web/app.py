@@ -37,6 +37,7 @@ _BW_HISTORY_FILE = "/var/lib/travel-router/bw-history.json"
 DOH_SCRIPT = "/usr/local/sbin/set-doh-resolver.sh"
 DOH_PRESETS = ["cloudflare", "quad9", "nextdns", "adguard", "system"]
 MOUNT_STORAGE_SCRIPT = "/usr/local/sbin/mount-storage.sh"
+WOL_TARGETS_FILE = "/var/lib/travel-router/wol-targets.json"
 DATACAP_FILE = "/var/lib/travel-router/datacap.json"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
@@ -2070,6 +2071,109 @@ def api_storage_unmount():
     if result.returncode != 0:
         return jsonify({"error": (result.stderr or result.stdout or "Unmount failed").strip()}), 503
 
+    return jsonify({"ok": True})
+
+
+# ── Wake-on-LAN ───────────────────────────────────────────────────────────────
+
+_MAC_RE = re.compile(r'^([0-9a-fA-F]{2}[:\-]?){5}[0-9a-fA-F]{2}$')
+
+
+def _read_wol_targets() -> list:
+    """Read WoL targets from JSON store. Returns [] on any error."""
+    try:
+        data = json.loads(Path(WOL_TARGETS_FILE).read_text())
+        if isinstance(data, list):
+            return data
+    except Exception:
+        pass
+    return []
+
+
+def _write_wol_targets(targets: list) -> None:
+    """Atomically write WoL targets list to disk."""
+    wol_dir = str(Path(WOL_TARGETS_FILE).parent)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=wol_dir, prefix="wol-targets.")
+    try:
+        with os.fdopen(tmp_fd, "w") as fh:
+            json.dump(targets, fh)
+        os.replace(tmp_path, WOL_TARGETS_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def _send_magic_packet(mac: str, broadcast: str = "255.255.255.255") -> None:
+    """Send a Wake-on-LAN magic packet to the given MAC address."""
+    import socket
+    # Normalize: strip colons and hyphens
+    mac_clean = mac.replace(":", "").replace("-", "")
+    if len(mac_clean) != 12 or not all(c in "0123456789abcdefABCDEF" for c in mac_clean):
+        raise ValueError(f"Invalid MAC address: {mac!r}")
+    mac_bytes = bytes.fromhex(mac_clean)
+    magic = b'\xff' * 6 + mac_bytes * 16
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.sendto(magic, (broadcast, 9))
+
+
+@app.route("/api/wol", methods=["GET"])
+@require_auth
+def api_wol_get():
+    return jsonify({"targets": _read_wol_targets()})
+
+
+@app.route("/api/wol/send", methods=["POST"])
+@require_auth_always
+def api_wol_send():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+    mac = data.get("mac", "")
+    if not isinstance(mac, str) or not _MAC_RE.match(mac):
+        return jsonify({"error": "Invalid MAC address format"}), 400
+    broadcast = data.get("broadcast", "255.255.255.255")
+    if not isinstance(broadcast, str):
+        broadcast = "255.255.255.255"
+    try:
+        _send_magic_packet(mac, broadcast)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to send magic packet: {exc}"}), 503
+    return jsonify({"ok": True})
+
+
+@app.route("/api/wol/targets", methods=["POST"])
+@require_auth_always
+def api_wol_targets_post():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+    targets = data.get("targets", [])
+    if not isinstance(targets, list):
+        return jsonify({"error": "'targets' must be a list"}), 400
+    if len(targets) > 20:
+        return jsonify({"error": "Maximum 20 targets allowed"}), 400
+    validated = []
+    for i, t in enumerate(targets):
+        if not isinstance(t, dict):
+            return jsonify({"error": f"Target {i} must be an object"}), 400
+        name = t.get("name", "")
+        if not isinstance(name, str) or len(name) == 0 or len(name) > 64:
+            return jsonify({"error": f"Target {i}: 'name' must be a non-empty string (max 64 chars)"}), 400
+        mac = t.get("mac", "")
+        if not isinstance(mac, str) or not _MAC_RE.match(mac):
+            return jsonify({"error": f"Target {i}: invalid MAC address format"}), 400
+        broadcast = t.get("broadcast", "255.255.255.255")
+        if not isinstance(broadcast, str) or not re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$', broadcast):
+            return jsonify({"error": f"Target {i}: invalid broadcast IPv4 address"}), 400
+        validated.append({"name": name, "mac": mac, "broadcast": broadcast})
+    try:
+        _write_wol_targets(validated)
+    except Exception as exc:
+        return jsonify({"error": f"Failed to save targets: {exc}"}), 503
     return jsonify({"ok": True})
 
 

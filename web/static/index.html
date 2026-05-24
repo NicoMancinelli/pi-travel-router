@@ -475,6 +475,33 @@
     </div>
   </div>
 
+  <!-- Wake-on-LAN -->
+  <div class="card full-width" id="card-wol" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x26A1; Wake-on-LAN</span>
+      <button class="btn btn-sm" onclick="fetchWolTargets()">&#x21BB; Refresh</button>
+    </div>
+    <div id="wol-targets-content" style="margin-bottom:14px;"><span class="spinner"></span></div>
+    <div style="border-top:1px solid var(--border);padding-top:12px;margin-top:4px;">
+      <div style="font-size:12px;font-weight:600;margin-bottom:8px;color:var(--text-dim);">Add Target</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px;">
+          <label style="font-size:11px;color:var(--text-dim);">Name</label>
+          <input type="text" id="wol-name" placeholder="e.g. Home NAS" maxlength="64" style="font-size:13px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:140px;">
+          <label style="font-size:11px;color:var(--text-dim);">MAC Address</label>
+          <input type="text" id="wol-mac" placeholder="AA:BB:CC:DD:EE:FF" style="font-size:13px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:130px;">
+          <label style="font-size:11px;color:var(--text-dim);">Broadcast</label>
+          <input type="text" id="wol-broadcast" placeholder="255.255.255.255" value="255.255.255.255" style="font-size:13px;padding:4px 8px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);">
+        </div>
+        <button class="btn btn-primary" onclick="addWolTarget()" style="white-space:nowrap;">&#x2795; Add</button>
+      </div>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -2292,6 +2319,114 @@ async function captiveBypass() {
   }
 }
 
+// ── Wake-on-LAN ───────────────────────────────────────────────────────────────
+let _wolTargets = [];
+
+async function fetchWolTargets() {
+  try {
+    const d = await apiFetch('/api/wol');
+    _wolTargets = d.targets || [];
+    _renderWolTargets(_wolTargets);
+  } catch (e) {
+    const el = document.getElementById('wol-targets-content');
+    if (el) el.innerHTML = '<span class="dim">Unavailable</span>';
+  }
+}
+
+function _renderWolTargets(targets) {
+  const el = document.getElementById('wol-targets-content');
+  if (!el) return;
+  if (!targets || targets.length === 0) {
+    el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;font-style:italic;">No targets saved.</span>';
+    return;
+  }
+  let rows = targets.map((t, i) =>
+    `<tr>
+      <td style="padding:4px 8px;">${escHtml(t.name)}</td>
+      <td style="padding:4px 8px;font-family:var(--mono);font-size:12px;">${escHtml(t.mac)}</td>
+      <td style="padding:4px 8px;font-size:12px;color:var(--text-dim);">${escHtml(t.broadcast || '255.255.255.255')}</td>
+      <td style="padding:4px 8px;">
+        <button class="btn btn-sm btn-primary" onclick="wakeTarget('${escHtml(t.mac)}','${escHtml(t.broadcast||'255.255.255.255')}')">&#x26A1; Wake</button>
+        <button class="btn btn-sm btn-danger" onclick="removeWolTarget(${i})" style="margin-left:4px;">&#x2715;</button>
+      </td>
+    </tr>`
+  ).join('');
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+    <thead><tr style="color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;">
+      <th style="padding:4px 8px;text-align:left;">Name</th>
+      <th style="padding:4px 8px;text-align:left;">MAC</th>
+      <th style="padding:4px 8px;text-align:left;">Broadcast</th>
+      <th style="padding:4px 8px;text-align:left;">Action</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function wakeTarget(mac, broadcast) {
+  try {
+    const resp = await apiFetch('/api/wol/send', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({mac, broadcast}),
+    });
+    if (resp.ok !== false) {
+      toast('Magic packet sent to ' + mac, 'ok');
+    } else {
+      toast('Error: ' + (resp.error || 'unknown'), 'error');
+    }
+  } catch (e) {
+    toast('Failed to send magic packet', 'error');
+  }
+}
+
+async function addWolTarget() {
+  const name = (document.getElementById('wol-name').value || '').trim();
+  const mac = (document.getElementById('wol-mac').value || '').trim();
+  const broadcast = (document.getElementById('wol-broadcast').value || '255.255.255.255').trim();
+  if (!name) { toast('Name is required', 'error'); return; }
+  if (!mac) { toast('MAC address is required', 'error'); return; }
+  const newTargets = [..._wolTargets, {name, mac, broadcast}];
+  try {
+    const resp = await apiFetch('/api/wol/targets', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({targets: newTargets}),
+    });
+    if (resp.ok !== false) {
+      document.getElementById('wol-name').value = '';
+      document.getElementById('wol-mac').value = '';
+      document.getElementById('wol-broadcast').value = '255.255.255.255';
+      await fetchWolTargets();
+    } else {
+      toast('Error: ' + (resp.error || 'unknown'), 'error');
+    }
+  } catch (e) {
+    toast('Failed to add target', 'error');
+  }
+}
+
+async function removeWolTarget(index) {
+  const newTargets = _wolTargets.filter((_, i) => i !== index);
+  try {
+    const resp = await apiFetch('/api/wol/targets', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({targets: newTargets}),
+    });
+    if (resp.ok !== false) {
+      await fetchWolTargets();
+    } else {
+      toast('Error: ' + (resp.error || 'unknown'), 'error');
+    }
+  } catch (e) {
+    toast('Failed to remove target', 'error');
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function refreshAll() {
   await fetchStatus();
@@ -2309,6 +2444,7 @@ async function refreshAll() {
   fetchSignal();
   fetchRebootSchedule();
   fetchStorage();
+  fetchWolTargets();
   fetchDataCap();
   fetchLatencyHistory();
 }
