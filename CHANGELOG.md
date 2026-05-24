@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-05-24
+
+### Added
+
+- **mDNS service browser** (`web/app.py`, `web/static/index.html`): `GET /api/mdns/services` runs `avahi-browse -all -t -r -p`, parses semicolon-delimited output, deduplicates on name+type+addr, returns up to 50 services sorted by type then name. Dashboard "Local Services (mDNS)" card with service type grouping, Scan button, and graceful "avahi-browse not available" degradation.
+- **Tailscale peer map** (`web/app.py`, `web/static/index.html`): `GET /api/tailscale/peers` parses `tailscale status --json`, normalises peer fields across Tailscale versions. Dashboard card showing self node + peer table (Hostname/IP/Status/OS/Last Seen) with online/offline indicators, relative timestamps, and exit-node badge. Handles tailscale-not-running gracefully.
+- **Software update checker** (`web/app.py`, `web/static/index.html`): `GET /api/update/check` queries GitHub releases API (cached 1 hour), compares semver tuples. `POST /api/update/apply` spawns `update-router.sh` in background + fires SSE event. Dashboard "Software Update" card with version info, release notes link, and Apply button; orange update badge in header when newer version exists.
+
 ## [2.12.0] - 2026-05-24
 
 ### Added
