@@ -381,6 +381,21 @@
     </div>
   </div>
 
+  <!-- Client History -->
+  <div class="card full-width" id="card-client-history" style="margin-top:16px;">
+    <div class="card-title">Client History
+      <span style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+        <select id="client-history-limit" style="font-size:12px;background:var(--bg-input,#161b22);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;">
+          <option value="20" selected>Last 20</option>
+          <option value="50">Last 50</option>
+          <option value="100">Last 100</option>
+        </select>
+        <button class="btn btn-sm" onclick="fetchClientHistory()">&#x21BB; Refresh</button>
+      </span>
+    </div>
+    <div id="client-history-content"><span class="spinner"></span></div>
+  </div>
+
   <!-- Latency History -->
   <div class="card full-width" id="card-latency" style="margin-top:16px;">
     <div class="card-title">Latency History (last 24h)</div>
@@ -2981,11 +2996,60 @@ async function deletePortForwardRule(id) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+async function fetchClientHistory(limitOverride) {
+  const sel = document.getElementById('client-history-limit');
+  const limit = limitOverride || (sel ? parseInt(sel.value, 10) : 20);
+  const el = document.getElementById('client-history-content');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/clients/history?limit=' + limit);
+    const events = resp.events || [];
+    if (events.length === 0) {
+      el.innerHTML = '<span class="dim">No connection history yet — events are recorded every 30s</span>';
+      return;
+    }
+    const rows = events.map(e => {
+      const t = new Date(e.ts * 1000).toLocaleTimeString();
+      const badge = e.event === 'connect'
+        ? '<span style="color:#3fb950;">↑ Connected</span>'
+        : '<span style="color:#f85149;">↓ Disconnected</span>';
+      const host = e.hostname || '<span class="dim">—</span>';
+      return `<tr>
+        <td style="font-family:var(--mono);font-size:12px;">${t}</td>
+        <td style="font-family:var(--mono);font-size:12px;">${e.mac}</td>
+        <td style="font-family:var(--mono);font-size:12px;">${e.ip}</td>
+        <td style="font-size:12px;">${host}</td>
+        <td style="font-size:12px;">${badge}</td>
+      </tr>`;
+    }).join('');
+    el.innerHTML = `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="color:var(--text-dim);font-size:11px;text-align:left;">
+        <th style="padding:4px 8px;">Time</th>
+        <th style="padding:4px 8px;">MAC</th>
+        <th style="padding:4px 8px;">IP</th>
+        <th style="padding:4px 8px;">Hostname</th>
+        <th style="padding:4px 8px;">Event</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  } catch(e) {
+    if (e.message !== 'Unauthorized') console.error('Client history error', e);
+    el.innerHTML = '<span class="dim">Unavailable</span>';
+  }
+}
+
+// Wire up the limit selector change
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('client-history-limit');
+  if (sel) sel.addEventListener('change', () => fetchClientHistory());
+});
+
 async function refreshAll() {
   await fetchStatus();
   await fetchQosLimits();
   await fetchAliases();
   fetchClients();
+  fetchClientHistory(20);
   fetchBandwidth();
   fetchLogs();
   fetchConfig();
