@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-05-24
+
+### Added
+
+- **Data-cap / monthly budget tracker** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`): `GET/POST /api/datacap` reads and writes `/var/lib/travel-router/datacap.json` (cap_mb, iface, reset_day, baseline_bytes, reset_ts). Computes live used_mb from `vnstat`, remaining_mb, and pct_used; auto-resets monthly on reset_day. Dashboard Data Cap card shows a color-coded progress bar (green <75% / yellow <90% / red ≥90%) and inline set-cap form.
+- **Wake-on-LAN panel** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`): `GET/POST /api/wol/targets` manages `/var/lib/travel-router/wol-targets.json` (name/MAC/broadcast triples). `POST /api/wol/send` validates MAC with regex, sends 6×0xFF + 16× MAC magic packet via UDP broadcast using pure-Python stdlib socket. Dashboard WoL card with saved-target list and inline add-target form.
+- **Latency history sparkline** (`web/app.py`, `web/static/index.html`): background daemon thread pings 8.8.8.8 every 60s using `ping -c1 -W2`, stores up to 60 samples in `_LATENCY_HISTORY`. `GET /api/latency/history` endpoint. Dashboard Latency card with inline SVG sparkline; color-coded latest value (green <20ms / yellow <50ms / red ≥50ms).
+
 ## [2.9.0] - 2026-05-24
 
 ### Added
