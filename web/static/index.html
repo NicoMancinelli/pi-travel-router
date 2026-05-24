@@ -602,6 +602,17 @@
     </div>
   </div>
 
+  <!-- Local Services (mDNS) -->
+  <div class="card full-width" id="card-mdns" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4E1; Local Services (<span id="mdns-count">0</span>)</span>
+      <button class="btn btn-sm" onclick="fetchMdnsServices()">Scan</button>
+    </div>
+    <div id="mdns-content">
+      <span style="color:var(--text-dim);font-size:13px;">No services found — click Scan to discover</span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -2863,6 +2874,7 @@ async function refreshAll() {
   fetchResourceStats();
   fetchUplinkScan();
   fetchFirewallRules();
+  fetchMdnsServices();
 }
 
 async function init() {
@@ -3134,6 +3146,58 @@ async function saveDataCap() {
     }
   } catch (e) {
     alert('Save request failed: ' + e);
+  }
+}
+
+// ── mDNS Service Browser ──────────────────────────────────────────────────────
+
+function fmtServiceType(t) {
+  return t.replace(/^_+/, '').replace(/\._?(tcp|udp)$/, '').replace(/\./g, ' ');
+}
+
+async function fetchMdnsServices() {
+  const el = document.getElementById('mdns-content');
+  const countEl = document.getElementById('mdns-count');
+  try {
+    const r = await apiFetch('/api/mdns/services');
+    const data = await r.json();
+    if (data.error && (!data.services || data.services.length === 0)) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">' + data.error + '</span>';
+      countEl.textContent = '0';
+      return;
+    }
+    const services = data.services || [];
+    countEl.textContent = services.length;
+    if (services.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No services found — click Scan to discover</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Name</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Type</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Address:Port</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Hostname</th>';
+    html += '</tr></thead><tbody>';
+    let lastType = null;
+    for (const svc of services) {
+      if (svc.type !== lastType) {
+        lastType = svc.type;
+        html += '<tr><td colspan="4" style="padding:6px 8px 2px;font-size:11px;font-weight:600;color:var(--text-dim);background:var(--bg-alt,var(--bg));letter-spacing:0.05em;text-transform:uppercase;">'
+          + fmtServiceType(svc.type) + '</td></tr>';
+      }
+      const addrPort = svc.addr ? (svc.addr + (svc.port ? ':' + svc.port : '')) : '—';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">' + (svc.name || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + fmtServiceType(svc.type) + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + addrPort + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (svc.hostname || '—') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed to load: ' + e + '</span>';
   }
 }
 

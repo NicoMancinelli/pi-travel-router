@@ -3136,6 +3136,53 @@ def ota_update():
     return jsonify({"status": "started", "message": "OTA update running in background. Check logs for progress."})
 
 
+# ── mDNS service browser ──────────────────────────────────────────────────────
+
+@app.route("/api/mdns/services", methods=["GET"])
+@require_auth
+def api_mdns_services():
+    """Return discovered mDNS/Bonjour services via avahi-browse."""
+    try:
+        result = subprocess.run(
+            ["avahi-browse", "-all", "-t", "-r", "-p"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        out = result.stdout
+    except FileNotFoundError:
+        return jsonify({"services": [], "error": "avahi-browse not available"}), 200
+    except subprocess.TimeoutExpired:
+        out = ""
+
+    services = []
+    seen = set()
+    for line in (out or "").splitlines():
+        # avahi-browse -p output format: type;iface;proto;name;stype;domain;hostname;addr;port;txt
+        parts = line.split(";")
+        if len(parts) < 9 or parts[0] != "=":
+            continue
+        _, iface, proto, name, stype, domain, hostname, addr, port = parts[:9]
+        txt = ";".join(parts[9:]) if len(parts) > 9 else ""
+        key = (name, stype, addr)
+        if key in seen:
+            continue
+        seen.add(key)
+        services.append({
+            "name": name,
+            "type": stype,
+            "hostname": hostname,
+            "addr": addr,
+            "port": int(port) if port.isdigit() else 0,
+            "proto": proto,
+            "iface": iface,
+            "txt": txt[:256],
+        })
+    # Sort: by type then name
+    services.sort(key=lambda s: (s["type"], s["name"].lower()))
+    return jsonify({"services": services[:50]})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
