@@ -3222,6 +3222,101 @@ def api_update_apply():
     return jsonify({"ok": True, "msg": "Update started in background"})
 
 
+# ── Tailscale peer map ────────────────────────────────────────────────────────
+
+@app.route("/api/tailscale/peers", methods=["GET"])
+@require_auth
+def api_tailscale_peers():
+    """Return Tailscale peer info from 'tailscale status --json'."""
+    try:
+        out, rc = _run(["tailscale", "status", "--json"], timeout=10)
+    except FileNotFoundError:
+        return jsonify({"peers": [], "self": None, "error": "tailscale not available"}), 200
+
+    if not out:
+        return jsonify({"peers": [], "self": None, "error": "no output from tailscale"}), 200
+
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        return jsonify({"peers": [], "self": None, "error": "failed to parse tailscale output"}), 200
+
+    def _peer_dict(k, v):
+        addrs = v.get("TailscaleIPs") or v.get("Addrs") or []
+        last_seen = v.get("LastSeen") or v.get("LastWrite") or ""
+        return {
+            "id": k[:12],
+            "hostname": v.get("HostName") or v.get("DNSName", "").split(".")[0],
+            "dns_name": v.get("DNSName", ""),
+            "ips": addrs[:2],  # max 2 IPs (IPv4 + IPv6)
+            "online": v.get("Online", False),
+            "os": v.get("OS", ""),
+            "last_seen": last_seen,
+            "relay": v.get("Relay", ""),
+            "exit_node": v.get("ExitNode", False),
+        }
+
+    peers = []
+    for node_key, peer in (data.get("Peer") or {}).items():
+        peers.append(_peer_dict(node_key, peer))
+
+    # Sort: online first, then alphabetically
+    peers.sort(key=lambda p: (not p["online"], p["hostname"].lower()))
+
+    self_info = None
+    if data.get("Self"):
+        self_info = _peer_dict("self", data["Self"])
+
+    return jsonify({"peers": peers, "self": self_info})
+
+
+# ── mDNS service browser ──────────────────────────────────────────────────────
+
+@app.route("/api/mdns/services", methods=["GET"])
+@require_auth
+def api_mdns_services():
+    """Return discovered mDNS/Bonjour services via avahi-browse."""
+    try:
+        result = subprocess.run(
+            ["avahi-browse", "-all", "-t", "-r", "-p"],
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+        out = result.stdout
+    except FileNotFoundError:
+        return jsonify({"services": [], "error": "avahi-browse not available"}), 200
+    except subprocess.TimeoutExpired:
+        out = ""
+
+    services = []
+    seen = set()
+    for line in (out or "").splitlines():
+        # avahi-browse -p output format: type;iface;proto;name;stype;domain;hostname;addr;port;txt
+        parts = line.split(";")
+        if len(parts) < 9 or parts[0] != "=":
+            continue
+        _, iface, proto, name, stype, domain, hostname, addr, port = parts[:9]
+        txt = ";".join(parts[9:]) if len(parts) > 9 else ""
+        key = (name, stype, addr)
+        if key in seen:
+            continue
+        seen.add(key)
+        services.append({
+            "name": name,
+            "type": stype,
+            "hostname": hostname,
+            "addr": addr,
+            "port": int(port) if port.isdigit() else 0,
+            "proto": proto,
+            "iface": iface,
+            "txt": txt[:256],
+        })
+    # Sort: by type then name
+    services.sort(key=lambda s: (s["type"], s["name"].lower()))
+    return jsonify({"services": services[:50]})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -613,6 +613,17 @@
     </div>
   </div>
 
+  <!-- Local Services (mDNS) -->
+  <div class="card full-width" id="card-mdns" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4E1; Local Services (<span id="mdns-count">0</span>)</span>
+      <button class="btn btn-sm" onclick="fetchMdnsServices()">Scan</button>
+    </div>
+    <div id="mdns-content">
+      <span style="color:var(--text-dim);font-size:13px;">No services found — click Scan to discover</span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -739,6 +750,17 @@
       <button class="btn btn-sm" onclick="fetchWgPeers()" style="margin-left:8px;">&#x21BB; Refresh</button>
     </div>
     <div id="wg-peers-content"><span class="spinner"></span></div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Tailscale peer map -->
+  <div class="card full-width">
+    <div class="card-title">
+      Tailscale Peers
+      <button class="btn btn-sm" onclick="fetchTailscalePeers()" style="margin-left:8px;">&#x21BB; Refresh</button>
+    </div>
+    <div id="tailscale-peers-content"><span class="spinner"></span></div>
   </div>
 
   <hr class="divider">
@@ -2205,6 +2227,84 @@ function closeQrModal(evt) {
   img.style.display = 'none';
 }
 
+// ── Tailscale peers ────────────────────────────────────────────────────────────
+
+function relTime(isoStr) {
+  if (!isoStr) return '—';
+  const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return Math.floor(diff/86400) + 'd ago';
+}
+
+async function fetchTailscalePeers() {
+  const el = document.getElementById('tailscale-peers-content');
+  try {
+    const resp = await apiFetch('/api/tailscale/peers');
+    if (!resp.ok) { el.innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const d = await resp.json();
+    renderTailscalePeers(d);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span class="dim">Error loading Tailscale peers</span>';
+  }
+}
+
+function renderTailscalePeers(d) {
+  const el = document.getElementById('tailscale-peers-content');
+  if (d.error) {
+    el.innerHTML = '<span class="dim">Tailscale not running or not configured</span>';
+    return;
+  }
+
+  let html = '';
+
+  // Self node at top
+  if (d.self) {
+    const s = d.self;
+    const ip = (s.ips && s.ips[0]) ? escHtml(s.ips[0]) : '—';
+    const statusDot = s.online
+      ? '<span style="color:#3fb950">&#9679;</span> Online'
+      : '<span style="color:#6e7681">&#9679;</span> Offline';
+    html += `<div style="margin-bottom:8px;padding:6px 8px;background:var(--card-header-bg,#161b22);border-radius:6px;display:flex;align-items:center;gap:8px;">
+      <strong>${escHtml(s.hostname || '(this device)')}</strong>
+      <span class="badge" style="background:#1f6feb;color:#fff;padding:1px 6px;border-radius:10px;font-size:0.75em;">This device</span>
+      <span class="dim" style="font-size:0.85em;">${ip}</span>
+      <span class="dim" style="font-size:0.85em;margin-left:auto;">${escHtml(s.os || '')}</span>
+    </div>`;
+  }
+
+  const peers = (d.peers || []).slice(0, 20);
+  if (!peers.length) {
+    html += '<span class="dim">No peers</span>';
+    el.innerHTML = html;
+    return;
+  }
+
+  let rows = peers.map(p => {
+    const name = escHtml(p.hostname || '—');
+    const ip = (p.ips && p.ips[0]) ? escHtml(p.ips[0]) : '—';
+    const statusDot = p.online
+      ? '<span style="color:#3fb950">&#9679;</span> <span style="color:#3fb950">Online</span>'
+      : '<span style="color:#6e7681">&#9679;</span> <span style="color:#6e7681">Offline</span>';
+    const os = escHtml(p.os || '—');
+    const seen = escHtml(relTime(p.last_seen));
+    const exitBadge = p.exit_node
+      ? ' <span class="badge" style="background:#d29922;color:#fff;padding:1px 5px;border-radius:10px;font-size:0.75em;">Exit Node</span>'
+      : '';
+    return `<tr>
+      <td>${name}${exitBadge}</td>
+      <td class="mono">${ip}</td>
+      <td>${statusDot}</td>
+      <td>${os}</td>
+      <td>${seen}</td>
+    </tr>`;
+  }).join('');
+
+  html += `<table><thead><tr><th>Hostname</th><th>IP</th><th>Status</th><th>OS</th><th>Last Seen</th></tr></thead><tbody>${rows}</tbody></table>`;
+  el.innerHTML = html;
+}
+
 // ── Guest Network ─────────────────────────────────────────────────────────────
 async function fetchGuestNetwork() {
   try {
@@ -2905,6 +3005,8 @@ async function refreshAll() {
   fetchResourceStats();
   fetchUplinkScan();
   fetchFirewallRules();
+  fetchTailscalePeers();
+  fetchMdnsServices();
   fetchUpdateCheck();
 }
 
@@ -3177,6 +3279,58 @@ async function saveDataCap() {
     }
   } catch (e) {
     alert('Save request failed: ' + e);
+  }
+}
+
+// ── mDNS Service Browser ──────────────────────────────────────────────────────
+
+function fmtServiceType(t) {
+  return t.replace(/^_+/, '').replace(/\._?(tcp|udp)$/, '').replace(/\./g, ' ');
+}
+
+async function fetchMdnsServices() {
+  const el = document.getElementById('mdns-content');
+  const countEl = document.getElementById('mdns-count');
+  try {
+    const r = await apiFetch('/api/mdns/services');
+    const data = await r.json();
+    if (data.error && (!data.services || data.services.length === 0)) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">' + data.error + '</span>';
+      countEl.textContent = '0';
+      return;
+    }
+    const services = data.services || [];
+    countEl.textContent = services.length;
+    if (services.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No services found — click Scan to discover</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Name</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Type</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Address:Port</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Hostname</th>';
+    html += '</tr></thead><tbody>';
+    let lastType = null;
+    for (const svc of services) {
+      if (svc.type !== lastType) {
+        lastType = svc.type;
+        html += '<tr><td colspan="4" style="padding:6px 8px 2px;font-size:11px;font-weight:600;color:var(--text-dim);background:var(--bg-alt,var(--bg));letter-spacing:0.05em;text-transform:uppercase;">'
+          + fmtServiceType(svc.type) + '</td></tr>';
+      }
+      const addrPort = svc.addr ? (svc.addr + (svc.port ? ':' + svc.port : '')) : '—';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">' + (svc.name || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + fmtServiceType(svc.type) + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + addrPort + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (svc.hostname || '—') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed to load: ' + e + '</span>';
   }
 }
 
