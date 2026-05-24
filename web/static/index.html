@@ -61,10 +61,26 @@
   .empty-row td { text-align: center; color: var(--text-dim); font-family: var(--font); font-style: italic; }
 
   /* Logs */
-  .log-panel { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 10px; height: 280px; overflow-y: auto; font-family: var(--mono); font-size: 11px; line-height: 1.6; }
+  .log-panel { background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 10px; max-height: 400px; overflow-y: auto; font-family: var(--mono); font-size: 11px; line-height: 1.6; }
   .log-line { white-space: pre-wrap; word-break: break-all; color: var(--text-dim); padding: 1px 0; }
   .log-line:hover { background: var(--bg2); }
-  .log-filters { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+  .log-error { color: var(--red) !important; }
+  .log-warn { color: var(--yellow) !important; }
+  .log-info { color: var(--text); }
+  .log-debug { color: var(--text-dim); opacity: 0.6; }
+  .log-filters { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-end; flex-wrap: wrap; }
+  .log-filters label { color: var(--text-dim); font-size: 11px; display: block; margin-bottom: 3px; }
+  .log-ctrl-group { display: flex; flex-direction: column; }
+  .log-ctrl-inline { display: flex; gap: 6px; align-items: center; }
+  .checkbox-label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-dim); cursor: pointer; user-select: none; }
+  .btn-paused { border-color: var(--yellow) !important; color: var(--yellow) !important; }
+  .btn-auto-on { border-color: var(--green); color: var(--green); }
+
+  /* Signal indicator */
+  .sig-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  .sig-green { background: var(--green); }
+  .sig-yellow { background: var(--yellow); }
+  .sig-red { background: var(--red); }
 
   /* Buttons */
   .btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg3); color: var(--text); font-size: 13px; font-family: var(--font); cursor: pointer; transition: background 0.1s; }
@@ -307,19 +323,48 @@
       <span id="log-spinner" style="display:none"><span class="spinner"></span></span>
     </div>
     <div class="log-filters">
-      <div style="display:flex;gap:4px;flex:1;max-width:320px;">
-        <div style="flex:1">
-          <label>Filter by service</label>
-          <input type="text" id="log-service" placeholder="e.g. wan-watchdog" oninput="debouncedLogRefresh()">
-        </div>
-        <div style="width:80px">
-          <label>Lines</label>
-          <input type="number" id="log-lines" value="50" min="10" max="500" style="width:100%" oninput="debouncedLogRefresh()">
+      <!-- Level filter -->
+      <div class="log-ctrl-group">
+        <label>Level</label>
+        <select id="log-level" onchange="debouncedLogRefresh()" style="width:90px;">
+          <option value="">All</option>
+          <option value="debug">DEBUG</option>
+          <option value="info">INFO</option>
+          <option value="warn">WARN</option>
+          <option value="error">ERROR</option>
+        </select>
+      </div>
+      <!-- Service filter -->
+      <div class="log-ctrl-group" style="flex:1;min-width:120px;max-width:200px;">
+        <label>Service</label>
+        <input type="text" id="log-service" placeholder="e.g. wan-watchdog" oninput="debouncedLogRefresh()">
+      </div>
+      <!-- Text search -->
+      <div class="log-ctrl-group" style="flex:2;min-width:140px;max-width:280px;">
+        <label>Search</label>
+        <input type="text" id="log-search" placeholder="case-insensitive text search" oninput="debouncedLogRefresh()">
+      </div>
+      <!-- Limit -->
+      <div class="log-ctrl-group" style="width:72px;">
+        <label>Limit</label>
+        <input type="number" id="log-lines" value="200" min="10" max="1000" style="width:100%" oninput="debouncedLogRefresh()">
+      </div>
+      <!-- Controls -->
+      <div class="log-ctrl-group">
+        <label>&nbsp;</label>
+        <div class="log-ctrl-inline">
+          <button class="btn btn-sm" onclick="fetchLogs()">&#x21BB;</button>
+          <button class="btn btn-sm" onclick="clearLogFilters()">&#x2715; Clear</button>
+          <button class="btn btn-sm" id="btn-pause-log" onclick="togglePauseLog()" title="Pause log auto-refresh">&#x23F8; Pause</button>
         </div>
       </div>
-      <div style="display:flex;gap:4px;margin-top:18px;">
-        <button class="btn btn-sm" onclick="fetchLogs()">&#x21BB; Refresh</button>
-        <button class="btn btn-sm" onclick="toggleAutoLog()" id="btn-auto-log">Auto OFF</button>
+      <!-- Auto-scroll -->
+      <div class="log-ctrl-group">
+        <label>&nbsp;</label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="log-autoscroll" checked>
+          Auto-scroll
+        </label>
       </div>
     </div>
     <div class="log-panel" id="log-panel">
@@ -411,6 +456,7 @@ let _statusInterval = null;
 let _logDebounce = null;
 let _configData = {};
 let _updateCheckResult = null; // fetched once on init
+let _logPaused = false;        // pause log auto-refresh
 
 const SERVICES = [
   'hostapd', 'NetworkManager', 'adguardhome',
@@ -461,8 +507,21 @@ function fmtBytes(b) {
 }
 function fmtSignal(s) {
   if (s == null) return '-';
-  const cls = s >= -60 ? 'green' : s >= -75 ? 'yellow' : 'red';
+  const cls = s >= -65 ? 'green' : s >= -80 ? 'yellow' : 'red';
   return `<span style="color:var(--${cls})">${s} dBm</span>`;
+}
+function fmtSignalWithDot(s) {
+  if (s == null) return '<span class="dim">—</span>';
+  const cls = s >= -65 ? 'sig-green' : s >= -80 ? 'sig-yellow' : 'sig-red';
+  const txtCls = s >= -65 ? 'green' : s >= -80 ? 'yellow' : 'red';
+  return `<span class="sig-dot ${cls}"></span><span style="color:var(--${txtCls})">${s} dBm</span>`;
+}
+function fmtConnected(secs) {
+  if (secs == null) return '—';
+  if (secs < 60) return secs + 's';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm';
+  if (secs < 86400) return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+  return Math.floor(secs / 86400) + 'd';
 }
 function badge(text, type) {
   return `<span class="badge badge-${type}"><span class="dot"></span>${text}</span>`;
@@ -483,7 +542,6 @@ async function fetchStatus() {
     renderVPN(d.vpn);
     renderSystem(d.system);
     renderHealth(d.system);
-    renderClients(d.ap_clients);
     const ts = new Date(d.timestamp * 1000);
     document.getElementById('last-refresh').textContent =
       'Updated ' + ts.toLocaleTimeString();
@@ -647,15 +705,40 @@ function renderClients(clients) {
   if (!Array.isArray(clients)) { document.getElementById('clients-content').innerHTML = '<span class="dim">No data</span>'; return; }
   if (clients.length === 0) {
     document.getElementById('clients-content').innerHTML =
-      '<table><thead><tr><th>MAC</th><th>Signal</th><th>RX</th><th>TX</th></tr></thead>' +
-      '<tbody><tr class="empty-row"><td colspan="4">No clients connected</td></tr></tbody></table>';
+      '<div style="text-align:center;padding:20px;color:var(--text-dim);">' +
+      '<div style="font-size:28px;margin-bottom:8px;">&#x1F4F6;</div>' +
+      '<div style="font-size:13px;">No clients connected</div></div>';
     return;
   }
-  let rows = clients.map(c =>
-    `<tr><td>${c.mac}</td><td>${fmtSignal(c.signal)}</td><td>${fmtBytes(c.rx_bytes)}</td><td>${fmtBytes(c.tx_bytes)}</td></tr>`
-  ).join('');
+  let rows = clients.map(c => {
+    const hostname = c.hostname ? escHtml(c.hostname) : null;
+    const mac = escHtml(c.mac || '?');
+    const nameCell = hostname
+      ? `<span title="${mac}" style="cursor:default;">${hostname}</span><br><span class="dim" style="font-size:10px;">${mac}</span>`
+      : `<span class="mono">${mac}</span>`;
+    const ip = c.ip ? escHtml(c.ip) : '<span class="dim">—</span>';
+    return `<tr>
+      <td>${nameCell}</td>
+      <td class="mono">${ip}</td>
+      <td>${fmtSignalWithDot(c.signal)}</td>
+      <td class="mono">${fmtConnected(c.connected_since)}</td>
+      <td class="mono">&#x2193; ${fmtBytes(c.rx_bytes)}</td>
+      <td class="mono">&#x2191; ${fmtBytes(c.tx_bytes)}</td>
+    </tr>`;
+  }).join('');
   document.getElementById('clients-content').innerHTML =
-    `<table><thead><tr><th>MAC</th><th>Signal</th><th>RX</th><th>TX</th></tr></thead><tbody>${rows}</tbody></table>`;
+    `<table><thead><tr><th>Hostname</th><th>IP</th><th>Signal</th><th>Connected</th><th>RX</th><th>TX</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function fetchClients() {
+  try {
+    const resp = await apiFetch('/api/clients');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    renderClients(d.clients || []);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('Clients error', e);
+  }
 }
 
 // ── Bandwidth ─────────────────────────────────────────────────────────────────
@@ -702,24 +785,46 @@ function renderBandwidth(data) {
 // ── Logs ──────────────────────────────────────────────────────────────────────
 function debouncedLogRefresh() {
   clearTimeout(_logDebounce);
-  _logDebounce = setTimeout(fetchLogs, 400);
+  _logDebounce = setTimeout(fetchLogs, 300);
+}
+
+function _classifyLogLine(line) {
+  const upper = line.toUpperCase();
+  if (/\[ERROR\]|\bERROR\b|\[FATAL\]|\bFATAL\b|\b\[error\]/.test(line) ||
+      /"level"\s*:\s*"(error|fatal|critical)"/.test(line)) return 'log-error';
+  if (/\[WARN\]|\[WARNING\]|\bWARN\b|\bWARNING\b|\[warn\]/.test(line) ||
+      /"level"\s*:\s*"(warn|warning)"/.test(line)) return 'log-warn';
+  if (/\[DEBUG\]|\bDEBUG\b|\[debug\]/.test(line) ||
+      /"level"\s*:\s*"debug"/.test(line)) return 'log-debug';
+  if (/\[INFO\]|\bINFO\b|\[info\]/.test(line) ||
+      /"level"\s*:\s*"info"/.test(line)) return 'log-info';
+  return '';
 }
 
 async function fetchLogs() {
+  if (_logPaused) return;
   const service = document.getElementById('log-service').value.trim();
-  const lines = parseInt(document.getElementById('log-lines').value) || 50;
+  const level = document.getElementById('log-level').value;
+  const q = document.getElementById('log-search').value.trim();
+  const limit = parseInt(document.getElementById('log-lines').value) || 200;
   document.getElementById('log-spinner').style.display = '';
   try {
-    const params = new URLSearchParams({ lines });
+    const params = new URLSearchParams({ limit });
     if (service) params.set('service', service);
+    if (level) params.set('level', level);
+    if (q) params.set('q', q);
     const resp = await apiFetch('/api/logs?' + params);
     if (!resp.ok) { document.getElementById('log-panel').innerHTML = '<div class="log-line dim">Error fetching logs</div>'; return; }
     const d = await resp.json();
     const panel = document.getElementById('log-panel');
+    const autoScroll = document.getElementById('log-autoscroll').checked;
     const atBottom = panel.scrollHeight - panel.scrollTop - panel.clientHeight < 40;
-    panel.innerHTML = (d.lines || []).map(l => `<div class="log-line">${escHtml(l)}</div>`).join('') ||
-      '<div class="log-line dim">No log entries found</div>';
-    if (atBottom) panel.scrollTop = panel.scrollHeight;
+    const lines = d.lines || [];
+    panel.innerHTML = lines.map(l => {
+      const cls = _classifyLogLine(l);
+      return `<div class="log-line${cls ? ' ' + cls : ''}">${escHtml(l)}</div>`;
+    }).join('') || '<div class="log-line dim">No log entries found</div>';
+    if (autoScroll && atBottom) panel.scrollTop = panel.scrollHeight;
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('Log error', e);
   } finally {
@@ -727,23 +832,29 @@ async function fetchLogs() {
   }
 }
 
-function toggleAutoLog() {
-  const btn = document.getElementById('btn-auto-log');
-  if (_autoLogInterval) {
-    clearInterval(_autoLogInterval);
-    _autoLogInterval = null;
-    btn.textContent = 'Auto OFF';
+function clearLogFilters() {
+  document.getElementById('log-level').value = '';
+  document.getElementById('log-service').value = '';
+  document.getElementById('log-search').value = '';
+  document.getElementById('log-lines').value = '200';
+  fetchLogs();
+}
+
+function togglePauseLog() {
+  _logPaused = !_logPaused;
+  const btn = document.getElementById('btn-pause-log');
+  if (_logPaused) {
+    btn.textContent = '▶ Resume';
+    btn.classList.add('btn-paused');
   } else {
-    _autoLogInterval = setInterval(fetchLogs, 5000);
-    btn.textContent = 'Auto ON';
-    btn.style.borderColor = 'var(--green)';
-    btn.style.color = 'var(--green)';
-  }
-  if (!_autoLogInterval) {
-    btn.style.borderColor = '';
-    btn.style.color = '';
+    btn.textContent = '⏸ Pause';
+    btn.classList.remove('btn-paused');
+    fetchLogs();
   }
 }
+
+// Legacy: kept for backward compat if called from old code
+function toggleAutoLog() { togglePauseLog(); }
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 async function fetchConfig() {
@@ -1104,6 +1215,7 @@ function escAttr(s) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function refreshAll() {
   await fetchStatus();
+  fetchClients();
   fetchBandwidth();
   fetchLogs();
   fetchConfig();
@@ -1117,8 +1229,10 @@ async function init() {
   await refreshAll();
   // Fetch update check once (calls GitHub API — not repeated on every refresh)
   fetchUpdateCheck();
-  // Auto-refresh status every 10s
-  _statusInterval = setInterval(fetchStatus, 10000);
+  // Auto-refresh status + clients every 10s
+  _statusInterval = setInterval(() => { fetchStatus(); fetchClients(); }, 10000);
+  // Auto-refresh logs every 5s (independently)
+  _autoLogInterval = setInterval(fetchLogs, 5000);
 }
 
 init();

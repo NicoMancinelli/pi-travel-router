@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import time
 import urllib.parse
+from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -188,6 +189,69 @@ def _ap_clients():
                 current["rx_bytes"] = int(m.group(1))
     if current:
         clients.append(current)
+    return clients
+
+
+def _ap_clients_rich():
+    """Return AP clients with hostname, IP, and connected_since from iw + dnsmasq leases."""
+    out, rc = _run("iw dev uap0 station dump")
+    if rc != 0:
+        return []
+
+    # Parse iw station dump
+    clients = []
+    current = {}
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("Station"):
+            if current:
+                clients.append(current)
+            parts = line.split()
+            current = {
+                "mac": parts[1] if len(parts) > 1 else "?",
+                "signal": None,
+                "tx_bytes": None,
+                "rx_bytes": None,
+                "connected_since": None,
+            }
+        elif "signal:" in line:
+            m = re.search(r"signal:\s*([-\d]+)", line)
+            if m and current:
+                current["signal"] = int(m.group(1))
+        elif "tx bytes:" in line:
+            m = re.search(r"tx bytes:\s*(\d+)", line)
+            if m and current:
+                current["tx_bytes"] = int(m.group(1))
+        elif "rx bytes:" in line:
+            m = re.search(r"rx bytes:\s*(\d+)", line)
+            if m and current:
+                current["rx_bytes"] = int(m.group(1))
+        elif "connected time:" in line:
+            m = re.search(r"connected time:\s*(\d+)", line)
+            if m and current:
+                current["connected_since"] = int(m.group(1))
+    if current:
+        clients.append(current)
+
+    # Load dnsmasq leases: timestamp mac ip hostname client-id
+    leases = {}  # mac -> {"ip": ..., "hostname": ...}
+    try:
+        for lease_line in Path("/var/lib/misc/dnsmasq.leases").read_text().splitlines():
+            parts = lease_line.split()
+            if len(parts) >= 4:
+                mac_l = parts[1].lower()
+                ip_l = parts[2]
+                hostname_l = parts[3] if parts[3] != "*" else None
+                leases[mac_l] = {"ip": ip_l, "hostname": hostname_l}
+    except OSError:
+        pass
+
+    # Merge lease info
+    for c in clients:
+        lease = leases.get(c["mac"].lower(), {})
+        c["ip"] = lease.get("ip")
+        c["hostname"] = lease.get("hostname")
+
     return clients
 
 
@@ -392,14 +456,86 @@ def api_status():
     return jsonify(result_dict)
 
 
+def _parse_log_level(line):
+    """Return normalised log level string for a log line, or None if undetectable."""
+    # Try JSON structured log first: {"level": "info", ...}
+    if line.lstrip().startswith("{"):
+        try:
+            obj = json.loads(line)
+            lvl = str(obj.get("level", "")).lower()
+            if lvl in ("debug", "info", "warn", "warning", "error", "fatal", "critical"):
+                return "warn" if lvl == "warning" else ("error" if lvl in ("fatal", "critical") else lvl)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    # Text patterns: [INFO], [WARN], [ERROR], [DEBUG] or uppercase words
+    m = re.search(
+        r'\[(debug|info|warn(?:ing)?|error|fatal|critical)\]',
+        line, re.IGNORECASE
+    )
+    if m:
+        lvl = m.group(1).lower()
+        return "warn" if lvl in ("warn", "warning") else ("error" if lvl in ("fatal", "critical") else lvl)
+    # systemd/journald style: daemon[pid]: LEVEL:
+    m2 = re.search(r'\b(DEBUG|INFO|WARN(?:ING)?|ERROR|FATAL|CRITICAL)\b', line)
+    if m2:
+        lvl = m2.group(1).lower()
+        return "warn" if lvl in ("warn", "warning") else ("error" if lvl in ("fatal", "critical") else lvl)
+    return None
+
+
+def _parse_log_timestamp(line):
+    """Try to extract a datetime from a log line. Returns datetime or None."""
+    # ISO 8601 / journald style: 2024-01-15T12:34:56 or 2024-01-15 12:34:56
+    m = re.search(r'(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})', line)
+    if m:
+        ts_str = m.group(1).replace(" ", "T")
+        try:
+            return datetime.fromisoformat(ts_str).replace(tzinfo=timezone.utc)
+        except ValueError:
+            pass
+    # JSON log: {"ts": 1234567890, ...} or {"time": "..."}
+    if line.lstrip().startswith("{"):
+        try:
+            obj = json.loads(line)
+            for key in ("ts", "time", "timestamp", "@timestamp"):
+                val = obj.get(key)
+                if isinstance(val, (int, float)):
+                    return datetime.fromtimestamp(val, tz=timezone.utc)
+                if isinstance(val, str):
+                    try:
+                        return datetime.fromisoformat(val.rstrip("Z")).replace(tzinfo=timezone.utc)
+                    except ValueError:
+                        pass
+        except (json.JSONDecodeError, AttributeError, OSError):
+            pass
+    return None
+
+
+@app.route("/api/logs/levels")
+@require_auth
+def api_logs_levels():
+    return jsonify({"levels": ["debug", "info", "warn", "error"]})
+
+
 @app.route("/api/logs")
 @require_auth
 def api_logs():
     service = request.args.get("service", "")
+    level_filter = request.args.get("level", "").lower()
+    since_str = request.args.get("since", "")
+    q_filter = request.args.get("q", "").lower()
     try:
-        lines_n = max(1, min(int(request.args.get("lines", "50")), 500))
+        limit = max(1, min(int(request.args.get("limit", request.args.get("lines", "200"))), 1000))
     except ValueError:
-        return jsonify({"error": "Invalid lines parameter"}), 400
+        return jsonify({"error": "Invalid limit parameter"}), 400
+
+    # Parse "since" timestamp
+    since_dt = None
+    if since_str:
+        try:
+            since_dt = datetime.fromisoformat(since_str.rstrip("Z")).replace(tzinfo=timezone.utc)
+        except ValueError:
+            return jsonify({"error": "Invalid since parameter (expected ISO 8601)"}), 400
 
     try:
         all_lines = Path(COMBINED_LOG).read_text(errors="replace").splitlines()
@@ -407,11 +543,36 @@ def api_logs():
         all_lines = []
 
     if service:
-        # Sanitise service name before using in regex
         safe = re.escape(service)
         all_lines = [l for l in all_lines if re.search(safe, l, re.IGNORECASE)]
 
-    return jsonify({"lines": all_lines[-lines_n:], "total": len(all_lines)})
+    if level_filter and level_filter in ("debug", "info", "warn", "error"):
+        def _line_matches_level(line, wanted):
+            lvl = _parse_log_level(line)
+            if lvl is None:
+                return True  # don't discard undetectable lines
+            return lvl == wanted
+        all_lines = [l for l in all_lines if _line_matches_level(l, level_filter)]
+
+    if since_dt:
+        filtered = []
+        for line in all_lines:
+            ts = _parse_log_timestamp(line)
+            if ts is None or ts >= since_dt:
+                filtered.append(line)
+        all_lines = filtered
+
+    if q_filter:
+        all_lines = [l for l in all_lines if q_filter in l.lower()]
+
+    return jsonify({"lines": all_lines[-limit:], "total": len(all_lines)})
+
+
+@app.route("/api/clients")
+@require_auth
+def api_clients():
+    clients = _ap_clients_rich()
+    return jsonify({"clients": clients, "count": len(clients)})
 
 
 @app.route("/api/bandwidth")
