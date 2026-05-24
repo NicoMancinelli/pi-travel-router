@@ -446,6 +446,19 @@
     </div>
   </div>
 
+  <!-- Storage (USB/SD) -->
+  <div class="card full-width" id="card-storage" style="margin-top:16px;">
+    <div class="card-title">&#x1F4BE; Storage (USB / SD)</div>
+    <div id="storage-status" style="font-size:13px;margin-bottom:10px;color:var(--text-dim);">Loading&hellip;</div>
+    <div id="storage-devices" style="margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-danger" id="btn-unmount-storage" onclick="unmountStorage()" style="display:none;">
+        &#x23CF; Unmount
+      </button>
+      <button class="btn btn-sm" onclick="fetchStorage()">&#x21BB; Refresh</button>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -2095,13 +2108,50 @@ async function fetchCaptiveStatus() {
           <div class="field"><label>Username</label><input type="text" id="captive-username" placeholder="username or email"></div>
           <div class="field"><label>Password</label><input type="password" id="captive-password" placeholder="password"></div>
           <button class="btn btn-primary" onclick="captiveBypass()">Attempt Auto-Login</button>
+          <div id="captive-creds-hint" style="margin-top:8px;font-size:12px;color:var(--text-dim);display:none;"></div>
           <div id="captive-result" style="margin-top:10px;font-size:12px;display:none;"></div>
         </div>`;
+      fetchCaptiveCredentials();
     } else {
       el.innerHTML = '<span style="color:var(--green);">&#x2713; No captive portal detected</span>';
     }
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span class="dim">Error checking captive portal status</span>';
+  }
+}
+
+async function fetchCaptiveCredentials() {
+  try {
+    const resp = await apiFetch('/api/captive/credentials');
+    if (!resp.ok) return;
+    const d = await resp.json();
+    if (!d || !d.username) return;
+    const uEl = document.getElementById('captive-username');
+    const pEl = document.getElementById('captive-password');
+    const hintEl = document.getElementById('captive-creds-hint');
+    if (uEl) uEl.value = d.username;
+    if (pEl) pEl.value = d.password || '';
+    if (hintEl) {
+      let host = d.url || '';
+      try { host = new URL(d.url).hostname; } catch (_) {}
+      hintEl.style.display = 'block';
+      hintEl.innerHTML = `&#x21A9; Last used: <strong>${esc(host)}</strong> &nbsp; <a href="#" style="color:var(--accent);font-size:11px;" onclick="forgetCaptiveCredentials();return false;">Forget saved credentials</a>`;
+    }
+  } catch (_) {}
+}
+
+async function forgetCaptiveCredentials() {
+  try {
+    await apiFetch('/api/captive/credentials', { method: 'DELETE' });
+    const uEl = document.getElementById('captive-username');
+    const pEl = document.getElementById('captive-password');
+    const hintEl = document.getElementById('captive-creds-hint');
+    if (uEl) uEl.value = '';
+    if (pEl) pEl.value = '';
+    if (hintEl) hintEl.style.display = 'none';
+    toast('Saved credentials cleared', 'ok');
+  } catch (e) {
+    toast('Failed to clear credentials: ' + e.message, 'err');
   }
 }
 
@@ -2150,6 +2200,7 @@ async function refreshAll() {
   fetchCaptiveStatus();
   fetchSignal();
   fetchRebootSchedule();
+  fetchStorage();
 }
 
 async function init() {
@@ -2167,6 +2218,103 @@ async function init() {
 }
 
 init();
+
+// ── Storage (USB/SD) ──────────────────────────────────────────────────────────
+async function fetchStorage() {
+  try {
+    const r = await apiFetch('/api/storage');
+    if (!r.ok) return;
+    const data = await r.json();
+    _renderStorage(data);
+  } catch (e) {
+    const el = document.getElementById('storage-status');
+    if (el) el.textContent = 'Storage unavailable';
+  }
+}
+
+function _renderStorage(data) {
+  const statusEl = document.getElementById('storage-status');
+  const devicesEl = document.getElementById('storage-devices');
+  const unmountBtn = document.getElementById('btn-unmount-storage');
+
+  if (statusEl) {
+    if (data.mounted) {
+      const free = data.free_gb != null ? data.free_gb + ' GB free' : '';
+      const total = data.total_gb != null ? ' of ' + data.total_gb + ' GB total' : '';
+      statusEl.innerHTML = '<span style="color:var(--green)">&#x2713; Mounted at ' +
+        data.mount_point + '</span>' +
+        (free ? ' &mdash; ' + free + total : '');
+    } else {
+      statusEl.textContent = 'Not mounted — select a device below to mount';
+    }
+  }
+
+  if (unmountBtn) {
+    unmountBtn.style.display = data.mounted ? '' : 'none';
+  }
+
+  if (devicesEl) {
+    const devices = data.devices || [];
+    if (devices.length === 0) {
+      devicesEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No removable devices detected</span>';
+    } else {
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="color:var(--text-dim);text-align:left;">' +
+        '<th style="padding:4px 8px;">Device</th>' +
+        '<th style="padding:4px 8px;">Size</th>' +
+        '<th style="padding:4px 8px;">FS</th>' +
+        '<th style="padding:4px 8px;">Label</th>' +
+        '<th style="padding:4px 8px;"></th>' +
+        '</tr></thead><tbody>';
+      for (const dev of devices) {
+        const nameEsc = dev.name.replace(/[^a-z0-9]/g, '');
+        html += '<tr style="border-top:1px solid var(--border);">' +
+          '<td style="padding:4px 8px;font-family:monospace;">/dev/' + nameEsc + '</td>' +
+          '<td style="padding:4px 8px;">' + (dev.size || '?') + '</td>' +
+          '<td style="padding:4px 8px;">' + (dev.fstype || '?') + '</td>' +
+          '<td style="padding:4px 8px;">' + (dev.label || '') + '</td>' +
+          '<td style="padding:4px 8px;">' +
+          '<button class="btn btn-sm btn-primary" onclick="mountDevice(\'' + nameEsc + '\')">Mount</button>' +
+          '</td></tr>';
+      }
+      html += '</tbody></table>';
+      devicesEl.innerHTML = html;
+    }
+  }
+}
+
+async function mountDevice(name) {
+  if (!name || !/^[a-z0-9]+$/.test(name)) return;
+  try {
+    const r = await apiFetch('/api/storage/mount', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({device: name}),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      await fetchStorage();
+    } else {
+      alert('Mount failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Mount request failed: ' + e);
+  }
+}
+
+async function unmountStorage() {
+  try {
+    const r = await apiFetch('/api/storage/unmount', {method: 'POST'});
+    const data = await r.json();
+    if (data.ok) {
+      await fetchStorage();
+    } else {
+      alert('Unmount failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Unmount request failed: ' + e);
+  }
+}
 </script>
 </body>
 </html>

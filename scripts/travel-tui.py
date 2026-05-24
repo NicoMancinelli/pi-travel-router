@@ -2661,6 +2661,7 @@ class TracerouteScreen(Screen):
 
 # ── Captive Portal screen ─────────────────────────────────────────────────────
 CAPTIVE_JSON_PATH = "/var/lib/travel-router/captive-portal.json"
+CAPTIVE_CREDS_PATH = "/var/lib/travel-router/captive-creds.json"
 CAPTIVE_CHECK_CMD = "/usr/local/sbin/captive-check.sh"
 
 
@@ -2671,6 +2672,7 @@ class CaptivePortalScreen(Screen):
         Binding("q,escape", "pop_screen", "Back"),
         Binding("r", "refresh_status", "Refresh"),
         Binding("o", "open_portal", "Open in browser"),
+        Binding("f", "forget_creds", "Forget saved creds"),
     ]
 
     _detected: reactive[bool] = reactive(False, layout=True)
@@ -2681,9 +2683,11 @@ class CaptivePortalScreen(Screen):
         yield Label("Captive Portal", classes="panel-title")
         yield Static(id="captive-status-line")
         yield Static(id="captive-url-line")
+        yield Static(id="captive-creds-line")
         with ScrollableContainer():
             yield Button("Re-run captive-check.sh  [R]", id="cp-recheck-btn", classes="action")
             yield Button("Open portal URL in browser  [O]", id="cp-open-btn", classes="action")
+            yield Button("Forget saved credentials  [F]", id="cp-forget-btn", classes="action")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -2695,6 +2699,7 @@ class CaptivePortalScreen(Screen):
     def _fetch_status(self) -> None:
         detected = False
         url = ""
+        creds_line = ""
         try:
             import json as _json
             with open(CAPTIVE_JSON_PATH) as fh:
@@ -2703,9 +2708,24 @@ class CaptivePortalScreen(Screen):
             url = str(data.get("url", "") or "")
         except (OSError, ValueError):
             pass
-        self.call_from_thread(self._apply_status, detected, url)
+        try:
+            import json as _json
+            with open(CAPTIVE_CREDS_PATH) as fh:
+                creds = _json.load(fh)
+            saved_user = str(creds.get("username", "") or "")
+            saved_url = str(creds.get("url", "") or "")
+            if saved_user:
+                try:
+                    from urllib.parse import urlparse as _urlparse
+                    host = _urlparse(saved_url).hostname or saved_url
+                except Exception:
+                    host = saved_url
+                creds_line = f"[@dim]Saved:[/] [@cyan]{saved_user}[/] [@dim]@[/] [@cyan]{host}[/]  [@dim](press F to forget)[/]"
+        except (OSError, ValueError):
+            pass
+        self.call_from_thread(self._apply_status, detected, url, creds_line)
 
-    def _apply_status(self, detected: bool, url: str) -> None:
+    def _apply_status(self, detected: bool, url: str, creds_line: str) -> None:
         self._detected = detected
         self._portal_url = url
         try:
@@ -2721,6 +2741,7 @@ class CaptivePortalScreen(Screen):
                     "[@green]✓ No captive portal detected — internet clear[/]"
                 )
                 self.query_one("#captive-url-line", Static).update("")
+            self.query_one("#captive-creds-line", Static).update(creds_line)
         except Exception:
             pass
 
@@ -2730,6 +2751,8 @@ class CaptivePortalScreen(Screen):
             self.action_refresh_status()
         elif bid == "cp-open-btn":
             self.action_open_portal()
+        elif bid == "cp-forget-btn":
+            self.action_forget_creds()
 
     def action_refresh_status(self) -> None:
         try:
@@ -2741,6 +2764,16 @@ class CaptivePortalScreen(Screen):
     def _run_check(self) -> None:
         run([CAPTIVE_CHECK_CMD], timeout=30)
         self._fetch_status()
+
+    def action_forget_creds(self) -> None:
+        try:
+            import os as _os
+            _os.unlink(CAPTIVE_CREDS_PATH)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            pass
+        self._load_status()
 
     def action_open_portal(self) -> None:
         url = self._portal_url
