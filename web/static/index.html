@@ -476,6 +476,23 @@
 
   <hr class="divider">
 
+  <!-- Firewall Rules -->
+  <div class="card full-width" id="card-firewall">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F6E1; Firewall Rules</span>
+      <button class="btn btn-sm" onclick="fetchFirewallRules()">&#x21BB; Refresh</button>
+    </div>
+    <div style="margin-bottom:10px;display:flex;gap:8px;">
+      <button class="btn btn-sm" id="fw-tab-filter" onclick="firewallTab('filter')" style="font-weight:600;">Filter</button>
+      <button class="btn btn-sm" id="fw-tab-nat" onclick="firewallTab('nat')">NAT</button>
+    </div>
+    <pre id="fw-output-filter" style="font-size:11px;font-family:monospace;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;margin:0;max-height:300px;overflow-y:auto;white-space:pre;color:var(--text);">Loading&hellip;</pre>
+    <pre id="fw-output-nat" style="font-size:11px;font-family:monospace;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;margin:0;max-height:300px;overflow-y:auto;white-space:pre;color:var(--text);display:none;">Loading&hellip;</pre>
+    <div id="fw-updated" style="font-size:11px;color:var(--text-dim);margin-top:6px;"></div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Backup & Restore -->
   <div class="card full-width" id="card-backup">
     <div class="card-title">&#x1F4BE; Backup &amp; Restore</div>
@@ -2683,6 +2700,7 @@ async function refreshAll() {
   fetchLatencyHistory();
   fetchResourceStats();
   fetchUplinkScan();
+  fetchFirewallRules();
 }
 
 async function init() {
@@ -2953,6 +2971,40 @@ async function saveDataCap() {
     }
   } catch (e) {
     alert('Save request failed: ' + e);
+  }
+}
+
+// ── Firewall Rules ─────────────────────────────────────────────────────────────
+
+let _fwActiveTab = 'filter';
+
+function firewallTab(tab) {
+  _fwActiveTab = tab;
+  document.getElementById('fw-output-filter').style.display = tab === 'filter' ? '' : 'none';
+  document.getElementById('fw-output-nat').style.display   = tab === 'nat'    ? '' : 'none';
+  document.getElementById('fw-tab-filter').style.fontWeight = tab === 'filter' ? '600' : '';
+  document.getElementById('fw-tab-nat').style.fontWeight    = tab === 'nat'    ? '600' : '';
+}
+
+async function fetchFirewallRules() {
+  try {
+    const r = await apiFetch('/api/firewall/rules');
+    const data = await r.json();
+    const filterEl = document.getElementById('fw-output-filter');
+    const natEl    = document.getElementById('fw-output-nat');
+    const updEl    = document.getElementById('fw-updated');
+    if (data.error && !data.raw_filter && !data.raw_nat) {
+      filterEl.textContent = 'Error: ' + data.error;
+      natEl.textContent    = 'Error: ' + data.error;
+    } else {
+      filterEl.textContent = data.raw_filter || '(no output)';
+      natEl.textContent    = data.raw_nat    || '(no output)';
+    }
+    const now = new Date();
+    updEl.textContent = 'Last updated: ' + now.toTimeString().slice(0,8);
+  } catch (e) {
+    const filterEl = document.getElementById('fw-output-filter');
+    if (filterEl) filterEl.textContent = 'Failed to load: ' + e;
   }
 }
 </script>
