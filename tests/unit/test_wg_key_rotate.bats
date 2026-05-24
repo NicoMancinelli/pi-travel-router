@@ -38,13 +38,15 @@ EOF
     mock_cmd "notify-router.sh" "" 0
     mock_cmd "systemctl"       "" 0
 
-    # wg genkey / pubkey mock: write keys and print them
+    # wg genkey / pubkey mock: write keys and print them.
+    # pubkey drains stdin so tee does not receive SIGPIPE under pipefail.
     mock_cmd_script "wg" "
         case \"\$1\" in
             genkey)
                 printf '%s\n' '${FAKE_PRIVATE_KEY}'
                 ;;
             pubkey)
+                cat > /dev/null
                 printf '%s\n' '${FAKE_PUBLIC_KEY}'
                 ;;
             *)
