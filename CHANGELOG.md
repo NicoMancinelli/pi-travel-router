@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-05-24
+
+### Added
+
+- **Captive portal credential memory** (`web/app.py`, `web/static/index.html`, `scripts/travel-tui.py`): `GET/POST/DELETE /api/captive/credentials`; successful bypass auto-saves URL+username+password atomically. Dashboard pre-fills the bypass form with saved creds and shows "Last used: <hostname>" hint with a Forget link. TUI `[F]` key clears saved creds.
+- **Traceroute card** (`web/app.py`, `web/static/index.html`, `scripts/travel-tui.py`): `POST /api/traceroute` validates target (hostname/IP regex, no shell metacharacters), runs `traceroute -n -m 15 -w 2`, returns per-hop `{hop, ip, rtts_ms}`. Dashboard Traceroute card with target input and color-coded hop table (green <20ms / yellow <100ms / red ≥100ms). TUI `TracerouteScreen` (press `T`).
+- **USB/SD mount manager** (`scripts/mount-storage.sh`, `web/app.py`, `web/static/index.html`, `scripts/travel-tui.py`): `list`/`mount <device>`/`unmount` subcommands; device name validated `^[a-z0-9]+$`. `GET /api/storage` returns removable device list + mount status + df usage; `POST /api/storage/mount` / `POST /api/storage/unmount`. Dashboard Storage card with per-device Mount button and Unmount button. TUI `StorageScreen` (press `U`).
+
 ## [2.8.0] - 2026-05-24
 
 ### Added
