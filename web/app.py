@@ -3136,6 +3136,92 @@ def ota_update():
     return jsonify({"status": "started", "message": "OTA update running in background. Check logs for progress."})
 
 
+# ── Update checker ────────────────────────────────────────────────────────────
+
+_UPDATE_CACHE: dict = {"ts": 0, "data": {}}
+_UPDATE_LOCK = threading.Lock()
+_GITHUB_RELEASES_URL = "https://api.github.com/repos/NicoMancinelli/pi-travel-router/releases/latest"
+
+
+def _get_installed_version() -> str:
+    try:
+        return Path("/etc/travel-router-version").read_text().strip()
+    except OSError:
+        # Fall back to local VERSION file for dev
+        try:
+            return Path("VERSION").read_text().strip()
+        except OSError:
+            return "unknown"
+
+
+@app.route("/api/update/check", methods=["GET"])
+@require_auth
+def api_update_check():
+    """Check GitHub releases for a newer version. Cached for 1 hour."""
+    import urllib.request
+
+    with _UPDATE_LOCK:
+        now = time.time()
+        if now - _UPDATE_CACHE["ts"] < 3600 and _UPDATE_CACHE["data"]:
+            return jsonify(_UPDATE_CACHE["data"])
+
+    installed = _get_installed_version()
+    result: dict = {
+        "installed": installed,
+        "latest": None,
+        "update_available": False,
+        "release_url": None,
+        "error": None,
+        "cached": False,
+    }
+
+    try:
+        req = urllib.request.Request(
+            _GITHUB_RELEASES_URL,
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "travel-router/1"},
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            gh = json.loads(resp.read())
+        latest = gh.get("tag_name", "").lstrip("v")
+        result["latest"] = latest
+        result["release_url"] = gh.get("html_url", "")
+
+        def _vt(s):
+            try:
+                return tuple(int(x) for x in s.split("."))
+            except ValueError:
+                return (0,)
+
+        if latest and installed != "unknown":
+            result["update_available"] = _vt(latest) > _vt(installed)
+    except Exception as exc:
+        result["error"] = str(exc)[:128]
+
+    with _UPDATE_LOCK:
+        _UPDATE_CACHE["ts"] = time.time()
+        _UPDATE_CACHE["data"] = {**result, "cached": True}
+
+    return jsonify(result)
+
+
+@app.route("/api/update/apply", methods=["POST"])
+@require_auth_always
+def api_update_apply():
+    """Trigger the update-router.sh script in the background."""
+    script = "/usr/local/sbin/update-router.sh"
+    if not Path(script).exists():
+        return jsonify({"error": f"{script} not found"}), 404
+    import subprocess
+    subprocess.Popen(
+        ["sudo", script],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    _push_event("update_started", {"msg": "Update started — router will restart when complete"})
+    return jsonify({"ok": True, "msg": "Update started in background"})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

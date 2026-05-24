@@ -252,6 +252,7 @@
     <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
       <span class="refresh-ts" id="last-refresh"></span>
       <button class="btn btn-sm" onclick="refreshAll()">&#x21BB; Refresh</button>
+      <span id="update-badge" style="display:none;background:#e65100;color:#fff;padding:2px 8px;border-radius:12px;font-size:0.8em;margin-left:8px;cursor:pointer;" onclick="showUpdateCard()">&#x2B06; Update available</span>
     </div>
   </header>
 
@@ -313,6 +314,16 @@
         <span id="diag-spinner" style="display:none"><span class="spinner"></span></span>
       </div>
       <pre class="diag-output" id="diag-output"></pre>
+    </div>
+  </div>
+
+  <!-- Software Update -->
+  <div class="card" id="card-update">
+    <div class="card-title">Software Update</div>
+    <div id="update-info" style="font-size:0.9em;color:#aaa;">Checking&hellip;</div>
+    <div style="margin-top:8px;display:flex;gap:8px;">
+      <button class="btn btn-sm" onclick="fetchUpdateCheck()">Check for updates</button>
+      <button id="update-apply-btn" class="btn btn-sm btn-primary" style="display:none;" onclick="applyUpdate()">Apply update</button>
     </div>
   </div>
 
@@ -990,14 +1001,45 @@ function renderUpdateBadge(result) {
 }
 
 async function fetchUpdateCheck() {
+  const el = document.getElementById('update-info');
+  if (el) el.textContent = 'Checking…';
   try {
-    const resp = await apiFetch('/api/system/update-check');
-    if (!resp.ok) return;
-    _updateCheckResult = await resp.json();
+    const r = await fetch('/api/update/check');
+    const d = await r.json();
+    const badge = document.getElementById('update-badge');
+    const applyBtn = document.getElementById('update-apply-btn');
+    if (d.error && !d.latest) {
+      if (el) el.textContent = 'Could not check for updates: ' + d.error;
+      return;
+    }
+    const installed = d.installed || '?';
+    const latest = d.latest || '?';
+    if (d.update_available) {
+      if (el) el.innerHTML = `<span style="color:#8bc34a;">Update available!</span> v${latest} (installed: v${installed}) — <a href="${d.release_url}" target="_blank" style="color:#64b5f6;">Release notes</a>`;
+      if (badge) badge.style.display = '';
+      if (applyBtn) applyBtn.style.display = '';
+    } else {
+      if (el) el.textContent = `Up to date — v${installed}${d.error ? ' (check failed: ' + d.error + ')' : ''}`;
+      if (badge) badge.style.display = 'none';
+      if (applyBtn) applyBtn.style.display = 'none';
+    }
+    // Also update legacy health badge if present
+    _updateCheckResult = { update_available: d.update_available, latest_version: d.latest, release_url: d.release_url };
     renderUpdateBadge(_updateCheckResult);
   } catch (e) {
-    // Non-critical — silently ignore
+    if (el) el.textContent = 'Error: ' + e;
   }
+}
+
+async function applyUpdate() {
+  if (!confirm('Apply update? The router will restart when the update completes.')) return;
+  const r = await fetch('/api/update/apply', {method:'POST'});
+  const d = await r.json();
+  toast(d.msg || d.error || 'Update started');
+}
+
+function showUpdateCard() {
+  document.getElementById('card-update')?.scrollIntoView({behavior:'smooth'});
 }
 
 // ── Signal quality ────────────────────────────────────────────────────────────
@@ -2863,6 +2905,7 @@ async function refreshAll() {
   fetchResourceStats();
   fetchUplinkScan();
   fetchFirewallRules();
+  fetchUpdateCheck();
 }
 
 async function init() {
