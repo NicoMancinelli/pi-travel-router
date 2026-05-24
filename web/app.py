@@ -36,6 +36,20 @@ _BW_HISTORY_FILE = "/var/lib/travel-router/bw-history.json"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
+# ── Event bus ─────────────────────────────────────────────────────────────────
+_event_queue: list = []
+_event_lock = threading.Lock()
+
+
+def _push_event(type_: str, data: dict) -> None:
+    """Append an event to the queue, keeping only the last 50."""
+    event = {"type": type_, "ts": int(time.time()), **data}
+    with _event_lock:
+        _event_queue.append(event)
+        if len(_event_queue) > 50:
+            del _event_queue[:-50]
+
+
 # ── Status cache ──────────────────────────────────────────────────────────────
 _STATUS_CACHE: dict = {"ts": 0.0, "data": {}}
 
@@ -563,6 +577,46 @@ def api_status():
     return jsonify(result_dict)
 
 
+@app.route("/api/events/stream")
+@require_auth
+def api_events_stream():
+    """Server-Sent Events stream for real-time connection event notifications."""
+
+    def generate():
+        deadline = time.monotonic() + 300  # 5-minute max connection
+        last_seen = len(_event_queue)
+        wake = threading.Event()
+        try:
+            while time.monotonic() < deadline:
+                wake.wait(timeout=2)
+                wake.clear()
+                with _event_lock:
+                    pending = _event_queue[last_seen:]
+                    last_seen = len(_event_queue)
+                if pending:
+                    for evt in pending:
+                        yield "data: " + json.dumps(evt) + "\n\n"
+                else:
+                    yield "data: {}\n\n"
+        except GeneratorExit:
+            pass
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/events")
+@require_auth
+def api_events():
+    """Polling fallback — return last 20 events."""
+    with _event_lock:
+        events = list(_event_queue[-20:])
+    return jsonify({"events": events})
+
+
 def _parse_log_level(line):
     """Return normalised log level string for a log line, or None if undetectable."""
     # Try JSON structured log first: {"level": "info", ...}
@@ -810,7 +864,6 @@ def api_service_restart(name):
 @app.route("/api/system/reboot", methods=["POST"])
 @require_auth_always
 def api_system_reboot():
-    import threading
     delay = 30
 
     def _do_reboot():
@@ -818,6 +871,7 @@ def api_system_reboot():
         _t.sleep(delay)
         subprocess.run(["systemctl", "reboot"], timeout=10)
 
+    _push_event("reboot_scheduled", {"in_seconds": delay})
     threading.Thread(target=_do_reboot, daemon=True).start()
     return jsonify({"rebooting": True, "in_seconds": delay,
                     "message": f"Reboot scheduled in {delay} seconds"})
@@ -883,6 +937,7 @@ def api_wg_add_peer():
     except Exception:
         pass  # Interface may not be up yet; peer will load on next wg-quick start
 
+    _push_event("wg_peer_added", {"key_prefix": public_key[:8]})
     return jsonify({"ok": True, "public_key": public_key})
 
 
@@ -1268,6 +1323,7 @@ def api_clients_qos_post():
     )
     if rc != 0:
         return jsonify({"error": f"apply-qos.sh failed (rc={rc})"}), 503
+    _push_event("qos_change", {"mac": mac})
     return jsonify({"ok": True})
 
 
@@ -1462,6 +1518,7 @@ def api_privacy_profile_set():
         return jsonify({"error": str(exc)}), 503
     if result.returncode != 0:
         return jsonify({"error": result.stderr or result.stdout}), 503
+    _push_event("privacy_change", {"profile": profile})
     return jsonify({"ok": True, "profile": profile})
 
 

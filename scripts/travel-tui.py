@@ -506,9 +506,66 @@ class DashboardScreen(Screen):
         )
         yield Footer()
 
+    _last_event_ts: int = 0
+
     def on_mount(self) -> None:
         self._refresh_timer: Timer = self.set_interval(5, self._refresh_status)
         self._refresh_status()
+        self._event_timer: Timer = self.set_interval(10, self._poll_events)
+
+    def _poll_events(self) -> None:
+        self.run_worker(self._fetch_events, exclusive=False, thread=True)
+
+    def _fetch_events(self) -> None:
+        """Poll /api/events and show a modal for critical event types."""
+        import json as _json
+        try:
+            token_file = "/var/lib/travel-router/web-token"
+            token = ""
+            try:
+                with open(token_file) as fh:
+                    token = fh.read().strip()
+            except OSError:
+                pass
+
+            api_url = "http://127.0.0.1:8080/api/events"
+            cmd = ["curl", "-sf", "--max-time", "5", api_url]
+            if token:
+                cmd += ["-H", f"Authorization: Bearer {token}"]
+            rc, out, _ = run(cmd, timeout=8)
+            if rc != 0 or not out.strip():
+                return
+            data = _json.loads(out)
+            events = data.get("events", [])
+            if not events:
+                return
+
+            critical_types = {"reboot_scheduled", "vpn_down"}
+            new_ts = self._last_event_ts
+            to_show = []
+            for evt in events:
+                ts = evt.get("ts", 0)
+                if ts > self._last_event_ts and evt.get("type") in critical_types:
+                    to_show.append(evt)
+                if ts > new_ts:
+                    new_ts = ts
+            self._last_event_ts = new_ts
+
+            for evt in to_show:
+                etype = evt.get("type", "")
+                if etype == "reboot_scheduled":
+                    msg = f"Router reboot scheduled in {evt.get('in_seconds', 30)}s"
+                elif etype == "vpn_down":
+                    msg = "VPN connection went down"
+                else:
+                    msg = f"Event: {etype}"
+                self.call_from_thread(
+                    lambda m=msg, t=etype: self.app.push_screen(
+                        MessageModal("Router Alert", m, "error")
+                    )
+                )
+        except Exception:
+            pass
 
     def _refresh_status(self) -> None:
         self.run_worker(self._load_status, exclusive=True, thread=True)

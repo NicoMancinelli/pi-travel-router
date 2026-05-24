@@ -1650,6 +1650,56 @@ async function restoreBackup() {
   }
 }
 
+// ── SSE event stream ──────────────────────────────────────────────────────────
+let _rebootCountdownInterval = null;
+
+function handleRouterEvent(evt) {
+  if (!evt || !evt.type) return;
+  switch (evt.type) {
+    case 'privacy_change':
+      toast('Privacy profile changed to ' + evt.profile);
+      break;
+    case 'qos_change':
+      toast('QoS limit updated for ' + evt.mac);
+      break;
+    case 'wg_peer_added':
+      toast('WireGuard peer added (' + evt.key_prefix + '…)');
+      break;
+    case 'reboot_scheduled': {
+      toast('Router rebooting in 30s…', 'err');
+      // Start countdown in header
+      let secsLeft = 30;
+      const subEl = document.getElementById('header-sub');
+      if (_rebootCountdownInterval) clearInterval(_rebootCountdownInterval);
+      _rebootCountdownInterval = setInterval(() => {
+        secsLeft--;
+        if (subEl) subEl.textContent = 'Rebooting in ' + secsLeft + 's…';
+        if (secsLeft <= 0) clearInterval(_rebootCountdownInterval);
+      }, 1000);
+      break;
+    }
+    default:
+      // Unknown event type — silently ignore
+      break;
+  }
+}
+
+function initEventStream() {
+  if (!_token) return;
+  const es = new EventSource('/api/events/stream?token=' + encodeURIComponent(_token));
+  es.onmessage = function(e) {
+    try {
+      const evt = JSON.parse(e.data);
+      if (evt && evt.type) handleRouterEvent(evt);
+    } catch (_) {}
+  };
+  es.onerror = function() {
+    if (es.readyState === EventSource.CLOSED) {
+      setTimeout(initEventStream, 10000);
+    }
+  };
+}
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -1746,6 +1796,8 @@ async function init() {
   _statusInterval = setInterval(async () => { fetchStatus(); await fetchQosLimits(); fetchClients(); }, 10000);
   // Auto-refresh logs every 5s (independently)
   _autoLogInterval = setInterval(fetchLogs, 5000);
+  // Connect SSE event stream
+  initEventStream();
 }
 
 init();
