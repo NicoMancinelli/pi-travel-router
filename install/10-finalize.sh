@@ -13,6 +13,12 @@ run_finalize() {
         || true
     ok "speedtest.sh installed to /usr/local/sbin/speedtest.sh"
 
+    # ── DoH resolver selector ────────────────────────────────────────────────────
+    section "DoH resolver selector"
+    cp "${REPO}/scripts/set-doh-resolver.sh" /usr/local/sbin/set-doh-resolver.sh
+    chmod +x /usr/local/sbin/set-doh-resolver.sh
+    ok "set-doh-resolver.sh installed to /usr/local/sbin/set-doh-resolver.sh"
+
     # ── Privacy profiles ─────────────────────────────────────────────────────────
     section "Privacy profiles"
     mkdir -p /etc/travel-router/privacy-profiles
