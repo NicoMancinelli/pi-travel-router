@@ -220,6 +220,119 @@ def _latency_sampler_loop():
 # Start background latency sampler when the module loads
 threading.Thread(target=_latency_sampler_loop, daemon=True).start()
 
+# ── System resource history sampler ──────────────────────────────────────────
+
+_RESOURCE_HISTORY: list = []
+_RESOURCE_LOCK = threading.Lock()
+_RESOURCE_SAMPLE_INTERVAL = 30   # seconds
+_RESOURCE_MAX_ENTRIES = 120      # ~1 hour at 30-second intervals
+
+# Previous /proc/stat totals for CPU delta calculation
+_prev_cpu_idle: float = 0.0
+_prev_cpu_total: float = 0.0
+
+
+def _read_cpu_pct() -> float:
+    """Return CPU usage % since last call, from /proc/stat delta. Returns 0.0 on error."""
+    global _prev_cpu_idle, _prev_cpu_total
+    try:
+        text = Path("/proc/stat").read_text()
+        for line in text.splitlines():
+            if line.startswith("cpu "):
+                fields = line.split()[1:]  # skip "cpu" label
+                if len(fields) < 4:
+                    return 0.0
+                user = float(fields[0])
+                nice = float(fields[1])
+                system = float(fields[2])
+                idle = float(fields[3])
+                iowait = float(fields[4]) if len(fields) > 4 else 0.0
+                total = user + nice + system + idle + iowait + sum(float(f) for f in fields[5:])
+                idle_total = idle + iowait
+
+                delta_total = total - _prev_cpu_total
+                delta_idle = idle_total - _prev_cpu_idle
+
+                _prev_cpu_total = total
+                _prev_cpu_idle = idle_total
+
+                if delta_total <= 0:
+                    return 0.0
+                return round(100.0 - (delta_idle / delta_total * 100.0), 1)
+        return 0.0
+    except Exception:
+        return 0.0
+
+
+def _read_mem_pct() -> float:
+    """Return memory usage % from /proc/meminfo. Returns 0.0 on error."""
+    try:
+        meminfo = Path("/proc/meminfo").read_text()
+        mem = {}
+        for line in meminfo.splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                mem[parts[0].rstrip(":")] = int(parts[1])
+        mem_total = mem.get("MemTotal", 0)
+        mem_avail = mem.get("MemAvailable", 0)
+        if mem_total <= 0:
+            return 0.0
+        return round((mem_total - mem_avail) / mem_total * 100.0, 1)
+    except Exception:
+        return 0.0
+
+
+def _read_disk_pct() -> float:
+    """Return root filesystem usage % via os.statvfs. Returns 0.0 on error."""
+    try:
+        st = os.statvfs("/")
+        total = st.f_blocks * st.f_frsize
+        free = st.f_bfree * st.f_frsize
+        if total <= 0:
+            return 0.0
+        used = total - free
+        return round(used / total * 100.0, 1)
+    except Exception:
+        return 0.0
+
+
+def _read_temp_c():
+    """Return CPU temperature in °C from thermal_zone0, or None if unavailable."""
+    try:
+        raw = Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()
+        return round(int(raw) / 1000.0, 1)
+    except Exception:
+        return None
+
+
+def _resource_sample_once():
+    """Take one system resource sample and append to _RESOURCE_HISTORY."""
+    sample = {
+        "ts": int(time.time()),
+        "cpu_pct": _read_cpu_pct(),
+        "mem_pct": _read_mem_pct(),
+        "disk_pct": _read_disk_pct(),
+        "temp_c": _read_temp_c(),
+    }
+    with _RESOURCE_LOCK:
+        _RESOURCE_HISTORY.append(sample)
+        if len(_RESOURCE_HISTORY) > _RESOURCE_MAX_ENTRIES:
+            del _RESOURCE_HISTORY[:-_RESOURCE_MAX_ENTRIES]
+
+
+def _resource_sampler_loop():
+    """Background thread: sample system resources every _RESOURCE_SAMPLE_INTERVAL seconds."""
+    while True:
+        time.sleep(_RESOURCE_SAMPLE_INTERVAL)
+        try:
+            _resource_sample_once()
+        except Exception:
+            pass  # Never crash the background thread
+
+
+# Start background resource sampler when the module loads
+threading.Thread(target=_resource_sampler_loop, daemon=True).start()
+
 # ── Config value validators ───────────────────────────────────────────────────
 import re as _re
 
@@ -2473,6 +2586,19 @@ def api_latency_history():
             last_gateway = entry["gateway"]
             break
     return jsonify({"history": history, "gateway": last_gateway})
+
+
+# ── System resource history endpoint ─────────────────────────────────────────
+
+
+@app.route("/api/system/resources")
+@require_auth
+def api_system_resources():
+    """Return last 60 resource samples and the most recent snapshot as 'current'."""
+    with _RESOURCE_LOCK:
+        history = list(_RESOURCE_HISTORY[-60:])
+    current = history[-1] if history else None
+    return jsonify({"current": current, "history": history})
 
 
 # ── Serve index.html ──────────────────────────────────────────────────────────

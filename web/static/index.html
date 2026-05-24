@@ -378,6 +378,43 @@
     <div id="latency-gateway" style="font-size:11px;color:var(--text-dim);font-family:var(--mono);"></div>
   </div>
 
+  <!-- System Resources -->
+  <div class="card full-width" id="card-resources" style="margin-top:16px;">
+    <div class="card-title">System Resources</div>
+    <div id="resources-content">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;max-width:480px;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <svg id="gauge-cpu" width="80" height="48" viewBox="0 0 80 48" aria-label="CPU gauge">
+            <path d="M8,44 A32,32 0 0,1 72,44" fill="none" stroke="#30363d" stroke-width="8" stroke-linecap="round"/>
+            <path id="gauge-cpu-arc" d="M8,44 A32,32 0 0,1 72,44" fill="none" stroke="#3fb950" stroke-width="8" stroke-linecap="round" stroke-dasharray="100.5" stroke-dashoffset="100.5"/>
+          </svg>
+          <span id="gauge-cpu-label" style="font-size:12px;color:var(--text-dim);">CPU —</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <svg id="gauge-ram" width="80" height="48" viewBox="0 0 80 48" aria-label="RAM gauge">
+            <path d="M8,44 A32,32 0 0,1 72,44" fill="none" stroke="#30363d" stroke-width="8" stroke-linecap="round"/>
+            <path id="gauge-ram-arc" d="M8,44 A32,32 0 0,1 72,44" fill="none" stroke="#3fb950" stroke-width="8" stroke-linecap="round" stroke-dasharray="100.5" stroke-dashoffset="100.5"/>
+          </svg>
+          <span id="gauge-ram-label" style="font-size:12px;color:var(--text-dim);">RAM —</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <svg id="gauge-disk" width="80" height="48" viewBox="0 0 80 48" aria-label="Disk gauge">
+            <path d="M8,44 A32,32 0 0,1 72,44" fill="none" stroke="#30363d" stroke-width="8" stroke-linecap="round"/>
+            <path id="gauge-disk-arc" d="M8,44 A32,32 0 0,1 72,44" fill="none" stroke="#3fb950" stroke-width="8" stroke-linecap="round" stroke-dasharray="100.5" stroke-dashoffset="100.5"/>
+          </svg>
+          <span id="gauge-disk-label" style="font-size:12px;color:var(--text-dim);">Disk —</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <svg id="gauge-temp" width="80" height="48" viewBox="0 0 80 48" aria-label="Temp gauge">
+            <path d="M8,44 A32,32 0 0,1 72,44" fill="none" stroke="#30363d" stroke-width="8" stroke-linecap="round"/>
+            <path id="gauge-temp-arc" d="M8,44 A32,32 0 0,1 72,44" fill="none" stroke="#3fb950" stroke-width="8" stroke-linecap="round" stroke-dasharray="100.5" stroke-dashoffset="100.5"/>
+          </svg>
+          <span id="gauge-temp-label" style="font-size:12px;color:var(--text-dim);">Temp —</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Data Cap -->
@@ -2583,6 +2620,7 @@ async function refreshAll() {
   fetchWolTargets();
   fetchDataCap();
   fetchLatencyHistory();
+  fetchResourceStats();
   fetchUplinkScan();
 }
 
@@ -2596,11 +2634,67 @@ async function init() {
   _statusInterval = setInterval(async () => { fetchStatus(); await fetchQosLimits(); fetchClients(); }, 10000);
   // Auto-refresh logs every 5s (independently)
   _autoLogInterval = setInterval(fetchLogs, 5000);
+  // Auto-refresh system resources every 30s
+  setInterval(fetchResourceStats, 30000);
   // Connect SSE event stream
   initEventStream();
 }
 
 init();
+
+// ── System Resources ──────────────────────────────────────────────────────────
+function _gaugeColor(pct, isTemp) {
+  if (isTemp) {
+    if (pct === null) return '#8b949e';
+    if (pct < 55) return '#3fb950';
+    if (pct < 70) return '#d29922';
+    return '#f85149';
+  }
+  if (pct < 60) return '#3fb950';
+  if (pct < 85) return '#d29922';
+  return '#f85149';
+}
+
+function _updateGauge(arcId, labelId, pct, labelText) {
+  const arc = document.getElementById(arcId);
+  const lbl = document.getElementById(labelId);
+  if (!arc || !lbl) return;
+  // Semicircle arc length: radius=32, half-circle = π*r ≈ 100.53
+  const arcLen = 100.5;
+  const offset = pct === null ? arcLen : arcLen - (pct / 100) * arcLen;
+  arc.style.strokeDashoffset = offset;
+  arc.style.stroke = _gaugeColor(pct, arcId === 'gauge-temp-arc');
+  lbl.textContent = labelText;
+}
+
+async function fetchResourceStats() {
+  try {
+    const resp = await apiFetch('/api/system/resources');
+    if (!resp || !resp.ok) return;
+    const data = await resp.json();
+    const cur = data.current;
+    if (!cur) return;
+
+    const cpu = typeof cur.cpu_pct === 'number' ? cur.cpu_pct : null;
+    const mem = typeof cur.mem_pct === 'number' ? cur.mem_pct : null;
+    const disk = typeof cur.disk_pct === 'number' ? cur.disk_pct : null;
+    const temp = typeof cur.temp_c === 'number' ? cur.temp_c : null;
+
+    _updateGauge('gauge-cpu-arc', 'gauge-cpu-label', cpu,
+      cpu !== null ? 'CPU ' + cpu + '%' : 'CPU N/A');
+    _updateGauge('gauge-ram-arc', 'gauge-ram-label', mem,
+      mem !== null ? 'RAM ' + mem + '%' : 'RAM N/A');
+    _updateGauge('gauge-disk-arc', 'gauge-disk-label', disk,
+      disk !== null ? 'Disk ' + disk + '%' : 'Disk N/A');
+
+    // Temp gauge: map 0–100°C to 0–100%
+    const tempPct = temp !== null ? Math.min(100, temp) : null;
+    _updateGauge('gauge-temp-arc', 'gauge-temp-label', tempPct,
+      temp !== null ? 'Temp ' + temp + '°C' : 'Temp N/A');
+  } catch (e) {
+    // silently ignore — non-critical
+  }
+}
 
 // ── Storage (USB/SD) ──────────────────────────────────────────────────────────
 async function fetchStorage() {
