@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.67.0] - 2026-05-25
+
+### Added
+- `GET /api/system/battery` — battery/UPS status from `/sys/class/power_supply/`; reads capacity, status, voltage, current, power, energy; dashboard card shows per-supply fill bar and metrics grid
+- `GET /api/system/sysctl-security` — 14 security-relevant kernel parameters via `sysctl -n`; includes recommended hardened values for a travel router; dashboard card color-codes compliant (✓ green) vs. non-compliant (⚠ amber) params
+- `GET /api/system/timers` — all systemd timers via `systemctl list-timers --all`; returns unit, activates, next fire time, and last fired; dashboard card shows scrollable timer table
+- Dashboard cards: Battery/UPS (🔋), Sysctl Security (🔒), Systemd Timers (⏱️)
+
 ## [2.66.0] - 2026-05-25
 
 ### Added
