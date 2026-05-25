@@ -1197,6 +1197,10 @@
     <div id="dmesg-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-sockstat">
+    <div id="sockstat-content">Loading&hellip;</div>
+  </div>
+
   <div class="card" id="card-osinfo">
     <div id="osinfo-content">Loading&hellip;</div>
   </div>
@@ -4245,6 +4249,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
+  fetchSockStat();
   fetchOsInfo();
   fetchLoadAvg();
   fetchBatteryStatus();
@@ -4462,6 +4467,7 @@ async function refreshAll() {
   fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
+  fetchSockStat();
   fetchOsInfo();
   fetchLoadAvg();
   fetchBatteryStatus();
@@ -7783,6 +7789,78 @@ async function fetchDmesg() {
     el.innerHTML = html;
   } catch (e) {
     if (el) el.innerHTML = `<div class="card-title">&#x1F514; Kernel Log (dmesg)</div><span style="color:var(--danger)">${e.message}</span>`;
+  }
+}
+
+// ── Socket Statistics ─────────────────────────────────────────────────────────
+
+async function fetchSockStat() {
+  const el = document.getElementById('sockstat-content');
+  try {
+    const r = await apiFetch('/api/network/sockstat');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>';
+      return;
+    }
+    const tcp = d.tcp || {};
+    const udp = d.udp || {};
+    const tcp6 = d.tcp6 || {};
+    const udp6 = d.udp6 || {};
+    const sockets = d.sockets || {};
+
+    const twColor = (tcp.tw || 0) > 100 ? 'color:var(--warn,#f90)' : '';
+    const orphanColor = (tcp.orphan || 0) > 0 ? 'color:var(--warn,#f90)' : '';
+
+    let html = '<div class="card-title">&#x1F50C; Socket Statistics</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Protocol</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">In-Use</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Orphaned</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Time-Wait</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Alloc</th>';
+    html += '</tr></thead><tbody>';
+
+    html += '<tr>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-weight:600;">TCP</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (tcp.inuse ?? '—') + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;' + orphanColor + '">' + (tcp.orphan ?? '—') + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;' + twColor + '">' + (tcp.tw ?? '—') + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (tcp.alloc ?? '—') + '</td>';
+    html += '</tr>';
+
+    html += '<tr>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-weight:600;">UDP</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (udp.inuse ?? '—') + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">—</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">—</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">—</td>';
+    html += '</tr>';
+
+    html += '<tr>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-weight:600;">TCP6</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (tcp6.inuse ?? '—') + '</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">—</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">—</td>';
+    html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">—</td>';
+    html += '</tr>';
+
+    html += '<tr>';
+    html += '<td style="padding:4px 8px;font-weight:600;">UDP6</td>';
+    html += '<td style="padding:4px 8px;font-family:monospace;">' + (udp6.inuse ?? '—') + '</td>';
+    html += '<td style="padding:4px 8px;">—</td>';
+    html += '<td style="padding:4px 8px;">—</td>';
+    html += '<td style="padding:4px 8px;">—</td>';
+    html += '</tr>';
+
+    html += '</tbody></table>';
+    if (sockets.used !== undefined) {
+      html += '<div style="font-size:12px;color:var(--text-dim);margin-top:8px;">Total sockets used: <span style="font-family:monospace;color:var(--text);">' + sockets.used + '</span></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   }
 }
 

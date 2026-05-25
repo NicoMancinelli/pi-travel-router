@@ -8469,6 +8469,51 @@ def api_dmesg():
         return jsonify({"messages": [], "count": 0, "error": str(exc)})
 
 
+@app.route("/api/network/sockstat")
+@require_auth
+def api_network_sockstat():
+    """Parse /proc/net/sockstat and /proc/net/sockstat6, return socket counts."""
+    def parse_sockstat(path):
+        result = {}
+        try:
+            text = Path(path).read_text()
+        except OSError:
+            return result
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            proto = parts[0].rstrip(":").lower()
+            fields = {}
+            i = 1
+            while i + 1 < len(parts):
+                try:
+                    fields[parts[i]] = int(parts[i + 1])
+                except (ValueError, IndexError):
+                    pass
+                i += 2
+            if fields:
+                result[proto] = fields
+        return result
+
+    data = parse_sockstat("/proc/net/sockstat")
+    data6 = parse_sockstat("/proc/net/sockstat6")
+
+    def pick(src, key, *fields):
+        entry = src.get(key, {})
+        return {f: entry.get(f, 0) for f in fields}
+
+    return jsonify({
+        "sockets": pick(data, "sockets", "used"),
+        "tcp": pick(data, "tcp", "inuse", "orphan", "tw", "alloc"),
+        "udp": pick(data, "udp", "inuse"),
+        "raw": pick(data, "raw", "inuse"),
+        "frag": pick(data, "frag", "inuse", "memory"),
+        "tcp6": pick(data6, "tcp6", "inuse"),
+        "udp6": pick(data6, "udp6", "inuse"),
+    })
+
+
 @app.route("/api/system/osinfo")
 @require_auth
 def api_system_osinfo():
