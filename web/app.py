@@ -3514,6 +3514,59 @@ def api_tailscale_peers():
     return jsonify({"peers": peers, "self": self_info})
 
 
+# ── Tailscale exit node control ───────────────────────────────────────────────
+
+@app.route("/api/tailscale/exit-node", methods=["GET"])
+@require_auth
+def api_tailscale_exit_node_get():
+    """Return current exit node and list of available exit node peers."""
+    try:
+        out, _ = _run(["tailscale", "status", "--json"], timeout=5)
+        if not out:
+            return jsonify({"error": "tailscale not running", "current": None, "peers": []}), 503
+        import json as _json
+        data = _json.loads(out)
+        # Current exit node
+        current_exit = None
+        self_node = data.get("Self", {})
+        if self_node.get("ExitNodeOption"):
+            current_exit = self_node.get("ExitNodeOption")
+        # Also check peer list for active exit node
+        peer_list = []
+        for peer_id, peer in (data.get("Peer") or {}).items():
+            if peer.get("ExitNodeOption") or peer.get("ExitNode"):
+                name = peer.get("HostName") or peer.get("DNSName", "").split(".")[0]
+                ip = (peer.get("TailscaleIPs") or [""])[0]
+                peer_list.append({
+                    "id": peer_id,
+                    "name": name,
+                    "ip": ip,
+                    "active": bool(peer.get("ExitNode")),
+                    "online": peer.get("Online", False),
+                })
+                if peer.get("ExitNode"):
+                    current_exit = name
+        return jsonify({"current": current_exit, "peers": peer_list})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "current": None, "peers": []}), 500
+
+
+@app.route("/api/tailscale/exit-node", methods=["POST"])
+@require_auth_always
+def api_tailscale_exit_node_post():
+    """Set or clear the Tailscale exit node."""
+    body = request.get_json(silent=True) or {}
+    node = str(body.get("node", "")).strip()  # IP or hostname, or "" to clear
+    if node:
+        # Validate: no shell chars
+        if any(c in node for c in (';', '&', '|', '`', '$', '>', '<', ' ')):
+            return jsonify({"error": "invalid node"}), 400
+        out, _ = _run(["tailscale", "set", f"--exit-node={node}", "--exit-node-allow-lan-access=true"], timeout=10)
+    else:
+        out, _ = _run(["tailscale", "set", "--exit-node="], timeout=10)
+    return jsonify({"ok": True, "node": node or None})
+
+
 # ── mDNS service browser ──────────────────────────────────────────────────────
 
 @app.route("/api/mdns/services", methods=["GET"])
