@@ -1116,6 +1116,15 @@
 
   <hr class="divider">
 
+  <!-- WireGuard Config QR -->
+  <div class="card" id="card-wg-config-qr" style="max-width:360px;">
+    <div class="card-title">
+      &#x1F4F1; WireGuard Config QR
+      <button class="btn btn-sm" onclick="fetchWgConfigQr()" style="margin-left:8px;">&#x21BB; Refresh</button>
+    </div>
+    <div id="wg-config-qr-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Kernel Modules -->
   <div class="card full-width" id="card-kernel-modules">
     <div class="card-title">
@@ -4147,6 +4156,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchEntropy();
   fetchUsbDevices();
   fetchProcTop();
+  fetchWgConfigQr();
   fetchKernelModules();
 });
 
@@ -6768,6 +6778,59 @@ async function fetchUsbDevices() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load USB devices</span>';
+  }
+}
+
+// ── WireGuard Config QR ───────────────────────────────────────────────────────
+
+async function fetchWgConfigQr() {
+  const el = document.getElementById('wg-config-qr-content');
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Generating QR&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/vpn/wireguard/config/qr');
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Failed to generate QR') + '</span>';
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    let html = '<div style="text-align:center;margin-bottom:8px;">';
+    html += '<img src="' + url + '" alt="WireGuard Config QR" style="max-width:220px;border-radius:8px;background:#fff;padding:8px;">';
+    html += '</div>';
+    html += '<div style="text-align:center;">';
+    html += '<button class="btn btn-sm" onclick="fetchWgConfigText()" id="wg-config-text-btn">Show Config</button>';
+    html += '</div>';
+    html += '<div id="wg-config-text-content" style="display:none;margin-top:8px;"></div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function fetchWgConfigText() {
+  const textEl = document.getElementById('wg-config-text-content');
+  const btn = document.getElementById('wg-config-text-btn');
+  if (!textEl) return;
+  if (textEl.style.display !== 'none') {
+    textEl.style.display = 'none';
+    if (btn) btn.textContent = 'Show Config';
+    return;
+  }
+  textEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  textEl.style.display = 'block';
+  if (btn) btn.textContent = 'Hide Config';
+  try {
+    const r = await apiFetch('/api/vpn/wireguard/config/text');
+    const d = await r.json();
+    if (!r.ok) {
+      textEl.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error') + '</span>';
+      return;
+    }
+    const escaped = d.config.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    textEl.innerHTML = '<pre style="font-size:11px;line-height:1.5;overflow-x:auto;max-height:300px;overflow-y:auto;background:var(--bg2);padding:10px;border-radius:6px;margin:0;white-space:pre-wrap;word-break:break-all;">' + escaped + '</pre>';
+  } catch (e) {
+    textEl.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   }
 }
 
