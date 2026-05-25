@@ -929,6 +929,15 @@
     <div id="wifi-signal-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Cgroup Stats -->
+  <div class="card full-width" id="card-cgroup-stats">
+    <div class="card-title">
+      &#x1F4CA; Cgroup Memory
+      <button class="btn btn-sm" onclick="fetchCgroupStats()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="cgroup-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4516,6 +4525,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNetworkInterfaces();
   fetchOpenSockets();
   fetchWifiSignal();
+  fetchCgroupStats();
 });
 
 async function fetchJournal() {
@@ -4774,6 +4784,7 @@ async function refreshAll() {
   fetchNetworkInterfaces();
   fetchOpenSockets();
   fetchWifiSignal();
+  fetchCgroupStats();
 }
 
 async function init() {
@@ -9369,6 +9380,42 @@ async function fetchWifiSignal() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchWifiSignal error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load WiFi signal</span>';
+  }
+}
+
+// ── Cgroup Stats ──────────────────────────────────────────────────────────────
+
+async function fetchCgroupStats() {
+  const el = document.getElementById('cgroup-stats-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/cgroup-stats');
+    const d = await r.json();
+    const cgroups = d.cgroups || [];
+    if (!cgroups.length) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No cgroup data (cgroups may not be mounted)</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:4px 8px;">Cgroup</th>';
+    html += '<th style="text-align:right;padding:4px 8px;">Memory</th>';
+    html += '<th style="text-align:right;padding:4px 8px;">Limit</th>';
+    html += '</tr></thead><tbody>';
+    for (const cg of cgroups) {
+      const mbUsed = cg.mem_bytes / (1024 * 1024);
+      const color = mbUsed > 200 ? 'var(--danger)' : mbUsed > 80 ? '#f59e0b' : 'var(--success)';
+      html += `<tr style="border-bottom:1px solid var(--border-faint,#333);">`;
+      html += `<td style="padding:3px 8px;font-family:monospace;font-size:11px;">${cg.name}</td>`;
+      html += `<td style="padding:3px 8px;text-align:right;color:${color};font-weight:600;">${cg.mem_label}</td>`;
+      html += `<td style="padding:3px 8px;text-align:right;color:var(--text-dim);">${cg.mem_high}</td>`;
+      html += `</tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchCgroupStats error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load cgroup stats</span>';
   }
 }
 
