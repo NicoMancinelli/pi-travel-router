@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.27.0] - 2026-05-25
+
+### Added
+
+- **Tailscale status and peers** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/tailscale/status` runs `tailscale status --json` and extracts self-node info (hostname, DNS name, IPs, online state) and all peers (hostname, IPs, OS, online/offline badge, rx/tx bytes). Dashboard card with self-node summary bar and peers table sorted online-first.
+- **System services status** (`web/app.py`, `web/static/index.html`): `GET /api/system/services` queries `systemctl is-active` and `is-enabled` for 12 key travel-router services (hostapd, dnsmasq, WireGuard, tailscaled, watchdogs, vnstat, etc.). Dashboard card with two-column grid and color-coded active/enabled badges.
+- **AdGuard Home stats** (`web/app.py`, `web/static/index.html`): `GET /api/dns/adguard/stats` probes AdGuard Home REST API on ports 3000/80/8088, returns total query count, blocked count with percentage, average processing time, and top-5 blocked domains and clients. Dashboard card with 3-stat summary grid and top-domains/clients lists.
+
 ## [2.26.0] - 2026-05-25
 
 ### Added
