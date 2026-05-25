@@ -6444,6 +6444,88 @@ def api_system_temp_history():
     })
 
 
+# ── Log Export ────────────────────────────────────────────────────────────────
+
+@app.route("/api/logs/export", methods=["GET"])
+@require_auth
+def api_logs_export():
+    """Export combined system logs as a downloadable text file."""
+    import io
+    from flask import Response
+
+    lines = []
+
+    # journald: last 500 lines across all units
+    out, rc = _run(["journalctl", "-n", "500", "--no-pager", "--output=short-iso"])
+    if rc == 0 and out.strip():
+        lines.append("=== journald (last 500 lines) ===")
+        lines.append(out.rstrip())
+        lines.append("")
+
+    # Travel router specific service logs
+    for service in ["travel-router-web", "wan-watchdog", "wg-quick@wg0", "tailscaled", "hostapd", "dnsmasq"]:
+        svc_out, svc_rc = _run(["journalctl", "-u", service, "-n", "100", "--no-pager", "--output=short-iso"])
+        if svc_rc == 0 and svc_out.strip():
+            lines.append(f"=== {service} (last 100 lines) ===")
+            lines.append(svc_out.rstrip())
+            lines.append("")
+
+    # Syslog if available
+    for syslog_path in ["/var/log/syslog", "/var/log/messages"]:
+        try:
+            with open(syslog_path) as f:
+                content = f.readlines()[-200:]
+            lines.append(f"=== {syslog_path} (last 200 lines) ===")
+            lines.append("".join(content).rstrip())
+            lines.append("")
+            break
+        except OSError:
+            continue
+
+    content = "\n".join(lines) if lines else "No logs available.\n"
+
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"travel-router-logs-{ts}.txt"
+
+    return Response(
+        content,
+        mimetype="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route("/api/logs/summary", methods=["GET"])
+@require_auth
+def api_logs_summary():
+    """Return a brief log summary: error/warning counts and recent errors."""
+    import re
+
+    summary = {"error_count": 0, "warn_count": 0, "recent_errors": [], "services_with_errors": []}
+
+    out, rc = _run(["journalctl", "-n", "1000", "--no-pager", "--output=short-iso",
+                    "-p", "0..4"])  # emerg..warning
+    if rc == 0 and out.strip():
+        for line in out.splitlines():
+            lower = line.lower()
+            if any(x in lower for x in [" err ", " error ", "failed", "crit", "alert", "emerg"]):
+                summary["error_count"] += 1
+                if len(summary["recent_errors"]) < 5:
+                    summary["recent_errors"].append(line[:200])
+            elif "warn" in lower:
+                summary["warn_count"] += 1
+
+    # Services with failures
+    svc_out, svc_rc = _run(["systemctl", "list-units", "--state=failed", "--no-pager", "--plain"])
+    if svc_rc == 0:
+        for line in svc_out.splitlines():
+            m = re.match(r'^\s*(\S+\.service)', line)
+            if m:
+                summary["services_with_errors"].append(m.group(1))
+
+    return jsonify(summary)
+
+
 # ── VPN Kill Switch ───────────────────────────────────────────────────────────
 
 @app.route("/api/vpn/killswitch", methods=["GET"])
