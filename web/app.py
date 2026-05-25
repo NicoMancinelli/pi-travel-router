@@ -3839,6 +3839,71 @@ def api_network_firewall():
     return jsonify({"tool": "none", "rules": [], "count": 0, "error": "No firewall tool available (nft/iptables)"})
 
 
+# ── Bandwidth History ─────────────────────────────────────────────────────────
+
+@app.route("/api/network/bandwidth", methods=["GET"])
+@require_auth
+def api_network_bandwidth():
+    """Return bandwidth history from vnstat for the last 24 hours (hourly) and 30 days (daily)."""
+    import json as _json
+
+    result = {"hourly": [], "daily": [], "interface": None, "available": False}
+
+    out, rc = _run(["vnstat", "--json"])
+    if rc != 0:
+        result["error"] = "vnstat not available or no data yet"
+        return jsonify(result)
+
+    try:
+        data = _json.loads(out)
+    except ValueError:
+        result["error"] = "Could not parse vnstat output"
+        return jsonify(result)
+
+    interfaces = data.get("interfaces", [])
+    if not interfaces:
+        result["error"] = "No interfaces tracked by vnstat"
+        return jsonify(result)
+
+    iface = None
+    for i in interfaces:
+        if i.get("name") not in ("lo",):
+            iface = i
+            break
+    if not iface:
+        iface = interfaces[0]
+
+    result["interface"] = iface.get("name")
+    result["available"] = True
+
+    hourly = iface.get("traffic", {}).get("hour", [])
+    hourly_out = []
+    for h in hourly[-24:]:
+        ts = h.get("date", {})
+        t = h.get("time", {})
+        label = f"{ts.get('year',0)}-{str(ts.get('month',0)).zfill(2)}-{str(ts.get('day',0)).zfill(2)} {str(t.get('hour',0)).zfill(2)}:00"
+        hourly_out.append({
+            "label": label,
+            "rx_mb": round(h.get("rx", 0) / 1024 / 1024, 2),
+            "tx_mb": round(h.get("tx", 0) / 1024 / 1024, 2),
+        })
+    result["hourly"] = hourly_out
+
+    daily = iface.get("traffic", {}).get("day", [])
+    daily_out = []
+    for d in daily[-30:]:
+        ts = d.get("date", {})
+        label = f"{ts.get('year',0)}-{str(ts.get('month',0)).zfill(2)}-{str(ts.get('day',0)).zfill(2)}"
+        daily_out.append({
+            "label": label,
+            "rx_gb": round(d.get("rx", 0) / 1024 / 1024 / 1024, 3),
+            "tx_gb": round(d.get("tx", 0) / 1024 / 1024 / 1024, 3),
+        })
+    result["daily"] = daily_out
+
+    return jsonify(result)
+
+
 # ── DNS Resolver Config ───────────────────────────────────────────────────────
 
 @app.route("/api/dns/resolvers", methods=["GET"])
