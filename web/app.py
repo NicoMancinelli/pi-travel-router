@@ -7658,6 +7658,82 @@ def api_network_arp():
     return jsonify({"entries": entries, "count": len(entries)})
 
 
+# ── IP Routing Table ──────────────────────────────────────────────────────────
+
+@app.route("/api/network/routes", methods=["GET"])
+@require_auth
+def api_network_routes():
+    """Return the kernel IP routing table by running `ip route show`."""
+    out, rc = _run(["ip", "route", "show"])
+    if rc != 0:
+        return jsonify({"routes": [], "count": 0, "error": out.strip() or "ip route show failed"})
+    routes = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        tokens = line.split()
+        route = {
+            "dest": tokens[0] if tokens else "",
+            "via": None,
+            "dev": None,
+            "metric": 0,
+            "proto": None,
+            "scope": None,
+            "src": None,
+        }
+        i = 1
+        while i < len(tokens):
+            key = tokens[i]
+            if key in ("via", "dev", "proto", "scope", "src") and i + 1 < len(tokens):
+                route[key] = tokens[i + 1]
+                i += 2
+            elif key == "metric" and i + 1 < len(tokens):
+                try:
+                    route["metric"] = int(tokens[i + 1])
+                except ValueError:
+                    route["metric"] = 0
+                i += 2
+            else:
+                i += 1
+        routes.append(route)
+    return jsonify({"routes": routes, "count": len(routes)})
+
+
+# ── Journal Errors ────────────────────────────────────────────────────────────
+@app.route("/api/system/journal-errors", methods=["GET"])
+@require_auth
+def api_system_journal_errors():
+    ALLOWED_PRIORITIES = {"emerg", "alert", "crit", "err", "warning"}
+    priority = request.args.get("priority", "warning")
+    if priority not in ALLOWED_PRIORITIES:
+        return jsonify({"error": f"Invalid priority '{priority}'. Allowed: {', '.join(sorted(ALLOWED_PRIORITIES))}"}), 400
+
+    cmd = ["journalctl", "-p", priority, "-n", "30", "--no-pager", "--output=short-iso"]
+    out, rc = _run(cmd, timeout=10)
+    if rc != 0 or not out.strip():
+        return jsonify({"entries": [], "count": 0, "priority_filter": priority, "error": "journalctl unavailable"})
+
+    entries = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line.startswith("--"):
+            continue
+        # Format: YYYY-MM-DDTHH:MM:SS+ZZZZ HOSTNAME UNIT[PID]: MESSAGE
+        try:
+            parts = line.split(" ", 3)
+            ts = parts[0] if len(parts) > 0 else ""
+            unit_pid = parts[2] if len(parts) > 2 else ""
+            msg = parts[3].split(": ", 1)[-1] if len(parts) > 3 else ""
+            # Strip [PID] from unit
+            unit = unit_pid.split("[")[0] if "[" in unit_pid else unit_pid
+            entries.append({"ts": ts, "unit": unit, "msg": msg, "priority": priority})
+        except (IndexError, ValueError):
+            continue
+
+    return jsonify({"entries": entries, "count": len(entries), "priority_filter": priority})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -793,15 +793,6 @@
     <div id="dns-lookup-result" style="font-size:13px;color:var(--text-dim);">Enter a hostname and click Lookup.</div>
   </div>
 
-  <!-- Route Table -->
-  <div class="card full-width" id="card-routes">
-    <div class="card-title">
-      &#x1F5FA; Route Table
-      <button class="btn btn-sm" onclick="fetchRouteTable()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="route-table-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
-
   <!-- Config Backup -->
   <div class="card" id="card-config-backup" style="margin-top:16px;">
     <div class="card-header">
@@ -1160,6 +1151,14 @@
 
   <div class="card" id="card-arp-table">
     <div id="arp-table-content">Loading&hellip;</div>
+  </div>
+
+  <div class="card" id="card-route-table">
+    <div id="route-table-content">Loading&hellip;</div>
+  </div>
+
+  <div class="card full-width" id="card-journal-errors">
+    <div id="journal-errors-content">Loading&hellip;</div>
   </div>
 
   <hr class="divider">
@@ -4193,6 +4192,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchOpenFiles();
   fetchCpuFreq();
   fetchArpTable();
+  fetchRouteTable();
+  fetchJournalErrors();
 });
 
 async function fetchJournal() {
@@ -4373,7 +4374,6 @@ async function refreshAll() {
   fetchDnsHosts();
   fetchDhcpReservations();
   fetchDhcpLeases();
-  fetchRouteTable();
   fetchUpdateCheck();
   fetchJournal();
   fetchRouterConfig();
@@ -4382,7 +4382,6 @@ async function refreshAll() {
   fetchNtfyConfig();
   fetchLoginHistory();
   fetchConnectedClients();
-  fetchArpTable();
   fetchWifiClients();
   fetchWanUplinks();
   fetchSystemResources();
@@ -4400,6 +4399,8 @@ async function refreshAll() {
   fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
+  fetchRouteTable();
+  fetchJournalErrors();
 }
 
 async function init() {
@@ -5204,55 +5205,6 @@ async function runDnsLookup() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--error,#e55);">Error: ' + e + '</span>';
-  }
-}
-
-// ── Route Table ───────────────────────────────────────────────────────────────
-
-async function fetchRouteTable() {
-  const el = document.getElementById('route-table-content');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const resp = await apiFetch('/api/network/routes');
-    const d = await resp.json();
-    if (!d.routes || d.routes.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No routes found.</span>';
-      return;
-    }
-    // Group by family
-    const v4 = d.routes.filter(r => r.family === '4');
-    const v6 = d.routes.filter(r => r.family === '6');
-
-    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} route${d.count !== 1 ? 's' : ''} (${v4.length} IPv4, ${v6.length} IPv6)</div>`;
-
-    const renderTable = (rows, label) => {
-      if (rows.length === 0) return '';
-      let t = `<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin:8px 0 4px;">${label}</div>`;
-      t += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-      t += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
-      t += '<th style="padding:4px 8px;">Destination</th><th style="padding:4px 8px;">Gateway</th><th style="padding:4px 8px;">Interface</th><th style="padding:4px 8px;">Proto</th><th style="padding:4px 8px;">Metric</th>';
-      t += '</tr></thead><tbody>';
-      for (const r of rows) {
-        const isDefault = r.dest === 'default' || r.dest === '0.0.0.0/0' || r.dest === '::/0';
-        const destStyle = isDefault ? 'font-weight:700;color:var(--accent,#4af);' : '';
-        t += `<tr style="border-bottom:1px solid var(--border);">`;
-        t += `<td style="padding:4px 8px;font-family:monospace;${destStyle}">${escHtml(r.dest)}</td>`;
-        t += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${r.gateway ? escHtml(r.gateway) : '—'}</td>`;
-        t += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${r.dev ? escHtml(r.dev) : '—'}</td>`;
-        t += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${r.proto ? escHtml(r.proto) : '—'}</td>`;
-        t += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${r.metric || '—'}</td>`;
-        t += '</tr>';
-      }
-      t += '</tbody></table>';
-      return t;
-    };
-
-    html += renderTable(v4, 'IPv4');
-    html += renderTable(v6, 'IPv6');
-    el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load route table</span>';
   }
 }
 
@@ -7129,7 +7081,6 @@ async function fetchCpuFreq() {
 
 // ── ARP / Neighbor Table ──────────────────────────────────────────────────────
 
-
 async function fetchArpTable() {
   const el = document.getElementById('arp-table-content');
   try {
@@ -7156,6 +7107,93 @@ async function fetchArpTable() {
         <td style="padding:3px 8px;"><span style="color:${color};font-weight:600;">${e.state}</span></td>
       </tr>`;    }
     html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── IP Routing Table ──────────────────────────────────────────────────────────
+
+async function fetchRouteTable() {
+  const el = document.getElementById('route-table-content');
+  try {
+    const r = await fetch('/api/network/routes');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error && d.routes.length === 0) {
+      el.textContent = 'Error: ' + d.error;
+      return;
+    }
+    const badge = `<span style="background:var(--accent);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:6px;">${d.count}</span>`;
+    let html = `<div class="card-title">&#x1F5FA; Routing Table ${badge}</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 8px;">Destination</th>
+      <th style="text-align:left;padding:3px 8px;">Via</th>
+      <th style="text-align:left;padding:3px 8px;">Interface</th>
+      <th style="text-align:right;padding:3px 8px;">Metric</th>
+      <th style="text-align:left;padding:3px 8px;">Proto</th>
+    </tr></thead><tbody>`;
+    for (const route of d.routes) {
+      const isDefault = route.dest === 'default';
+      const bold = isDefault ? 'font-weight:bold;' : '';
+      html += `<tr style="border-bottom:1px solid var(--border);${bold}">
+        <td style="padding:3px 8px;font-family:monospace;">${route.dest}</td>
+        <td style="padding:3px 8px;font-family:monospace;">${route.via || '—'}</td>
+        <td style="padding:3px 8px;font-family:monospace;">${route.dev || '—'}</td>
+        <td style="padding:3px 8px;text-align:right;">${route.metric}</td>
+        <td style="padding:3px 8px;color:var(--text-dim);">${route.proto || '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    if (d.error) {
+      html += `<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">Note: ${d.error}</div>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── Journal Errors ────────────────────────────────────────────────────────────
+
+async function fetchJournalErrors() {
+  const el = document.getElementById('journal-errors-content');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/journal-errors');
+    const d = await r.json();
+    const count = d.count || 0;
+
+    let headerBadge;
+    if (count === 0) {
+      headerBadge = '<span style="background:#28a745;color:#fff;border-radius:4px;padding:1px 7px;font-size:12px;margin-left:6px;">No errors</span>';
+    } else {
+      headerBadge = `<span style="background:#dc3545;color:#fff;border-radius:4px;padding:1px 7px;font-size:12px;margin-left:6px;">${count}</span>`;
+    }
+
+    let html = `<div class="card-title">&#x1F4D3; Journal Errors ${headerBadge}</div>`;
+
+    if (d.error && count === 0) {
+      html += `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+    } else if (count === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No recent journal errors.</div>';
+    } else {
+      html += '<div style="font-size:12px;">';
+      for (const entry of d.entries) {
+        const p = entry.priority || 'warning';
+        const isHigh = ['err','crit','alert','emerg'].includes(p);
+        const badgeColor = isHigh ? '#dc3545' : '#fd7e14';
+        const badge = `<span style="background:${badgeColor};color:#fff;border-radius:3px;padding:0 5px;font-size:11px;margin-right:4px;">${p}</span>`;
+        const msg = (entry.msg || '').slice(0, 80);
+        const unit = entry.unit || '';
+        const ts = entry.ts || '';
+        html += `<div style="padding:2px 0;border-bottom:1px solid var(--border-color,#333);word-break:break-all;">${badge}<span style="color:var(--text-dim);margin-right:6px;">${ts}</span><span style="font-weight:bold;margin-right:6px;">${unit}</span><span>${msg}</span></div>`;
+      }
+      html += '</div>';
+    }
+
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
