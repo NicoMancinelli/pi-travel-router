@@ -6526,6 +6526,173 @@ def api_logs_summary():
     return jsonify(summary)
 
 
+# ── VPN Kill Switch ───────────────────────────────────────────────────────────
+
+@app.route("/api/vpn/killswitch", methods=["GET"])
+@require_auth
+def api_vpn_killswitch():
+    """Return kill switch status: whether traffic is blocked if VPN drops."""
+    import re
+
+    result = {
+        "enabled": False,
+        "method": None,
+        "details": [],
+        "vpn_interfaces": [],
+    }
+
+    # Detect WireGuard interfaces
+    wg_out, wg_rc = _run(["wg", "show", "interfaces"])
+    wg_ifaces = wg_out.strip().split() if wg_rc == 0 and wg_out.strip() else []
+    result["vpn_interfaces"] = wg_ifaces
+
+    # Check nftables for kill switch rules
+    nft_out, nft_rc = _run(["nft", "list", "ruleset"])
+    if nft_rc == 0:
+        rules = nft_out
+        # Kill switch typically: default drop policy + accept on wg/tun iface
+        has_drop_forward = "drop" in rules and ("forward" in rules.lower() or "output" in rules.lower())
+        has_wg_accept = any(iface in rules for iface in wg_ifaces) if wg_ifaces else False
+        if has_drop_forward:
+            result["enabled"] = True
+            result["method"] = "nftables"
+            result["details"].append("nftables: default drop policy detected")
+            if has_wg_accept:
+                result["details"].append(f"WireGuard interface(s) explicitly allowed: {', '.join(wg_ifaces)}")
+
+    # Check iptables if nft not conclusive
+    if not result["enabled"]:
+        ipt_out, ipt_rc = _run(["iptables", "-L", "FORWARD", "-n"])
+        if ipt_rc == 0:
+            # Kill switch: FORWARD chain policy DROP
+            if "policy DROP" in ipt_out or "Chain FORWARD (policy DROP)" in ipt_out:
+                result["enabled"] = True
+                result["method"] = "iptables"
+                result["details"].append("iptables: FORWARD chain policy is DROP")
+        ipt_out2, ipt_rc2 = _run(["iptables", "-L", "OUTPUT", "-n"])
+        if ipt_rc2 == 0 and "policy DROP" in ipt_out2:
+            result["enabled"] = True
+            result["method"] = result["method"] or "iptables"
+            result["details"].append("iptables: OUTPUT chain policy is DROP")
+
+    # Check for common kill switch systemd service or config marker
+    out3, rc3 = _run(["systemctl", "is-active", "travel-router-killswitch"])
+    if rc3 == 0 and out3.strip() == "active":
+        result["enabled"] = True
+        result["method"] = result["method"] or "systemd"
+        result["details"].append("systemd: travel-router-killswitch.service is active")
+
+    # Check /etc/default/travel-router for KILL_SWITCH setting
+    try:
+        with open("/etc/default/travel-router") as f:
+            for line in f:
+                m = re.match(r'^KILL_SWITCH\s*=\s*["\']?(\w+)["\']?', line.strip())
+                if m:
+                    val = m.group(1).lower()
+                    result["config_value"] = val
+                    if val in ("1", "true", "yes", "on"):
+                        result["details"].append(f"/etc/default/travel-router: KILL_SWITCH={val}")
+    except OSError:
+        pass
+
+    return jsonify(result)
+
+
+# ── Connected Clients ─────────────────────────────────────────────────────────
+
+@app.route("/api/network/clients", methods=["GET"])
+@require_auth
+def api_network_clients():
+    """Return connected LAN clients from ARP table and optionally nmap."""
+    import re
+
+    clients = []
+
+    # Parse /proc/net/arp
+    try:
+        with open("/proc/net/arp") as f:
+            lines = f.readlines()[1:]  # skip header
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            ip = parts[0]
+            flags = parts[2]
+            mac = parts[3]
+            iface = parts[5].strip()
+            # Skip incomplete entries (flags=0x0) and loopback
+            if flags == "0x0" or mac == "00:00:00:00:00:00" or iface == "lo":
+                continue
+            # Try reverse DNS
+            hostname = None
+            out, rc = _run(["getent", "hosts", ip])
+            if rc == 0 and out.strip():
+                hostname = out.split()[1] if len(out.split()) > 1 else None
+            clients.append({
+                "ip": ip,
+                "mac": mac,
+                "hostname": hostname,
+                "interface": iface,
+                "vendor": _mac_vendor(mac),
+            })
+    except OSError:
+        pass
+
+    # Also check dnsmasq leases for hostnames we might have missed
+    lease_names = {}
+    lease_paths = ["/var/lib/misc/dnsmasq.leases", "/tmp/dnsmasq.leases", "/var/lib/dnsmasq/dnsmasq.leases"]
+    for path in lease_paths:
+        try:
+            with open(path) as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        lease_mac = parts[1].lower()
+                        lease_ip = parts[2]
+                        lease_host = parts[3] if parts[3] != "*" else None
+                        lease_names[lease_ip] = (lease_mac, lease_host)
+            break
+        except OSError:
+            continue
+
+    for c in clients:
+        if c["hostname"] is None and c["ip"] in lease_names:
+            c["hostname"] = lease_names[c["ip"]][1]
+
+    # Sort by last octet of IP
+    try:
+        clients.sort(key=lambda c: int(c["ip"].split(".")[-1]))
+    except (ValueError, IndexError):
+        pass
+
+    return jsonify({"clients": clients, "count": len(clients)})
+
+
+def _mac_vendor(mac):
+    """Return a short vendor hint from the MAC OUI (first 3 bytes)."""
+    oui_map = {
+        "b8:27:eb": "Raspberry Pi",
+        "dc:a6:32": "Raspberry Pi",
+        "e4:5f:01": "Raspberry Pi",
+        "d8:3a:dd": "Raspberry Pi",
+        "00:50:56": "VMware",
+        "00:0c:29": "VMware",
+        "08:00:27": "VirtualBox",
+        "00:1a:11": "Google",
+        "ac:37:43": "HTC",
+        "f4:f5:d8": "Google",
+        "04:d3:b0": "Apple",
+        "a4:c3:f0": "Apple",
+        "98:01:a7": "Apple",
+        "3c:22:fb": "Apple",
+        "00:1b:21": "Intel",
+        "00:1e:65": "Intel",
+        "18:66:da": "Intel",
+    }
+    prefix = mac.lower()[:8]
+    return oui_map.get(prefix, None)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
