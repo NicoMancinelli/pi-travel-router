@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.44.0] - 2026-05-25
+
+### Added
+
+- **CPU temperature card** (`web/app.py`, `web/static/index.html`): `GET /api/system/cpu-temp` globs `/sys/class/thermal/thermal_zone*/temp` and `type`, skips acpi zones reading 0. Returns zones array with zone name + temp in °C and `max_temp_c`. Dashboard card with large max-temp display, per-zone colour-coded badges (blue <50°C, green 50-65°C, orange 65-80°C, red ≥80°C). Auto-refreshes on poll.
+- **USB devices card** (`web/app.py`, `web/static/index.html`): `GET /api/system/usb-devices` parses `lsusb` output extracting bus/device/vendor_id/product_id/description with best-effort sysfs enrichment via `/sys/bus/usb/devices/`. Dashboard card with Bus/Dev/ID/Description table, count summary header, network adapter badge for Ethernet/WLAN/Wireless devices. On-demand refresh.
+- **Firewall rules card** (`web/app.py`, `web/static/index.html`): `GET /api/network/firewall-stats` runs `iptables -L -n -v --line-numbers` for IPv4 and `ip6tables` for IPv6. Parses chain headers for policy/packets/bytes, counts numbered rule lines, converts K/M/G byte suffixes. Dashboard card with Chain/Policy/Packets/Bytes/Rules table, ACCEPT=green/DROP|REJECT=red policy badges, human-readable byte sizes, IPv6 section hidden when empty. Auto-refreshes on poll.
+
 ## [2.43.0] - 2026-05-25
 
 ### Added
