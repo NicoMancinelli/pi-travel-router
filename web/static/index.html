@@ -1194,12 +1194,14 @@
   </div>
 
   <!-- Open File Descriptors -->
-  <div class="card" id="card-open-fds">
-    <div class="card-title">
-      📂 Open File Descriptors
-      <button class="btn btn-sm" onclick="fetchOpenFds()" style="margin-left:8px;">&#x27F3; Refresh</button>
+  <div class="card" id="open-fds-card">
+    <div class="card-header">
+      <span>📂 Open File Descriptors</span>
+      <span class="card-badge" id="open-fds-pct">—</span>
     </div>
-    <div id="open-fds-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+    <div class="card-body" id="open-fds-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <!-- Crontab -->
@@ -8351,42 +8353,58 @@ async function fetchCrontab() {
 // ── Open File Descriptors ─────────────────────────────────────────────────────
 async function fetchOpenFds() {
   const el = document.getElementById('open-fds-content');
+  const badge = document.getElementById('open-fds-pct');
   if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
     const r = await fetch('/api/system/open-fds');
     const d = await r.json();
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    const sys = d.system || {};
-    const pct = (sys.used_pct || 0).toFixed(1);
-    const barColor = sys.used_pct >= 85 ? 'var(--red)' : sys.used_pct >= 65 ? 'var(--amber)' : 'var(--green)';
-    let html = `<div style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span>Allocated</span>
-        <span style="color:${barColor};font-weight:600">${sys.allocated || 0} / ${sys.max || 0} (${pct}%)</span>
+    const pct = d.pct_used ?? 0;
+    if (badge) {
+      badge.textContent = `${pct.toFixed(1)}%`;
+      badge.style.background = pct >= 80 ? '#dc2626' : pct >= 50 ? '#f59e0b' : '#16a34a';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
+    }
+    let html = '';
+    const barColor = pct >= 80 ? '#dc2626' : pct >= 50 ? '#f59e0b' : '#16a34a';
+    html += `<div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+        <span>File descriptors</span>
+        <span style="color:var(--text-dim)">${(d.allocated - d.free).toLocaleString()} / ${(d.max || 0).toLocaleString()}</span>
       </div>
-      <div style="background:var(--bg2);border-radius:4px;height:8px">
-        <div style="width:${Math.min(100, sys.used_pct || 0)}%;background:${barColor};height:8px;border-radius:4px"></div>
+      <div style="background:var(--border);border-radius:4px;height:8px;">
+        <div style="background:${barColor};width:${Math.min(pct,100)}%;height:8px;border-radius:4px;"></div>
       </div>
-      <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Unused: ${sys.unused || 0} &nbsp;|&nbsp; Scanned ${d.total_scanned || 0} processes</div>
     </div>`;
-    const procs = d.top_processes || [];
-    if (procs.length > 0) {
-      html += `<table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead><tr style="color:var(--text-dim)">
-          <th style="text-align:left;padding:4px 6px">PID</th>
-          <th style="text-align:left;padding:4px 6px">Name</th>
-          <th style="text-align:right;padding:4px 6px">FD Count</th>
-        </tr></thead><tbody>`;
-      procs.forEach(p => {
-        html += `<tr style="border-top:1px solid var(--border)">
-          <td style="padding:4px 6px;font-family:monospace">${p.pid}</td>
-          <td style="padding:4px 6px">${p.name}</td>
-          <td style="padding:4px 6px;text-align:right;font-weight:600">${p.fds}</td>
-        </tr>`;
-      });
-      html += `</tbody></table>`;
-    } else {
-      html += `<p class="muted">No process data available.</p>`;
+    const stats = [
+      ['Allocated', d.allocated?.toLocaleString()],
+      ['Free', d.free?.toLocaleString()],
+      ['Max', d.max?.toLocaleString()],
+      d.lsof_total ? ['lsof total', d.lsof_total.toLocaleString()] : null,
+      d.inodes_allocated ? ['Inodes alloc', d.inodes_allocated?.toLocaleString()] : null,
+    ].filter(Boolean);
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+    for (const [k, v] of stats) {
+      html += `<div style="background:var(--bg2);border-radius:4px;padding:4px 10px;font-size:11px;"><span style="color:var(--text-dim)">${k}: </span><strong>${v}</strong></div>`;
+    }
+    html += '</div>';
+    const top = d.top_procs || [];
+    if (top.length > 0) {
+      html += '<div style="font-weight:600;font-size:11px;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px;">Top Processes by FD</div>';
+      html += '<div style="display:flex;flex-direction:column;gap:3px;">';
+      const maxC = top[0]?.count || 1;
+      for (const p of top.slice(0, 8)) {
+        const w = Math.round((p.count / maxC) * 100);
+        html += `<div style="display:flex;align-items:center;gap:6px;">
+          <div style="width:80px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim)">${p.name}</div>
+          <div style="flex:1;background:var(--border);border-radius:2px;height:10px;"><div style="background:var(--accent,#4a9eff);width:${w}%;height:10px;border-radius:2px;"></div></div>
+          <div style="font-size:10px;width:30px;text-align:right">${p.count}</div>
+        </div>`;
+      }
+      html += '</div>';
     }
     el.innerHTML = html;
   } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
