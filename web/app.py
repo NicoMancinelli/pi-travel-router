@@ -10119,6 +10119,119 @@ def api_network_wifi_signal():
     return jsonify({"interfaces": results, "count": len(results)})
 
 
+# ── Cgroup Resource Stats ─────────────────────────────────────────────────────
+
+@app.route("/api/system/cgroup-stats", methods=["GET"])
+@require_auth
+def api_system_cgroup_stats():
+    """Return memory usage per systemd cgroup slice from cgroup v2 (or v1)."""
+    import os as _os
+    cgroups = []
+    cgroup_root = Path("/sys/fs/cgroup")
+
+    # cgroup v2: unified hierarchy
+    if (cgroup_root / "memory.stat").exists() or (cgroup_root / "system.slice").exists():
+        for name in ("system.slice", "user.slice"):
+            base = cgroup_root / name
+            if not base.is_dir():
+                continue
+            try:
+                mem_current = (base / "memory.current").read_text().strip()
+                mem_high = ""
+                try:
+                    mem_high = (base / "memory.high").read_text().strip()
+                except OSError:
+                    pass
+                cpu_usage = ""
+                try:
+                    cpu_stat = (base / "cpu.stat").read_text()
+                    for line in cpu_stat.splitlines():
+                        if line.startswith("usage_usec"):
+                            cpu_usage = line.split()[1]
+                except OSError:
+                    pass
+                cgroups.append({
+                    "name": name,
+                    "mem_bytes": int(mem_current) if mem_current.isdigit() else 0,
+                    "mem_high": mem_high if mem_high not in ("max", "") else "unlimited",
+                    "cpu_usage_usec": int(cpu_usage) if cpu_usage.isdigit() else 0,
+                    "version": 2,
+                })
+            except OSError:
+                continue
+        # Also enumerate services under system.slice
+        services_dir = cgroup_root / "system.slice"
+        if services_dir.is_dir():
+            for svc_dir in sorted(services_dir.iterdir())[:20]:
+                if not svc_dir.is_dir():
+                    continue
+                try:
+                    mem_f = svc_dir / "memory.current"
+                    if not mem_f.exists():
+                        continue
+                    mem_val = mem_f.read_text().strip()
+                    mem_bytes = int(mem_val) if mem_val.isdigit() else 0
+                    if mem_bytes == 0:
+                        continue
+                    cgroups.append({
+                        "name": svc_dir.name,
+                        "mem_bytes": mem_bytes,
+                        "mem_high": "unknown",
+                        "cpu_usage_usec": 0,
+                        "version": 2,
+                    })
+                except OSError:
+                    continue
+
+    if not cgroups:
+        # cgroup v1 fallback: /sys/fs/cgroup/memory/
+        mem_root = Path("/sys/fs/cgroup/memory")
+        if mem_root.is_dir():
+            for entry in sorted(mem_root.iterdir())[:20]:
+                if not entry.is_dir():
+                    continue
+                try:
+                    usage_f = entry / "memory.usage_in_bytes"
+                    limit_f = entry / "memory.limit_in_bytes"
+                    if not usage_f.exists():
+                        continue
+                    usage = int(usage_f.read_text().strip())
+                    limit_raw = limit_f.read_text().strip() if limit_f.exists() else ""
+                    # max limit on 32-bit is 9223372036854771712
+                    try:
+                        limit = int(limit_raw)
+                        limit_str = "unlimited" if limit > 2**62 else str(limit)
+                    except ValueError:
+                        limit_str = limit_raw
+                    if usage == 0:
+                        continue
+                    cgroups.append({
+                        "name": entry.name,
+                        "mem_bytes": usage,
+                        "mem_high": limit_str,
+                        "cpu_usage_usec": 0,
+                        "version": 1,
+                    })
+                except OSError:
+                    continue
+
+    def fmt_bytes(b):
+        if b < 1024:
+            return f"{b} B"
+        elif b < 1024 * 1024:
+            return f"{b / 1024:.1f} KB"
+        elif b < 1024 * 1024 * 1024:
+            return f"{b / (1024 * 1024):.1f} MB"
+        else:
+            return f"{b / (1024 * 1024 * 1024):.2f} GB"
+
+    for c in cgroups:
+        c["mem_label"] = fmt_bytes(c["mem_bytes"])
+
+    cgroups.sort(key=lambda x: -x["mem_bytes"])
+    return jsonify({"cgroups": cgroups, "count": len(cgroups)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
