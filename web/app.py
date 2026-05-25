@@ -5997,6 +5997,88 @@ def api_vpn_tailscale_status():
     })
 
 
+# ── Speedtest ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/network/speedtest", methods=["GET"])
+@require_auth
+def api_network_speedtest():
+    """Run a speedtest and return download/upload/ping results."""
+    import json as _json
+    import re
+
+    # Try speedtest-cli (Python) first with --json
+    out, rc = _run(["speedtest-cli", "--json", "--timeout", "30"])
+    if rc == 0:
+        try:
+            d = _json.loads(out)
+            download_mbps = round(d.get("download", 0) / 1_000_000, 2)
+            upload_mbps = round(d.get("upload", 0) / 1_000_000, 2)
+            ping_ms = round(d.get("ping", 0), 1)
+            server = d.get("server", {})
+            return jsonify({
+                "available": True,
+                "tool": "speedtest-cli",
+                "download_mbps": download_mbps,
+                "upload_mbps": upload_mbps,
+                "ping_ms": ping_ms,
+                "server_name": server.get("name", ""),
+                "server_country": server.get("country", ""),
+                "server_sponsor": server.get("sponsor", ""),
+            })
+        except (ValueError, KeyError):
+            pass
+
+    # Try speedtest (Ookla) with --format=json
+    out, rc = _run(["speedtest", "--format=json", "--accept-license", "--accept-gdpr"])
+    if rc == 0:
+        try:
+            d = _json.loads(out)
+            dl = d.get("download", {})
+            ul = d.get("upload", {})
+            ping = d.get("ping", {})
+            server = d.get("server", {})
+            download_mbps = round(dl.get("bandwidth", 0) * 8 / 1_000_000, 2)
+            upload_mbps = round(ul.get("bandwidth", 0) * 8 / 1_000_000, 2)
+            ping_ms = round(ping.get("latency", 0), 1)
+            return jsonify({
+                "available": True,
+                "tool": "speedtest-ookla",
+                "download_mbps": download_mbps,
+                "upload_mbps": upload_mbps,
+                "ping_ms": ping_ms,
+                "server_name": server.get("name", ""),
+                "server_country": server.get("country", ""),
+                "server_sponsor": server.get("host", ""),
+            })
+        except (ValueError, KeyError):
+            pass
+
+    # Try curl-based fallback: measure download from a known host
+    out, rc = _run([
+        "curl", "-o", "/dev/null", "-s", "-w", "%{speed_download}",
+        "--max-time", "10",
+        "https://speed.cloudflare.com/__down?bytes=10000000",
+    ])
+    if rc == 0:
+        try:
+            speed_bps = float(out.strip())
+            download_mbps = round(speed_bps * 8 / 1_000_000, 2)
+            return jsonify({
+                "available": True,
+                "tool": "curl",
+                "download_mbps": download_mbps,
+                "upload_mbps": None,
+                "ping_ms": None,
+                "server_name": "Cloudflare",
+                "server_country": "",
+                "server_sponsor": "speed.cloudflare.com",
+            })
+        except ValueError:
+            pass
+
+    return jsonify({"available": False, "error": "No speedtest tool available (install speedtest-cli)"})
+
+
 # ── Temperature History ───────────────────────────────────────────────────────
 
 import threading as _threading
