@@ -6833,6 +6833,69 @@ def api_network_datacap():
     return jsonify(result)
 
 
+# ── Network Interface Stats ───────────────────────────────────────────────────
+
+@app.route("/api/network/iface/stats", methods=["GET"])
+@require_auth
+def api_network_iface_stats():
+    """Return per-interface RX/TX stats including errors and drops from /proc/net/dev."""
+    interfaces = []
+
+    try:
+        with open("/proc/net/dev") as f:
+            lines = f.readlines()
+    except OSError:
+        return jsonify({"error": "Cannot read /proc/net/dev", "interfaces": []})
+
+    # Skip first two header lines
+    for line in lines[2:]:
+        line = line.strip()
+        if not line:
+            continue
+        colon = line.index(":")
+        name = line[:colon].strip()
+        fields = line[colon + 1:].split()
+        if len(fields) < 16:
+            continue
+        # /proc/net/dev columns:
+        # RX: bytes packets errs drop fifo frame compressed multicast
+        # TX: bytes packets errs drop fifo colls carrier compressed
+        rx_bytes = int(fields[0])
+        rx_packets = int(fields[1])
+        rx_errors = int(fields[2])
+        rx_drop = int(fields[3])
+        tx_bytes = int(fields[8])
+        tx_packets = int(fields[9])
+        tx_errors = int(fields[10])
+        tx_drop = int(fields[11])
+        tx_colls = int(fields[13])
+
+        # Skip loopback and zero-traffic virtual interfaces (but keep wg, tun, eth, wlan, usb)
+        if name == "lo":
+            continue
+
+        interfaces.append({
+            "name": name,
+            "rx_bytes": rx_bytes,
+            "rx_packets": rx_packets,
+            "rx_errors": rx_errors,
+            "rx_drop": rx_drop,
+            "tx_bytes": tx_bytes,
+            "tx_packets": tx_packets,
+            "tx_errors": tx_errors,
+            "tx_drop": tx_drop,
+            "tx_colls": tx_colls,
+            "rx_human": _fmt_bytes(rx_bytes),
+            "tx_human": _fmt_bytes(tx_bytes),
+            "has_errors": (rx_errors + tx_errors + rx_drop + tx_drop + tx_colls) > 0,
+        })
+
+    # Sort: active interfaces first (most traffic), then by name
+    interfaces.sort(key=lambda i: -(i["rx_bytes"] + i["tx_bytes"]))
+
+    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
