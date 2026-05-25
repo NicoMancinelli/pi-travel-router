@@ -902,6 +902,15 @@
     <div id="system-services-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Network Interfaces -->
+  <div class="card full-width" id="card-network-interfaces">
+    <div class="card-title">
+      &#x1F5A7; Network Interfaces
+      <button class="btn btn-sm" onclick="fetchNetworkInterfaces()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="network-interfaces-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4480,6 +4489,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNetworkNeighbors();
   fetchProcessTree();
   fetchKernelMessages();
+  fetchNetworkInterfaces();
 });
 
 async function fetchJournal() {
@@ -4734,6 +4744,8 @@ async function refreshAll() {
   fetchNetworkNeighbors();
   fetchProcessTree();
   fetchKernelMessages();
+  fetchSystemServices();
+  fetchNetworkInterfaces();
 }
 
 async function init() {
@@ -9195,6 +9207,48 @@ async function fetchKernelMessages() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchKernelMessages error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load kernel messages</span>';
+  }
+}
+
+// ── Network Interfaces ────────────────────────────────────────────────────────
+
+async function fetchNetworkInterfaces() {
+  const el = document.getElementById('network-interfaces-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/network/interfaces');
+    const d = await r.json();
+    const ifaces = d.interfaces || [];
+    if (!ifaces.length) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No interfaces found</span>';
+      return;
+    }
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">';
+    for (const iface of ifaces) {
+      const up = (iface.operstate || '') === 'up';
+      const badge = up
+        ? '<span style="background:#22c55e;color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:6px;">UP</span>'
+        : '<span style="background:#6b7280;color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:6px;">DOWN</span>';
+      html += '<div style="padding:8px;border:1px solid var(--border);border-radius:4px;">';
+      html += `<div style="font-weight:600;margin-bottom:4px;">${iface.name}${badge}`;
+      if (iface.mac) html += ` <span style="font-size:11px;color:var(--text-dim);font-family:monospace;">${iface.mac}</span>`;
+      html += '</div>';
+      for (const addr of (iface.addresses || [])) {
+        const tag = (addr.family || '').includes('6')
+          ? '<span style="font-size:10px;background:#3b82f6;color:#fff;padding:1px 4px;border-radius:3px;margin-right:4px;">IPv6</span>'
+          : '<span style="font-size:10px;background:#10b981;color:#fff;padding:1px 4px;border-radius:3px;margin-right:4px;">IPv4</span>';
+        html += `<div style="font-size:12px;font-family:monospace;padding:1px 0;">${tag}${addr.address}</div>`;
+      }
+      if (iface.rx_label || iface.tx_label) {
+        html += `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">↓ ${iface.rx_label || '0 B'} &nbsp; ↑ ${iface.tx_label || '0 B'}</div>`;
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchNetworkInterfaces error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load interfaces</span>';
   }
 }
 
