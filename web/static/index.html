@@ -888,6 +888,15 @@
     <div id="firewall-nat-table" style="overflow-x:auto;display:none;"></div>
   </div>
 
+  <!-- Wi-Fi Clients -->
+  <div class="card full-width">
+    <div class="card-title">
+      Wi-Fi Clients (<span id="wifi-clients-count">0</span>)
+      <button class="btn btn-sm" onclick="fetchWifiClients()">&#x27F3; Refresh</button>
+    </div>
+    <div id="wifi-clients-content" style="font-size:13px;color:var(--text-dim);">Loading…</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4019,6 +4028,7 @@ async function refreshAll() {
   fetchNtfyConfig();
   fetchLoginHistory();
   fetchArpTable();
+  fetchWifiClients();
 }
 
 async function init() {
@@ -5038,6 +5048,62 @@ async function fetchFirewallRules() {
     filterDiv.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
+  }
+}
+
+// ── Wi-Fi Clients ─────────────────────────────────────────────────────────────
+
+async function fetchWifiClients() {
+  const el = document.getElementById('wifi-clients-content');
+  const countEl = document.getElementById('wifi-clients-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading…</span>';
+  try {
+    const r = await fetch('/api/wifi/clients');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    if (countEl) countEl.textContent = data.count || 0;
+    if (!data.clients || data.clients.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No clients connected.</span>';
+      return;
+    }
+    function fmtBytes(b) {
+      if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+      if (b >= 1048576) return (b / 1048576).toFixed(2) + ' MB';
+      if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+      return b + ' B';
+    }
+    function signalColor(q) {
+      if (q >= 70) return '#4caf50';
+      if (q >= 40) return '#ff9800';
+      return '#f44336';
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="color:var(--text-dim);text-align:left;border-bottom:1px solid var(--border);">';
+    html += '<th style="padding:6px 8px;">MAC</th>';
+    html += '<th style="padding:6px 8px;">Signal</th>';
+    html += '<th style="padding:6px 8px;">RX</th>';
+    html += '<th style="padding:6px 8px;">TX</th>';
+    html += '<th style="padding:6px 8px;">Inactive</th>';
+    html += '</tr></thead><tbody>';
+    for (const c of data.clients) {
+      const q = c.signal_quality || 0;
+      const dbm = c.signal_dbm != null ? c.signal_dbm + ' dBm' : 'N/A';
+      const color = signalColor(q);
+      const bar = '<div style="background:var(--bg2);border-radius:3px;height:8px;width:80px;display:inline-block;vertical-align:middle;margin-right:6px;">'
+        + '<div style="background:' + color + ';border-radius:3px;height:8px;width:' + q + '%;"></div></div>';
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += '<td style="padding:6px 8px;font-family:monospace;">' + c.mac + '</td>';
+      html += '<td style="padding:6px 8px;">' + bar + '<span style="color:' + color + ';">' + dbm + '</span></td>';
+      html += '<td style="padding:6px 8px;">' + fmtBytes(c.rx_bytes) + '</td>';
+      html += '<td style="padding:6px 8px;">' + fmtBytes(c.tx_bytes) + '</td>';
+      html += '<td style="padding:6px 8px;">' + (c.inactive_ms != null ? c.inactive_ms + ' ms' : 'N/A') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Error: ' + e + '</span>';
   }
 }
 
