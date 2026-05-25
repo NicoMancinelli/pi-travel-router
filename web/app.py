@@ -9547,25 +9547,67 @@ def api_network_socket_summary():
 @app.route("/api/system/block-devices")
 @require_auth
 def api_system_block_devices():
-    """Return block device list from lsblk --json, with key=value fallback."""
-    out, rc = _run(["lsblk", "--json", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,LABEL,RM,RO,MODEL"])
-    if rc == 0:
+    """Return block device list from lsblk -J, with /sys/block fallback."""
+    lsblk_cmd = [
+        "lsblk", "-J", "-o",
+        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,HOTPLUG,STATE",
+    ]
+    out, rc = _run(lsblk_cmd)
+    if rc == 0 and out.strip():
         try:
             data = json.loads(out)
-            return jsonify({"devices": data.get("blockdevices", []), "source": "lsblk-json"})
+            raw_devs = data.get("blockdevices", [])
+
+            def _flatten(nodes):
+                result = []
+                for node in nodes:
+                    hotplug_raw = node.get("hotplug")
+                    if isinstance(hotplug_raw, str):
+                        hotplug = hotplug_raw in ("1", "true", "True")
+                    else:
+                        hotplug = bool(hotplug_raw)
+                    entry = {
+                        "name": node.get("name") or "",
+                        "size": node.get("size") or "",
+                        "type": node.get("type") or "",
+                        "mountpoint": node.get("mountpoint") or "",
+                        "fstype": node.get("fstype") or "",
+                        "model": (node.get("model") or "").strip(),
+                        "serial": (node.get("serial") or "").strip(),
+                        "transport": node.get("tran") or "",
+                        "hotplug": hotplug,
+                        "state": node.get("state") or "",
+                    }
+                    result.append(entry)
+                    children = node.get("children") or []
+                    result.extend(_flatten(children))
+                return result
+
+            devices = _flatten(raw_devs)
+            return jsonify({"devices": devices, "total": len(devices)})
         except (ValueError, KeyError):
             pass
-    # fallback: lsblk -P (key=value pairs)
-    out2, rc2 = _run(["lsblk", "-P", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE"])
-    devices = []
-    if rc2 == 0:
-        for line in out2.splitlines():
-            dev = {}
-            for m in re.finditer(r'(\w+)="([^"]*)"', line):
-                dev[m.group(1).lower()] = m.group(2)
-            if dev:
-                devices.append(dev)
-    return jsonify({"devices": devices, "source": "lsblk-pairs"})
+
+    # lsblk not available or failed — try /sys/block fallback
+    sys_block = Path("/sys/block")
+    if sys_block.is_dir():
+        devices = []
+        for entry in sorted(sys_block.iterdir()):
+            devices.append({
+                "name": entry.name,
+                "size": "",
+                "type": "disk",
+                "mountpoint": "",
+                "fstype": "",
+                "model": "",
+                "serial": "",
+                "transport": "",
+                "hotplug": False,
+                "state": "",
+            })
+        return jsonify({"devices": devices, "total": len(devices)})
+
+    return jsonify({"devices": [], "total": 0, "error": "lsblk not available"})
 
 
 @app.route("/api/network/dns-config")
