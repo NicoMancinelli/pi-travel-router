@@ -1024,6 +1024,15 @@
 
   <hr class="divider">
 
+  <!-- Connected Clients -->
+  <div class="card full-width" id="card-clients">
+    <div class="card-title">
+      &#x1F4BB; Connected Clients
+      <button class="btn btn-sm" onclick="fetchConnectedClients()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="clients-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- VPN Kill Switch -->
   <div class="card" id="card-killswitch">
     <div class="card-title">&#x1F6AB; VPN Kill Switch</div>
@@ -3984,6 +3993,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTempHistory();
   fetchBandwidthHistory();
   fetchDnsResolvers();
+  fetchConnectedClients();
   fetchKillSwitchStatus();
 });
 
@@ -4173,6 +4183,7 @@ async function refreshAll() {
   fetchIfaceStats();
   fetchNtfyConfig();
   fetchLoginHistory();
+  fetchConnectedClients();
   fetchArpTable();
   fetchWifiClients();
   fetchWanUplinks();
@@ -6080,6 +6091,40 @@ async function fetchSshKeys() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load SSH keys</span>';
+  }
+}
+
+// ── Connected Clients ─────────────────────────────────────────────────────────
+
+async function fetchConnectedClients() {
+  const el = document.getElementById('clients-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/clients');
+    const d = await resp.json();
+    if (!d.clients || d.clients.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No ARP entries found (no clients connected, or table empty).</span>';
+      return;
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} client${d.count !== 1 ? 's' : ''} in ARP table</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">IP</th><th style="padding:5px 8px;">MAC</th><th style="padding:5px 8px;">Hostname</th><th style="padding:5px 8px;">Vendor</th><th style="padding:5px 8px;">Interface</th>';
+    html += '</tr></thead><tbody>';
+    for (const c of d.clients) {
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:600;">${escHtml(c.ip)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(c.mac)}</td>`;
+      html += `<td style="padding:5px 8px;">${c.hostname ? escHtml(c.hostname) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${c.vendor ? escHtml(c.vendor) : '—'}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(c.interface)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load connected clients</span>';
   }
 }
 

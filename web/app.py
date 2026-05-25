@@ -6516,6 +6516,101 @@ def api_vpn_killswitch():
     return jsonify(result)
 
 
+# ── Connected Clients ─────────────────────────────────────────────────────────
+
+@app.route("/api/network/clients", methods=["GET"])
+@require_auth
+def api_network_clients():
+    """Return connected LAN clients from ARP table and optionally nmap."""
+    import re
+
+    clients = []
+
+    # Parse /proc/net/arp
+    try:
+        with open("/proc/net/arp") as f:
+            lines = f.readlines()[1:]  # skip header
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            ip = parts[0]
+            flags = parts[2]
+            mac = parts[3]
+            iface = parts[5].strip()
+            # Skip incomplete entries (flags=0x0) and loopback
+            if flags == "0x0" or mac == "00:00:00:00:00:00" or iface == "lo":
+                continue
+            # Try reverse DNS
+            hostname = None
+            out, rc = _run(["getent", "hosts", ip])
+            if rc == 0 and out.strip():
+                hostname = out.split()[1] if len(out.split()) > 1 else None
+            clients.append({
+                "ip": ip,
+                "mac": mac,
+                "hostname": hostname,
+                "interface": iface,
+                "vendor": _mac_vendor(mac),
+            })
+    except OSError:
+        pass
+
+    # Also check dnsmasq leases for hostnames we might have missed
+    lease_names = {}
+    lease_paths = ["/var/lib/misc/dnsmasq.leases", "/tmp/dnsmasq.leases", "/var/lib/dnsmasq/dnsmasq.leases"]
+    for path in lease_paths:
+        try:
+            with open(path) as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        lease_mac = parts[1].lower()
+                        lease_ip = parts[2]
+                        lease_host = parts[3] if parts[3] != "*" else None
+                        lease_names[lease_ip] = (lease_mac, lease_host)
+            break
+        except OSError:
+            continue
+
+    for c in clients:
+        if c["hostname"] is None and c["ip"] in lease_names:
+            c["hostname"] = lease_names[c["ip"]][1]
+
+    # Sort by last octet of IP
+    try:
+        clients.sort(key=lambda c: int(c["ip"].split(".")[-1]))
+    except (ValueError, IndexError):
+        pass
+
+    return jsonify({"clients": clients, "count": len(clients)})
+
+
+def _mac_vendor(mac):
+    """Return a short vendor hint from the MAC OUI (first 3 bytes)."""
+    oui_map = {
+        "b8:27:eb": "Raspberry Pi",
+        "dc:a6:32": "Raspberry Pi",
+        "e4:5f:01": "Raspberry Pi",
+        "d8:3a:dd": "Raspberry Pi",
+        "00:50:56": "VMware",
+        "00:0c:29": "VMware",
+        "08:00:27": "VirtualBox",
+        "00:1a:11": "Google",
+        "ac:37:43": "HTC",
+        "f4:f5:d8": "Google",
+        "04:d3:b0": "Apple",
+        "a4:c3:f0": "Apple",
+        "98:01:a7": "Apple",
+        "3c:22:fb": "Apple",
+        "00:1b:21": "Intel",
+        "00:1e:65": "Intel",
+        "18:66:da": "Intel",
+    }
+    prefix = mac.lower()[:8]
+    return oui_map.get(prefix, None)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
