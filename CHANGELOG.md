@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.65.0] - 2026-05-25
+
+### Added
+- `GET /api/system/failed-units` — failed systemd units via `systemctl list-units --state=failed`; shows unit name, load/active/sub state, description; dashboard card shows green healthy badge when all units pass
+- `GET /api/network/routes` — IPv4 routing table via `ip -j route show`; returns destination, gateway, interface, protocol, scope, metric; highlights default gateway; dashboard card bolds default route
+- `GET /api/system/swap` — swap utilization from `/proc/meminfo` with per-device breakdown via `swapon --show --bytes`; dashboard card shows fill bar (green <50%, amber <80%, red ≥80%) and device table
+- Dashboard cards: Failed Units (🔴), Route Table (🗺️), Swap Usage (🔄)
+
 ## [2.64.0] - 2026-05-25
 
 ### Added
