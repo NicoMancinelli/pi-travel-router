@@ -13788,6 +13788,64 @@ def api_system_clock():
     return jsonify({"synced": False, "source": None})
 
 
+@app.route("/api/network/connections")
+@require_auth
+def api_network_connections():
+    """Return established TCP/UDP connections with process names via ss."""
+    import re as _re
+
+    out, _ = _run("ss -tunp state established")
+    connections = []
+    by_proto: dict = {"tcp": 0, "udp": 0}
+
+    for line in out.splitlines():
+        # Skip header lines
+        if line.startswith("Netid") or line.startswith("State"):
+            continue
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+        proto = parts[0].lower()  # tcp / udp
+        # columns: Netid State Recv-Q Send-Q Local Peer [process]
+        # When "state established" filter is used, State column may be omitted
+        # ss -tunp state established: Netid Recv-Q Send-Q Local Peer [users]
+        # Detect layout by checking if parts[1] is a digit (Recv-Q)
+        if parts[1].lstrip("-").isdigit():
+            local = parts[3]
+            peer = parts[4]
+            process_col = parts[5] if len(parts) > 5 else ""
+        else:
+            # State column present
+            local = parts[4]
+            peer = parts[5]
+            process_col = parts[6] if len(parts) > 6 else ""
+
+        # Extract process name from users:(("name",pid=X,...))
+        proc_match = _re.search(r'users:\(\("([^"]+)"', process_col)
+        process = proc_match.group(1) if proc_match else ""
+
+        connections.append({
+            "proto": proto,
+            "local": local,
+            "remote": peer,
+            "process": process,
+        })
+        if proto in by_proto:
+            by_proto[proto] += 1
+        else:
+            by_proto[proto] = 1
+
+    # Sort by remote IP, cap at top 20
+    connections.sort(key=lambda c: c["remote"])
+    connections = connections[:20]
+
+    return jsonify({
+        "connections": connections,
+        "total": len(connections),
+        "by_proto": by_proto,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

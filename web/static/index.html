@@ -1459,6 +1459,17 @@
     </div>
   </div>
 
+  <!-- Active Network Connections -->
+  <div class="card" id="card-connections">
+    <div class="card-header">
+      <span>🔌 Active Connections</span>
+      <span class="card-badge" id="connections-count">—</span>
+    </div>
+    <div class="card-body" id="connections-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -7518,6 +7529,53 @@ async function fetchClockSync() {
     if (d.local_time)
       html += `<tr><td>Local Time</td><td>${escHtml(d.local_time)}</td></tr>`;
     html += '</table>';
+    body.innerHTML = html;
+  } catch(e) { body.innerHTML = `<p class="error">${escHtml(String(e))}</p>`; }
+}
+
+// ── Active Network Connections ────────────────────────────────────────────────
+
+async function fetchConnections() {
+  const badge = document.getElementById('connections-count');
+  const body = document.getElementById('connections-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>';
+  try {
+    const resp = await apiFetch('/api/network/connections');
+    const data = await resp.json();
+    if (badge) {
+      badge.textContent = data.total ?? '—';
+      const tcp = (data.by_proto || {}).tcp || 0;
+      const udp = (data.by_proto || {}).udp || 0;
+      badge.title = `TCP: ${tcp}  UDP: ${udp}`;
+    }
+    if (!data.connections || data.connections.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim)">No established connections.</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr>';
+    html += '<th style="padding:4px 6px;text-align:left;color:var(--text-dim);font-weight:600;">Proto</th>';
+    html += '<th style="padding:4px 6px;text-align:left;color:var(--text-dim);font-weight:600;">Local</th>';
+    html += '<th style="padding:4px 6px;text-align:left;color:var(--text-dim);font-weight:600;">Remote</th>';
+    html += '<th style="padding:4px 6px;text-align:left;color:var(--text-dim);font-weight:600;">Process</th>';
+    html += '</tr></thead><tbody>';
+    for (const c of data.connections) {
+      const protoColor = c.proto === 'tcp' ? '#3b82f6' : '#a855f7';
+      html += '<tr style="border-top:1px solid var(--border)">';
+      html += `<td style="padding:4px 6px;"><span style="display:inline-block;background:${protoColor};color:#fff;border-radius:3px;padding:1px 5px;font-size:10px;font-weight:600;">${escHtml(c.proto.toUpperCase())}</span></td>`;
+      html += `<td style="padding:4px 6px;font-family:monospace;">${escHtml(c.local)}</td>`;
+      html += `<td style="padding:4px 6px;font-family:monospace;">${escHtml(c.remote)}</td>`;
+      html += `<td style="padding:4px 6px;color:var(--text-dim);">${escHtml(c.process || '—')}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (data.total > 20) {
+      html += `<p style="margin:6px 0 0;font-size:11px;color:var(--text-dim);">Showing top 20 of ${data.total} connections.</p>`;
+    }
+    const tcp = (data.by_proto || {}).tcp || 0;
+    const udp = (data.by_proto || {}).udp || 0;
+    html += `<p style="margin:6px 0 0;font-size:11px;color:var(--text-dim);">TCP: ${tcp} &nbsp; UDP: ${udp}</p>`;
     body.innerHTML = html;
   } catch(e) { body.innerHTML = `<p class="error">${escHtml(String(e))}</p>`; }
 }
