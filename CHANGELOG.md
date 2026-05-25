@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.19.0] - 2026-05-24
+
+### Added
+
+- **Uplink history** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`): Background daemon thread samples the active default-route interface every 60s, records transitions to `uplink-history.json` (max 200 entries) with interface type classification (wifi/ethernet/wireguard/vpn/usb-tether/bluetooth). `GET /api/uplink/history` returns newest-first with configurable limit. Dashboard card shows timestamp/interface/type/metric table with color-coded type column.
+- **Pi throttle monitor** (`web/app.py`, `web/static/index.html`): `GET /api/system/throttle` calls `vcgencmd get_throttled`, decodes the bitmask into named flags for current (undervoltage, ARM freq cap, throttled, soft temp limit) and historical events, reads CPU temp and current frequency. Dashboard "Pi Health" card shows temp with green/orange/red threshold coloring, clean status or active flag list, and raw hex for diagnostics. Gracefully degrades to "not available" on non-Pi hardware.
+- **Log export** (`web/app.py`, `web/static/index.html`): `GET /api/logs/export?lines=5000` reads up to 1000 lines from each known log file, falls back to `journalctl` if none found, returns a timestamped `.txt` file as a `Content-Disposition: attachment` download. Logs card gains an Export button that opens the URL in a new tab.
+
 ## [2.18.0] - 2026-05-24
 
 ### Added
