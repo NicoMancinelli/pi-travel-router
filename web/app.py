@@ -10285,6 +10285,82 @@ def api_system_oom_events():
     return jsonify({"events": events, "count": len(events), "oom_free": len(events) == 0})
 
 
+# ── Hardware Sensors (Pi Firmware) ───────────────────────────────────────────
+
+@app.route("/api/system/hardware-sensors", methods=["GET"])
+@require_auth
+def api_system_hardware_sensors():
+    """Return Pi firmware sensor readings: voltage, clock speeds, throttle state."""
+    sensors = {}
+
+    # Throttle state (bitmask from firmware)
+    out, rc = _run(["vcgencmd", "get_throttled"])
+    if rc == 0:
+        m = re.search(r'throttled=(0x[0-9a-fA-F]+)', out)
+        if m:
+            val = int(m.group(1), 16)
+            sensors["throttled_hex"] = hex(val)
+            sensors["throttled_flags"] = {
+                "under_voltage": bool(val & 0x1),
+                "arm_freq_capped": bool(val & 0x2),
+                "currently_throttled": bool(val & 0x4),
+                "soft_temp_limit": bool(val & 0x8),
+                "under_voltage_occurred": bool(val & 0x10000),
+                "arm_freq_capped_occurred": bool(val & 0x20000),
+                "throttling_occurred": bool(val & 0x40000),
+                "soft_temp_limit_occurred": bool(val & 0x80000),
+            }
+
+    # Core voltage
+    out, rc = _run(["vcgencmd", "measure_volts", "core"])
+    if rc == 0:
+        m = re.search(r'volt=([\d.]+)V', out)
+        if m:
+            sensors["core_voltage_v"] = float(m.group(1))
+
+    # SDRAM voltages
+    for rail in ("sdram_c", "sdram_i", "sdram_p"):
+        out, rc = _run(["vcgencmd", "measure_volts", rail])
+        if rc == 0:
+            m = re.search(r'volt=([\d.]+)V', out)
+            if m:
+                sensors[f"{rail}_voltage_v"] = float(m.group(1))
+
+    # Clock speeds
+    for clock in ("arm", "core", "h264", "isp", "v3d", "uart", "pwm", "emmc", "pixel", "vec", "hdmi", "dpi"):
+        out, rc = _run(["vcgencmd", "measure_clock", clock])
+        if rc == 0:
+            m = re.search(r'frequency\(\d+\)=(\d+)', out)
+            if m:
+                sensors.setdefault("clocks_hz", {})[clock] = int(m.group(1))
+
+    # GPU temperature
+    out, rc = _run(["vcgencmd", "measure_temp"])
+    if rc == 0:
+        m = re.search(r'temp=([\d.]+)', out)
+        if m:
+            sensors["gpu_temp_c"] = float(m.group(1))
+
+    # CPU temperature from sysfs (more reliable)
+    try:
+        for zone_path in sorted(Path("/sys/class/thermal").iterdir()):
+            if not zone_path.name.startswith("thermal_zone"):
+                continue
+            temp_f = zone_path / "temp"
+            type_f = zone_path / "type"
+            if temp_f.exists():
+                temp_val = int(temp_f.read_text().strip())
+                zone_type = type_f.read_text().strip() if type_f.exists() else zone_path.name
+                sensors.setdefault("cpu_temps", {})[zone_type] = round(temp_val / 1000, 1)
+    except OSError:
+        pass
+
+    # Check if vcgencmd is available at all
+    sensors["vcgencmd_available"] = bool(sensors.get("gpu_temp_c") is not None or "throttled_hex" in sensors)
+
+    return jsonify(sensors)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

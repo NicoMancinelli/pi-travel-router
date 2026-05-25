@@ -947,6 +947,15 @@
     <div id="oom-events-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Hardware Sensors -->
+  <div class="card full-width" id="card-hardware-sensors">
+    <div class="card-title">
+      &#x1F50D; Hardware Sensors
+      <button class="btn btn-sm" onclick="fetchHardwareSensors()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="hardware-sensors-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4536,6 +4545,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWifiSignal();
   fetchCgroupStats();
   fetchOomEvents();
+  fetchHardwareSensors();
 });
 
 async function fetchJournal() {
@@ -4796,6 +4806,7 @@ async function refreshAll() {
   fetchWifiSignal();
   fetchCgroupStats();
   fetchOomEvents();
+  fetchHardwareSensors();
 }
 
 async function init() {
@@ -9465,6 +9476,72 @@ async function fetchOomEvents() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchOomEvents error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load OOM events</span>';
+  }
+}
+
+// ── Hardware Sensors ──────────────────────────────────────────────────────────
+
+async function fetchHardwareSensors() {
+  const el = document.getElementById('hardware-sensors-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/hardware-sensors');
+    const d = await r.json();
+    if (!d.vcgencmd_available && !d.cpu_temps) {
+      el.innerHTML = '<span style="color:var(--text-dim)">vcgencmd not available on this hardware</span>';
+      return;
+    }
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">';
+
+    // Temperatures
+    if (d.gpu_temp_c !== undefined) {
+      const c = d.gpu_temp_c;
+      const col = c >= 80 ? 'var(--danger)' : c >= 60 ? '#f59e0b' : 'var(--success)';
+      html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;"><div style="font-size:11px;color:var(--text-dim);">GPU Temp</div><div style="font-size:20px;font-weight:700;color:${col};">${c}°C</div></div>`;
+    }
+    if (d.cpu_temps) {
+      for (const [zone, temp] of Object.entries(d.cpu_temps)) {
+        const col = temp >= 80 ? 'var(--danger)' : temp >= 60 ? '#f59e0b' : 'var(--success)';
+        html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;"><div style="font-size:11px;color:var(--text-dim);">${zone}</div><div style="font-size:20px;font-weight:700;color:${col};">${temp}°C</div></div>`;
+      }
+    }
+
+    // Voltage
+    if (d.core_voltage_v !== undefined) {
+      const col = d.core_voltage_v < 1.2 ? 'var(--danger)' : 'var(--success)';
+      html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;"><div style="font-size:11px;color:var(--text-dim);">Core Voltage</div><div style="font-size:20px;font-weight:700;color:${col};">${d.core_voltage_v}V</div></div>`;
+    }
+
+    // Throttle flags
+    if (d.throttled_flags) {
+      const f = d.throttled_flags;
+      const issues = [];
+      if (f.under_voltage) issues.push('⚡ Under-voltage');
+      if (f.currently_throttled) issues.push('🔥 Throttled');
+      if (f.soft_temp_limit) issues.push('🌡 Temp limit');
+      if (f.under_voltage_occurred) issues.push('⚡ UV occurred');
+      if (f.throttling_occurred) issues.push('🔥 Throttle occurred');
+      const col = issues.length ? 'var(--danger)' : 'var(--success)';
+      const label = issues.length ? issues.join(', ') : '✓ No throttling';
+      html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;grid-column:span 2;"><div style="font-size:11px;color:var(--text-dim);">Throttle State (${d.throttled_hex})</div><div style="font-size:13px;color:${col};margin-top:2px;">${label}</div></div>`;
+    }
+
+    // Clock speeds
+    if (d.clocks_hz) {
+      const interesting = ['arm', 'core', 'v3d'];
+      for (const clk of interesting) {
+        if (d.clocks_hz[clk] !== undefined) {
+          const mhz = (d.clocks_hz[clk] / 1e6).toFixed(0);
+          html += `<div style="padding:8px;border:1px solid var(--border);border-radius:4px;"><div style="font-size:11px;color:var(--text-dim);">${clk.toUpperCase()} Clock</div><div style="font-size:18px;font-weight:700;">${mhz} MHz</div></div>`;
+        }
+      }
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchHardwareSensors error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load hardware sensors</span>';
   }
 }
 
