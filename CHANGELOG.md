@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.72.0] - 2026-05-25
+
+### Added
+- `GET /api/system/kernel-config` — selected kernel config keys from `/boot/config-$(uname -r)` or `/proc/config.gz`; covers security (SECCOMP, ASLR, AppArmor), networking (WireGuard, TUN, IPv6), and Pi-specific (BCM2835, USB); dashboard card shows 3-column grid with color-coded built-in/module/disabled badges
+- `GET /api/network/bonding` — bonding interface status from `/sys/class/net/*/bonding/`; reads mode, slaves, active slave, MII interval, and per-slave state; dashboard card shows per-bond detail or "No bonding interfaces configured"
+- `GET /api/system/environment` — filtered process and systemd environment variables; allowlist of safe keys, blocks any key matching PASSWORD/SECRET/TOKEN/KEY/CREDENTIAL/AUTH; dashboard card shows scrollable table with blue/gray source badges
+- Dashboard cards: Kernel Config (⚙️), Network Bonding (🔗), System Environment (🌐)
+
 ## [2.71.0] - 2026-05-25
 
 ### Added
