@@ -1209,6 +1209,10 @@
     <div id="loadavg-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-cpu-temp">
+    <div id="cpu-temp-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4254,6 +4258,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoadAvg();
   fetchBatteryStatus();
   fetchInterrupts();
+  fetchCpuTemp();
 });
 
 async function fetchJournal() {
@@ -4473,6 +4478,7 @@ async function refreshAll() {
   fetchLoadAvg();
   fetchBatteryStatus();
   fetchInterrupts();
+  fetchCpuTemp();
 }
 
 async function init() {
@@ -7913,6 +7919,49 @@ async function fetchLoadAvg() {
       <div style="font-size:0.8em;color:var(--muted);margin-top:4px;">${d.running_procs} running / ${d.total_procs} total processes &nbsp;&bull;&nbsp; ${d.cpu_count} CPU${d.cpu_count !== 1 ? 's' : ''}</div>`;
   } catch (e) {
     if (el) el.innerHTML = `<div class="card-title">&#x1F4CA; Load Average</div><span style="color:var(--danger)">Failed: ${e}</span>`;
+  }
+}
+
+// ── CPU Temperature ───────────────────────────────────────────────────────────
+
+async function fetchCpuTemp() {
+  const el = document.getElementById('cpu-temp-content');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/system/cpu-temp');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    if (d.error) {
+      el.innerHTML = `<div class="card-title">&#x1F321; CPU Temperature</div><span style="color:var(--danger)">${d.error}</span>`;
+      return;
+    }
+    const zones = d.zones || [];
+    const maxTemp = d.max_temp_c;
+    const tempColour = (t) => {
+      if (t === null) return 'var(--muted)';
+      if (t < 50) return 'var(--info,#4fa3e0)';
+      if (t < 65) return 'var(--success)';
+      if (t < 80) return 'var(--warning)';
+      return 'var(--danger)';
+    };
+    const badge = (t) => {
+      if (t === null) return '<span style="color:var(--muted)">N/A</span>';
+      const c = tempColour(t);
+      return `<span style="background:${c};color:#fff;border-radius:4px;padding:1px 7px;font-size:0.82em;font-weight:600;">${t.toFixed(1)}&thinsp;&deg;C</span>`;
+    };
+    const maxDisplay = maxTemp !== null
+      ? `<span style="font-size:1.6em;font-weight:600;color:${tempColour(maxTemp)};">${maxTemp.toFixed(1)}&thinsp;&deg;C</span>`
+      : '<span style="color:var(--muted)">N/A</span>';
+    const zoneRows = zones.length
+      ? zones.map(z => `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:0.88em;">
+          <span style="color:var(--text);">${z.zone}</span>${badge(z.temp_c)}</div>`).join('')
+      : '<div style="color:var(--muted);font-size:0.88em;">No thermal zones found</div>';
+    el.innerHTML = `
+      <div class="card-title">&#x1F321; CPU Temperature</div>
+      <div style="margin:6px 0 10px;">Max: ${maxDisplay}</div>
+      <div>${zoneRows}</div>`;
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="card-title">&#x1F321; CPU Temperature</div><span style="color:var(--danger)">Failed: ${e}</span>`;
   }
 }
 
