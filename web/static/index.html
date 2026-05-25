@@ -1100,6 +1100,12 @@
     <div id="ntp-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- CPU Frequency -->
+  <div class="card" id="cpu-freq-card">
+    <h2>⚡ CPU Frequency</h2>
+    <div id="cpu-freq-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1314,11 +1320,6 @@
   <div class="card full-width" id="card-open-files">
     <div class="card-title">&#x1F4C2; Open File Descriptors</div>
     <div id="open-files-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
-
-  <div class="card full-width" id="card-cpufreq">
-    <div class="card-title">&#x26A1; CPU Frequency</div>
-    <div id="cpufreq-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <!-- ARP Table -->
@@ -7393,6 +7394,29 @@ async function fetchNtpStatus() {
   } catch(e) { document.getElementById('ntp-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
+// ── CPU Frequency ─────────────────────────────────────────────────────────────
+async function fetchCpuFreq() {
+  try {
+    const r = await fetch('/api/system/cpu-freq');
+    const d = await r.json();
+    const el = document.getElementById('cpu-freq-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    let html = `<div class="metric-grid" style="margin-bottom:8px">
+      <div class="metric"><span class="metric-label">Avg Freq</span><span class="metric-value">${d.avg_mhz?.toFixed(0)} MHz</span></div>
+      <div class="metric"><span class="metric-label">Governor</span><span class="metric-value">${d.governor || '-'}</span></div>
+      <div class="metric"><span class="metric-label">Cores</span><span class="metric-value">${d.core_count}</span></div>
+    </div>`;
+    html += '<table class="table"><thead><tr><th>Core</th><th>Current</th><th>Min</th><th>Max</th><th>Governor</th></tr></thead><tbody>';
+    for (const c of (d.cores || [])) {
+      const pct = d.cores[0]?.max_mhz > 0 ? (c.cur_mhz / d.cores[0].max_mhz * 100) : 0;
+      const freqColor = pct > 80 ? 'color:var(--amber)' : '';
+      html += `<tr><td>CPU${c.core}</td><td style="${freqColor}">${c.cur_mhz.toFixed(0)} MHz</td><td>${c.min_mhz.toFixed(0)}</td><td>${c.max_mhz.toFixed(0)}</td><td>${c.governor}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('cpu-freq-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
 // ── Failed Systemd Units ──────────────────────────────────────────────────────
 async function fetchFailedUnits() {
   try {
@@ -7568,45 +7592,6 @@ async function fetchOpenFiles() {
       }
       html += '</tbody></table>';
     }
-    el.innerHTML = html;
-  } catch (e) {
-    el.textContent = 'Failed: ' + e;
-  }
-}
-
-async function fetchCpuFreq() {
-  const el = document.getElementById('cpufreq-content');
-  try {
-    const r = await fetch('/api/system/cpufreq');
-    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
-    const d = await r.json();
-    if (d.error) { el.textContent = d.error; return; }
-    if (!d.cpus || d.cpus.length === 0) { el.textContent = 'No CPUs found'; return; }
-    const fmtMhz = khz => khz ? (khz / 1000).toFixed(0) + ' MHz' : '—';
-    let html = '<table style="width:100%;border-collapse:collapse;">';
-    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
-      <th style="text-align:left;padding:3px 8px;">CPU</th>
-      <th style="text-align:right;padding:3px 8px;">Current</th>
-      <th style="text-align:right;padding:3px 8px;">Min</th>
-      <th style="text-align:right;padding:3px 8px;">Max</th>
-      <th style="text-align:left;padding:3px 8px;">Governor</th>
-    </tr></thead><tbody>`;
-    for (const cpu of d.cpus) {
-      const pct = (cpu.cur_khz && cpu.max_khz)
-        ? Math.round(cpu.cur_khz / cpu.max_khz * 100) : null;
-      const barColor = pct >= 90 ? '#e74c3c' : pct >= 60 ? '#f39c12' : '#2ecc71';
-      html += `<tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:3px 8px;font-family:monospace;">${cpu.cpu}</td>
-        <td style="padding:3px 8px;text-align:right;">
-          ${fmtMhz(cpu.cur_khz)}
-          ${pct !== null ? `<div style="background:var(--border);border-radius:3px;height:4px;margin-top:2px;"><div style="background:${barColor};width:${pct}%;height:4px;border-radius:3px;"></div></div>` : ''}
-        </td>
-        <td style="padding:3px 8px;text-align:right;">${fmtMhz(cpu.min_khz)}</td>
-        <td style="padding:3px 8px;text-align:right;">${fmtMhz(cpu.max_khz)}</td>
-        <td style="padding:3px 8px;color:var(--text-dim);">${cpu.governor || '—'}</td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
