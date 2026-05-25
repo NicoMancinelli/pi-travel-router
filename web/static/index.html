@@ -1393,6 +1393,12 @@
     <div id="process-tree-content"><em>Loading&hellip;</em></div>
   </div>
 
+  <!-- Kernel Messages -->
+  <div class="card" id="card-kernel-messages">
+    <h2>🔔 Kernel Messages</h2>
+    <div id="kernel-messages-content"><em>Loading…</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4473,6 +4479,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchThermalHistory();
   fetchNetworkNeighbors();
   fetchProcessTree();
+  fetchKernelMessages();
 });
 
 async function fetchJournal() {
@@ -4726,6 +4733,7 @@ async function refreshAll() {
   fetchThermalHistory();
   fetchNetworkNeighbors();
   fetchProcessTree();
+  fetchKernelMessages();
 }
 
 async function init() {
@@ -9161,6 +9169,32 @@ async function fetchNetworkNeighbors() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load neighbor table</span>';
+  }
+}
+
+async function fetchKernelMessages() {
+  const el = document.getElementById('kernel-messages-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/kernel-messages');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error') + '</span>'; return; }
+    const msgs = d.messages || [];
+    if (msgs.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No recent warnings/errors</span>';
+      return;
+    }
+    const lines = msgs.map(m => {
+      const ts = m.timestamp ? '[' + m.timestamp + '] ' : '';
+      return ts + m.level.toUpperCase() + ': ' + m.message;
+    }).join('\n');
+    el.innerHTML = '<pre style="max-height:300px;overflow-y:auto;font-size:12px;margin:0;white-space:pre-wrap;word-break:break-all;">'
+      + lines.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      + '</pre>'
+      + '<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">' + d.count + ' message' + (d.count !== 1 ? 's' : '') + '</div>';
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchKernelMessages error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load kernel messages</span>';
   }
 }
 
