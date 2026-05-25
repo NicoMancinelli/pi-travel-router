@@ -10049,6 +10049,76 @@ def api_system_open_sockets():
     })
 
 
+# ── WiFi Signal Quality ───────────────────────────────────────────────────────
+
+@app.route("/api/network/wifi-signal", methods=["GET"])
+@require_auth
+def api_network_wifi_signal():
+    """Return WiFi signal strength for all wireless interfaces."""
+    import os as _os
+
+    # Find wireless interfaces
+    wireless = []
+    net_path = Path("/sys/class/net")
+    try:
+        for iface in sorted(net_path.iterdir()):
+            if (iface / "wireless").exists() or (iface / "phy80211").exists():
+                wireless.append(iface.name)
+    except OSError:
+        pass
+
+    results = []
+    for iface in wireless:
+        info = {"interface": iface, "connected": False, "ssid": None,
+                "signal_dbm": None, "signal_quality": None, "freq_mhz": None,
+                "tx_bitrate": None, "rx_bitrate": None, "bssid": None}
+
+        out, rc = _run(["iw", "dev", iface, "link"])
+        if rc == 0 and "Not connected" not in out:
+            info["connected"] = True
+            for line in out.splitlines():
+                line = line.strip()
+                if line.startswith("SSID:"):
+                    info["ssid"] = line.split(":", 1)[1].strip()
+                elif line.startswith("signal:"):
+                    try:
+                        info["signal_dbm"] = int(line.split()[1])
+                        # Convert dBm to quality percent: quality = 2*(dBm+100), clamped 0-100
+                        q = 2 * (info["signal_dbm"] + 100)
+                        info["signal_quality"] = max(0, min(100, q))
+                    except (ValueError, IndexError):
+                        pass
+                elif line.startswith("freq:"):
+                    try:
+                        info["freq_mhz"] = int(line.split()[1])
+                    except (ValueError, IndexError):
+                        pass
+                elif line.startswith("tx bitrate:"):
+                    info["tx_bitrate"] = " ".join(line.split()[2:4])
+                elif line.startswith("rx bitrate:"):
+                    info["rx_bitrate"] = " ".join(line.split()[2:4])
+                elif line.startswith("Connected to"):
+                    info["bssid"] = line.split()[2]
+
+        results.append(info)
+
+    # If no wireless ifaces found via sysfs, try iw dev list
+    if not results:
+        out, rc = _run(["iw", "dev"])
+        if rc == 0:
+            for line in out.splitlines():
+                line = line.strip()
+                if line.startswith("Interface "):
+                    iface = line.split()[1]
+                    results.append({"interface": iface, "connected": False,
+                                    "ssid": None, "signal_dbm": None,
+                                    "signal_quality": None, "freq_mhz": None,
+                                    "tx_bitrate": None, "rx_bitrate": None,
+                                    "bssid": None})
+
+    return jsonify({"interfaces": results, "count": len(results)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
