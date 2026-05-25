@@ -7487,6 +7487,57 @@ def api_system_meminfo():
     return jsonify(result)
 
 
+# ── Open File Descriptors ─────────────────────────────────────────────────────
+
+@app.route("/api/system/openfiles", methods=["GET"])
+@require_auth
+def api_system_openfiles():
+    """Return open file descriptor stats from /proc/sys/fs/file-nr and top procs."""
+    result = {
+        "allocated": 0,
+        "free": 0,
+        "max": 0,
+        "pct_used": 0.0,
+        "top_procs": [],
+    }
+    # System-wide fd counts from /proc/sys/fs/file-nr
+    # Format: allocated  free  max
+    try:
+        line = open("/proc/sys/fs/file-nr").read().strip()
+        parts = line.split()
+        if len(parts) >= 3:
+            result["allocated"] = int(parts[0])
+            result["free"]      = int(parts[1])
+            result["max"]       = int(parts[2])
+            if result["max"] > 0:
+                result["pct_used"] = round(result["allocated"] / result["max"] * 100, 1)
+    except (OSError, ValueError):
+        pass
+
+    # Per-process fd counts — top 10 by open fd count
+    import os as _os
+    proc_fds = []
+    try:
+        for pid_str in _os.listdir("/proc"):
+            if not pid_str.isdigit():
+                continue
+            fd_dir = f"/proc/{pid_str}/fd"
+            try:
+                fd_count = len(_os.listdir(fd_dir))
+            except OSError:
+                continue
+            try:
+                comm = open(f"/proc/{pid_str}/comm").read().strip()
+            except OSError:
+                comm = pid_str
+            proc_fds.append({"pid": int(pid_str), "comm": comm, "fds": fd_count})
+    except OSError:
+        pass
+
+    proc_fds.sort(key=lambda x: x["fds"], reverse=True)
+    result["top_procs"] = proc_fds[:10]
+    return jsonify(result)
+
 
 # ── CPU Frequency ─────────────────────────────────────────────────────────────
 
