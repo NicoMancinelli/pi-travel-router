@@ -507,14 +507,8 @@
   <div class="card full-width" id="card-datacap">
     <div class="card-title">Data Cap / Monthly Budget</div>
     <div id="datacap-content"><span class="spinner"></span></div>
-  </div>
-
-  <hr class="divider">
-
-  <!-- Data Cap -->
-  <div class="card full-width" id="card-datacap">
-    <div class="card-title">Data Cap / Monthly Budget</div>
-    <div id="datacap-content"><span class="spinner"></span></div>
+    <div id="datacap-status-content" style="margin-top:8px;"></div>
+    <button class="btn btn-sm" onclick="fetchDataCapStatus()" style="margin-top:4px;font-size:12px;">&#x1F4CA; Check Usage</button>
   </div>
 
   <hr class="divider">
@@ -3761,6 +3755,7 @@ async function refreshAll() {
   fetchWolTargets();
   fetchPortForwardRules();
   fetchDataCap();
+  fetchDataCapStatus();
   fetchLatencyHistory();
   fetchResourceStats();
   fetchThrottle();
@@ -4191,6 +4186,37 @@ async function saveDataCap() {
     }
   } catch (e) {
     alert('Save request failed: ' + e);
+  }
+}
+
+async function fetchDataCapStatus() {
+  const el = document.getElementById('datacap-status-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/datacap/status');
+    const d = await r.json();
+    if (!d.enabled) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:12px;">No data cap configured</span>';
+      return;
+    }
+    const barColor = d.over_cap ? 'var(--error,#e55)' : d.over_alert ? '#e93' : 'var(--success,#4c4)';
+    const pct = Math.min(d.pct, 100);
+    let html = '<div style="margin-bottom:6px;">';
+    html += '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">';
+    html += '<span>' + d.used_gb.toFixed(2) + ' GB used</span>';
+    html += '<span style="color:var(--text-dim);">' + d.cap_gb.toFixed(2) + ' GB cap</span>';
+    html += '</div>';
+    html += '<div style="background:var(--bg2);border-radius:4px;height:8px;overflow:hidden;">';
+    html += '<div style="background:' + barColor + ';height:100%;width:' + pct + '%;border-radius:4px;transition:width 0.3s;"></div>';
+    html += '</div>';
+    html += '<div style="font-size:11px;margin-top:3px;color:' + barColor + ';">';
+    if (d.over_cap) html += '⚠ Over cap (' + d.pct.toFixed(1) + '%)';
+    else if (d.over_alert) html += '⚠ Alert threshold reached (' + d.pct.toFixed(1) + '% of ' + d.alert_pct + '% limit)';
+    else html += d.pct.toFixed(1) + '% used';
+    html += '</div></div>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (el) el.innerHTML = '<span style="color:var(--error,#e55);font-size:12px;">Failed: ' + e + '</span>';
   }
 }
 
