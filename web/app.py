@@ -12331,6 +12331,118 @@ def api_system_environment():
     return jsonify({"variables": variables, "total": len(variables)})
 
 
+# ── Network Socket Stats ──────────────────────────────────────────────────────
+
+@app.route("/api/network/sockets", methods=["GET"])
+@require_auth
+def api_network_sockets():
+    """Return network socket statistics from ss and /proc/net/sockstat."""
+    summary = {"total": 0, "tcp_estab": 0, "tcp_timewait": 0, "udp": 0}
+    tcp_states: dict = {}
+    top_listeners: list = []
+    sockstat: dict = {"sockets_used": 0, "tcp_alloc": 0, "udp_inuse": 0}
+
+    # --- ss -s summary ---
+    out, rc = _run(["ss", "-s"])
+    if rc != 0:
+        # fallback: netstat -s (best-effort, very limited)
+        out, rc = _run(["netstat", "-s"])
+
+    if rc == 0 and out:
+        for line in out.splitlines():
+            line = line.strip()
+            if line.startswith("Total:"):
+                parts = line.split()
+                try:
+                    summary["total"] = int(parts[1])
+                except (IndexError, ValueError):
+                    pass
+            elif line.startswith("TCP:"):
+                rest = line.split(":", 1)[1].strip()
+                for m in re.finditer(r'(\w+)\s+(\d+)', rest):
+                    key, val = m.group(1), int(m.group(2))
+                    if key == "estab":
+                        summary["tcp_estab"] = val
+                    elif key == "timewait":
+                        summary["tcp_timewait"] = val
+            elif line.startswith("UDP:"):
+                parts = line.split()
+                try:
+                    summary["udp"] = int(parts[1])
+                except (IndexError, ValueError):
+                    pass
+
+    # --- ss -tan for TCP state breakdown ---
+    out2, rc2 = _run(["ss", "-tan"])
+    if rc2 == 0:
+        for line in out2.splitlines()[1:]:
+            parts = line.split()
+            if parts:
+                state = parts[0]
+                tcp_states[state] = tcp_states.get(state, 0) + 1
+
+    # --- ss -tnp for top listeners ---
+    out3, rc3 = _run(["ss", "-tnp"])
+    if rc3 == 0:
+        port_count: dict = {}
+        port_proc: dict = {}
+        for line in out3.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            # local address is parts[3]; format is addr:port
+            local = parts[3]
+            port_str = local.rsplit(":", 1)[-1]
+            try:
+                port = int(port_str)
+            except ValueError:
+                continue
+            port_count[port] = port_count.get(port, 0) + 1
+            # process name is in the last column: users:(("sshd",pid=1,fd=3))
+            if port not in port_proc and len(parts) >= 6:
+                proc_col = parts[-1]
+                m = re.search(r'"([^"]+)"', proc_col)
+                port_proc[port] = m.group(1) if m else ""
+        # top 10 by connection count
+        sorted_ports = sorted(port_count.items(), key=lambda x: x[1], reverse=True)[:10]
+        top_listeners = [
+            {"port": p, "process": port_proc.get(p, ""), "count": c}
+            for p, c in sorted_ports
+        ]
+
+    # --- /proc/net/sockstat ---
+    try:
+        content = Path("/proc/net/sockstat").read_text()
+        for line in content.splitlines():
+            parts = line.split()
+            if not parts:
+                continue
+            label = parts[0].rstrip(":")
+            kv: dict = {}
+            i = 1
+            while i < len(parts) - 1:
+                try:
+                    kv[parts[i]] = int(parts[i + 1])
+                except ValueError:
+                    pass
+                i += 2
+            if label == "sockets":
+                sockstat["sockets_used"] = kv.get("used", 0)
+            elif label == "TCP":
+                sockstat["tcp_alloc"] = kv.get("alloc", 0)
+            elif label == "UDP":
+                sockstat["udp_inuse"] = kv.get("inuse", 0)
+    except OSError:
+        pass
+
+    return jsonify({
+        "summary": summary,
+        "tcp_states": tcp_states,
+        "top_listeners": top_listeners,
+        "sockstat": sockstat,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

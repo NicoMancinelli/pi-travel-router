@@ -1223,6 +1223,15 @@
     <div id="env-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Socket Statistics -->
+  <div class="card full-width" id="card-socket-stats">
+    <div class="card-title">
+      &#x1F50C; Socket Statistics
+      <button class="btn btn-sm" onclick="fetchSockets()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="socket-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4809,6 +4818,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKernelConfig();
   fetchBonding();
   fetchEnvironment();
+  fetchSockets();
 });
 
 async function fetchJournal() {
@@ -5075,6 +5085,7 @@ async function refreshAll() {
   fetchKernelConfig();
   fetchBonding();
   fetchEnvironment();
+  fetchSockets();
 }
 
 async function init() {
@@ -7516,6 +7527,66 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Network Socket Stats ──────────────────────────────────────────────────────
+async function fetchSockets() {
+  const el = document.getElementById('socket-stats-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/network/sockets');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+
+    const s = d.summary || {};
+    const states = d.tcp_states || {};
+    const listeners = d.top_listeners || [];
+    const sk = d.sockstat || {};
+
+    // Key metrics row
+    let html = '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px;">';
+    const metrics = [
+      { label: 'Total Sockets', value: s.total ?? sk.sockets_used ?? 0, color: 'var(--blue,#3b82f6)' },
+      { label: 'TCP Established', value: s.tcp_estab ?? states['ESTAB'] ?? 0, color: 'var(--green,#22c55e)' },
+      { label: 'TCP Time-Wait', value: s.tcp_timewait ?? states['TIME-WAIT'] ?? 0, color: 'var(--amber,#f59e0b)' },
+      { label: 'UDP In Use', value: s.udp ?? sk.udp_inuse ?? 0, color: 'var(--text,#e2e8f0)' },
+      { label: 'TCP Alloc', value: sk.tcp_alloc ?? 0, color: 'var(--text-dim,#94a3b8)' },
+    ];
+    for (const m of metrics) {
+      html += `<div style="background:var(--bg2);border-radius:6px;padding:8px 14px;min-width:110px;text-align:center;">
+        <div style="font-size:1.5em;font-weight:700;color:${m.color}">${m.value}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${m.label}</div>
+      </div>`;
+    }
+    html += '</div>';
+
+    // TCP state breakdown
+    const stateKeys = Object.keys(states);
+    if (stateKeys.length > 0) {
+      html += '<div style="margin-bottom:12px;">';
+      html += '<div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">TCP State Breakdown</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;">';
+      const stateColors = { 'ESTAB': 'var(--green,#22c55e)', 'LISTEN': 'var(--blue,#3b82f6)', 'TIME-WAIT': 'var(--amber,#f59e0b)', 'CLOSE-WAIT': 'var(--red,#ef4444)', 'SYN-SENT': 'var(--amber,#f59e0b)', 'SYN-RECV': 'var(--amber,#f59e0b)' };
+      for (const [state, count] of Object.entries(states).sort((a,b) => b[1]-a[1])) {
+        const col = stateColors[state] || 'var(--text-dim,#94a3b8)';
+        html += `<span style="background:var(--bg2);border-radius:4px;padding:2px 8px;font-size:12px;"><span style="color:${col};font-weight:600;">${state}</span> ${count}</span>`;
+      }
+      html += '</div></div>';
+    }
+
+    // Top listeners table
+    if (listeners.length > 0) {
+      html += '<div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Top Listeners by Connections</div>';
+      html += '<div style="max-height:200px;overflow-y:auto"><table class="table"><thead><tr><th>Port</th><th>Process</th><th>Connections</th></tr></thead><tbody>';
+      for (const l of listeners) {
+        html += `<tr><td style="font-family:monospace;font-weight:600">${l.port}</td><td style="font-family:monospace">${l.process || '<span style="color:var(--text-dim)">unknown</span>'}</td><td>${l.count}</td></tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── System Environment ────────────────────────────────────────────────────────
