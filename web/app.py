@@ -3679,6 +3679,102 @@ def api_network_dhcp_leases():
     })
 
 
+# ── Firewall Rules ────────────────────────────────────────────────────────────
+
+@app.route("/api/network/firewall", methods=["GET"])
+@require_auth
+def api_network_firewall():
+    """Return firewall rules: nft list ruleset (preferred) or iptables -L."""
+    import re
+
+    # Try nftables first
+    out, rc = _run(["nft", "-j", "list", "ruleset"])
+    if rc == 0:
+        import json as _json
+        try:
+            data = _json.loads(out)
+            rules = []
+            for item in data.get("nftables", []):
+                if "rule" in item:
+                    r = item["rule"]
+                    table = r.get("table", "")
+                    chain = r.get("chain", "")
+                    expr_list = r.get("expr", [])
+                    # Stringify expr for display
+                    parts = []
+                    for expr in expr_list:
+                        if "match" in expr:
+                            m = expr["match"]
+                            left = str(m.get("left", {}).get("payload", {}).get("field", ""))
+                            right = str(m.get("right", ""))
+                            parts.append(f"{left}={right}")
+                        elif "accept" in expr:
+                            parts.append("ACCEPT")
+                        elif "drop" in expr:
+                            parts.append("DROP")
+                        elif "reject" in expr:
+                            parts.append("REJECT")
+                        elif "counter" in expr:
+                            c = expr["counter"]
+                            parts.append(f"pkts={c.get('packets',0)} bytes={c.get('bytes',0)}")
+                    rules.append({
+                        "table": table,
+                        "chain": chain,
+                        "rule": " ".join(parts) if parts else str(expr_list),
+                        "tool": "nft",
+                    })
+            return jsonify({"tool": "nft", "rules": rules, "count": len(rules)})
+        except (ValueError, KeyError):
+            pass
+
+    # Try nft plain text as fallback
+    out, rc = _run(["nft", "list", "ruleset"])
+    if rc == 0:
+        lines = [l for l in out.splitlines() if l.strip() and not l.startswith("#")]
+        rules = []
+        current_table = ""
+        current_chain = ""
+        for line in lines:
+            line_s = line.strip()
+            m = re.match(r'^table (\S+ \S+)', line_s)
+            if m:
+                current_table = m.group(1)
+                continue
+            m = re.match(r'^chain (\S+)', line_s)
+            if m:
+                current_chain = m.group(1)
+                continue
+            if line_s and line_s not in ('{', '}'):
+                rules.append({"table": current_table, "chain": current_chain, "rule": line_s, "tool": "nft"})
+        return jsonify({"tool": "nft", "rules": rules, "count": len(rules)})
+
+    # Fall back to iptables
+    chains = []
+    for table in ("filter", "nat", "mangle"):
+        out, rc = _run(["iptables", "-t", table, "-L", "-n", "-v", "--line-numbers"])
+        if rc != 0:
+            continue
+        current_chain = ""
+        for line in out.splitlines():
+            m = re.match(r'^Chain (\S+)', line)
+            if m:
+                current_chain = m.group(1)
+                continue
+            # Rule lines start with a line number
+            m = re.match(r'^\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.*)', line)
+            if m:
+                chains.append({
+                    "table": table,
+                    "chain": current_chain,
+                    "rule": line.strip(),
+                    "tool": "iptables",
+                })
+    if chains:
+        return jsonify({"tool": "iptables", "rules": chains, "count": len(chains)})
+
+    return jsonify({"tool": "none", "rules": [], "count": 0, "error": "No firewall tool available (nft/iptables)"})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])
@@ -5186,63 +5282,6 @@ def api_network_traceroute():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     return jsonify({"target": target, "hops": hops, "count": len(hops)})
-
-
-# ── Firewall Rules ────────────────────────────────────────────────────────────
-
-
-def _parse_iptables(output: str) -> list:
-    """Parse iptables -L -n --line-numbers output into a list of rule dicts."""
-    rules = []
-    current_chain = ""
-    for line in output.splitlines():
-        line = line.rstrip()
-        if not line:
-            continue
-        if line.startswith("Chain "):
-            # e.g. "Chain INPUT (policy ACCEPT)"
-            current_chain = line.split()[1]
-            continue
-        # Skip column-header lines
-        if line.lstrip().startswith("num") or line.lstrip().startswith("target"):
-            continue
-        parts = line.split()
-        if len(parts) < 6:
-            continue
-        # parts: num target prot opt source destination [options...]
-        try:
-            int(parts[0])  # first token must be a line number
-        except ValueError:
-            continue
-        rules.append({
-            "chain": current_chain,
-            "num": parts[0],
-            "target": parts[1],
-            "prot": parts[2],
-            "source": parts[4],
-            "destination": parts[5],
-            "options": " ".join(parts[6:]) if len(parts) > 6 else "",
-        })
-    return rules
-
-
-@app.route("/api/firewall/rules", methods=["GET"])
-@require_auth
-def api_firewall_rules():
-    """Return parsed iptables filter and nat table rules."""
-    filter_out, filter_rc = _run(["iptables", "-L", "-n", "--line-numbers"])
-    if filter_rc != 0:
-        filter_rules = []
-    else:
-        filter_rules = _parse_iptables(filter_out)
-
-    nat_out, nat_rc = _run(["iptables", "-t", "nat", "-L", "-n", "--line-numbers"])
-    if nat_rc != 0:
-        nat_rules = []
-    else:
-        nat_rules = _parse_iptables(nat_out)
-
-    return jsonify({"filter": filter_rules, "nat": nat_rules})
 
 
 # ── Wi-Fi Clients ─────────────────────────────────────────────────────────────
