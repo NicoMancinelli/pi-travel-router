@@ -8350,6 +8350,68 @@ def api_system_disk_partitions():
     return jsonify({"partitions": partitions, "count": len(partitions)})
 
 
+# ── Kernel Log (dmesg) ────────────────────────────────────────────────────────
+
+@app.route("/api/system/dmesg")
+@require_auth
+def api_dmesg():
+    try:
+        lines_param = request.args.get("lines", 30)
+        try:
+            lines_count = int(lines_param)
+        except (ValueError, TypeError):
+            lines_count = 30
+        lines_count = max(1, min(lines_count, 100))
+
+        out, rc = _run(
+            ["dmesg", "--time-format", "iso", "-l", "warn,err,crit,alert,emerg",
+             "-n", str(lines_count)],
+            timeout=10,
+        )
+        if rc != 0:
+            out, rc = _run(
+                ["dmesg", "-T"],
+                timeout=10,
+            )
+            if rc != 0:
+                return jsonify({"messages": [], "count": 0, "error": "dmesg unavailable"})
+            raw_lines = out.splitlines()[-lines_count:]
+        else:
+            raw_lines = [l for l in out.splitlines() if l.strip()]
+
+        messages = []
+        for line in raw_lines:
+            line = line.strip()
+            if not line:
+                continue
+            ts = ""
+            msg = line
+            # ISO timestamp: starts with digit or [
+            m = re.match(r'^(\[?\d{4}-\d{2}-\d{2}T[\d:.+-]+\]?)\s+(.*)', line)
+            if m:
+                ts = m.group(1).strip("[]")
+                msg = m.group(2)
+            else:
+                # bracketed seconds-since-boot: [   12.345678]
+                m2 = re.match(r'^\[\s*[\d.]+\]\s+(.*)', line)
+                if m2:
+                    msg = m2.group(1)
+
+            lower = msg.lower()
+            if "error" in lower or "err:" in lower:
+                level = "err"
+            elif "warn" in lower:
+                level = "warn"
+            else:
+                level = "info"
+
+            messages.append({"ts": ts, "level": level, "msg": msg})
+
+        return jsonify({"messages": messages, "count": len(messages), "error": None})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"messages": [], "count": 0, "error": str(exc)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
