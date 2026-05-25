@@ -9453,6 +9453,68 @@ def api_system_ntp_peers():
     return jsonify({"backend": None, "peers": [], "error": "neither chrony nor ntpq available"})
 
 
+@app.route("/api/system/hardware")
+@require_auth
+def api_system_hardware():
+    """Return Raspberry Pi hardware info: model, revision, serial, memory."""
+    result = {}
+
+    # /proc/cpuinfo — model, revision, serial, hardware
+    try:
+        content = Path("/proc/cpuinfo").read_text()
+        for line in content.splitlines():
+            if ":" not in line:
+                continue
+            key, _, val = line.partition(":")
+            key = key.strip().lower().replace(" ", "_")
+            val = val.strip()
+            if key in ("model_name", "hardware", "revision", "serial", "model"):
+                result[key] = val
+    except OSError:
+        pass
+
+    # /proc/device-tree/model (Pi-specific)
+    try:
+        result["board_model"] = Path("/proc/device-tree/model").read_text().rstrip("\x00")
+    except OSError:
+        pass
+
+    # /sys/firmware/devicetree/base/model (alternate path)
+    if "board_model" not in result:
+        try:
+            result["board_model"] = Path("/sys/firmware/devicetree/base/model").read_text().rstrip("\x00")
+        except OSError:
+            pass
+
+    # RAM total from /proc/meminfo
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                result["mem_total_kb"] = int(line.split()[1])
+                break
+    except (OSError, ValueError):
+        pass
+
+    # SD card info
+    out, rc = _run(["cat", "/sys/block/mmcblk0/device/name"])
+    if rc == 0:
+        result["storage_device"] = out.strip()
+    out2, rc2 = _run(["cat", "/sys/block/mmcblk0/size"])
+    if rc2 == 0:
+        try:
+            result["storage_sectors"] = int(out2.strip())
+            result["storage_bytes"] = result["storage_sectors"] * 512
+        except ValueError:
+            pass
+
+    # vcgencmd (VideoCore GPU — Pi only)
+    out_vc, rc_vc = _run(["vcgencmd", "get_throttled"])
+    if rc_vc == 0:
+        result["throttle_hex"] = out_vc.strip()
+
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
