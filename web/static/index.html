@@ -1343,6 +1343,12 @@
     <div id="block-devices-content"><em>Loading&hellip;</em></div>
   </div>
 
+  <!-- DNS Config -->
+  <div class="card" id="card-dns-config">
+    <h2>&#x1F310; DNS Config</h2>
+    <div id="dns-config-content"><em>Loading&hellip;</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4412,6 +4418,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchUptimeHistory();
   fetchSocketSummary();
   fetchBlockDevices();
+  fetchDnsConfig();
 });
 
 async function fetchJournal() {
@@ -4655,6 +4662,7 @@ async function refreshAll() {
   fetchUptimeHistory();
   fetchSocketSummary();
   fetchBlockDevices();
+  fetchDnsConfig();
 }
 
 async function init() {
@@ -8754,6 +8762,64 @@ async function fetchBlockDevices() {
     el.innerHTML = html;
   } catch (e) { el.textContent = 'Error: ' + e; }
 }
+async function fetchDnsConfig() {
+  const el = document.getElementById('dns-config-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/network/dns-config');
+    const d = await r.json();
+    let html = '';
+    // Nameservers
+    html += '<div style="margin-bottom:8px;">';
+    html += '<strong>Nameservers</strong><br>';
+    if (d.nameservers && d.nameservers.length) {
+      d.nameservers.forEach(ns => {
+        html += `<span style="display:inline-block;background:var(--accent,#2563eb);color:#fff;border-radius:4px;padding:1px 7px;margin:2px 4px 2px 0;font-size:12px;font-family:monospace;">${escHtml(ns)}</span>`;
+      });
+    } else {
+      html += '<span style="color:var(--text-dim);font-size:13px;">None</span>';
+    }
+    html += '</div>';
+    // Search domains
+    if (d.search && d.search.length) {
+      html += '<div style="margin-bottom:8px;">';
+      html += '<strong>Search Domains</strong><br>';
+      d.search.forEach(s => {
+        html += `<span style="display:inline-block;background:var(--surface2,#334155);color:var(--text,#e2e8f0);border-radius:4px;padding:1px 7px;margin:2px 4px 2px 0;font-size:12px;font-family:monospace;">${escHtml(s)}</span>`;
+      });
+      html += '</div>';
+    }
+    // Options
+    if (d.options && d.options.length) {
+      html += '<div style="margin-bottom:8px;">';
+      html += '<strong>Options</strong><br>';
+      d.options.forEach(o => {
+        html += `<span style="display:inline-block;background:var(--surface2,#334155);color:var(--text,#e2e8f0);border-radius:4px;padding:1px 7px;margin:2px 4px 2px 0;font-size:12px;font-family:monospace;">${escHtml(o)}</span>`;
+      });
+      html += '</div>';
+    }
+    // AdGuard Home badge
+    html += '<div style="margin-bottom:8px;">';
+    html += '<strong>AdGuard Home</strong> ';
+    if (d.adguard_active) {
+      html += '<span style="display:inline-block;background:#16a34a;color:#fff;border-radius:4px;padding:1px 8px;font-size:12px;">&#x2714; Active</span>';
+    } else {
+      html += '<span style="display:inline-block;background:var(--surface2,#475569);color:var(--text-dim,#94a3b8);border-radius:4px;padding:1px 8px;font-size:12px;">Inactive</span>';
+    }
+    html += '</div>';
+    // resolvectl output
+    if (d.resolvectl) {
+      html += '<div style="margin-top:8px;">';
+      html += '<strong>resolvectl status</strong>';
+      html += `<pre style="max-height:160px;overflow-y:auto;font-size:11px;margin:4px 0 0 0;padding:8px;background:var(--surface,#1e293b);border-radius:4px;white-space:pre-wrap;word-break:break-all;">${escHtml(d.resolvectl)}</pre>`;
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger,#ef4444)">Failed to load DNS config</span>';
+  }
+}
+
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
 
 async function runLanScan() {
