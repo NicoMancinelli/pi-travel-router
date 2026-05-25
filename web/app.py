@@ -6930,6 +6930,68 @@ def api_network_iface_stats():
     return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
+# ── Tailscale Exit Node ───────────────────────────────────────────────────────
+
+@app.route("/api/vpn/tailscale/exitnode", methods=["GET"])
+@require_auth
+def api_tailscale_exitnode():
+    """Return current Tailscale exit node and list of available exit nodes."""
+    import json
+
+    out, rc = _run(["tailscale", "status", "--json"])
+    if rc != 0:
+        return jsonify({"error": "tailscale not available or not running", "current": None, "available": []})
+
+    try:
+        data = json.loads(out)
+    except (ValueError, KeyError):
+        return jsonify({"error": "Failed to parse tailscale status", "current": None, "available": []})
+
+    # Find current exit node (ExitNodeStatus in Self)
+    self_node = data.get("Self", {})
+    current_exit = None
+
+    # ExitNodeStatus is set when an exit node is in use
+    exit_node_status = data.get("ExitNodeStatus")
+    if exit_node_status:
+        current_exit = {
+            "tailscale_ip": exit_node_status.get("TailscaleIPs", [None])[0],
+            "hostname": exit_node_status.get("HostName", ""),
+            "dns_name": exit_node_status.get("DNSName", ""),
+            "online": exit_node_status.get("Online", False),
+        }
+
+    # Collect all peers that advertise as exit nodes
+    peers = data.get("Peer", {})
+    available = []
+    for node_id, peer in peers.items():
+        # ExitNodeOption=True means it can be used as exit node
+        if peer.get("ExitNodeOption", False):
+            is_current = peer.get("ExitNode", False)
+            available.append({
+                "id": node_id,
+                "hostname": peer.get("HostName", ""),
+                "dns_name": peer.get("DNSName", ""),
+                "tailscale_ip": peer.get("TailscaleIPs", [None])[0],
+                "online": peer.get("Online", False),
+                "current": is_current,
+                "os": peer.get("OS", ""),
+            })
+
+    # Sort: current first, then online, then offline
+    available.sort(key=lambda p: (not p["current"], not p["online"], p["hostname"]))
+
+    # Is this device itself acting as an exit node?
+    self_is_exit = self_node.get("ExitNodeOption", False)
+
+    return jsonify({
+        "current": current_exit,
+        "available": available,
+        "self_is_exit_node": self_is_exit,
+        "self_hostname": self_node.get("HostName", ""),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

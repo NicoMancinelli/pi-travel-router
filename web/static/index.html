@@ -1060,6 +1060,12 @@
     <div id="system-updates-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Tailscale Exit Node -->
+  <div class="card" id="card-ts-exitnode">
+    <div class="card-title">&#x1F5FA; Tailscale Exit Node</div>
+    <div id="ts-exitnode-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -1293,7 +1299,7 @@
   <div class="card" id="card-ts-exit-node" style="margin-top:16px;">
     <div class="card-title" style="justify-content:space-between;">
       <span>&#x1F310; Exit Node</span>
-      <button class="btn btn-sm" onclick="fetchTsExitNode()">&#x21BB; Refresh</button>
+      <button class="btn btn-sm" onclick="fetchTsExitNodeLegacy()">&#x21BB; Refresh</button>
     </div>
     <div id="ts-exit-node-content">
       <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
@@ -3203,8 +3209,9 @@ function renderTailscalePeers(d) {
 
 // ── Tailscale exit node ────────────────────────────────────────────────────────
 
-async function fetchTsExitNode() {
+async function fetchTsExitNodeLegacy() {
   const el = document.getElementById('ts-exit-node-content');
+  if (!el) return;
   try {
     const r = await apiFetch('/api/tailscale/exit-node');
     const d = await r.json();
@@ -3255,7 +3262,7 @@ async function setTsExitNode() {
     if (r.ok) {
       msg.textContent = node ? '✓ Exit node set' : '✓ Cleared';
       msg.style.color = 'var(--success,#4c4)';
-      setTimeout(() => { msg.textContent = ''; fetchTsExitNode(); }, 2000);
+      setTimeout(() => { msg.textContent = ''; fetchTsExitNodeLegacy(); fetchTsExitNode(); }, 2000);
     } else {
       msg.textContent = d.error || 'Failed';
       msg.style.color = 'var(--error,#e55)';
@@ -4075,6 +4082,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoginHistory();
   fetchIfaceStats();
   fetchSystemUpdates();
+  fetchTsExitNode();
 });
 
 async function fetchJournal() {
@@ -6378,6 +6386,66 @@ async function fetchVnstatDataCap() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load data usage</span>';
+  }
+}
+
+// ── Tailscale Exit Node ───────────────────────────────────────────────────────
+
+async function fetchTsExitNode() {
+  const el = document.getElementById('ts-exitnode-content');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/vpn/tailscale/exitnode');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+
+    let html = '';
+
+    // Current exit node status
+    if (d.current) {
+      const onlineColor = d.current.online ? '#22c55e' : '#ef4444';
+      html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px;background:var(--bg2);border-radius:6px;">`;
+      html += `<span style="font-size:18px;">&#x1F30D;</span>`;
+      html += `<div>`;
+      html += `<div style="font-weight:600;font-size:13px;">${escHtml(d.current.hostname || d.current.dns_name || d.current.tailscale_ip || 'Unknown')}</div>`;
+      html += `<div style="font-size:11px;color:var(--text-dim);">Exit node active · <span style="color:${onlineColor};">${d.current.online ? 'online' : 'offline'}</span></div>`;
+      html += `</div></div>`;
+    } else {
+      html += `<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">No exit node active — traffic routing directly</div>`;
+    }
+
+    if (d.self_is_exit_node) {
+      html += `<div style="font-size:12px;color:#60a5fa;margin-bottom:8px;">&#x2139; This device is advertising as an exit node</div>`;
+    }
+
+    // Available exit nodes
+    if (d.available && d.available.length > 0) {
+      html += `<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px;">Available exit nodes (${d.available.length})</div>`;
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      html += '<th style="padding:4px 8px;">Node</th><th style="padding:4px 8px;">IP</th><th style="padding:4px 8px;">OS</th><th style="padding:4px 8px;">Status</th>';
+      html += '</tr></thead><tbody>';
+      for (const node of d.available) {
+        const onlineColor = node.online ? '#22c55e' : '#6b7280';
+        const currentBadge = node.current ? '<span style="background:#22c55e;color:#fff;border-radius:3px;padding:0 5px;font-size:10px;margin-left:4px;">ACTIVE</span>' : '';
+        html += `<tr style="border-bottom:1px solid var(--border);">`;
+        html += `<td style="padding:4px 8px;font-weight:${node.current ? '700' : '400'};">${escHtml(node.hostname || node.dns_name || '—')}${currentBadge}</td>`;
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${node.tailscale_ip ? escHtml(node.tailscale_ip) : '—'}</td>`;
+        html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${node.os ? escHtml(node.os) : '—'}</td>`;
+        html += `<td style="padding:4px 8px;font-size:11px;color:${onlineColor};">${node.online ? '● online' : '○ offline'}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    } else {
+      html += `<div style="font-size:12px;color:var(--text-dim);">No exit nodes available in tailnet</div>`;
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load exit node status</span>';
   }
 }
 
