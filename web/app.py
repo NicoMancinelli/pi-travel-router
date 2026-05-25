@@ -8043,76 +8043,79 @@ def api_network_tcp():
 @require_auth
 def api_system_battery():
     """Return battery/UPS status from /sys/class/power_supply/ sysfs entries."""
-    ps_dir = "/sys/class/power_supply"
+    ps_dir = Path("/sys/class/power_supply")
+    _empty = {"supplies": [], "count": 0, "has_battery": False, "source": "sysfs"}
     try:
-        entries = os.listdir(ps_dir)
-    except OSError as exc:
-        return jsonify({"error": str(exc)})
+        entry_names = sorted(p.name for p in ps_dir.iterdir())
+    except OSError:
+        return jsonify(_empty)
 
-    batteries = []
-    for name in sorted(entries):
-        base = os.path.join(ps_dir, name)
+    if not entry_names:
+        return jsonify(_empty)
 
-        def _read(fname):
+    def _read(base, fname):
+        try:
+            return (base / fname).read_text().strip()
+        except OSError:
+            return None
+
+    # First pass: collect all supplies with their types
+    raw = []
+    for name in entry_names:
+        base = ps_dir / name
+        ptype = _read(base, "type") or "Unknown"
+        raw.append((name, base, ptype))
+
+    # Filter Mains/USB unless they are the only supplies present
+    non_mains = [(n, b, t) for n, b, t in raw if t not in ("Mains", "USB")]
+    to_process = non_mains if non_mains else raw
+
+    supplies = []
+    for name, base, ptype in to_process:
+        def _int_field(base, fname, divisor, ndigits):  # noqa: E306
+            val = _read(base, fname)
+            if val is None:
+                return None
             try:
-                with open(os.path.join(base, fname), "r") as fh:
-                    return fh.read().strip()
-            except OSError:
+                return round(int(val) / divisor, ndigits)
+            except ValueError:
                 return None
 
-        ptype = _read("type")
-        if ptype in ("Mains", "USB"):
-            continue
+        status = _read(base, "status") or "Unknown"
 
-        bat = {"name": name, "type": ptype}
+        capacity_raw = _read(base, "capacity")
+        try:
+            capacity_pct = int(capacity_raw) if capacity_raw is not None else None
+        except ValueError:
+            capacity_pct = None
 
-        status = _read("status")
-        if status is not None:
-            bat["status"] = status
+        voltage_v      = _int_field(base, "voltage_now",  1_000_000, 3)
+        current_ma     = _int_field(base, "current_now",  1_000,     1)
+        power_mw       = _int_field(base, "power_now",    1_000,     1)
+        energy_wh      = _int_field(base, "energy_now",   1_000_000, 3)
+        energy_full_wh = _int_field(base, "energy_full",  1_000_000, 3)
 
-        capacity = _read("capacity")
-        if capacity is not None:
-            try:
-                bat["capacity_pct"] = int(capacity)
-            except ValueError:
-                pass
+        supplies.append({
+            "name":           name,
+            "type":           ptype,
+            "status":         status,
+            "capacity_pct":   capacity_pct,
+            "voltage_v":      voltage_v,
+            "current_ma":     current_ma,
+            "power_mw":       power_mw,
+            "energy_wh":      energy_wh,
+            "energy_full_wh": energy_full_wh,
+            "manufacturer":   _read(base, "manufacturer"),
+            "model":          _read(base, "model_name"),
+            "technology":     _read(base, "technology"),
+        })
 
-        voltage_now = _read("voltage_now")
-        if voltage_now is not None:
-            try:
-                bat["voltage_v"] = round(int(voltage_now) / 1_000_000, 2)
-            except ValueError:
-                pass
-
-        current_now = _read("current_now")
-        if current_now is not None:
-            try:
-                bat["current_a"] = round(int(current_now) / 1_000_000, 4)
-            except ValueError:
-                pass
-
-        manufacturer = _read("manufacturer")
-        if manufacturer is not None:
-            bat["manufacturer"] = manufacturer
-
-        model = _read("model_name")
-        if model is not None:
-            bat["model"] = model
-
-        technology = _read("technology")
-        if technology is not None:
-            bat["technology"] = technology
-
-        present = _read("present")
-        if present is not None:
-            bat["present"] = present == "1"
-
-        batteries.append(bat)
-
+    has_battery = any(s["type"] == "Battery" for s in supplies)
     return jsonify({
-        "batteries": batteries,
-        "count": len(batteries),
-        "any_present": len(batteries) > 0,
+        "supplies":    supplies,
+        "count":       len(supplies),
+        "has_battery": has_battery,
+        "source":      "sysfs",
     })
 
 
@@ -9127,28 +9130,34 @@ def api_system_cpu_governors():
         pass
 
     return jsonify({"cores": cores, "available_governors": avail})
-@app.route("/api/system/timers")
+@app.route("/api/system/timers", methods=["GET"])
 @require_auth
 def api_system_timers():
     """Return systemd timers list with last/next trigger times."""
-    out, rc = _run(["systemctl", "list-timers", "--all", "--no-pager", "--no-legend"])
-    if rc != 0:
-        return jsonify({"timers": [], "error": "systemctl unavailable"})
-    timers = []
-    for line in out.strip().splitlines():
-        # format: NEXT LEFT LAST PASSED UNIT ACTIVATES
-        parts = line.split(None, 5)
-        if len(parts) < 6:
-            continue
-        timers.append({
-            "next": parts[0] if parts[0] != "n/a" else None,
-            "left": parts[1],
-            "last": parts[2] if parts[2] != "n/a" else None,
-            "passed": parts[3],
-            "unit": parts[4],
-            "activates": parts[5],
-        })
-    return jsonify({"timers": timers, "count": len(timers)})
+    try:
+        out, rc = _run(
+            ["systemctl", "list-timers", "--all", "--no-legend", "--no-pager"],
+            timeout=10,
+        )
+        if rc != 0:
+            return jsonify({"error": "systemctl unavailable", "timers": [], "count": 0})
+        timers = []
+        for line in (out or "").strip().splitlines():
+            # format: NEXT LEFT LAST PASSED UNIT ACTIVATES
+            parts = line.split(None, 5)
+            if len(parts) < 6:
+                continue
+            timers.append({
+                "unit": parts[4],
+                "activates": parts[5],
+                "next": parts[0] if parts[0] != "n/a" else "",
+                "left": parts[1] if parts[1] != "n/a" else "",
+                "last": parts[2] if parts[2] != "n/a" else "",
+                "passed": parts[3] if parts[3] != "n/a" else "",
+            })
+        return jsonify({"timers": timers, "count": len(timers), "source": "systemctl"})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "timers": [], "count": 0})
 
 
 @app.route("/api/network/mdns")
@@ -11456,6 +11465,43 @@ def api_system_cpu_freq():
         "core_count": len(cores),
         "source": "sysfs",
     })
+
+
+SYSCTL_KEYS = [
+    ("net.ipv4.ip_forward", "IPv4 forwarding", "1"),
+    ("net.ipv6.conf.all.forwarding", "IPv6 forwarding", None),
+    ("net.ipv4.conf.all.rp_filter", "Reverse path filter", "1"),
+    ("net.ipv4.conf.all.accept_redirects", "Accept ICMP redirects", "0"),
+    ("net.ipv4.conf.all.send_redirects", "Send ICMP redirects", "0"),
+    ("net.ipv4.conf.all.accept_source_route", "Accept source routing", "0"),
+    ("net.ipv4.tcp_syncookies", "TCP SYN cookies", "1"),
+    ("kernel.randomize_va_space", "ASLR", "2"),
+    ("kernel.dmesg_restrict", "dmesg restriction", "1"),
+    ("kernel.kptr_restrict", "kernel pointer restriction", "1"),
+    ("net.ipv4.icmp_echo_ignore_broadcasts", "Ignore broadcast pings", "1"),
+    ("net.ipv4.tcp_rfc1337", "TCP RFC 1337", "1"),
+    ("fs.protected_hardlinks", "Protected hardlinks", "1"),
+    ("fs.protected_symlinks", "Protected symlinks", "1"),
+]
+
+
+@app.route("/api/system/sysctl-security")
+@require_auth
+def api_sysctl_security():
+    params = []
+    try:
+        for key, description, recommended in SYSCTL_KEYS:
+            out, err, rc = _run(["sysctl", "-n", key])
+            value = out.strip() if rc == 0 else "error"
+            params.append({
+                "key": key,
+                "description": description,
+                "value": value,
+                "recommended": recommended,
+            })
+        return jsonify({"params": params, "count": len(params), "source": "sysctl"})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "params": [], "count": 0})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
