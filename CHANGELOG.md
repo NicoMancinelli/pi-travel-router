@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.40.0] - 2026-05-25
+
+### Added
+
+- **WiFi network scan card** (`web/app.py`, `web/static/index.html`): `GET /api/network/wifi-scan` tries `iw dev wlan0 scan` then falls back to `iwlist wlan0 scan`, parses SSID/BSSID/channel/signal/encryption, returns up to 20 networks sorted by signal strength. Dashboard card with signal-bar indicators (████/███░/██░░/█░░░), security label, on-demand Refresh button.
+- **Interface counters card** (`web/app.py`, `web/static/index.html`): `GET /api/network/netdev` parses `/proc/net/dev`, returns RX/TX bytes/packets/errors per interface (skips `lo`, sorted alphabetically). Dashboard card with human-readable byte counts, error-row highlighting in orange. Auto-refreshes on poll.
+- **Swap / zRAM usage card** (`web/app.py`, `web/static/index.html`): `GET /api/system/swap` reads `/proc/swaps` for per-device breakdown and cross-checks totals via `/proc/meminfo`. Returns total/used/free/pct + device list. Dashboard card with usage bar, zRAM badge, per-device table, graceful "no swap" state. Auto-refreshes on poll.
+
 ## [2.39.0] - 2026-05-25
 
 ### Added
