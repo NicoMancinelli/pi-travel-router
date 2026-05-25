@@ -9690,6 +9690,42 @@ def api_system_log_summary():
     })
 
 
+@app.route("/api/network/wifi-clients")
+@require_auth
+def api_network_wifi_clients():
+    """Return clients connected to the Pi's AP via iw dev <iface> station dump."""
+    ifaces = []
+    out_dev, rc_dev = _run(["iw", "dev"])
+    if rc_dev == 0:
+        for line in out_dev.splitlines():
+            line = line.strip()
+            if line.startswith("Interface "):
+                ifaces.append(line.split()[1])
+    if not ifaces:
+        ifaces = ["wlan0"]
+
+    for iface in ifaces:
+        out, rc = _run(["iw", "dev", iface, "station", "dump"])
+        if rc == 0 and "Station" in out:
+            clients = []
+            current = {}
+            for line in out.splitlines():
+                line = line.strip()
+                if line.startswith("Station "):
+                    if current:
+                        clients.append(current)
+                    current = {"mac": line.split()[1]}
+                elif ":" in line and current:
+                    key, _, val = line.partition(":")
+                    key = key.strip().lower().replace(" ", "_")
+                    current[key] = val.strip()
+            if current:
+                clients.append(current)
+            return jsonify({"clients": clients, "interface": iface})
+
+    return jsonify({"clients": [], "interface": None})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
