@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.71.0] - 2026-05-25
+
+### Added
+- `GET /api/system/open-fds` — system-wide open file descriptor stats from `/proc/sys/fs/file-nr` plus top-10 processes by FD count; dashboard card shows fill bar (color-coded at 65%/85%) and PID table
+- `GET /api/system/crontab` — all cron jobs from `crontab -l`, `/etc/crontab`, `/etc/cron.d/*`, and period directories; parses schedule, user, and command; dashboard card shows scrollable table with source attribution
+- `GET /api/system/block-devices` — block device tree via `lsblk -J`; flattens disk/partition hierarchy; highlights USB transport with badge; falls back to `/sys/block/` if lsblk unavailable
+- Dashboard cards: Open File Descriptors (📂), Crontab (⏰), Block Devices (💾)
+
 ## [2.70.0] - 2026-05-25
 
 ### Added
