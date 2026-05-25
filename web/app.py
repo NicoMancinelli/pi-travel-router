@@ -7734,6 +7734,82 @@ def api_system_journal_errors():
     return jsonify({"entries": entries, "count": len(entries), "priority_filter": priority})
 
 
+# ── Swap / zRAM Info ──────────────────────────────────────────────────────────
+
+@app.route("/api/system/swap", methods=["GET"])
+@require_auth
+def api_system_swap():
+    """Return swap usage from /proc/swaps and /proc/meminfo."""
+    empty = {
+        "swap_total_kb": 0,
+        "swap_used_kb": 0,
+        "swap_free_kb": 0,
+        "pct_used": 0,
+        "devices": [],
+        "count": 0,
+    }
+
+    # Read /proc/swaps for per-device breakdown
+    devices = []
+    try:
+        with open("/proc/swaps", "r") as fh:
+            lines = fh.readlines()
+        # First line is header: Filename Type Size Used Priority
+        for line in lines[1:]:
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            try:
+                devices.append({
+                    "file": parts[0],
+                    "type": parts[1],
+                    "size_kb": int(parts[2]),
+                    "used_kb": int(parts[3]),
+                    "priority": int(parts[4]),
+                })
+            except (ValueError, IndexError):
+                continue
+    except OSError as exc:
+        return jsonify({"error": str(exc), **empty})
+
+    if not devices:
+        return jsonify(empty)
+
+    # Cross-check totals from /proc/meminfo
+    swap_total_kb = 0
+    swap_free_kb = 0
+    try:
+        with open("/proc/meminfo", "r") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) >= 2:
+                    key = parts[0].rstrip(":")
+                    try:
+                        val = int(parts[1])
+                    except ValueError:
+                        val = 0
+                    if key == "SwapTotal":
+                        swap_total_kb = val
+                    elif key == "SwapFree":
+                        swap_free_kb = val
+    except OSError:
+        # Fall back to summing devices
+        swap_total_kb = sum(d["size_kb"] for d in devices)
+        swap_free_kb = swap_total_kb - sum(d["used_kb"] for d in devices)
+
+    swap_used_kb = swap_total_kb - swap_free_kb
+    pct_used = round(swap_used_kb / swap_total_kb * 100, 1) if swap_total_kb > 0 else 0
+
+    return jsonify({
+        "swap_total_kb": swap_total_kb,
+        "swap_used_kb": swap_used_kb,
+        "swap_free_kb": swap_free_kb,
+        "pct_used": pct_used,
+        "devices": devices,
+        "count": len(devices),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
