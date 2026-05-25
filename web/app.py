@@ -6989,6 +6989,78 @@ def api_network_iface_stats():
     return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
+# ── Cron Jobs Viewer ──────────────────────────────────────────────────────────
+
+@app.route("/api/system/cron", methods=["GET"])
+@require_auth
+def api_system_cron():
+    """Return cron jobs from system crontabs and /etc/cron.d/."""
+    import os
+    import re
+
+    jobs = []
+
+    def parse_crontab(content, source):
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Skip environment variable lines (KEY=value)
+            if re.match(r'^[A-Z_]+=', line):
+                continue
+            parts = line.split(None, 5)
+            # Standard crontab: min hour dom month dow command
+            # /etc/cron.d also has a user field: min hour dom month dow user command
+            if len(parts) >= 6:
+                schedule = " ".join(parts[:5])
+                # Detect if this is a /etc/cron.d entry (has user field)
+                if source.startswith("/etc/cron.d/"):
+                    user = parts[5] if len(parts) > 6 else ""
+                    command = parts[6] if len(parts) > 6 else parts[5]
+                else:
+                    user = ""
+                    command = parts[5]
+                jobs.append({
+                    "schedule": schedule,
+                    "user": user,
+                    "command": command[:120],  # truncate long commands
+                    "source": source,
+                })
+
+    # System crontab
+    try:
+        with open("/etc/crontab") as f:
+            parse_crontab(f.read(), "/etc/crontab")
+    except OSError:
+        pass
+
+    # /etc/cron.d/
+    try:
+        cron_d = "/etc/cron.d"
+        for fname in sorted(os.listdir(cron_d)):
+            fpath = os.path.join(cron_d, fname)
+            if os.path.isfile(fpath):
+                try:
+                    with open(fpath) as f:
+                        parse_crontab(f.read(), fpath)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+    # Root user crontab (crontab -l -u root)
+    out, rc = _run(["crontab", "-l", "-u", "root"])
+    if rc == 0 and out.strip() and "no crontab for" not in out:
+        parse_crontab(out, "root crontab")
+
+    # travel-router user crontab if it exists
+    out2, rc2 = _run(["crontab", "-l", "-u", "travel-router"])
+    if rc2 == 0 and out2.strip() and "no crontab for" not in out2:
+        parse_crontab(out2, "travel-router crontab")
+
+    return jsonify({"jobs": jobs, "count": len(jobs)})
+
+
 # ── Tailscale Exit Node ───────────────────────────────────────────────────────
 
 @app.route("/api/vpn/tailscale/exitnode", methods=["GET"])
