@@ -9571,27 +9571,71 @@ def api_system_block_devices():
 @app.route("/api/network/dns-config")
 @require_auth
 def api_network_dns_config():
-    result = {"nameservers": [], "search": [], "options": []}
     try:
-        for line in Path("/etc/resolv.conf").read_text().splitlines():
-            line = line.strip()
-            if line.startswith("nameserver"):
-                result["nameservers"].append(line.split()[1])
-            elif line.startswith("search"):
-                result["search"] = line.split()[1:]
-            elif line.startswith("options"):
-                result["options"] = line.split()[1:]
-    except OSError:
-        pass
-    # resolvectl status
-    out, rc = _run(["resolvectl", "status"])
-    if rc != 0:
-        out, rc = _run(["systemd-resolve", "--status"])
-    result["resolvectl"] = "\n".join(out.splitlines()[:20]) if rc == 0 else None
-    # AdGuard Home
-    _, rc2 = _run(["systemctl", "is-active", "AdGuardHome"])
-    result["adguard_active"] = rc2 == 0
-    return jsonify(result)
+        nameservers: list[str] = []
+        search_domains: list[str] = []
+        resolv_conf_path = "/etc/resolv.conf"
+        try:
+            for line in Path(resolv_conf_path).read_text().splitlines():
+                line = line.strip()
+                if line.startswith("nameserver"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        nameservers.append(parts[1])
+                elif line.startswith("search"):
+                    search_domains = line.split()[1:]
+        except OSError:
+            pass
+        # resolvectl status for per-interface DNS
+        interfaces: list[dict] = []
+        out, rc = _run(["resolvectl", "status", "--no-pager"])
+        if rc == 0:
+            current_iface: str | None = None
+            iface_dns: list[str] = []
+            iface_domain: str | None = None
+            for line in out.splitlines():
+                # "Link 2 (eth0)" or "Link 3 (wlan0)"
+                if line.startswith("Link "):
+                    if current_iface is not None:
+                        interfaces.append({
+                            "name": current_iface,
+                            "dns_servers": iface_dns,
+                            "dns_domain": iface_domain,
+                        })
+                    import re as _re
+                    m = _re.search(r'\(([^)]+)\)', line)
+                    current_iface = m.group(1) if m else line.split()[1]
+                    iface_dns = []
+                    iface_domain = None
+                elif current_iface and "DNS Servers:" in line:
+                    iface_dns = line.split("DNS Servers:")[-1].split()
+                elif current_iface and "DNS Domain:" in line:
+                    iface_domain = line.split("DNS Domain:")[-1].strip() or None
+            if current_iface is not None:
+                interfaces.append({
+                    "name": current_iface,
+                    "dns_servers": iface_dns,
+                    "dns_domain": iface_domain,
+                })
+        # Count non-comment, non-blank /etc/hosts entries
+        hosts_entries = 0
+        try:
+            for line in Path("/etc/hosts").read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    hosts_entries += 1
+        except OSError:
+            pass
+        return jsonify({
+            "nameservers": nameservers,
+            "search_domains": search_domains,
+            "resolv_conf_path": resolv_conf_path,
+            "interfaces": interfaces,
+            "hosts_entries": hosts_entries,
+            "source": "resolv.conf+resolvectl",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "nameservers": [], "search_domains": []})
 
 
 @app.route("/api/network/ip-rules")

@@ -1148,6 +1148,12 @@
     <div id="journal-errors-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- DNS Config -->
+  <div class="card" id="dns-config-card">
+    <h2>🔍 DNS Config</h2>
+    <div id="dns-config-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1550,12 +1556,6 @@
   <div class="card" id="card-block-devices">
     <h2>&#x1F4BE; Block Devices</h2>
     <div id="block-devices-content"><em>Loading&hellip;</em></div>
-  </div>
-
-  <!-- DNS Config -->
-  <div class="card" id="card-dns-config">
-    <h2>&#x1F310; DNS Config</h2>
-    <div id="dns-config-content"><em>Loading&hellip;</em></div>
   </div>
 
   <hr class="divider">
@@ -7431,6 +7431,29 @@ async function fetchPacketStats() {
   } catch(e) { document.getElementById('packet-stats-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
+// ── DNS Config ────────────────────────────────────────────────────────────────
+async function fetchDnsConfig() {
+  try {
+    const r = await fetch('/api/network/dns-config');
+    const d = await r.json();
+    const el = document.getElementById('dns-config-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    let html = `<div class="metric-grid" style="margin-bottom:8px">
+      <div class="metric"><span class="metric-label">Nameservers</span><span class="metric-value">${(d.nameservers || []).join(', ') || '-'}</span></div>
+      <div class="metric"><span class="metric-label">Search</span><span class="metric-value">${(d.search_domains || []).join(', ') || '-'}</span></div>
+      <div class="metric"><span class="metric-label">Hosts entries</span><span class="metric-value">${d.hosts_entries}</span></div>
+    </div>`;
+    if (d.interfaces && d.interfaces.length > 0) {
+      html += '<table class="table"><thead><tr><th>Interface</th><th>DNS Servers</th><th>Domain</th></tr></thead><tbody>';
+      for (const iface of d.interfaces) {
+        html += `<tr><td>${iface.name}</td><td>${iface.dns_servers.join(', ') || '-'}</td><td>${iface.dns_domain || '-'}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
 // ── I2C Devices ───────────────────────────────────────────────────────────────
 async function fetchI2cDevices() {
   try {
@@ -9171,64 +9194,6 @@ async function fetchBlockDevices() {
     el.innerHTML = html;
   } catch (e) { el.textContent = 'Error: ' + e; }
 }
-async function fetchDnsConfig() {
-  const el = document.getElementById('dns-config-content');
-  if (!el) return;
-  try {
-    const r = await apiFetch('/api/network/dns-config');
-    const d = await r.json();
-    let html = '';
-    // Nameservers
-    html += '<div style="margin-bottom:8px;">';
-    html += '<strong>Nameservers</strong><br>';
-    if (d.nameservers && d.nameservers.length) {
-      d.nameservers.forEach(ns => {
-        html += `<span style="display:inline-block;background:var(--accent,#2563eb);color:#fff;border-radius:4px;padding:1px 7px;margin:2px 4px 2px 0;font-size:12px;font-family:monospace;">${escHtml(ns)}</span>`;
-      });
-    } else {
-      html += '<span style="color:var(--text-dim);font-size:13px;">None</span>';
-    }
-    html += '</div>';
-    // Search domains
-    if (d.search && d.search.length) {
-      html += '<div style="margin-bottom:8px;">';
-      html += '<strong>Search Domains</strong><br>';
-      d.search.forEach(s => {
-        html += `<span style="display:inline-block;background:var(--surface2,#334155);color:var(--text,#e2e8f0);border-radius:4px;padding:1px 7px;margin:2px 4px 2px 0;font-size:12px;font-family:monospace;">${escHtml(s)}</span>`;
-      });
-      html += '</div>';
-    }
-    // Options
-    if (d.options && d.options.length) {
-      html += '<div style="margin-bottom:8px;">';
-      html += '<strong>Options</strong><br>';
-      d.options.forEach(o => {
-        html += `<span style="display:inline-block;background:var(--surface2,#334155);color:var(--text,#e2e8f0);border-radius:4px;padding:1px 7px;margin:2px 4px 2px 0;font-size:12px;font-family:monospace;">${escHtml(o)}</span>`;
-      });
-      html += '</div>';
-    }
-    // AdGuard Home badge
-    html += '<div style="margin-bottom:8px;">';
-    html += '<strong>AdGuard Home</strong> ';
-    if (d.adguard_active) {
-      html += '<span style="display:inline-block;background:#16a34a;color:#fff;border-radius:4px;padding:1px 8px;font-size:12px;">&#x2714; Active</span>';
-    } else {
-      html += '<span style="display:inline-block;background:var(--surface2,#475569);color:var(--text-dim,#94a3b8);border-radius:4px;padding:1px 8px;font-size:12px;">Inactive</span>';
-    }
-    html += '</div>';
-    // resolvectl output
-    if (d.resolvectl) {
-      html += '<div style="margin-top:8px;">';
-      html += '<strong>resolvectl status</strong>';
-      html += `<pre style="max-height:160px;overflow-y:auto;font-size:11px;margin:4px 0 0 0;padding:8px;background:var(--surface,#1e293b);border-radius:4px;white-space:pre-wrap;word-break:break-all;">${escHtml(d.resolvectl)}</pre>`;
-      html += '</div>';
-    }
-    el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger,#ef4444)">Failed to load DNS config</span>';
-  }
-}
-
 // ── IP Rules ──────────────────────────────────────────────────────────────────
 
 async function fetchIpRules() {
