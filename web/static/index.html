@@ -1106,6 +1106,12 @@
     <div id="cpu-freq-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- Systemd Timers -->
+  <div class="card" id="timers-card">
+    <h2>⏱️ Systemd Timers</h2>
+    <div id="timers-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4688,6 +4694,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchIPv6Addresses();
   fetchFailedUnits();
   fetchRoutes();
+  fetchTimers();
 });
 
 async function fetchJournal() {
@@ -4965,6 +4972,7 @@ async function refreshAll() {
   fetchIPv6Addresses();
   fetchFailedUnits();
   fetchRoutes();
+  fetchTimers();
 }
 
 async function init() {
@@ -7365,6 +7373,24 @@ async function fetchIPv6Addresses() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('ipv6-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Systemd Timers ────────────────────────────────────────────────────────────
+async function fetchTimers() {
+  try {
+    const r = await fetch('/api/system/timers');
+    const d = await r.json();
+    const el = document.getElementById('timers-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (!d.timers || d.timers.length === 0) { el.innerHTML = '<p class="muted">No timers found.</p>'; return; }
+    let html = `<p class="muted" style="margin-bottom:6px">Active timers: <strong>${d.count}</strong></p>`;
+    html += '<div style="max-height:220px;overflow-y:auto"><table class="table"><thead><tr><th>Unit</th><th>Activates</th><th>Next</th><th>Last</th></tr></thead><tbody>';
+    for (const t of d.timers) {
+      html += `<tr><td><code style="font-size:0.8em">${t.unit}</code></td><td><code style="font-size:0.8em">${t.activates}</code></td><td>${t.left || t.next || '-'}</td><td>${t.passed || t.last || '-'}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('timers-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── NTP Status ────────────────────────────────────────────────────────────────

@@ -9127,28 +9127,34 @@ def api_system_cpu_governors():
         pass
 
     return jsonify({"cores": cores, "available_governors": avail})
-@app.route("/api/system/timers")
+@app.route("/api/system/timers", methods=["GET"])
 @require_auth
 def api_system_timers():
     """Return systemd timers list with last/next trigger times."""
-    out, rc = _run(["systemctl", "list-timers", "--all", "--no-pager", "--no-legend"])
-    if rc != 0:
-        return jsonify({"timers": [], "error": "systemctl unavailable"})
-    timers = []
-    for line in out.strip().splitlines():
-        # format: NEXT LEFT LAST PASSED UNIT ACTIVATES
-        parts = line.split(None, 5)
-        if len(parts) < 6:
-            continue
-        timers.append({
-            "next": parts[0] if parts[0] != "n/a" else None,
-            "left": parts[1],
-            "last": parts[2] if parts[2] != "n/a" else None,
-            "passed": parts[3],
-            "unit": parts[4],
-            "activates": parts[5],
-        })
-    return jsonify({"timers": timers, "count": len(timers)})
+    try:
+        out, rc = _run(
+            ["systemctl", "list-timers", "--all", "--no-legend", "--no-pager"],
+            timeout=10,
+        )
+        if rc != 0:
+            return jsonify({"error": "systemctl unavailable", "timers": [], "count": 0})
+        timers = []
+        for line in (out or "").strip().splitlines():
+            # format: NEXT LEFT LAST PASSED UNIT ACTIVATES
+            parts = line.split(None, 5)
+            if len(parts) < 6:
+                continue
+            timers.append({
+                "unit": parts[4],
+                "activates": parts[5],
+                "next": parts[0] if parts[0] != "n/a" else "",
+                "left": parts[1] if parts[1] != "n/a" else "",
+                "last": parts[2] if parts[2] != "n/a" else "",
+                "passed": parts[3] if parts[3] != "n/a" else "",
+            })
+        return jsonify({"timers": timers, "count": len(timers), "source": "systemctl"})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "timers": [], "count": 0})
 
 
 @app.route("/api/network/mdns")
