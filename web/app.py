@@ -8617,6 +8617,76 @@ def api_system_loadavg():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/network/firewall-stats")
+@require_auth
+def api_network_firewall_stats():
+    """Return iptables chain stats (policy, packets, bytes, rule count) for IPv4 and IPv6."""
+
+    def _parse_bytes(val):
+        """Convert iptables byte value (e.g. '567K', '2M') to integer bytes."""
+        val = val.strip()
+        if not val or val == "0":
+            return 0
+        suffixes = {"K": 1024, "M": 1048576, "G": 1073741824}
+        for suffix, mult in suffixes.items():
+            if val.endswith(suffix):
+                try:
+                    return int(float(val[:-1]) * mult)
+                except ValueError:
+                    return 0
+        try:
+            return int(val)
+        except ValueError:
+            return 0
+
+    def _parse_iptables(output):
+        """Parse iptables -L -n -v --line-numbers output into chain dicts."""
+        chains = {}
+        current_chain = None
+        rule_count = 0
+        for line in output.splitlines():
+            # Chain header: Chain INPUT (policy ACCEPT 1234 packets, 567K bytes)
+            m = re.match(
+                r"^Chain\s+(\S+)\s+\(policy\s+(\S+)\s+(\S+)\s+packets,\s+(\S+)\s+bytes\)",
+                line,
+            )
+            if m:
+                if current_chain is not None:
+                    chains[current_chain]["rules"] = rule_count
+                current_chain = m.group(1)
+                rule_count = 0
+                chains[current_chain] = {
+                    "policy": m.group(2),
+                    "packets": _parse_bytes(m.group(3)),
+                    "bytes": _parse_bytes(m.group(4)),
+                    "rules": 0,
+                }
+                continue
+            # Skip header/blank lines; count rule lines (start with a digit)
+            if current_chain is not None and re.match(r"^\d+\s+", line):
+                rule_count += 1
+        if current_chain is not None:
+            chains[current_chain]["rules"] = rule_count
+        return chains
+
+    result = {"ipv4": {}, "ipv6": {}, "error": None}
+
+    out4, rc4 = _run("iptables -L -n -v --line-numbers 2>&1", timeout=10)
+    if rc4 != 0 or "iptables" not in out4.lower() and not out4.strip():
+        result["error"] = "iptables not available"
+        return jsonify(result)
+    if "permission denied" in out4.lower() or "operation not permitted" in out4.lower():
+        result["error"] = "iptables not available"
+        return jsonify(result)
+    result["ipv4"] = _parse_iptables(out4)
+
+    out6, rc6 = _run("ip6tables -L -n -v --line-numbers 2>&1", timeout=10)
+    if rc6 == 0:
+        result["ipv6"] = _parse_iptables(out6)
+
+    return jsonify(result)
+
+
 # ── USB Devices ──────────────────────────────────────────────────────────────
 
 @app.route("/api/system/usb-devices", methods=["GET"])

@@ -1209,6 +1209,10 @@
     <div id="loadavg-content">Loading&hellip;</div>
   </div>
 
+  <div class="card full-width" id="card-firewall-stats">
+    <div id="firewall-stats-content">Loading&hellip;</div>
+  </div>
+
   <div class="card" id="card-cpu-temp">
     <div id="cpu-temp-content">Loading&hellip;</div>
   </div>
@@ -4258,6 +4262,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoadAvg();
   fetchBatteryStatus();
   fetchInterrupts();
+  fetchFirewallStats();
   fetchCpuTemp();
 });
 
@@ -4478,6 +4483,7 @@ async function refreshAll() {
   fetchLoadAvg();
   fetchBatteryStatus();
   fetchInterrupts();
+  fetchFirewallStats();
   fetchCpuTemp();
 }
 
@@ -7919,6 +7925,78 @@ async function fetchLoadAvg() {
       <div style="font-size:0.8em;color:var(--muted);margin-top:4px;">${d.running_procs} running / ${d.total_procs} total processes &nbsp;&bull;&nbsp; ${d.cpu_count} CPU${d.cpu_count !== 1 ? 's' : ''}</div>`;
   } catch (e) {
     if (el) el.innerHTML = `<div class="card-title">&#x1F4CA; Load Average</div><span style="color:var(--danger)">Failed: ${e}</span>`;
+  }
+}
+
+// ── Firewall Stats ────────────────────────────────────────────────────────────
+
+async function fetchFirewallStats() {
+  const el = document.getElementById('firewall-stats-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/network/firewall-stats');
+    const d = await r.json();
+    if (d.error) {
+      el.innerHTML = '<div class="card-title">&#x1F6E1; Firewall Rules</div><span style="color:var(--text-dim);font-size:13px;">' + d.error + '</span>';
+      return;
+    }
+
+    function fmtBytes(b) {
+      if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+      if (b >= 1048576)    return (b / 1048576).toFixed(1) + ' MB';
+      if (b >= 1024)       return (b / 1024).toFixed(1) + ' KB';
+      return b + ' B';
+    }
+
+    function policyBadge(p) {
+      const col = (p === 'ACCEPT') ? '#3fb950' : (p === 'DROP' || p === 'REJECT') ? '#f85149' : '#8b949e';
+      return '<span style="background:' + col + ';color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;">' + p + '</span>';
+    }
+
+    function buildTable(chains) {
+      if (!chains || Object.keys(chains).length === 0) return '';
+      let t = '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">';
+      t += '<thead><tr>';
+      t += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Chain</th>';
+      t += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Policy</th>';
+      t += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Packets</th>';
+      t += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Bytes</th>';
+      t += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Rules</th>';
+      t += '</tr></thead><tbody>';
+      for (const [chain, info] of Object.entries(chains)) {
+        t += '<tr>';
+        t += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;font-weight:600;">' + chain + '</td>';
+        t += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">' + policyBadge(info.policy) + '</td>';
+        t += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + (info.packets || 0).toLocaleString() + '</td>';
+        t += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + fmtBytes(info.bytes || 0) + '</td>';
+        t += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + (info.rules || 0) + '</td>';
+        t += '</tr>';
+      }
+      t += '</tbody></table>';
+      return t;
+    }
+
+    let html = '<div class="card-title">&#x1F6E1; Firewall Rules</div>';
+
+    const ipv4Keys = Object.keys(d.ipv4 || {});
+    if (ipv4Keys.length > 0) {
+      html += '<div style="font-size:12px;color:var(--text-dim);font-weight:600;margin-bottom:4px;">IPv4</div>';
+      html += buildTable(d.ipv4);
+    }
+
+    const ipv6Keys = Object.keys(d.ipv6 || {});
+    if (ipv6Keys.length > 0) {
+      html += '<div style="font-size:12px;color:var(--text-dim);font-weight:600;margin:8px 0 4px;">IPv6</div>';
+      html += buildTable(d.ipv6);
+    }
+
+    if (ipv4Keys.length === 0 && ipv6Keys.length === 0) {
+      html += '<span style="color:var(--text-dim);font-size:13px;">No chains found</span>';
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    if (el) el.innerHTML = '<div class="card-title">&#x1F6E1; Firewall Rules</div><span style="color:var(--danger)">Failed: ' + e + '</span>';
   }
 }
 
