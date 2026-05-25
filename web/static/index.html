@@ -1000,6 +1000,15 @@
     <div id="dns-resolvers-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- SSH Authorized Keys -->
+  <div class="card full-width" id="card-ssh-keys">
+    <div class="card-title">
+      &#x1F511; SSH Authorized Keys
+      <button class="btn btn-sm" onclick="fetchSshKeys()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="ssh-keys-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3945,6 +3954,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchStorage();
   fetchWgPeerHealth();
   fetchDhcpLeases();
+  fetchSshKeys();
   fetchNetInterfaces();
   fetchAdguardStats();
   fetchSystemServices();
@@ -5943,6 +5953,41 @@ async function fetchDnsResolvers() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load DNS resolvers</span>';
+  }
+}
+
+// ── SSH Authorized Keys ───────────────────────────────────────────────────────
+
+async function fetchSshKeys() {
+  const el = document.getElementById('ssh-keys-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/ssh/keys');
+    const d = await resp.json();
+    if (!d.keys || d.keys.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No authorized keys found.</span>';
+      return;
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} key${d.count !== 1 ? 's' : ''}</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">User</th><th style="padding:5px 8px;">Type</th><th style="padding:5px 8px;">Comment</th><th style="padding:5px 8px;font-family:monospace;">Fingerprint (tail)</th><th style="padding:5px 8px;">Options</th>';
+    html += '</tr></thead><tbody>';
+    for (const k of d.keys) {
+      const tc = k.type === 'ssh-ed25519' || k.type.includes('ed25519') ? '#22c55e' : k.type === 'ssh-rsa' ? '#f97316' : '#6366f1';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(k.user)}</td>`;
+      html += `<td style="padding:5px 8px;"><span style="color:${tc};font-weight:600;font-size:11px;">${escHtml(k.type)}</span></td>`;
+      html += `<td style="padding:5px 8px;color:var(--text-dim);">${k.comment ? escHtml(k.comment) : '<em>no comment</em>'}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(k.fingerprint)}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${k.options ? escHtml(k.options) : '—'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load SSH keys</span>';
   }
 }
 

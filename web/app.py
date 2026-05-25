@@ -3900,6 +3900,66 @@ def api_dns_resolvers():
     })
 
 
+# ── SSH Authorized Keys ───────────────────────────────────────────────────────
+
+@app.route("/api/system/ssh/keys", methods=["GET"])
+@require_auth
+def api_system_ssh_keys():
+    """Return parsed SSH authorized_keys entries for root and pi/travel-router users."""
+    import re
+    import os
+
+    users_to_check = ["root", "pi", "travel-router"]
+    all_keys = []
+
+    for user in users_to_check:
+        path = "/root/.ssh/authorized_keys" if user == "root" else f"/home/{user}/.ssh/authorized_keys"
+        try:
+            with open(path) as f:
+                content = f.read()
+        except OSError:
+            continue
+        key_types = {
+            "ssh-rsa", "ssh-ed25519", "ssh-dss", "ecdsa-sha2-nistp256",
+            "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521", "sk-ssh-ed25519@openssh.com",
+        }
+        for lineno, line in enumerate(content.splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            options = ""
+            keytype = ""
+            pubkey = ""
+            comment = ""
+            if parts[0] in key_types:
+                keytype, pubkey = parts[0], parts[1]
+                comment = " ".join(parts[2:]) if len(parts) > 2 else ""
+            else:
+                options = parts[0]
+                if len(parts) >= 3 and parts[1] in key_types:
+                    keytype, pubkey = parts[1], parts[2]
+                    comment = " ".join(parts[3:]) if len(parts) > 3 else ""
+                else:
+                    keytype = parts[1] if len(parts) > 1 else ""
+                    pubkey = parts[2] if len(parts) > 2 else ""
+                    comment = " ".join(parts[3:]) if len(parts) > 3 else ""
+            fingerprint = pubkey[-16:] if len(pubkey) > 16 else pubkey
+            all_keys.append({
+                "user": user,
+                "file": path,
+                "line": lineno,
+                "type": keytype,
+                "comment": comment,
+                "fingerprint": f"…{fingerprint}",
+                "options": options,
+            })
+
+    return jsonify({"keys": all_keys, "count": len(all_keys)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])
