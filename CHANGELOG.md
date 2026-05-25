@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.28.0] - 2026-05-25
+
+### Added
+
+- **CPU temperature history sparkline** (`web/app.py`, `web/static/index.html`): `GET /api/system/temp/history` samples CPU temp every 60 s via `vcgencmd measure_temp` (with `/sys/class/thermal` fallback) into a 60-sample ring buffer (1 hour). Dashboard card with current/min/avg/max stats and SVG sparkline with 65 °C warn and 80 °C danger threshold lines.
+- **Internet speed test** (`web/app.py`, `web/static/index.html`): `GET /api/network/speedtest` tries three tools in order — `speedtest-cli --json`, Ookla `speedtest --format=json`, then curl Cloudflare download — and returns download/upload Mbps, ping ms, and server info. Dashboard card with on-demand run button and proportional speed bars.
+- **WAN uplink status** (`web/app.py`, `web/static/index.html`): `GET /api/network/wan` parses `ip -j route` and `ip -j link` to enumerate known WAN interfaces (wlan1, usb0, bnep0, wwan0, eth1, ppp0), their operstate, default-route presence, routing metric, and gateway. Sorted active-first. Dashboard card with type icons, status badges (active/up/down), and metric/gateway columns. Auto-loaded on page init.
+
 ## [2.27.0] - 2026-05-25
 
 ### Added
