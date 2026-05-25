@@ -10361,6 +10361,77 @@ def api_system_hardware_sensors():
     return jsonify(sensors)
 
 
+# ── Firewall Rules (nftables/iptables) ───────────────────────────────────────
+
+@app.route("/api/network/firewall-rules", methods=["GET"])
+@require_auth
+def api_network_firewall_rules():
+    """Return active firewall rules from nftables (or iptables fallback)."""
+    rules = []
+    backend = "none"
+
+    # Try nftables first
+    out, rc = _run(["nft", "list", "ruleset"])
+    if rc == 0 and out.strip():
+        backend = "nftables"
+        current_table = None
+        current_chain = None
+        for line in out.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("table "):
+                parts = stripped.split()
+                current_table = f"{parts[1]} {parts[2]}" if len(parts) >= 3 else stripped
+                current_chain = None
+            elif stripped.startswith("chain "):
+                parts = stripped.split()
+                current_chain = parts[1] if len(parts) >= 2 else stripped
+            elif stripped and not stripped.startswith("}") and current_chain:
+                # Skip hook/policy lines
+                if stripped.startswith("type ") or stripped.startswith("policy "):
+                    continue
+                rules.append({
+                    "table": current_table or "",
+                    "chain": current_chain or "",
+                    "rule": stripped,
+                    "backend": "nftables",
+                })
+    else:
+        # Fall back to iptables
+        for table in ("filter", "nat", "mangle"):
+            out, rc = _run(["iptables", "-t", table, "-L", "-n", "--line-numbers"])
+            if rc != 0:
+                continue
+            backend = "iptables"
+            current_chain = None
+            for line in out.splitlines():
+                if line.startswith("Chain "):
+                    parts = line.split()
+                    current_chain = parts[1] if len(parts) >= 2 else line
+                elif line and not line.startswith("target") and not line.startswith("num") and current_chain:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        rules.append({
+                            "table": table,
+                            "chain": current_chain,
+                            "rule": line.strip(),
+                            "backend": "iptables",
+                        })
+
+    # Group by table+chain
+    chains = {}
+    for rule in rules:
+        key = f"{rule['table']}/{rule['chain']}"
+        chains.setdefault(key, []).append(rule["rule"])
+
+    return jsonify({
+        "backend": backend,
+        "rules": rules[:200],  # cap at 200 to avoid huge responses
+        "chains": {k: v for k, v in list(chains.items())[:20]},
+        "rule_count": len(rules),
+        "chain_count": len(chains),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
