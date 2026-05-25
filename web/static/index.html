@@ -479,6 +479,17 @@
     </div>
   </div>
 
+  <!-- Pi Throttle Monitor -->
+  <div class="card" id="card-throttle" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F321; Pi Health</span>
+      <button class="btn btn-sm" onclick="fetchThrottle()">&#x21BB; Refresh</button>
+    </div>
+    <div id="throttle-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <!-- Network Interface Stats -->
   <div class="card full-width" id="card-iface-stats" style="margin-top:16px;">
     <div class="card-title" style="justify-content:space-between;">
@@ -3742,6 +3753,7 @@ async function refreshAll() {
   fetchDataCap();
   fetchLatencyHistory();
   fetchResourceStats();
+  fetchThrottle();
   fetchUplinkScan();
   fetchUplinkHistory();
   fetchApConfig();
@@ -3839,6 +3851,49 @@ function _fmtBytes(b) {
   if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
   if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
   return (b / 1073741824).toFixed(2) + ' GB';
+}
+
+async function fetchThrottle() {
+  const el = document.getElementById('throttle-content');
+  try {
+    const r = await apiFetch('/api/system/throttle');
+    const d = await r.json();
+    let html = '<div style="font-size:13px;">';
+    // Temperature
+    if (d.temp_c != null) {
+      const tempColor = d.temp_c >= 80 ? 'var(--error,#e55)' : d.temp_c >= 70 ? '#e93' : 'var(--success,#4c4)';
+      html += '<div style="margin-bottom:6px;">🌡️ CPU Temp: <strong style="color:' + tempColor + ';">' + d.temp_c + '°C</strong>';
+      if (d.freq_mhz) html += '  &nbsp; ⚡ ' + d.freq_mhz + ' MHz';
+      html += '</div>';
+    }
+    if (!d.available) {
+      html += '<div style="color:var(--text-dim);font-size:12px;">vcgencmd not available (only on Raspberry Pi hardware)</div>';
+    } else if (d.ok) {
+      html += '<div style="color:var(--success,#4c4);">✓ No throttling or undervoltage detected</div>';
+      if (d.flags && d.flags.length > 0) {
+        html += '<div style="color:var(--text-dim);font-size:12px;margin-top:4px;">Historical: ' + d.flags.filter(f => f.includes('-occurred')).join(', ') + '</div>';
+      }
+    } else {
+      html += '<div style="color:var(--error,#e55);font-weight:600;margin-bottom:4px;">⚠ Active issues detected:</div>';
+      for (const flag of (d.flags || [])) {
+        if (!flag.includes('-occurred')) {
+          const label = flag.replace(/-/g, ' ');
+          html += '<div style="color:var(--error,#e55);font-size:13px;">• ' + label + '</div>';
+        }
+      }
+      const historical = (d.flags || []).filter(f => f.includes('-occurred'));
+      if (historical.length > 0) {
+        html += '<div style="color:var(--text-dim);font-size:12px;margin-top:6px;">Historical: ' + historical.map(f => f.replace(/-occurred/, '').replace(/-/g, ' ')).join(', ') + '</div>';
+      }
+    }
+    if (d.available) {
+      html += '<div style="color:var(--text-dim);font-size:11px;margin-top:6px;font-family:monospace;">Raw: ' + d.raw + '</div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
 }
 
 async function fetchIfaceStats() {
