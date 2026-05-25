@@ -5452,38 +5452,72 @@ def api_network_arp():
     return jsonify({"neighbors": neighbors, "count": len(neighbors)})
 
 
-# ── System update checker ─────────────────────────────────────────────────────
+# ── System Update Checker ─────────────────────────────────────────────────────
 
 @app.route("/api/system/updates", methods=["GET"])
 @require_auth
 def api_system_updates():
-    """Check for available apt package updates."""
+    """Return list of available package updates from apt."""
+    import re
+
     packages = []
-    try:
-        # Run apt list --upgradable (non-interactive, no color)
-        out, rc = _run(
-            ["apt", "list", "--upgradable"],
-            timeout=30,
-        )
-        for line in (out or "").splitlines():
-            line = line.strip()
-            # Lines look like: package/suite version arch [upgradable from: old_version]
-            if not line or line.startswith("Listing") or line.startswith("WARNING"):
+    error = None
+
+    # Run apt list --upgradable (fast, no network — uses cached apt metadata)
+    out, rc = _run(["apt", "list", "--upgradable"])
+    if rc != 0:
+        error = "apt not available"
+    else:
+        for line in out.splitlines():
+            # Format: package/suite version arch [upgradable from: old_version]
+            if line.startswith("Listing") or not line.strip():
                 continue
-            parts = line.split("/", 1)
-            pkg = parts[0]
-            rest = parts[1] if len(parts) > 1 else ""
-            # Extract new version (first word after /)
-            tokens = rest.split()
-            new_ver = tokens[1] if len(tokens) > 1 else ""
-            # Extract old version
-            old_ver = ""
-            if "upgradable from:" in line:
-                old_ver = line.split("upgradable from:")[-1].strip().rstrip("]")
-            packages.append({"package": pkg, "new_version": new_ver, "old_version": old_ver})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-    return jsonify({"count": len(packages), "packages": packages})
+            m = re.match(r'^(\S+)/(\S+)\s+(\S+)\s+(\S+)(?:\s+\[upgradable from: (\S+)\])?', line)
+            if m:
+                pkg_full = m.group(1)
+                pkg_name = pkg_full.split(":")[0]  # strip arch suffix
+                suite = m.group(2)
+                new_ver = m.group(3)
+                arch = m.group(4)
+                old_ver = m.group(5) or ""
+                # Flag security updates
+                is_security = "security" in suite
+                packages.append({
+                    "name": pkg_name,
+                    "new_version": new_ver,
+                    "old_version": old_ver,
+                    "suite": suite,
+                    "arch": arch,
+                    "security": is_security,
+                })
+
+    # Check when apt cache was last updated
+    last_update = None
+    try:
+        import os
+        stamp = "/var/cache/apt/pkgcache.bin"
+        if os.path.exists(stamp):
+            mtime = os.path.getmtime(stamp)
+            import time
+            age_sec = int(time.time() - mtime)
+            if age_sec < 3600:
+                last_update = f"{age_sec // 60}m ago"
+            elif age_sec < 86400:
+                last_update = f"{age_sec // 3600}h ago"
+            else:
+                last_update = f"{age_sec // 86400}d ago"
+    except OSError:
+        pass
+
+    security_count = sum(1 for p in packages if p["security"])
+
+    return jsonify({
+        "packages": packages,
+        "count": len(packages),
+        "security_count": security_count,
+        "last_cache_update": last_update,
+        "error": error,
+    })
 
 
 # ── Config backup ─────────────────────────────────────────────────────────────
