@@ -1437,6 +1437,17 @@
     </div>
   </div>
 
+  <!-- Route Table -->
+  <div class="card" id="card-routes">
+    <div class="card-header">
+      <span>🗺️ Route Table</span>
+      <span class="card-badge" id="routes-count">—</span>
+    </div>
+    <div class="card-body" id="routes-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -9450,42 +9461,63 @@ async function fetchArpTable() {
 
 async function fetchRouteTable() {
   const el = document.getElementById('route-table-content');
+  const newBody = document.getElementById('routes-body');
+  const newBadge = document.getElementById('routes-count');
   try {
     const r = await fetch('/api/network/routes');
-    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
-    const d = await r.json();
-    if (d.error && d.routes.length === 0) {
-      el.textContent = 'Error: ' + d.error;
+    if (!r.ok) {
+      if (el) el.textContent = 'Error ' + r.status;
+      if (newBody) newBody.textContent = 'Error ' + r.status;
       return;
     }
-    const badge = `<span style="background:var(--accent);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:6px;">${d.count}</span>`;
-    let html = `<div class="card-title">&#x1F5FA; Routing Table ${badge}</div>`;
+    const d = await r.json();
+    if (d.error && (!d.routes || d.routes.length === 0)) {
+      if (el) el.textContent = 'Error: ' + d.error;
+      if (newBody) newBody.textContent = 'Error: ' + d.error;
+      return;
+    }
+    // Update badge count
+    if (newBadge) newBadge.textContent = d.count || (d.routes || []).length;
+    // Build table HTML (shared for both cards)
+    let html = '';
+    if (d.default_gw) {
+      html += `<div style="background:var(--bg2);border-radius:5px;padding:6px 10px;margin-bottom:8px;font-size:13px;">Default gateway: <strong><code>${d.default_gw}</code></strong></div>`;
+    }
     html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
       <th style="text-align:left;padding:3px 8px;">Destination</th>
       <th style="text-align:left;padding:3px 8px;">Via</th>
       <th style="text-align:left;padding:3px 8px;">Interface</th>
-      <th style="text-align:right;padding:3px 8px;">Metric</th>
-      <th style="text-align:left;padding:3px 8px;">Proto</th>
+      <th style="text-align:left;padding:3px 8px;">Protocol</th>
     </tr></thead><tbody>`;
-    for (const route of d.routes) {
-      const isDefault = route.dest === 'default';
+    for (const route of (d.routes || [])) {
+      const dst = route.dst || route.dest || '';
+      const via = route.gateway || route.via || '—';
+      const dev = route.dev || '—';
+      const proto = route.protocol || route.proto || '—';
+      const isDefault = dst === 'default';
       const bold = isDefault ? 'font-weight:bold;' : '';
       html += `<tr style="border-bottom:1px solid var(--border);${bold}">
-        <td style="padding:3px 8px;font-family:monospace;">${route.dest}</td>
-        <td style="padding:3px 8px;font-family:monospace;">${route.via || '—'}</td>
-        <td style="padding:3px 8px;font-family:monospace;">${route.dev || '—'}</td>
-        <td style="padding:3px 8px;text-align:right;">${route.metric}</td>
-        <td style="padding:3px 8px;color:var(--text-dim);">${route.proto || '—'}</td>
+        <td style="padding:3px 8px;font-family:monospace;">${dst}</td>
+        <td style="padding:3px 8px;font-family:monospace;">${via}</td>
+        <td style="padding:3px 8px;font-family:monospace;">${dev}</td>
+        <td style="padding:3px 8px;color:var(--text-dim);">${proto}</td>
       </tr>`;
     }
     html += '</tbody></table>';
     if (d.error) {
       html += `<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">Note: ${d.error}</div>`;
     }
-    el.innerHTML = html;
+    // Update legacy card
+    if (el) {
+      const badge = `<span style="background:var(--accent);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:6px;">${d.count}</span>`;
+      el.innerHTML = `<div class="card-title">&#x1F5FA; Routing Table ${badge}</div>` + html;
+    }
+    // Update new card
+    if (newBody) newBody.innerHTML = html;
   } catch (e) {
-    el.textContent = 'Failed: ' + e;
+    if (el) el.textContent = 'Failed: ' + e;
+    if (newBody) newBody.textContent = 'Failed: ' + e;
   }
 }
 
