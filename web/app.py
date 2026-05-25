@@ -8265,6 +8265,63 @@ def api_system_interrupts():
     return jsonify({"interrupts": top, "cpus": cpu_count, "count": len(top)})
 
 
+# ── Top Processes by Memory ───────────────────────────────────────────────────
+@app.route("/api/system/proc-mem", methods=["GET"])
+@require_auth
+def api_system_proc_mem():
+    """Return top processes sorted by RSS from /proc/<pid>/status."""
+    try:
+        raw_limit = request.args.get("limit", "20")
+        limit = int(raw_limit)
+    except (ValueError, TypeError):
+        return jsonify({"error": "limit must be an integer"}), 400
+    limit = max(1, min(limit, 50))
+
+    processes = []
+    try:
+        pids = [e for e in os.listdir("/proc") if e.isdigit()]
+    except OSError as exc:
+        return jsonify({"processes": [], "count": 0, "total_rss_kb": 0, "error": str(exc)})
+
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/status", "r") as fh:
+                raw = fh.read()
+        except OSError:
+            # Process exited between listing and reading — normal race condition
+            continue
+
+        info = {}
+        for line in raw.splitlines():
+            if ":" not in line:
+                continue
+            key, _, val = line.partition(":")
+            info[key.strip()] = val.strip()
+
+        try:
+            rss_kb = int(info.get("VmRSS", "0 kB").split()[0])
+            vsz_kb = int(info.get("VmSize", "0 kB").split()[0])
+        except (ValueError, IndexError):
+            rss_kb = 0
+            vsz_kb = 0
+
+        state_raw = info.get("State", "")
+        state = state_raw.split()[0] if state_raw else ""
+
+        processes.append({
+            "pid": int(pid),
+            "name": info.get("Name", ""),
+            "rss_kb": rss_kb,
+            "vsz_kb": vsz_kb,
+            "state": state,
+        })
+
+    processes.sort(key=lambda x: x["rss_kb"], reverse=True)
+    top = processes[:limit]
+    total_rss_kb = sum(p["rss_kb"] for p in processes)
+    return jsonify({"processes": top, "count": len(top), "total_rss_kb": total_rss_kb})
+
+
 # ── Disk Partitions ───────────────────────────────────────────────────────────
 
 

@@ -1185,6 +1185,10 @@
     <div id="interrupts-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-proc-mem">
+    <div id="proc-mem-content">Loading&hellip;</div>
+  </div>
+
   <div class="card" id="card-disk-partitions">
     <div id="disk-partitions-content">Loading&hellip;</div>
   </div>
@@ -4230,6 +4234,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWifiScan();
   fetchNetdev();
   fetchTcpConnections();
+  fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
   fetchBatteryStatus();
@@ -4444,6 +4449,7 @@ async function refreshAll() {
   fetchSwapInfo();
   fetchNetdev();
   fetchTcpConnections();
+  fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
   fetchBatteryStatus();
@@ -7613,6 +7619,54 @@ async function fetchInterrupts() {
           '</tr>';
       }
       html += '</tbody></table></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── Top Processes by Memory ───────────────────────────────────────────────────
+async function fetchProcMem() {
+  const el = document.getElementById('proc-mem-content');
+  if (!el) return;
+  function fmtMem(kb) {
+    if (kb >= 1024 * 1024) return (kb / (1024 * 1024)).toFixed(1) + ' MB';
+    if (kb >= 1024) return (kb / 1024).toFixed(1) + ' KB';
+    return kb + ' kB';
+  }
+  try {
+    const r = await apiFetch('/api/system/proc-mem');
+    const d = await r.json();
+    const procs = d.processes || [];
+    const countBadge = `<span class="badge badge-blue" style="margin-left:6px;">${d.count ?? procs.length}</span>`;
+    let html = `<div class="card-title">&#x1F9E0; Top Processes by Memory ${countBadge}` +
+      `<button class="btn btn-sm" onclick="fetchProcMem()" style="margin-left:auto;">&#x21BB; Refresh</button></div>`;
+    if (d.error && procs.length === 0) {
+      html += `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+    } else if (procs.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No processes found.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">' +
+        '<th style="text-align:right;padding:4px 6px;">PID</th>' +
+        '<th style="text-align:left;padding:4px 6px;">Name</th>' +
+        '<th style="text-align:right;padding:4px 6px;">RSS</th>' +
+        '<th style="text-align:right;padding:4px 6px;">VSZ</th>' +
+        '<th style="text-align:left;padding:4px 6px;">State</th>' +
+        '</tr></thead><tbody>';
+      for (const p of procs) {
+        html += `<tr style="border-bottom:1px solid var(--border-color,#222);">` +
+          `<td style="text-align:right;padding:3px 6px;color:var(--text-dim);">${p.pid}</td>` +
+          `<td style="padding:3px 6px;font-weight:bold;">${p.name || '—'}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${fmtMem(p.rss_kb)}</td>` +
+          `<td style="text-align:right;padding:3px 6px;color:var(--text-dim);">${fmtMem(p.vsz_kb)}</td>` +
+          `<td style="padding:3px 6px;">${p.state || '—'}</td>` +
+          '</tr>';
+      }
+      html += '</tbody></table></div>';
+      html += `<div style="font-size:12px;color:var(--text-dim);margin-top:6px;padding:0 6px;">` +
+        `Total RSS (all processes): <strong>${fmtMem(d.total_rss_kb)}</strong></div>`;
     }
     el.innerHTML = html;
   } catch (e) {
