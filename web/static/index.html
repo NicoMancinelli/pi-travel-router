@@ -974,6 +974,15 @@
     <div id="tailscale-status-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- WAN Uplinks -->
+  <div class="card full-width" id="card-wan-uplinks">
+    <div class="card-title">
+      &#x1F310; WAN Uplinks
+      <button class="btn btn-sm" onclick="fetchWanUplinks()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="wan-uplinks-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Speedtest -->
   <div class="card full-width" id="card-speedtest">
     <div class="card-title">
@@ -3941,6 +3950,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchAdguardStats();
   fetchSystemServices();
   fetchTailscaleStatus();
+  fetchWanUplinks();
   fetchTempHistory();
 });
 
@@ -4133,6 +4143,7 @@ async function refreshAll() {
   fetchLoginHistory();
   fetchArpTable();
   fetchWifiClients();
+  fetchWanUplinks();
 }
 
 async function init() {
@@ -5720,6 +5731,55 @@ async function fetchTailscaleStatus() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load Tailscale status</span>';
+  }
+}
+
+// ── WAN Uplink Status ─────────────────────────────────────────────────────────
+
+async function fetchWanUplinks() {
+  const el = document.getElementById('wan-uplinks-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/wan');
+    const data = await resp.json();
+    if (!data.uplinks || data.uplinks.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No WAN interfaces detected.</span>';
+      return;
+    }
+
+    const typeIcon = { wifi: '📶', usb: '🔌', bluetooth: '🔵', lte: '📡', ethernet: '🔗', ppp: '📞' };
+
+    function stateBadge(u) {
+      if (u.has_default_route) return '<span style="display:inline-block;background:#22c55e;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">active</span>';
+      if (u.up) return '<span style="display:inline-block;background:#6366f1;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">up</span>';
+      return '<span style="display:inline-block;background:#6b7280;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">down</span>';
+    }
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:6px 8px;">Interface</th>';
+    html += '<th style="padding:6px 8px;">Type</th>';
+    html += '<th style="padding:6px 8px;">Status</th>';
+    html += '<th style="padding:6px 8px;">Metric</th>';
+    html += '<th style="padding:6px 8px;">Gateway</th>';
+    html += '</tr></thead><tbody>';
+    for (const u of data.uplinks) {
+      const icon = typeIcon[u.type] || '🌐';
+      const isActive = u.interface === data.active_interface;
+      const rowStyle = isActive ? 'background:var(--bg2);' : '';
+      html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">`;
+      html += `<td style="padding:6px 8px;font-family:monospace;font-weight:600;">${escHtml(u.interface)}</td>`;
+      html += `<td style="padding:6px 8px;">${icon} ${escHtml(u.label)}</td>`;
+      html += `<td style="padding:6px 8px;">${stateBadge(u)}</td>`;
+      html += `<td style="padding:6px 8px;font-family:monospace;">${u.metric != null ? u.metric : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += `<td style="padding:6px 8px;font-family:monospace;font-size:11px;">${u.gateway ? escHtml(u.gateway) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load WAN uplinks</span>';
   }
 }
 
