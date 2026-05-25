@@ -500,6 +500,17 @@
     <div id="guest-network-content"><span class="spinner"></span></div>
   </div>
 
+  <!-- WiFi QR Code -->
+  <div class="card" id="card-wifi-qr" style="margin-top:16px;max-width:320px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4F1; WiFi QR Code</span>
+      <button class="btn btn-sm" onclick="fetchWifiQr()">&#x21BB; Refresh</button>
+    </div>
+    <div id="wifi-qr-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Firewall Rules -->
@@ -2428,6 +2439,30 @@ async function toggleGuestNetwork(currentlyEnabled) {
   }
 }
 
+// ── WiFi QR Code ──────────────────────────────────────────────────────────────
+async function fetchWifiQr() {
+  const el = document.getElementById('wifi-qr-content');
+  try {
+    const r = await apiFetch('/api/wifi/qr');
+    const d = await r.json();
+    let html = '';
+    if (d.qr_data_url) {
+      html += '<div style="text-align:center;margin-bottom:8px;">';
+      html += '<img src="' + d.qr_data_url + '" alt="WiFi QR" style="max-width:200px;border-radius:8px;background:#fff;padding:8px;">';
+      html += '</div>';
+    } else {
+      html += '<p style="color:var(--text-dim);font-size:12px;margin:4px 0;">QR generation unavailable (install qrencode)</p>';
+    }
+    html += '<div style="font-size:13px;margin-top:4px;">';
+    html += '<strong>SSID:</strong> <span style="font-family:monospace;">' + d.ssid + '</span>';
+    html += '</div>';
+    html += '<div style="font-size:11px;color:var(--text-dim);margin-top:4px;word-break:break-all;font-family:monospace;">' + d.wifi_string + '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
 // ── Speed Test ────────────────────────────────────────────────────────────────
 function _spdClass(type, value) {
   if (value == null) return '';
@@ -3085,6 +3120,7 @@ async function refreshAll() {
   fetchDohResolver();
   fetchWgPeers();
   fetchGuestNetwork();
+  fetchWifiQr();
   fetchSpeedTestCached();
   fetchCaptiveStatus();
   fetchSignal();
