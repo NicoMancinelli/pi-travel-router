@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.29.0] - 2026-05-25
+
+### Added
+
+- **System resource usage** (`web/app.py`, `web/static/index.html`): `GET /api/system/resources` reads CPU% (sampled from `/proc/stat` with 200ms interval), memory used/total/available MB and percent (from `/proc/meminfo`), load averages 1/5/15min (`/proc/loadavg`), and uptime (`/proc/uptime`). Dashboard card with proportional usage bars (green→orange→red at 70%/90%), load average color-coding, and human-readable uptime. Auto-refreshes on poll.
+- **Firewall rules viewer** (`web/app.py`, `web/static/index.html`): `GET /api/network/firewall` tries nft JSON (`nft -j list ruleset`) → nft plain text → iptables -L fallback. Returns rules grouped by table/chain with rule count and tool label. Dashboard card displays grouped monospace rule blocks. Loaded on page init.
+- **Power control** (`web/app.py`, `web/static/index.html`): `POST /api/system/reboot` and `POST /api/system/shutdown` schedule the action 10 seconds out via a background daemon thread, returning `{"scheduled": true, "in_seconds": 10}`. Dashboard card with Reboot (orange) and Shutdown (red) buttons, browser confirm() guard, and live countdown display.
+
 ## [2.28.0] - 2026-05-25
 
 ### Added
