@@ -8514,6 +8514,109 @@ def api_network_sockstat():
     })
 
 
+@app.route("/api/system/osinfo")
+@require_auth
+def api_system_osinfo():
+    """Return OS/kernel/arch/uptime/hostname info."""
+    # Kernel version
+    try:
+        kernel = Path("/proc/version").read_text().strip()
+    except OSError:
+        kernel = "unknown"
+
+    # Distro
+    distro = "unknown"
+    try:
+        osrelease = Path("/etc/os-release").read_text()
+        for line in osrelease.splitlines():
+            if line.startswith("PRETTY_NAME="):
+                distro = line.split("=", 1)[1].strip().strip('"')
+                break
+    except OSError:
+        try:
+            distro = Path("/etc/debian_version").read_text().strip()
+        except OSError:
+            pass
+
+    # Architecture
+    arch_out, rc = _run(["uname", "-m"])
+    arch = arch_out.strip() if rc == 0 else "unknown"
+
+    # Uptime
+    uptime_out, rc = _run(["uptime", "-p"])
+    if rc == 0 and uptime_out.strip():
+        uptime = uptime_out.strip()
+    else:
+        try:
+            raw = Path("/proc/uptime").read_text().split()[0]
+            total_secs = int(float(raw))
+            days, remainder = divmod(total_secs, 86400)
+            hours, remainder = divmod(remainder, 3600)
+            minutes = remainder // 60
+            parts = []
+            if days:
+                parts.append(f"{days} day{'s' if days != 1 else ''}")
+            if hours:
+                parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+            if minutes or not parts:
+                parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+            uptime = "up " + ", ".join(parts)
+        except (OSError, ValueError, IndexError):
+            uptime = "unknown"
+
+    # Hostname
+    try:
+        hostname = Path("/proc/sys/kernel/hostname").read_text().strip()
+    except OSError:
+        hostname = "unknown"
+
+    return jsonify({
+        "kernel": kernel,
+        "distro": distro,
+        "arch": arch,
+        "uptime": uptime,
+        "hostname": hostname,
+    })
+
+
+@app.route("/api/system/loadavg", methods=["GET"])
+@require_auth
+def api_system_loadavg():
+    """Return load average and process counts from /proc/loadavg and CPU count from /proc/cpuinfo."""
+    try:
+        with open("/proc/loadavg", "r") as fh:
+            raw = fh.read().strip()
+        parts = raw.split()
+        load_1 = float(parts[0])
+        load_5 = float(parts[1])
+        load_15 = float(parts[2])
+        procs = parts[3].split("/")
+        running_procs = int(procs[0])
+        total_procs = int(procs[1])
+
+        cpu_count = 0
+        with open("/proc/cpuinfo", "r") as fh:
+            for line in fh:
+                if line.startswith("processor"):
+                    cpu_count += 1
+        if cpu_count == 0:
+            cpu_count = 1
+
+        normalized_1 = round(load_1 / cpu_count, 3)
+
+        return jsonify({
+            "load_1": load_1,
+            "load_5": load_5,
+            "load_15": load_15,
+            "cpu_count": cpu_count,
+            "running_procs": running_procs,
+            "total_procs": total_procs,
+            "normalized_1": normalized_1,
+        })
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

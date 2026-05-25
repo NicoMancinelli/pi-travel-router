@@ -1201,6 +1201,14 @@
     <div id="sockstat-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-osinfo">
+    <div id="osinfo-content">Loading&hellip;</div>
+  </div>
+
+  <div class="card" id="card-loadavg">
+    <div id="loadavg-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4242,6 +4250,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDiskPartitions();
   fetchDmesg();
   fetchSockStat();
+  fetchOsInfo();
+  fetchLoadAvg();
   fetchBatteryStatus();
   fetchInterrupts();
 });
@@ -4458,6 +4468,8 @@ async function refreshAll() {
   fetchDiskPartitions();
   fetchDmesg();
   fetchSockStat();
+  fetchOsInfo();
+  fetchLoadAvg();
   fetchBatteryStatus();
   fetchInterrupts();
 }
@@ -7849,6 +7861,58 @@ async function fetchSockStat() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function fetchOsInfo() {
+  const el = document.getElementById('osinfo-content');
+  if (!el) return;
+  try {
+    const res = await apiFetch('/api/system/osinfo');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    let html = `<div class="card-title">&#x1F5A5;&#xFE0F; System Info</div>`;
+    html += `<div style="font-size:1.1em;font-weight:600;margin-bottom:8px;">${d.hostname || 'unknown'}</div>`;
+    html += `<table style="border-collapse:collapse;font-size:0.88em;">`;
+    html += `<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;white-space:nowrap;">Distro</td><td>${d.distro || 'unknown'}</td></tr>`;
+    html += `<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;white-space:nowrap;">Kernel</td><td style="word-break:break-all;">${d.kernel || 'unknown'}</td></tr>`;
+    html += `<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;white-space:nowrap;">Arch</td><td>${d.arch || 'unknown'}</td></tr>`;
+    html += `<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;white-space:nowrap;">Uptime</td><td>${d.uptime || 'unknown'}</td></tr>`;
+    html += `</table>`;
+    el.innerHTML = html;
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="card-title">&#x1F5A5;&#xFE0F; System Info</div><span style="color:var(--danger)">${e.message}</span>`;
+  }
+}
+
+// ── System Load Average ───────────────────────────────────────────────────────
+
+async function fetchLoadAvg() {
+  const el = document.getElementById('loadavg-content');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/system/loadavg');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    if (d.error) {
+      el.innerHTML = `<div class="card-title">&#x1F4CA; Load Average</div><span style="color:var(--danger)">${d.error}</span>`;
+      return;
+    }
+    const n = d.normalized_1;
+    const colour = n < 0.7 ? 'var(--success)' : n < 1.0 ? 'var(--warning)' : 'var(--danger)';
+    const indicator = n < 0.7 ? '&#x25CF; Normal' : n < 1.0 ? '&#x25CF; High' : '&#x25CF; Critical';
+    el.innerHTML = `
+      <div class="card-title">&#x1F4CA; Load Average</div>
+      <div style="display:flex;gap:24px;align-items:baseline;margin:8px 0;">
+        <span style="font-size:1.6em;font-weight:600;">${d.load_1.toFixed(2)}</span>
+        <span style="font-size:1.1em;color:var(--muted);">${d.load_5.toFixed(2)}</span>
+        <span style="font-size:1.1em;color:var(--muted);">${d.load_15.toFixed(2)}</span>
+        <span style="font-size:0.85em;color:var(--muted);">1m &nbsp; 5m &nbsp; 15m</span>
+      </div>
+      <div style="color:${colour};font-size:0.9em;font-weight:600;">${indicator} &nbsp;(${n.toFixed(2)} per CPU)</div>
+      <div style="font-size:0.8em;color:var(--muted);margin-top:4px;">${d.running_procs} running / ${d.total_procs} total processes &nbsp;&bull;&nbsp; ${d.cpu_count} CPU${d.cpu_count !== 1 ? 's' : ''}</div>`;
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="card-title">&#x1F4CA; Load Average</div><span style="color:var(--danger)">Failed: ${e}</span>`;
   }
 }
 
