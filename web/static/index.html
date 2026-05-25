@@ -1241,6 +1241,15 @@
     <div id="smart-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- GPU / VideoCore -->
+  <div class="card" id="card-gpu-info">
+    <div class="card-title">
+      &#x1F3AE; GPU / VideoCore
+      <button class="btn btn-sm" onclick="fetchGpu()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="gpu-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4829,6 +4838,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchEnvironment();
   fetchSockets();
   fetchSmart();
+  fetchGpu();
 });
 
 async function fetchJournal() {
@@ -5097,6 +5107,7 @@ async function refreshAll() {
   fetchEnvironment();
   fetchSockets();
   fetchSmart();
+  fetchGpu();
 }
 
 async function init() {
@@ -7641,6 +7652,74 @@ async function fetchSockets() {
 
     el.innerHTML = html;
   } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── GPU / VideoCore ───────────────────────────────────────────────────────────
+async function fetchGpu() {
+  const el = document.getElementById('gpu-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/gpu');
+    const d = await r.json();
+    if (!d.vcgencmd_available) {
+      el.innerHTML = `<p class="muted">vcgencmd not available &mdash; ${d.error || 'not a Raspberry Pi?'}</p>`;
+      return;
+    }
+
+    // Memory split bar
+    const totalMem = (d.arm_mem_mb || 0) + (d.gpu_mem_mb || 0);
+    const armPct = totalMem > 0 ? Math.round((d.arm_mem_mb || 0) / totalMem * 100) : 0;
+    const gpuPct = 100 - armPct;
+    let html = '';
+
+    if (totalMem > 0) {
+      html += `<div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px">
+          <span>ARM <strong>${d.arm_mem_mb} MB</strong> (${armPct}%)</span>
+          <span>GPU <strong>${d.gpu_mem_mb} MB</strong> (${gpuPct}%)</span>
+        </div>
+        <div style="display:flex;border-radius:4px;overflow:hidden;height:8px;background:var(--bg2)">
+          <div style="width:${armPct}%;background:var(--blue,#4a9eff)"></div>
+          <div style="width:${gpuPct}%;background:var(--green,#4caf50)"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:3px;color:var(--text-dim)">
+          <span style="color:var(--blue,#4a9eff)">&#9632; ARM</span>
+          <span style="color:var(--green,#4caf50)">&#9632; GPU</span>
+        </div>
+      </div>`;
+    }
+
+    html += '<div class="metric-grid">';
+    if (d.arm_clock_hz !== null && d.arm_clock_hz !== undefined)
+      html += `<div class="metric"><span class="metric-label">ARM Clock</span><span class="metric-value">${(d.arm_clock_hz / 1e6).toFixed(0)} MHz</span></div>`;
+    if (d.core_clock_hz !== null && d.core_clock_hz !== undefined)
+      html += `<div class="metric"><span class="metric-label">Core Clock</span><span class="metric-value">${(d.core_clock_hz / 1e6).toFixed(0)} MHz</span></div>`;
+    if (d.core_voltage_v !== null && d.core_voltage_v !== undefined)
+      html += `<div class="metric"><span class="metric-label">Core Voltage</span><span class="metric-value">${d.core_voltage_v.toFixed(4)} V</span></div>`;
+    if (d.sdram_voltage_v !== null && d.sdram_voltage_v !== undefined)
+      html += `<div class="metric"><span class="metric-label">SDRAM Voltage</span><span class="metric-value">${d.sdram_voltage_v.toFixed(4)} V</span></div>`;
+    html += '</div>';
+
+    // Throttle status
+    const t = d.throttled || {};
+    const flags = [];
+    if (t.undervoltage) flags.push('<span style="color:var(--red)">Undervoltage</span>');
+    if (t.freq_capped) flags.push('<span style="color:var(--amber,#ffb74d)">Freq Capped</span>');
+    if (t.throttled) flags.push('<span style="color:var(--red)">Throttled</span>');
+    if (t.undervoltage_occurred) flags.push('<span style="color:var(--amber,#ffb74d)">Undervoltage (hist)</span>');
+    const throttleHtml = flags.length === 0
+      ? '<span style="color:var(--green,#4caf50);font-weight:600">&#10003; OK</span>'
+      : flags.join(' &middot; ');
+    html += `<div style="margin-top:8px;font-size:12px"><span class="muted">Throttle: </span>${throttleHtml}`;
+    if (t.raw) html += ` <span class="muted">(${t.raw})</span>`;
+    html += '</div>';
+
+    el.innerHTML = html;
+  } catch(e) {
+    const el2 = document.getElementById('gpu-content');
+    if (el2) el2.innerHTML = `<p class="error">${e}</p>`;
+  }
 }
 
 // ── System Environment ────────────────────────────────────────────────────────
