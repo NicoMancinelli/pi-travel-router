@@ -832,6 +832,16 @@
     <div id="arp-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
   </div>
 
+  <!-- Config Backup -->
+  <div class="card" id="card-config-backup" style="margin-top:16px;">
+    <div class="card-header">
+      <span>💾 Config Backup</span>
+    </div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">Download a snapshot of router config files: wireguard, dnsmasq, hostapd, and data store.</div>
+    <button class="btn" onclick="downloadConfigBackup()" style="width:100%;">⬇ Download Backup</button>
+    <div id="backup-status" style="margin-top:8px;font-size:12px;color:var(--text-dim);"></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4805,6 +4815,34 @@ async function fetchArpTable() {
   } catch (e) {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   }
+}
+
+// ── Config Backup ─────────────────────────────────────────────────────────────
+
+function downloadConfigBackup() {
+  const status = document.getElementById('backup-status');
+  status.textContent = 'Preparing backup…';
+  // Open the download URL directly — the browser handles the file save
+  const token = window._authToken || '';
+  const url = '/api/config/backup';
+  // Use a hidden anchor to trigger download with auth header isn't straightforward;
+  // instead open in same window — the Content-Disposition header will trigger download
+  fetch(url, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} })
+    .then(r => {
+      if (!r.ok) { status.textContent = 'Error: ' + r.status; return; }
+      return r.blob().then(blob => {
+        const cd = r.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename="?([^"]+)"?/);
+        const filename = match ? match[1] : 'travel-router-backup.tar.gz';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        status.textContent = '✓ Downloaded ' + filename;
+      });
+    })
+    .catch(e => { status.textContent = 'Failed: ' + e; });
 }
 
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
