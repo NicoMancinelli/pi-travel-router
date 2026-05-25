@@ -8617,6 +8617,64 @@ def api_system_loadavg():
         return jsonify({"error": str(exc)}), 500
 
 
+# ── USB Devices ──────────────────────────────────────────────────────────────
+
+@app.route("/api/system/usb-devices", methods=["GET"])
+@require_auth
+def api_system_usb_devices():
+    """Return a list of connected USB devices parsed from lsusb, enriched via sysfs."""
+    import re as _re
+
+    out, rc = _run(["lsusb"])
+    if rc != 0:
+        return jsonify({"devices": [], "count": 0, "error": "lsusb not available"})
+
+    devices = []
+    for line in out.splitlines():
+        m = _re.match(
+            r"Bus (\d+) Device (\d+): ID ([0-9a-f]{4}):([0-9a-f]{4})\s*(.*)",
+            line,
+        )
+        if not m:
+            continue
+        bus = m.group(1)
+        device_num = m.group(2)
+        vendor_id = m.group(3)
+        product_id = m.group(4)
+        description = m.group(5).strip()
+
+        # Best-effort sysfs enrichment
+        try:
+            for sysfs_dev in Path("/sys/bus/usb/devices").iterdir():
+                try:
+                    busnum = (sysfs_dev / "busnum").read_text().strip()
+                    devnum = (sysfs_dev / "devnum").read_text().strip()
+                    if busnum == str(int(bus)) and devnum == str(int(device_num)):
+                        prod_path = sysfs_dev / "product"
+                        mfr_path = sysfs_dev / "manufacturer"
+                        prod = prod_path.read_text().strip() if prod_path.exists() else ""
+                        mfr = mfr_path.read_text().strip() if mfr_path.exists() else ""
+                        if prod and mfr and mfr not in description and prod not in description:
+                            description = f"{mfr} {prod}"
+                        elif prod and prod not in description:
+                            description = prod
+                        break
+                except OSError:
+                    continue
+        except OSError:
+            pass
+
+        devices.append({
+            "bus": bus,
+            "device": device_num,
+            "vendor_id": vendor_id,
+            "product_id": product_id,
+            "description": description,
+        })
+
+    return jsonify({"devices": devices, "count": len(devices)})
+
+
 @app.route("/api/system/cpu-temp", methods=["GET"])
 @require_auth
 def api_system_cpu_temp():
