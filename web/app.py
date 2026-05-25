@@ -9288,6 +9288,43 @@ def api_system_timers():
     return jsonify({"timers": timers, "count": len(timers)})
 
 
+@app.route("/api/network/mdns")
+@require_auth
+def api_network_mdns():
+    """Browse mDNS/Avahi services on the local network."""
+    # Try avahi-browse first
+    out, rc = _run(["avahi-browse", "-a", "-t", "-r", "-p"])
+    if rc != 0:
+        # Fallback: try dns-sd
+        out, rc = _run(["dns-sd", "-B", "_services._dns-sd._udp", "local"])
+        if rc != 0:
+            return jsonify({"services": [], "error": "avahi-browse and dns-sd unavailable"})
+
+    services = []
+    seen = set()
+    for line in out.strip().splitlines():
+        # avahi-browse -p format: =;iface;IPv4;name;type;domain;hostname;addr;port;txt
+        if not line.startswith("="):
+            continue
+        parts = line.split(";")
+        if len(parts) < 9:
+            continue
+        key = (parts[3], parts[4], parts[6])
+        if key in seen:
+            continue
+        seen.add(key)
+        services.append({
+            "name": parts[3],
+            "type": parts[4],
+            "domain": parts[5],
+            "hostname": parts[6],
+            "address": parts[7],
+            "port": parts[8],
+        })
+
+    return jsonify({"services": services, "count": len(services)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
