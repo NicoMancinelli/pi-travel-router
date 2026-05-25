@@ -415,6 +415,22 @@
     <div id="latency-gateway" style="font-size:11px;color:var(--text-dim);font-family:var(--mono);"></div>
   </div>
 
+  <!-- Ping Monitor -->
+  <div class="card full-width" id="card-ping-monitor" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4E1; Ping Monitor</span>
+      <button class="btn btn-sm" id="ping-refresh-btn" onclick="fetchPingMonitor()">&#x21BB; Check</button>
+    </div>
+    <div id="ping-monitor-content">
+      <span style="color:var(--text-dim);font-size:13px;">No hosts configured — add one below</span>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="ping-host-input" type="text" placeholder="Host or IP (e.g. 8.8.8.8)" style="flex:2;min-width:150px;">
+      <input id="ping-label-input" type="text" placeholder="Label (optional)" style="flex:1;min-width:100px;">
+      <button class="btn btn-primary" onclick="addPingHost()" style="white-space:nowrap;">&#x2795; Add</button>
+    </div>
+  </div>
+
   <!-- System Resources -->
   <div class="card full-width" id="card-resources" style="margin-top:16px;">
     <div class="card-title">System Resources</div>
@@ -3356,6 +3372,75 @@ async function fetchJournal() {
   } catch (e) {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   }
+}
+
+async function fetchPingMonitor() {
+  const el = document.getElementById('ping-monitor-content');
+  const btn = document.getElementById('ping-refresh-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Pinging…'; }
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Pinging hosts…</span>';
+  try {
+    const r = await apiFetch('/api/monitor/ping');
+    const d = await r.json();
+    const results = d.results || [];
+    if (results.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No hosts configured — add one below</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Host</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Status</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Latency</th>';
+    html += '<th style="padding:4px 8px;border-bottom:1px solid var(--border);"></th>';
+    html += '</tr></thead><tbody>';
+    for (const h of results) {
+      const statusColor = h.up ? 'var(--success,#4c4)' : 'var(--error,#e55)';
+      const statusDot = h.up ? '● UP' : '○ DOWN';
+      const latency = h.latency_ms != null ? h.latency_ms.toFixed(1) + ' ms' : '—';
+      const display = h.label ? h.label + ' (' + h.host + ')' : h.host;
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + display + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:' + statusColor + ';">' + statusDot + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">' + latency + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;">'
+        + '<button class="btn btn-sm" style="color:var(--error,#e55);" onclick="deletePingHost(\'' + h.host.replace(/'/g, "\\'") + '\')">&#x2715;</button>'
+        + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↻ Check'; }
+  }
+}
+
+async function addPingHost() {
+  const host = document.getElementById('ping-host-input').value.trim();
+  const label = document.getElementById('ping-label-input').value.trim();
+  if (!host) { toast('Host is required', 'err'); return; }
+  try {
+    const r = await apiFetch('/api/monitor/ping', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({host, label}) });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'err'); return; }
+    document.getElementById('ping-host-input').value = '';
+    document.getElementById('ping-label-input').value = '';
+    toast('Host added', 'ok');
+    await fetchPingMonitor();
+  } catch (e) { toast('Error: ' + e, 'err'); }
+}
+
+async function deletePingHost(host) {
+  if (!confirm('Remove ' + host + ' from ping monitor?')) return;
+  try {
+    const r = await apiFetch('/api/monitor/ping/' + encodeURIComponent(host), { method: 'DELETE' });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'err'); return; }
+    toast('Host removed', 'ok');
+    await fetchPingMonitor();
+  } catch (e) { toast('Error: ' + e, 'err'); }
 }
 
 async function refreshAll() {

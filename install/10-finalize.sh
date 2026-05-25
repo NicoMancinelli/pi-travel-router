@@ -109,6 +109,11 @@ run_finalize() {
     touch /var/lib/travel-router/client-history.json 2>/dev/null || true
     ok "Client history store initialised"
 
+    # ── Ping monitor store ────────────────────────────────────────────────────────
+    section "Ping monitor store"
+    touch /var/lib/travel-router/ping-hosts.json 2>/dev/null || true
+    ok "Ping monitor store initialised"
+
     # ── Version stamp ────────────────────────────────────────────────────────────
     section "Version stamp"
     local _INSTALLED_VERSION
