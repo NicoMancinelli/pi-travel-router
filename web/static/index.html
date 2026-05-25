@@ -897,6 +897,15 @@
     <div id="wifi-clients-content" style="font-size:13px;color:var(--text-dim);">Loading…</div>
   </div>
 
+  <!-- Storage -->
+  <div class="card full-width" id="card-storage">
+    <div class="card-title">
+      &#x1F4BE; Storage
+      <button class="btn btn-sm" onclick="fetchStorage()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="storage-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Connectivity Check -->
   <div class="card full-width" id="card-ping-checker" style="margin-top:16px;">
     <div class="card-title">&#x1F4E1; Connectivity Check</div>
@@ -3854,6 +3863,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sel) sel.addEventListener('change', () => fetchClientHistory());
   fetchFirewallRules();
   fetchSystemResources();
+  fetchStorage();
 });
 
 async function fetchJournal() {
@@ -5199,6 +5209,78 @@ async function fetchSystemResources() {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
+  }
+}
+
+// ── Storage / Block Device Info ───────────────────────────────────────────────
+
+async function fetchStorage() {
+  const el = document.getElementById('storage-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/storage');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>';
+      return;
+    }
+
+    function diskColor(pct) {
+      if (pct >= 90) return '#f44336';
+      if (pct >= 70) return '#ff9800';
+      return '#4caf50';
+    }
+
+    let html = '';
+
+    // Disk partitions table
+    if (d.disks && d.disks.length > 0) {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;">';
+      html += '<thead><tr style="color:var(--text-dim);text-align:left;border-bottom:1px solid var(--border);">';
+      html += '<th style="padding:6px 8px;">Device</th>';
+      html += '<th style="padding:6px 8px;">Mount</th>';
+      html += '<th style="padding:6px 8px;">FS</th>';
+      html += '<th style="padding:6px 8px;">Usage</th>';
+      html += '<th style="padding:6px 8px;">Free / Total</th>';
+      html += '</tr></thead><tbody>';
+      for (const disk of d.disks) {
+        const pct = disk.percent != null ? disk.percent : 0;
+        const color = diskColor(pct);
+        const bar = '<div style="background:var(--bg2);border-radius:3px;height:8px;width:80px;display:inline-block;vertical-align:middle;margin-right:6px;">'
+          + '<div style="background:' + color + ';border-radius:3px;height:8px;width:' + Math.min(pct, 100) + '%;"></div></div>';
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += '<td style="padding:6px 8px;font-family:monospace;">' + disk.device + '</td>';
+        html += '<td style="padding:6px 8px;font-family:monospace;">' + disk.mountpoint + '</td>';
+        html += '<td style="padding:6px 8px;">' + disk.fstype + '</td>';
+        html += '<td style="padding:6px 8px;">' + bar + '<span style="color:' + color + ';">' + pct.toFixed(1) + '%</span></td>';
+        html += '<td style="padding:6px 8px;">' + disk.free_gb + ' GB / ' + disk.total_gb + ' GB</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    } else {
+      html += '<div style="color:var(--text-dim);margin-bottom:12px;">No disk partitions found.</div>';
+    }
+
+    // USB devices list
+    if (d.usb_devices && d.usb_devices.length > 0) {
+      html += '<div style="font-weight:600;margin-bottom:6px;">USB Devices</div>';
+      html += '<ul style="margin:0;padding-left:18px;font-size:13px;">';
+      for (const u of d.usb_devices) {
+        const label = u.description || '(unknown)';
+        html += '<li style="padding:3px 0;color:var(--text);">'
+          + '<span style="font-family:monospace;color:var(--text-dim);">Bus ' + u.bus + ' Dev ' + u.device
+          + ' [' + u.vendor_id + ':' + u.product_id + ']</span>'
+          + ' &mdash; ' + label + '</li>';
+      }
+      html += '</ul>';
+    } else {
+      html += '<div style="color:var(--text-dim);font-size:13px;">No USB devices detected.</div>';
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Error: ' + e + '</span>';
   }
 }
 
