@@ -8645,34 +8645,35 @@ def api_system_cpu_temp():
 @require_auth
 def api_system_kernel_modules():
     try:
+        out, rc = _run("lsmod")
+        if rc != 0:
+            return jsonify({"error": "lsmod failed", "modules": [], "count": 0})
         modules = []
-        with open("/proc/modules", "r") as fh:
-            for line in fh:
-                cols = line.split()
-                if len(cols) < 4:
-                    continue
-                name = cols[0]
-                try:
-                    size = int(cols[1])
-                except ValueError:
-                    size = 0
-                try:
-                    instance_count = int(cols[2])
-                except ValueError:
-                    instance_count = 0
-                raw_deps = cols[3].strip(",")
-                depends = raw_deps.split(",") if raw_deps != "-" else []
-                modules.append({
-                    "name": name,
-                    "size": size,
-                    "used": instance_count,
-                    "depends": depends,
-                })
-        total = len(modules)
-        modules.sort(key=lambda m: m["size"], reverse=True)
-        return jsonify({"modules": modules[:50], "total": total})
+        lines = out.strip().splitlines()
+        for line in lines[1:]:  # skip header
+            cols = line.split()
+            if len(cols) < 3:
+                continue
+            name = cols[0]
+            try:
+                size = int(cols[1])
+            except ValueError:
+                size = 0
+            try:
+                used_by = int(cols[2])
+            except ValueError:
+                used_by = 0
+            raw_deps = cols[3].strip(",") if len(cols) > 3 else ""
+            dependents = [d for d in raw_deps.split(",") if d] if raw_deps else []
+            modules.append({
+                "name": name,
+                "size": size,
+                "used_by": used_by,
+                "dependents": dependents,
+            })
+        return jsonify({"modules": modules, "count": len(modules), "source": "lsmod"})
     except Exception as exc:  # pylint: disable=broad-except
-        return jsonify({"modules": [], "total": 0, "error": str(exc)}), 500
+        return jsonify({"error": str(exc), "modules": [], "count": 0})
 
 
 @app.route("/api/system/logged-in-users", methods=["GET"])
@@ -11120,6 +11121,45 @@ def api_system_user_accounts():
         pass
 
     return jsonify({"users": users, "count": len(users)})
+
+@app.route("/api/system/process-top", methods=["GET"])
+@require_auth
+def api_system_process_top():
+    """Return top 15 processes by CPU and top 15 by memory."""
+    def parse_ps(output):
+        results = []
+        lines = output.strip().splitlines()
+        for line in lines[1:]:  # skip header
+            parts = line.split(None, 10)
+            if len(parts) < 11:
+                continue
+            try:
+                results.append({
+                    "user": parts[0],
+                    "pid": int(parts[1]),
+                    "cpu": float(parts[2]),
+                    "mem": float(parts[3]),
+                    "rss_kb": int(parts[5]),
+                    "command": parts[10][:60],
+                })
+            except (ValueError, IndexError):
+                continue
+        return results
+
+    try:
+        out_cpu, rc_cpu = _run(["ps", "aux", "--sort=-%cpu"])
+        out_mem, rc_mem = _run(["ps", "aux", "--sort=-%mem"])
+
+        if rc_cpu != 0 and rc_mem != 0:
+            return jsonify({"error": "ps command failed", "by_cpu": [], "by_mem": []})
+
+        by_cpu = parse_ps(out_cpu)[:15] if rc_cpu == 0 else []
+        by_mem = parse_ps(out_mem)[:15] if rc_mem == 0 else []
+
+        return jsonify({"by_cpu": by_cpu, "by_mem": by_mem, "source": "ps"})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "by_cpu": [], "by_mem": []})
+
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 

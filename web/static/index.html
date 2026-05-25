@@ -1046,6 +1046,18 @@
     <div id="user-accounts-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Process Resource Hogs -->
+  <div class="card" id="process-top-card">
+    <h2>&#x26A1; Top Processes</h2>
+    <div id="process-top-content"><p class="muted">Loading&hellip;</p></div>
+  </div>
+
+  <!-- Kernel Modules -->
+  <div class="card" id="kernel-modules-card">
+    <h2>🧩 Kernel Modules</h2>
+    <div id="kernel-modules-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1253,15 +1265,6 @@
     <div id="wg-config-qr-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <!-- Kernel Modules -->
-  <div class="card full-width" id="card-kernel-modules">
-    <div class="card-title">
-      &#x1F527; Kernel Modules
-      <button class="btn btn-sm" onclick="fetchKernelModules()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="kernel-modules-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
-
   <div class="card full-width" id="card-diskio">
     <div class="card-title">&#x1F4BE; Disk I/O Stats</div>
     <div id="diskio-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
@@ -1287,8 +1290,10 @@
     <div id="cpufreq-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <div class="card" id="card-arp-table">
-    <div id="arp-table-content">Loading&hellip;</div>
+  <!-- ARP Table -->
+  <div class="card" id="arp-table-card">
+    <h2>📡 ARP Table</h2>
+    <div id="arp-table-content"><p class="muted">Loading…</p></div>
   </div>
 
   <div class="card" id="card-route-table">
@@ -4646,6 +4651,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchBootAnalysis();
   fetchLinkStatus();
   fetchUserAccounts();
+  fetchProcessTop();
 });
 
 async function fetchJournal() {
@@ -4917,6 +4923,8 @@ async function refreshAll() {
   fetchBootAnalysis();
   fetchLinkStatus();
   fetchUserAccounts();
+  fetchProcessTop();
+  fetchArpTable();
 }
 
 async function init() {
@@ -7525,38 +7533,23 @@ async function fetchCpuFreq() {
   }
 }
 
-// ── ARP / Neighbor Table ──────────────────────────────────────────────────────
-
+// ── ARP Table ─────────────────────────────────────────────────────────────────
 async function fetchArpTable() {
-  const el = document.getElementById('arp-table-content');
   try {
-    const r = await fetch('/api/network/arp');
-    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const r = await fetch('/api/network/arp-table');
     const d = await r.json();
-    const stateColor = { REACHABLE: '#2ecc71', STALE: '#f39c12', INCOMPLETE: '#e74c3c', UNKNOWN: '#95a5a6' };
-    let html = `<div class="card-title">&#x1F5A7; ARP Table <span style="font-size:11px;background:var(--border);border-radius:10px;padding:1px 7px;margin-left:6px;">${d.count}</span></div>`;
-    if (d.error) { html += `<div style="color:var(--text-dim);font-size:13px;">${d.error}</div>`; el.innerHTML = html; return; }
-    if (!d.entries || d.entries.length === 0) { html += '<div style="color:var(--text-dim);font-size:13px;">No ARP entries found</div>'; el.innerHTML = html; return; }
-    html += '<table style="width:100%;border-collapse:collapse;">';
-    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
-      <th style="text-align:left;padding:3px 8px;">IP</th>
-      <th style="text-align:left;padding:3px 8px;">MAC</th>
-      <th style="text-align:left;padding:3px 8px;">Interface</th>
-      <th style="text-align:left;padding:3px 8px;">State</th>
-    </tr></thead><tbody>`;
+    const el = document.getElementById('arp-table-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (!d.entries || d.entries.length === 0) { el.innerHTML = '<p class="muted">No ARP entries.</p>'; return; }
+    let html = `<p class="muted" style="margin-bottom:6px">Neighbors: <strong>${d.count}</strong></p>`;
+    html += '<table class="table"><thead><tr><th>IP</th><th>MAC</th><th>Interface</th><th>State</th></tr></thead><tbody>';
     for (const e of d.entries) {
-      const color = stateColor[e.state] || stateColor.UNKNOWN;
-      html += `<tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:3px 8px;font-family:monospace;">${e.ip}</td>
-        <td style="padding:3px 8px;font-family:monospace;color:var(--text-dim);">${e.mac}</td>
-        <td style="padding:3px 8px;">${e.iface}</td>
-        <td style="padding:3px 8px;"><span style="color:${color};font-weight:600;">${e.state}</span></td>
-      </tr>`;    }
+      const stateClass = e.state === 'REACHABLE' ? 'color:var(--green)' : e.state === 'STALE' ? 'color:var(--amber)' : '';
+      html += `<tr><td><code>${e.ip}</code></td><td><code>${e.mac || '-'}</code></td><td>${e.interface}</td><td style="${stateClass}">${e.state}</td></tr>`;
+    }
     html += '</tbody></table>';
     el.innerHTML = html;
-  } catch (e) {
-    el.textContent = 'Failed: ' + e;
-  }
+  } catch(e) { document.getElementById('arp-table-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── IP Routing Table ──────────────────────────────────────────────────────────
@@ -9856,6 +9849,30 @@ async function fetchUserAccounts() {
     if (e.message !== 'Unauthorized') console.error('fetchUserAccounts error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load user accounts</span>';
   }
+}
+
+// ── Top Processes ─────────────────────────────────────────────────────────────
+async function fetchProcessTop() {
+  try {
+    const r = await fetch('/api/system/process-top');
+    const d = await r.json();
+    const el = document.getElementById('process-top-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    function makeTable(rows, metric) {
+      let t = `<table class="table"><thead><tr><th>PID</th><th>User</th><th>${metric}</th><th>Mem%</th><th>RSS</th><th>Command</th></tr></thead><tbody>`;
+      for (const p of rows) {
+        const cpuColor = p.cpu > 50 ? 'color:var(--red)' : p.cpu > 20 ? 'color:var(--amber)' : '';
+        const memColor = p.mem > 20 ? 'color:var(--red)' : p.mem > 10 ? 'color:var(--amber)' : '';
+        t += `<tr><td>${p.pid}</td><td>${p.user}</td><td style="${cpuColor}">${p.cpu.toFixed(1)}%</td><td style="${memColor}">${p.mem.toFixed(1)}%</td><td>${(p.rss_kb/1024).toFixed(1)}M</td><td><code style="font-size:0.75em">${p.command}</code></td></tr>`;
+      }
+      return t + '</tbody></table>';
+    }
+    let html = '<p class="muted" style="font-weight:600;margin-bottom:4px">Top by CPU</p>';
+    html += makeTable(d.by_cpu || [], 'CPU%');
+    html += '<p class="muted" style="font-weight:600;margin:10px 0 4px">Top by Memory</p>';
+    html += makeTable(d.by_mem || [], 'CPU%');
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('process-top-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── TCP Connection State Counts ───────────────────────────────────────────────
