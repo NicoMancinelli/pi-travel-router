@@ -983,6 +983,15 @@
     <div id="logged-in-sessions-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- DNS Cache Stats -->
+  <div class="card full-width" id="card-dns-cache">
+    <div class="card-title">
+      &#x1F50D; DNS Cache Stats
+      <button class="btn btn-sm" onclick="fetchDnsCache()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="dns-cache-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4574,7 +4583,9 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchOomEvents();
   fetchHardwareSensors();
   fetchFirewallRulesFull();
+  fetchTrafficShaping();
   fetchLoggedInSessions();
+  fetchDnsCache();
 });
 
 async function fetchJournal() {
@@ -4837,7 +4848,9 @@ async function refreshAll() {
   fetchOomEvents();
   fetchHardwareSensors();
   fetchFirewallRulesFull();
+  fetchTrafficShaping();
   fetchLoggedInSessions();
+  fetchDnsCache();
 }
 
 async function init() {
@@ -9644,6 +9657,84 @@ async function fetchLoggedInSessions() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchLoggedInSessions error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load sessions</span>';
+  }
+}
+
+// ── DNS Cache Stats ───────────────────────────────────────────────────────────
+
+async function fetchDnsCache() {
+  const el = document.getElementById('dns-cache-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/dns-cache');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>'; return; }
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:12px;">';
+    const items = [
+      { label: 'Cache Size', value: d.cache_size != null ? d.cache_size.toLocaleString() : '—' },
+      { label: 'Cache Hits', value: d.cache_hits != null ? d.cache_hits.toLocaleString() : '—' },
+      { label: 'Cache Misses', value: d.cache_misses != null ? d.cache_misses.toLocaleString() : '—' },
+      { label: 'Hit Rate', value: d.hit_rate_pct != null ? d.hit_rate_pct + '%' : '—' },
+      { label: 'Inserted', value: d.insertions != null ? d.insertions.toLocaleString() : '—' },
+      { label: 'Evicted', value: d.evictions != null ? d.evictions.toLocaleString() : '—' },
+    ];
+    items.forEach(it => {
+      html += '<div style="background:var(--bg2);border-radius:6px;padding:8px 12px;">';
+      html += '<div style="font-size:11px;color:var(--text-dim);">' + it.label + '</div>';
+      html += '<div style="font-size:16px;font-weight:600;">' + it.value + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    if (d.source) {
+      html += '<div style="color:var(--text-dim);font-size:11px;">Source: ' + d.source + '</div>';
+    }
+    if (d.note) {
+      html += '<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">' + d.note + '</div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchDnsCache error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load DNS cache stats</span>';
+  }
+}
+
+// ── Traffic Shaping ──────────────────────────────────────────────────────────
+
+async function fetchTrafficShaping() {
+  const el = document.getElementById('traffic-shaping-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/network/traffic-shaping');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>'; return; }
+    if (!d.tc_available) { el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">tc not available on this system</span>'; return; }
+    const qdiscs = d.qdiscs || [];
+    if (qdiscs.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No qdiscs found</span>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Interface</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Type</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Sent</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Pkts</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Dropped</th>';
+    html += '</tr></thead><tbody>';
+    qdiscs.forEach(q => {
+      const dropColor = q.dropped > 0 ? 'var(--warning,#fa0)' : 'inherit';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;font-weight:600;">' + (q.dev || '—') + '</td>';
+      html += '<td style="padding:4px 8px;color:var(--text-dim);">' + (q.type || '—') + '</td>';
+      html += '<td style="padding:4px 8px;text-align:right;">' + (q.sent_label || '0 B') + '</td>';
+      html += '<td style="padding:4px 8px;text-align:right;">' + q.sent_pkts.toLocaleString() + '</td>';
+      html += '<td style="padding:4px 8px;text-align:right;color:' + dropColor + ';">' + q.dropped + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchTrafficShaping error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load traffic shaping data</span>';
   }
 }
 

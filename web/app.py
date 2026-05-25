@@ -10588,6 +10588,86 @@ def api_system_logged_in_sessions():
     return jsonify({"sessions": sessions, "count": len(sessions)})
 
 
+# ── DNS Cache Stats ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/dns-cache", methods=["GET"])
+@require_auth
+def api_system_dns_cache():
+    """Return DNS resolver cache statistics (systemd-resolved or dnsmasq)."""
+    # Try systemd-resolved first
+    out, rc = _run(["resolvectl", "statistics"])
+    if rc == 0:
+        stats = {
+            "source": "systemd-resolved",
+            "cache_size": None,
+            "cache_hits": None,
+            "cache_misses": None,
+            "hit_rate_pct": None,
+            "insertions": None,
+            "evictions": None,
+        }
+        for line in out.splitlines():
+            line = line.strip()
+            # "Current Cache Size: 123"
+            m = re.search(r'Current Cache Size:\s*(\d+)', line, re.IGNORECASE)
+            if m:
+                stats["cache_size"] = int(m.group(1))
+            m = re.search(r'Cache Hits:\s*(\d+)', line, re.IGNORECASE)
+            if m:
+                stats["cache_hits"] = int(m.group(1))
+            m = re.search(r'Cache Misses:\s*(\d+)', line, re.IGNORECASE)
+            if m:
+                stats["cache_misses"] = int(m.group(1))
+        hits = stats["cache_hits"] or 0
+        misses = stats["cache_misses"] or 0
+        total = hits + misses
+        stats["hit_rate_pct"] = round(hits * 100 / total, 1) if total > 0 else 0.0
+        return jsonify(stats)
+
+    # Try dnsmasq cache dump via SIGHUP-triggered log line
+    # dnsmasq logs cache stats on SIGUSR1; check if dnsmasq is running
+    out2, rc2 = _run(["pgrep", "-x", "dnsmasq"])
+    if rc2 == 0:
+        # Send SIGUSR1 to dump stats to syslog then read last line
+        _run(["killall", "-USR1", "dnsmasq"])
+        import time as _time
+        _time.sleep(0.3)
+        log_out, _ = _run(["journalctl", "-u", "dnsmasq", "-n", "20", "--no-pager", "--output=short"])
+        cache_size = None
+        insertions = None
+        evictions = None
+        for line in reversed(log_out.splitlines()):
+            m = re.search(r'cache size (\d+)', line, re.IGNORECASE)
+            if m and cache_size is None:
+                cache_size = int(m.group(1))
+            m = re.search(r'(\d+)/(\d+) cache insertions re-used unexpired cache entries', line)
+            if m and insertions is None:
+                insertions = int(m.group(1))
+                evictions = int(m.group(2))
+        return jsonify({
+            "source": "dnsmasq",
+            "cache_size": cache_size,
+            "cache_hits": None,
+            "cache_misses": None,
+            "hit_rate_pct": None,
+            "insertions": insertions,
+            "evictions": evictions,
+            "note": "Hit/miss stats not available from dnsmasq",
+        })
+
+    # Neither resolver available
+    return jsonify({
+        "source": "none",
+        "cache_size": None,
+        "cache_hits": None,
+        "cache_misses": None,
+        "hit_rate_pct": None,
+        "insertions": None,
+        "evictions": None,
+        "note": "No supported DNS resolver found (tried systemd-resolved, dnsmasq)",
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
