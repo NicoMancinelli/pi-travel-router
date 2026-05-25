@@ -3684,95 +3684,38 @@ def api_network_dhcp_leases():
 @app.route("/api/network/firewall", methods=["GET"])
 @require_auth
 def api_network_firewall():
-    """Return firewall rules: nft list ruleset (preferred) or iptables -L."""
-    import re
-
-    # Try nftables first
-    out, rc = _run(["nft", "-j", "list", "ruleset"])
-    if rc == 0:
-        import json as _json
-        try:
-            data = _json.loads(out)
-            rules = []
-            for item in data.get("nftables", []):
-                if "rule" in item:
-                    r = item["rule"]
-                    table = r.get("table", "")
-                    chain = r.get("chain", "")
-                    expr_list = r.get("expr", [])
-                    # Stringify expr for display
-                    parts = []
-                    for expr in expr_list:
-                        if "match" in expr:
-                            m = expr["match"]
-                            left = str(m.get("left", {}).get("payload", {}).get("field", ""))
-                            right = str(m.get("right", ""))
-                            parts.append(f"{left}={right}")
-                        elif "accept" in expr:
-                            parts.append("ACCEPT")
-                        elif "drop" in expr:
-                            parts.append("DROP")
-                        elif "reject" in expr:
-                            parts.append("REJECT")
-                        elif "counter" in expr:
-                            c = expr["counter"]
-                            parts.append(f"pkts={c.get('packets',0)} bytes={c.get('bytes',0)}")
-                    rules.append({
-                        "table": table,
-                        "chain": chain,
-                        "rule": " ".join(parts) if parts else str(expr_list),
-                        "tool": "nft",
-                    })
-            return jsonify({"tool": "nft", "rules": rules, "count": len(rules)})
-        except (ValueError, KeyError):
-            pass
-
-    # Try nft plain text as fallback
-    out, rc = _run(["nft", "list", "ruleset"])
-    if rc == 0:
-        lines = [l for l in out.splitlines() if l.strip() and not l.startswith("#")]
-        rules = []
-        current_table = ""
-        current_chain = ""
-        for line in lines:
-            line_s = line.strip()
-            m = re.match(r'^table (\S+ \S+)', line_s)
-            if m:
-                current_table = m.group(1)
-                continue
-            m = re.match(r'^chain (\S+)', line_s)
-            if m:
-                current_chain = m.group(1)
-                continue
-            if line_s and line_s not in ('{', '}'):
-                rules.append({"table": current_table, "chain": current_chain, "rule": line_s, "tool": "nft"})
-        return jsonify({"tool": "nft", "rules": rules, "count": len(rules)})
-
-    # Fall back to iptables
-    chains = []
-    for table in ("filter", "nat", "mangle"):
-        out, rc = _run(["iptables", "-t", table, "-L", "-n", "-v", "--line-numbers"])
+    tables = ["filter", "nat", "mangle"]
+    result = {}
+    for table in tables:
+        out, rc = _run(["iptables", "-t", table, "-L", "-n", "--line-numbers"])
         if rc != 0:
+            result[table] = {"error": out.strip()}
             continue
-        current_chain = ""
+        chains = {}
+        current_chain = None
+        rule_count = 0
         for line in out.splitlines():
-            m = re.match(r'^Chain (\S+)', line)
-            if m:
-                current_chain = m.group(1)
-                continue
-            # Rule lines start with a line number
-            m = re.match(r'^\s*(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.*)', line)
-            if m:
-                chains.append({
-                    "table": table,
-                    "chain": current_chain,
-                    "rule": line.strip(),
-                    "tool": "iptables",
-                })
-    if chains:
-        return jsonify({"tool": "iptables", "rules": chains, "count": len(chains)})
-
-    return jsonify({"tool": "none", "rules": [], "count": 0, "error": "No firewall tool available (nft/iptables)"})
+            if line.startswith("Chain "):
+                if current_chain is not None:
+                    chains[current_chain]["rules"] = rule_count
+                parts = line.split()
+                current_chain = parts[1]
+                policy = None
+                if "policy" in line:
+                    try:
+                        policy = parts[parts.index("policy") + 1].rstrip(")")
+                    except (ValueError, IndexError):
+                        pass
+                chains[current_chain] = {"policy": policy, "rules": 0}
+                rule_count = 0
+            elif line and not line.startswith("num") and not line.startswith("pkts") and current_chain:
+                # Count non-header lines as rules
+                if line[0].isdigit():
+                    rule_count += 1
+        if current_chain is not None:
+            chains[current_chain]["rules"] = rule_count
+        result[table] = chains
+    return jsonify(result)
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

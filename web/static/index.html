@@ -857,15 +857,6 @@
 
   <hr class="divider">
 
-  <!-- Firewall Rules -->
-  <div class="card full-width" id="card-firewall">
-    <div class="card-title">
-      &#x1F6E1; Firewall Rules
-      <button class="btn btn-sm" onclick="fetchFirewallRules()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="firewall-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
-
   <!-- Wi-Fi Clients -->
   <div class="card full-width">
     <div class="card-title">
@@ -979,6 +970,14 @@
       <button class="btn btn-sm" onclick="fetchTempHistory()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
     <div id="temp-history-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <div class="card full-width" id="card-firewall-rules">
+    <div class="card-title">
+      &#x1F6E1; Firewall Rules
+      <button class="btn btn-sm" onclick="fetchFirewallRules()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="firewall-rules-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <hr class="divider">
@@ -5080,42 +5079,40 @@ async function runTraceroute() {
   }
 }
 
-// ── Firewall Rules ────────────────────────────────────────────────────────────
-
 async function fetchFirewallRules() {
-  const el = document.getElementById('firewall-content');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  const el = document.getElementById('firewall-rules-content');
   try {
-    const resp = await apiFetch('/api/network/firewall');
-    const d = await resp.json();
-
-    if (!d.rules || d.rules.length === 0) {
-      el.innerHTML = `<span style="color:var(--text-dim)">${d.error ? escHtml(d.error) : 'No firewall rules found.'}</span>`;
-      return;
+    const r = await fetch('/api/network/firewall');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    const tableOrder = ['filter', 'nat', 'mangle'];
+    let html = '';
+    for (const tbl of tableOrder) {
+      if (!d[tbl]) continue;
+      if (d[tbl].error) {
+        html += `<div style="margin-bottom:8px;"><strong>${tbl}</strong>: <span style="color:var(--text-dim);">${d[tbl].error}</span></div>`;
+        continue;
+      }
+      html += `<div style="margin-bottom:10px;"><strong style="text-transform:uppercase;font-size:11px;letter-spacing:1px;">${tbl}</strong><table style="width:100%;border-collapse:collapse;margin-top:4px;">`;
+      html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:2px 6px;">Chain</th>
+        <th style="text-align:left;padding:2px 6px;">Policy</th>
+        <th style="text-align:right;padding:2px 6px;">Rules</th>
+      </tr></thead><tbody>`;
+      for (const [chain, info] of Object.entries(d[tbl])) {
+        const policy = info.policy || '—';
+        const pColor = policy === 'DROP' ? '#e74c3c' : policy === 'ACCEPT' ? '#2ecc71' : 'inherit';
+        html += `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:3px 6px;font-family:monospace;">${chain}</td>
+          <td style="padding:3px 6px;color:${pColor};">${policy}</td>
+          <td style="padding:3px 6px;text-align:right;">${info.rules}</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
     }
-
-    // Group rules by table+chain
-    const groups = {};
-    for (const r of d.rules) {
-      const key = r.table ? `${r.table} › ${r.chain}` : (r.chain || 'default');
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(r.rule);
-    }
-
-    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">Tool: <strong>${escHtml(d.tool)}</strong> &mdash; ${d.count} rule${d.count !== 1 ? 's' : ''}</div>`;
-
-    for (const [groupKey, rules] of Object.entries(groups)) {
-      html += `<div style="margin-bottom:12px;">`;
-      html += `<div style="font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;">${escHtml(groupKey)}</div>`;
-      html += `<div style="font-family:monospace;font-size:11px;background:var(--bg2);border-radius:4px;padding:8px;overflow-x:auto;white-space:pre;">`;
-      html += rules.map(r => escHtml(r)).join('\n');
-      html += `</div></div>`;
-    }
-
-    el.innerHTML = html;
+    el.innerHTML = html || '<span style="color:var(--text-dim);">No tables found</span>';
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load firewall rules</span>';
+    el.textContent = 'Failed: ' + e;
   }
 }
 
