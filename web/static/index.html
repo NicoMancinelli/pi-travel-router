@@ -832,6 +832,38 @@
     <button class="btn btn-primary" onclick="addWgPeer()">Add Peer</button>
   </div>
 
+  <!-- Journal Logs -->
+  <div class="card full-width" id="card-journal" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4D3; Service Logs (journald)</span>
+      <button class="btn btn-sm" onclick="fetchJournal()">&#x21BB; Refresh</button>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+      <label style="font-size:13px;color:var(--text-dim);">Service:</label>
+      <select id="journal-unit-select" style="font-size:13px;padding:4px 8px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;" onchange="fetchJournal()">
+        <option value="travel-router-web">travel-router-web</option>
+        <option value="hostapd">hostapd</option>
+        <option value="dnsmasq">dnsmasq</option>
+        <option value="wg-quick@wg0">wg-quick@wg0</option>
+        <option value="tailscaled">tailscaled</option>
+        <option value="systemd-networkd">systemd-networkd</option>
+        <option value="dhcpcd">dhcpcd</option>
+        <option value="failover-watchdog">failover-watchdog</option>
+        <option value="wan-watchdog">wan-watchdog</option>
+        <option value="tailscale-watchdog">tailscale-watchdog</option>
+      </select>
+      <select id="journal-lines-select" style="font-size:13px;padding:4px 8px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;" onchange="fetchJournal()">
+        <option value="50">50 lines</option>
+        <option value="100" selected>100 lines</option>
+        <option value="200">200 lines</option>
+        <option value="500">500 lines</option>
+      </select>
+    </div>
+    <div id="journal-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
 </div><!-- /#app -->
 
 <!-- QR code modal -->
@@ -3072,6 +3104,30 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sel) sel.addEventListener('change', () => fetchClientHistory());
 });
 
+async function fetchJournal() {
+  const el = document.getElementById('journal-content');
+  const unitSel = document.getElementById('journal-unit-select');
+  const linesSel = document.getElementById('journal-lines-select');
+  const unit = unitSel ? unitSel.value : 'travel-router-web';
+  const lines = linesSel ? linesSel.value : '100';
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading ' + unit + '&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/journal?unit=' + encodeURIComponent(unit) + '&lines=' + lines);
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>';
+      return;
+    }
+    const escaped = d.output.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    el.innerHTML = '<pre style="font-size:11px;line-height:1.5;overflow-x:auto;max-height:400px;overflow-y:auto;background:var(--bg2);padding:10px;border-radius:6px;margin:0;white-space:pre-wrap;word-break:break-all;">' + escaped + '</pre>';
+    // Scroll to bottom
+    const pre = el.querySelector('pre');
+    if (pre) pre.scrollTop = pre.scrollHeight;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
 async function refreshAll() {
   await fetchStatus();
   await fetchQosLimits();
@@ -3102,6 +3158,7 @@ async function refreshAll() {
   fetchCronJobs();
   fetchDnsHosts();
   fetchUpdateCheck();
+  fetchJournal();
 }
 
 async function init() {
