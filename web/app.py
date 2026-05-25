@@ -5329,6 +5329,108 @@ def api_system_resources():
     })
 
 
+# ── Listening Ports ───────────────────────────────────────────────────────────
+
+@app.route("/api/network/ports", methods=["GET"])
+@require_auth
+def api_network_ports():
+    """Return open listening ports on the router via ss (or netstat fallback)."""
+    import re
+
+    ports = []
+
+    def parse_ss(output):
+        results = []
+        for line in output.splitlines():
+            line = line.strip()
+            # Match lines like: tcp  LISTEN  0  128  0.0.0.0:22  0.0.0.0:*  users:(("sshd",pid=1234,fd=3))
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            proto = parts[0].lower()
+            state = parts[1]
+            if state != "LISTEN":
+                continue
+            local = parts[4]
+            # Split local address/port on last ':'
+            colon = local.rfind(":")
+            if colon == -1:
+                continue
+            local_addr = local[:colon]
+            try:
+                local_port = int(local[colon + 1:])
+            except ValueError:
+                continue
+            # Extract PID and program from users:(("prog",pid=N,...))
+            pid = None
+            program = None
+            users_match = re.search(r'users:\(\("([^"]+)",pid=(\d+)', line)
+            if users_match:
+                program = users_match.group(1)
+                pid = int(users_match.group(2))
+            results.append({
+                "proto": proto,
+                "local_addr": local_addr,
+                "local_port": local_port,
+                "state": "LISTEN",
+                "pid": pid,
+                "program": program,
+            })
+        return results
+
+    def parse_netstat(output):
+        results = []
+        for line in output.splitlines():
+            line = line.strip()
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            proto = parts[0].lower()
+            if proto not in ("tcp", "tcp6"):
+                continue
+            state = parts[5] if len(parts) > 5 else ""
+            if state != "LISTEN":
+                continue
+            local = parts[3]
+            colon = local.rfind(":")
+            if colon == -1:
+                continue
+            local_addr = local[:colon]
+            try:
+                local_port = int(local[colon + 1:])
+            except ValueError:
+                continue
+            pid = None
+            program = None
+            if len(parts) > 6:
+                pid_prog = parts[6]
+                m = re.match(r"(\d+)/(.+)", pid_prog)
+                if m:
+                    pid = int(m.group(1))
+                    program = m.group(2)
+            results.append({
+                "proto": "tcp",
+                "local_addr": local_addr,
+                "local_port": local_port,
+                "state": "LISTEN",
+                "pid": pid,
+                "program": program,
+            })
+        return results
+
+    out, rc = _run(["ss", "-tlnup"])
+    if rc != 0:
+        out, rc = _run(["netstat", "-tlnup"])
+        if rc == 0:
+            ports = parse_netstat(out)
+    else:
+        ports = parse_ss(out)
+
+    ports.sort(key=lambda x: x["local_port"])
+
+    return jsonify({"ports": ports, "count": len(ports)})
+
+
 # ── Storage / Block Device Info ───────────────────────────────────────────────
 
 
