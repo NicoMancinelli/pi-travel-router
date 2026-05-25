@@ -1189,6 +1189,14 @@
     <div id="proc-mem-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-disk-partitions">
+    <div id="disk-partitions-content">Loading&hellip;</div>
+  </div>
+
+  <div class="card" id="card-dmesg">
+    <div id="dmesg-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4227,6 +4235,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNetdev();
   fetchTcpConnections();
   fetchProcMem();
+  fetchDiskPartitions();
+  fetchDmesg();
   fetchBatteryStatus();
   fetchInterrupts();
 });
@@ -4440,6 +4450,8 @@ async function refreshAll() {
   fetchNetdev();
   fetchTcpConnections();
   fetchProcMem();
+  fetchDiskPartitions();
+  fetchDmesg();
   fetchBatteryStatus();
   fetchInterrupts();
 }
@@ -7659,6 +7671,106 @@ async function fetchProcMem() {
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── Disk Partitions ───────────────────────────────────────────────────────────
+
+async function fetchDiskPartitions() {
+  const el = document.getElementById('disk-partitions-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/disk-partitions');
+    const d = await r.json();
+
+    if (d.error) {
+      el.innerHTML = '<div class="card-title">&#x1F4BE; Disk Partitions</div>' +
+        `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+      return;
+    }
+
+    const parts = d.partitions || [];
+    const badge = parts.length > 0
+      ? ` <span style="background:var(--accent,#007bff);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:6px;">${parts.length}</span>`
+      : '';
+    let html = `<div class="card-title">&#x1F4BE; Disk Partitions${badge}</div>`;
+
+    if (parts.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No partitions found.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">' +
+        '<th style="text-align:left;padding:3px 6px;">Device</th>' +
+        '<th style="text-align:left;padding:3px 6px;">Mountpoint</th>' +
+        '<th style="text-align:left;padding:3px 6px;">FS</th>' +
+        '<th style="text-align:right;padding:3px 6px;">Size</th>' +
+        '<th style="text-align:right;padding:3px 6px;">Used</th>' +
+        '<th style="text-align:right;padding:3px 6px;">Free</th>' +
+        '<th style="text-align:left;padding:3px 6px;min-width:80px;">%Used</th>' +
+        '</tr></thead><tbody>';
+
+      function fmtKb(kb) {
+        if (kb >= 1024 * 1024) return (kb / 1024 / 1024).toFixed(1) + ' GB';
+        if (kb >= 1024) return (kb / 1024).toFixed(1) + ' MB';
+        return kb + ' KB';
+      }
+
+      for (const p of parts) {
+        const pct = p.pct_used || 0;
+        const barColor = pct >= 80 ? '#dc3545' : pct >= 60 ? '#fd7e14' : '#28a745';
+        const bar = `<div style="display:inline-block;width:${Math.round(pct)}%;max-width:100%;height:8px;background:${barColor};border-radius:4px;vertical-align:middle;"></div>` +
+          `<span style="margin-left:4px;color:${barColor};">${pct}%</span>`;
+        const subtitle = p.model
+          ? `<div style="font-size:10px;color:var(--text-dim);margin-top:1px;">${p.model}</div>`
+          : '';
+        html += `<tr style="border-bottom:1px solid var(--border-color,#222);">` +
+          `<td style="padding:2px 6px;font-family:monospace;">${p.device}${subtitle}</td>` +
+          `<td style="padding:2px 6px;font-family:monospace;">${p.mountpoint}</td>` +
+          `<td style="padding:2px 6px;">${p.fstype || '—'}</td>` +
+          `<td style="padding:2px 6px;text-align:right;">${fmtKb(p.size_kb)}</td>` +
+          `<td style="padding:2px 6px;text-align:right;">${fmtKb(p.used_kb)}</td>` +
+          `<td style="padding:2px 6px;text-align:right;">${fmtKb(p.free_kb)}</td>` +
+          `<td style="padding:2px 6px;">${bar}</td>` +
+          `</tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── Kernel Log (dmesg) ────────────────────────────────────────────────────────
+
+async function fetchDmesg() {
+  const el = document.getElementById('dmesg-content');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/system/dmesg');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.error) {
+      el.innerHTML = `<div class="card-title">&#x1F514; Kernel Log (dmesg)</div><span style="color:var(--danger)">${data.error}</span>`;
+      return;
+    }
+    const badge = `<span class="badge" style="background:var(--accent);color:#fff;margin-left:6px;">${data.count}</span>`;
+    let html = `<div class="card-title">&#x1F514; Kernel Log (dmesg)${badge}</div>`;
+    if (data.count === 0) {
+      html += `<span style="color:var(--success)">No kernel warnings</span>`;
+    } else {
+      html += `<table style="width:100%;border-collapse:collapse;font-size:0.82em;">`;
+      for (const m of data.messages) {
+        const lvlColor = (m.level === 'err' || m.level === 'crit') ? 'var(--danger)' : 'var(--warning,#f0a500)';
+        const lvlBadge = `<span class="badge" style="background:${lvlColor};color:#fff;min-width:36px;text-align:center;">${m.level}</span>`;
+        const tsSpan = m.ts ? `<span style="color:var(--muted,#888);margin-right:8px;">${m.ts}</span>` : '';
+        html += `<tr><td style="white-space:nowrap;padding:2px 6px 2px 0;">${lvlBadge}</td><td style="white-space:nowrap;padding:2px 6px 2px 0;">${tsSpan}</td><td style="padding:2px 0;word-break:break-all;">${m.msg}</td></tr>`;
+      }
+      html += `</table>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="card-title">&#x1F514; Kernel Log (dmesg)</div><span style="color:var(--danger)">${e.message}</span>`;
   }
 }
 

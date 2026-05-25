@@ -8322,6 +8322,153 @@ def api_system_proc_mem():
     return jsonify({"processes": top, "count": len(top), "total_rss_kb": total_rss_kb})
 
 
+# ── Disk Partitions ───────────────────────────────────────────────────────────
+
+
+@app.route("/api/system/disk-partitions", methods=["GET"])
+@require_auth
+def api_system_disk_partitions():
+    """Return disk partition usage parsed from df -P -k, merged with lsblk device info."""
+    skip_fs = {"tmpfs", "devtmpfs", "udev", "none", "overlay", "squashfs"}
+
+    # Build lsblk model map keyed by mountpoint
+    model_by_mount = {}
+    lsblk_out, lsblk_rc = _run(["lsblk", "-J", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL"])
+    if lsblk_rc == 0 and lsblk_out.strip():
+        try:
+            import json as _json
+            lsblk_data = _json.loads(lsblk_out)
+            def _walk(devices):
+                for dev in devices:
+                    mp = dev.get("mountpoint") or ""
+                    model = (dev.get("model") or "").strip()
+                    if mp and model:
+                        model_by_mount[mp] = model
+                    children = dev.get("children") or []
+                    _walk(children)
+            _walk(lsblk_data.get("blockdevices") or [])
+        except Exception:
+            pass
+
+    partitions = []
+    df_out, df_rc = _run(["df", "-P", "-k"])
+    if df_rc != 0:
+        return jsonify({"error": "df failed", "partitions": [], "count": 0}), 500
+
+    for line in df_out.splitlines()[1:]:
+        cols = line.split()
+        if len(cols) < 6:
+            continue
+        device = cols[0]
+        size_kb_str = cols[1]
+        used_kb_str = cols[2]
+        free_kb_str = cols[3]
+        mountpoint = cols[5]
+
+        # df -P doesn't output fstype; skip virtual/pseudo devices by name
+        # We check filesystem type from /proc/mounts as a fallback
+        fstype = ""
+        try:
+            with open("/proc/mounts") as _f:
+                for _line in _f:
+                    _parts = _line.split()
+                    if len(_parts) >= 3 and _parts[1] == mountpoint and _parts[0] == device:
+                        fstype = _parts[2]
+                        break
+        except OSError:
+            pass
+
+        if fstype in skip_fs:
+            continue
+
+        try:
+            size_kb = int(size_kb_str)
+            used_kb = int(used_kb_str)
+            free_kb = int(free_kb_str)
+            pct_used = round(used_kb / size_kb * 100, 1) if size_kb > 0 else 0.0
+        except ValueError:
+            continue
+
+        entry = {
+            "device": device,
+            "mountpoint": mountpoint,
+            "fstype": fstype,
+            "size_kb": size_kb,
+            "used_kb": used_kb,
+            "free_kb": free_kb,
+            "pct_used": pct_used,
+        }
+        model = model_by_mount.get(mountpoint, "")
+        if model:
+            entry["model"] = model
+
+        partitions.append(entry)
+
+    return jsonify({"partitions": partitions, "count": len(partitions)})
+
+
+# ── Kernel Log (dmesg) ────────────────────────────────────────────────────────
+
+@app.route("/api/system/dmesg")
+@require_auth
+def api_dmesg():
+    try:
+        lines_param = request.args.get("lines", 30)
+        try:
+            lines_count = int(lines_param)
+        except (ValueError, TypeError):
+            lines_count = 30
+        lines_count = max(1, min(lines_count, 100))
+
+        out, rc = _run(
+            ["dmesg", "--time-format", "iso", "-l", "warn,err,crit,alert,emerg",
+             "-n", str(lines_count)],
+            timeout=10,
+        )
+        if rc != 0:
+            out, rc = _run(
+                ["dmesg", "-T"],
+                timeout=10,
+            )
+            if rc != 0:
+                return jsonify({"messages": [], "count": 0, "error": "dmesg unavailable"})
+            raw_lines = out.splitlines()[-lines_count:]
+        else:
+            raw_lines = [l for l in out.splitlines() if l.strip()]
+
+        messages = []
+        for line in raw_lines:
+            line = line.strip()
+            if not line:
+                continue
+            ts = ""
+            msg = line
+            # ISO timestamp: starts with digit or [
+            m = re.match(r'^(\[?\d{4}-\d{2}-\d{2}T[\d:.+-]+\]?)\s+(.*)', line)
+            if m:
+                ts = m.group(1).strip("[]")
+                msg = m.group(2)
+            else:
+                # bracketed seconds-since-boot: [   12.345678]
+                m2 = re.match(r'^\[\s*[\d.]+\]\s+(.*)', line)
+                if m2:
+                    msg = m2.group(1)
+
+            lower = msg.lower()
+            if "error" in lower or "err:" in lower:
+                level = "err"
+            elif "warn" in lower:
+                level = "warn"
+            else:
+                level = "info"
+
+            messages.append({"ts": ts, "level": level, "msg": msg})
+
+        return jsonify({"messages": messages, "count": len(messages), "error": None})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"messages": [], "count": 0, "error": str(exc)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
