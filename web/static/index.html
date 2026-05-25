@@ -1173,6 +1173,10 @@
     <div id="netdev-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-interrupts">
+    <div id="interrupts-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4209,6 +4213,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSwapInfo();
   fetchWifiScan();
   fetchNetdev();
+  fetchInterrupts();
 });
 
 async function fetchJournal() {
@@ -4418,6 +4423,7 @@ async function refreshAll() {
   fetchJournalErrors();
   fetchSwapInfo();
   fetchNetdev();
+  fetchInterrupts();
 }
 
 async function init() {
@@ -7411,6 +7417,45 @@ async function fetchNetdev() {
           `<td style="text-align:right;padding:3px 6px;">${fmtBytes(iface.tx_bytes)}</td>` +
           `<td style="text-align:right;padding:3px 6px;">${iface.tx_packets.toLocaleString()}</td>` +
           `<td style="text-align:right;padding:3px 6px;">${totalErrors > 0 ? totalErrors : '—'}</td>` +
+          '</tr>';
+      }
+      html += '</tbody></table></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── IRQ Interrupts ────────────────────────────────────────────────────────────
+async function fetchInterrupts() {
+  const el = document.getElementById('interrupts-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/interrupts');
+    const d = await r.json();
+    const irqs = d.interrupts || [];
+    const countBadge = `<span class="badge badge-blue" style="margin-left:6px;">${d.count ?? irqs.length}</span>`;
+    let html = `<div class="card-title">&#x26A1; IRQ Interrupts ${countBadge}` +
+      `<button class="btn btn-sm" onclick="fetchInterrupts()" style="margin-left:auto;">&#x21BB; Refresh</button></div>`;
+    if (d.error && irqs.length === 0) {
+      html += `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+    } else if (irqs.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No interrupts found.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">' +
+        '<th style="text-align:left;padding:4px 6px;">IRQ</th>' +
+        '<th style="text-align:right;padding:4px 6px;">Total</th>' +
+        '<th style="text-align:left;padding:4px 6px;">Type</th>' +
+        '<th style="text-align:left;padding:4px 6px;">Description</th>' +
+        '</tr></thead><tbody>';
+      for (const irq of irqs) {
+        html += `<tr style="border-bottom:1px solid var(--border-color,#222);">` +
+          `<td style="padding:3px 6px;font-weight:bold;">${irq.irq}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${irq.total.toLocaleString()}</td>` +
+          `<td style="padding:3px 6px;color:var(--text-dim);">${irq.type || '—'}</td>` +
+          `<td style="padding:3px 6px;">${irq.description || '—'}</td>` +
           '</tr>';
       }
       html += '</tbody></table></div>';
