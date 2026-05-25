@@ -1384,6 +1384,17 @@
     </div>
   </div>
 
+  <!-- Boot Parameters -->
+  <div class="card" id="boot-params-card">
+    <div class="card-header">
+      <span>🚀 Boot &amp; Kernel</span>
+      <span class="card-badge" id="boot-params-badge">—</span>
+    </div>
+    <div class="card-body" id="boot-params-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1798,13 +1809,14 @@
   </div>
 
   <!-- Block Devices -->
-  <div class="card" id="card-block-devices">
-    <div class="card-title">
-      &#x1F4BE; Block Devices
-      (<span id="block-devices-total">0</span> devices)
-      <button class="btn btn-sm" onclick="fetchBlockDevices()" style="margin-left:8px;">&#x27F3; Refresh</button>
+  <div class="card" id="block-devices-card">
+    <div class="card-header">
+      <span>💾 Block Devices</span>
+      <span class="card-badge" id="block-devices-count">—</span>
     </div>
-    <div id="block-devices-content"><em>Loading&hellip;</em></div>
+    <div class="card-body" id="block-devices-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <hr class="divider">
@@ -5154,6 +5166,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDhcpLeases();
   fetchLoadHistory();
   fetchDiskUsage();
+  fetchBootParams();
 });
 
 async function fetchJournal() {
@@ -5463,6 +5476,7 @@ async function refreshAll() {
   fetchDhcpLeases();
   fetchLoadHistory();
   fetchDiskUsage();
+  fetchBootParams();
 }
 
 async function init() {
@@ -7128,6 +7142,54 @@ async function fetchTcpStates() {
       html += listenPorts.map(p => `<span style="background:var(--bg2);border-radius:3px;padding:1px 5px;font-family:monospace;font-size:10px;">${p}</span>`).join(' ');
       html += '</div>';
     }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Boot Parameters ───────────────────────────────────────────────────────────
+async function fetchBootParams() {
+  const el = document.getElementById('boot-params-content');
+  const badge = document.getElementById('boot-params-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/boot-params');
+    const d = await r.json();
+    if (badge && d.kernel_version) {
+      const kver = d.kernel_version.split(' ').slice(0, 3).join(' ');
+      badge.textContent = kver;
+    }
+    let html = '';
+    const stats = [
+      d.hostname ? ['Hostname', d.hostname] : null,
+      d.pid_max ? ['PID max', d.pid_max.toLocaleString()] : null,
+      d.threads_max ? ['Threads max', d.threads_max.toLocaleString()] : null,
+      d.swappiness != null ? ['Swappiness', d.swappiness] : null,
+      d.dirty_ratio != null ? ['Dirty ratio', d.dirty_ratio + '%'] : null,
+    ].filter(Boolean);
+    if (stats.length) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;">';
+      for (const [k, v] of stats) {
+        html += `<div style="background:var(--bg2);border-radius:4px;padding:3px 8px;font-size:11px;"><span style="color:var(--text-dim)">${k}: </span><strong>${v}</strong></div>`;
+      }
+      html += '</div>';
+    }
+    if (d.boot_time) {
+      const bt = d.boot_time;
+      html += `<div style="background:var(--bg2);border-radius:5px;padding:6px 10px;margin-bottom:8px;font-size:11px;">
+        <div style="font-weight:600;margin-bottom:3px;color:var(--text-dim)">Boot Time</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          ${bt.total ? `<span><span style="color:var(--text-dim)">Total: </span><strong>${bt.total}</strong></span>` : ''}
+          ${bt.kernel ? `<span><span style="color:var(--text-dim)">Kernel: </span>${bt.kernel}</span>` : ''}
+          ${bt.userspace ? `<span><span style="color:var(--text-dim)">Userspace: </span>${bt.userspace}</span>` : ''}
+        </div>
+      </div>`;
+    }
+    if (d.cmdline) {
+      html += '<div style="font-weight:600;font-size:11px;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px;">Kernel Cmdline</div>';
+      html += `<div style="background:var(--bg2);border-radius:4px;padding:6px;font-size:10px;font-family:monospace;word-break:break-all;max-height:80px;overflow-y:auto;">${d.cmdline}</div>`;
+    }
+    if (!html) html = '<p class="muted">No boot data available.</p>';
     el.innerHTML = html;
   } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
@@ -10584,38 +10646,50 @@ async function fetchSocketSummary() {
 // ── Block Devices ─────────────────────────────────────────────────────────────
 async function fetchBlockDevices() {
   const el = document.getElementById('block-devices-content');
+  const badge = document.getElementById('block-devices-count');
   if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
     const r = await fetch('/api/system/block-devices');
     const d = await r.json();
-    const totalEl = document.getElementById('block-devices-total');
-    if (totalEl) totalEl.textContent = d.total || 0;
-    if (d.error) { el.textContent = d.error; return; }
-    const devs = d.devices || [];
-    if (!devs.length) { el.textContent = 'No block devices found.'; return; }
-    const headers = ['Device', 'Size', 'Type', 'Filesystem', 'Mount', 'Transport'];
-    let html = '<table class="info-table"><thead><tr>' +
-      headers.map(h => '<th>' + h + '</th>').join('') +
-      '</tr></thead><tbody>';
-    for (const dev of devs) {
-      const isUsb = (dev.transport || '').toLowerCase() === 'usb';
-      const transportCell = isUsb
-        ? '<span style="background:var(--accent,#2979ff);color:#fff;border-radius:3px;padding:1px 6px;font-size:11px;">USB</span>'
-        : (dev.transport || '');
-      const nameParts = [(dev.name || '')];
-      if (dev.model) nameParts.push('<span style="color:var(--text-dim);font-size:11px;">' + dev.model + '</span>');
-      html += '<tr>' +
-        '<td>' + nameParts.join('<br>') + '</td>' +
-        '<td>' + (dev.size || '') + '</td>' +
-        '<td>' + (dev.type || '') + '</td>' +
-        '<td>' + (dev.fstype || '') + '</td>' +
-        '<td>' + (dev.mountpoint || '') + '</td>' +
-        '<td>' + transportCell + '</td>' +
-        '</tr>';
+    const disks = (d.devices || []).filter(dev => dev.type === 'disk');
+    if (badge) badge.textContent = `${disks.length} disk${disks.length !== 1 ? 's' : ''}`;
+    let html = '';
+    if (d.devices?.length === 0) {
+      html = '<p class="muted">No block devices found.</p>';
+    } else {
+      for (const dev of d.devices || []) {
+        const typeIcon = dev.type === 'disk' ? (dev.rotational ? '💿' : '⚡') : dev.type === 'rom' ? '📀' : '📁';
+        const transport = dev.transport ? `<span style="font-size:9px;background:var(--bg2);border-radius:3px;padding:1px 4px;margin-left:4px;">${dev.transport.toUpperCase()}</span>` : '';
+        const hotplug = dev.hotplug ? '<span style="font-size:9px;background:#4a9eff22;color:#4a9eff;border-radius:3px;padding:1px 4px;margin-left:4px;">HOT</span>' : '';
+        html += `<div style="background:var(--bg2);border-radius:6px;padding:8px 10px;margin-bottom:6px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-family:monospace;font-weight:600;font-size:12px;">/dev/${dev.name}${transport}${hotplug}</span>
+            <span style="font-size:11px;color:var(--text-dim)">${dev.size || '?'}</span>
+          </div>
+          ${dev.model ? `<div style="font-size:10px;color:var(--text-dim);margin-bottom:3px;">${typeIcon} ${dev.model}${dev.vendor ? ' · ' + dev.vendor.trim() : ''}</div>` : ''}`;
+        const children = dev.children || [];
+        if (children.length > 0) {
+          html += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:3px;">';
+          for (const part of children) {
+            html += `<div style="background:var(--bg);border-radius:3px;padding:2px 6px;font-size:10px;">
+              <span style="font-family:monospace">${part.name}</span>
+              <span style="color:var(--text-dim);margin-left:4px">${part.size || '?'}</span>
+              ${part.mountpoint ? `<span style="color:var(--accent,#4a9eff);margin-left:3px">${part.mountpoint}</span>` : ''}
+              ${part.fstype ? `<span style="color:var(--text-dim);margin-left:3px">${part.fstype}</span>` : ''}
+            </div>`;
+          }
+          html += '</div>';
+        }
+        if (dev.io_stats) {
+          const ios = dev.io_stats;
+          html += `<div style="font-size:10px;color:var(--text-dim);margin-top:4px;">I/O: ${(ios.reads || 0).toLocaleString()} reads · ${(ios.writes || 0).toLocaleString()} writes</div>`;
+        }
+        html += '</div>';
+      }
     }
-    html += '</tbody></table>';
     el.innerHTML = html;
-  } catch (e) { el.textContent = 'Error: ' + e; }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 // ── IP Rules ──────────────────────────────────────────────────────────────────
 

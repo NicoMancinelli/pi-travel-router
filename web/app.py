@@ -9784,67 +9784,94 @@ def api_network_socket_summary():
 @app.route("/api/system/block-devices")
 @require_auth
 def api_system_block_devices():
-    """Return block device list from lsblk -J, with /sys/block fallback."""
+    """Return block devices via lsblk -J with per-device I/O stats; fallback to /proc/partitions."""
+
+    def _read_io_stats(name):
+        """Read /sys/block/<name>/stat for I/O counters."""
+        stat_path = Path("/sys/block") / name / "stat"
+        try:
+            fields = stat_path.read_text().split()
+            return {
+                "reads": int(fields[0]),
+                "writes": int(fields[4]),
+                "read_sectors": int(fields[2]),
+                "write_sectors": int(fields[6]),
+            }
+        except (OSError, IndexError, ValueError):
+            return None
+
+    def _bool_field(val):
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, str):
+            return val in ("1", "true", "True")
+        return bool(val) if val is not None else False
+
+    def _build_device(node, top_level=False):
+        name = node.get("name") or ""
+        children_raw = node.get("children") or []
+        children = [_build_device(c) for c in children_raw]
+        return {
+            "name": name,
+            "size": node.get("size") or "",
+            "type": node.get("type") or "",
+            "mountpoint": node.get("mountpoint") or None,
+            "fstype": node.get("fstype") or None,
+            "model": (node.get("model") or "").strip() or None,
+            "vendor": (node.get("vendor") or "").strip() or None,
+            "transport": node.get("tran") or None,
+            "hotplug": _bool_field(node.get("hotplug")),
+            "rotational": _bool_field(node.get("rota")),
+            "state": node.get("state") or None,
+            "children": children,
+            "io_stats": _read_io_stats(name) if top_level else None,
+        }
+
     lsblk_cmd = [
         "lsblk", "-J", "-o",
-        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,TRAN,HOTPLUG,STATE",
+        "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,SERIAL,VENDOR,TRAN,HOTPLUG,ROTA,PHY-SEC,LOG-SEC,STATE",
     ]
     out, rc = _run(lsblk_cmd)
     if rc == 0 and out.strip():
         try:
             data = json.loads(out)
             raw_devs = data.get("blockdevices", [])
-
-            def _flatten(nodes):
-                result = []
-                for node in nodes:
-                    hotplug_raw = node.get("hotplug")
-                    if isinstance(hotplug_raw, str):
-                        hotplug = hotplug_raw in ("1", "true", "True")
-                    else:
-                        hotplug = bool(hotplug_raw)
-                    entry = {
-                        "name": node.get("name") or "",
-                        "size": node.get("size") or "",
-                        "type": node.get("type") or "",
-                        "mountpoint": node.get("mountpoint") or "",
-                        "fstype": node.get("fstype") or "",
-                        "model": (node.get("model") or "").strip(),
-                        "serial": (node.get("serial") or "").strip(),
-                        "transport": node.get("tran") or "",
-                        "hotplug": hotplug,
-                        "state": node.get("state") or "",
-                    }
-                    result.append(entry)
-                    children = node.get("children") or []
-                    result.extend(_flatten(children))
-                return result
-
-            devices = _flatten(raw_devs)
-            return jsonify({"devices": devices, "total": len(devices)})
+            devices = [_build_device(d, top_level=True) for d in raw_devs]
+            return jsonify({"devices": devices, "count": len(devices)})
         except (ValueError, KeyError):
             pass
 
-    # lsblk not available or failed — try /sys/block fallback
-    sys_block = Path("/sys/block")
-    if sys_block.is_dir():
+    # Fallback: parse /proc/partitions
+    proc_part = Path("/proc/partitions")
+    if proc_part.exists():
         devices = []
-        for entry in sorted(sys_block.iterdir()):
-            devices.append({
-                "name": entry.name,
-                "size": "",
-                "type": "disk",
-                "mountpoint": "",
-                "fstype": "",
-                "model": "",
-                "serial": "",
-                "transport": "",
-                "hotplug": False,
-                "state": "",
-            })
-        return jsonify({"devices": devices, "total": len(devices)})
+        try:
+            for line in proc_part.read_text().splitlines()[2:]:
+                parts = line.split()
+                if len(parts) >= 4:
+                    name = parts[3]
+                    if name.startswith("loop") or name.startswith("ram"):
+                        continue
+                    devices.append({
+                        "name": name,
+                        "size": "",
+                        "type": "disk",
+                        "mountpoint": None,
+                        "fstype": None,
+                        "model": None,
+                        "vendor": None,
+                        "transport": None,
+                        "hotplug": False,
+                        "rotational": None,
+                        "state": None,
+                        "children": [],
+                        "io_stats": _read_io_stats(name),
+                    })
+        except OSError:
+            pass
+        return jsonify({"devices": devices, "count": len(devices)})
 
-    return jsonify({"devices": [], "total": 0, "error": "lsblk not available"})
+    return jsonify({"devices": [], "count": 0, "error": "lsblk not available"})
 
 
 @app.route("/api/network/dns-config")
@@ -13339,6 +13366,86 @@ def api_network_tcp_states():
         "listen_ports": sorted(listen_ports),
         "ipv6_total": ipv6_total,
     })
+
+
+# ── Boot Parameters ───────────────────────────────────────────────────────────
+
+@app.route("/api/system/boot-params")
+def api_boot_params():
+    """Return kernel boot parameters, version, and key sysctl values."""
+    try:
+        def _read(path):
+            try:
+                with open(path) as f:
+                    return f.read().strip()
+            except Exception:
+                return None
+
+        def _read_int(path):
+            v = _read(path)
+            try:
+                return int(v) if v is not None else None
+            except (ValueError, TypeError):
+                return None
+
+        cmdline = _read("/proc/cmdline") or ""
+        params = []
+        for token in cmdline.split():
+            if "=" in token:
+                k, _, v = token.partition("=")
+                params.append({"key": k, "value": v})
+            else:
+                params.append({"key": token, "value": None})
+
+        kernel_version = _read("/proc/version") or ""
+        hostname = _read("/proc/sys/kernel/hostname") or ""
+        pid_max = _read_int("/proc/sys/kernel/pid_max")
+        threads_max = _read_int("/proc/sys/kernel/threads-max")
+        swappiness = _read_int("/proc/sys/vm/swappiness")
+        dirty_ratio = _read_int("/proc/sys/vm/dirty_ratio")
+
+        boot_time = None
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["systemd-analyze", "time"],
+                capture_output=True, text=True, timeout=5
+            )
+            out = result.stdout.strip()
+            # Parse lines like:
+            # Startup finished in 1.234s (kernel) + 5.678s (userspace) = 6.912s
+            total = kernel = userspace = None
+            for line in out.splitlines():
+                if "Startup finished" in line or "=" in line:
+                    import re
+                    m = re.search(r'=\s*([\d.]+\w+)', line)
+                    if m:
+                        total = m.group(1)
+                    mk = re.search(r'([\d.]+\w+)\s*\(kernel\)', line)
+                    if mk:
+                        kernel = mk.group(1)
+                    mu = re.search(r'([\d.]+\w+)\s*\(userspace\)', line)
+                    if mu:
+                        userspace = mu.group(1)
+            if total or kernel or userspace:
+                boot_time = {"total": total, "kernel": kernel, "userspace": userspace}
+        except Exception:
+            pass
+
+        return jsonify({
+            "cmdline": cmdline,
+            "cmdline_params": params,
+            "kernel_version": kernel_version,
+            "hostname": hostname,
+            "pid_max": pid_max,
+            "threads_max": threads_max,
+            "swappiness": swappiness,
+            "dirty_ratio": dirty_ratio,
+            "boot_time": boot_time,
+            "error": None,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
