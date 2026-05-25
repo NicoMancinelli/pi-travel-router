@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.34.0] - 2026-05-25
+
+### Added
+
+- **Active connections viewer** (`web/app.py`, `web/static/index.html`): `GET /api/network/connections` runs `ss -tunatp`, filters loopback and TIME-WAIT entries, extracts process names from the `users:` field. Returns proto, state, local address, peer address, and process. Dashboard card with colour-coded state badges (green=ESTABLISHED, blue=LISTEN, orange=SYN states). Auto-refreshes on poll.
+- **Tailscale exit node status** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/tailscale/exitnode` parses `tailscale status --json`, reads `ExitNodeStatus` from Self for the active exit node, and iterates Peer map for all peers with `ExitNodeOption=true`. Returns current exit node (hostname, IP, online status) and available peer list sorted by active→online→offline. Dashboard card highlights active node with globe icon; lists available peers with ACTIVE badge and online/offline colour. Auto-refreshes on poll.
+- **Cron jobs viewer** (`web/app.py`, `web/static/index.html`): `GET /api/system/cron` reads `/etc/crontab`, all files in `/etc/cron.d/`, and runs `crontab -l` for `root` and `travel-router` users. Parses schedule, optional user field (cron.d entries), and command (truncated at 120 chars), groups results by source file. Dashboard card shows per-source tables with schedule in monospace blue, command column, user column when present. Refresh button for on-demand reload.
+
 ## [2.33.0] - 2026-05-25
 
 ### Added
