@@ -10002,24 +10002,86 @@ def api_network_wifi_clients():
 @app.route("/api/system/package-updates")
 @require_auth
 def api_system_package_updates():
-    out, _rc = _run(["apt", "list", "--upgradable"])
+    """Return list of available package updates using apt-get dry-run."""
+    def _parse_inst_lines(text, security_set):
+        pkgs = []
+        for line in text.splitlines():
+            if not line.startswith("Inst "):
+                continue
+            # Inst PACKAGE [OLD] (NEW ...) or Inst PACKAGE (NEW ...)
+            m = re.match(
+                r"^Inst (\S+)"
+                r"(?: \[([^\]]+)\])?"
+                r"(?: \((\S+))?",
+                line,
+            )
+            if not m:
+                continue
+            name = m.group(1)
+            old_ver = m.group(2)
+            new_ver = m.group(3)
+            pkgs.append({
+                "name": name,
+                "old_version": old_ver,
+                "new_version": new_ver,
+                "is_security": name in security_set,
+            })
+        return pkgs
+
+    error = None
     packages = []
-    for line in out.splitlines():
-        if "/" not in line or line.strip() == "Listing...":
-            continue
-        try:
-            parts = line.split()
-            pkg_suite = parts[0]
-            pkg = pkg_suite.split("/")[0]
-            available = parts[1] if len(parts) > 1 else "?"
-            arch = parts[2] if len(parts) > 2 else "?"
-            current = "?"
-            if "upgradable from:" in line:
-                current = line.split("upgradable from:")[-1].strip().rstrip("]")
-            packages.append({"package": pkg, "available": available, "current": current, "arch": arch})
-        except (IndexError, ValueError):
-            continue
-    return jsonify({"packages": packages, "count": len(packages)})
+    security_count = 0
+    dist_upgrade_count = 0
+    last_update = None
+
+    try:
+        out_upg, rc1 = _run(
+            ["bash", "-c", "apt-get -s upgrade 2>/dev/null | grep '^Inst '"],
+            timeout=30,
+        )
+        out_sec, _rc2 = _run(
+            ["bash", "-c",
+             "apt-get -s upgrade 2>/dev/null | grep -i security | grep '^Inst '"],
+            timeout=30,
+        )
+        out_dist, _rc3 = _run(
+            ["bash", "-c", "apt-get -s dist-upgrade 2>/dev/null | grep '^Inst '"],
+            timeout=30,
+        )
+
+        security_names = {
+            line.split()[1]
+            for line in out_sec.splitlines()
+            if line.startswith("Inst ")
+        }
+
+        packages = _parse_inst_lines(out_upg, security_names)
+        security_count = sum(1 for p in packages if p["is_security"])
+
+        dist_pkgs = _parse_inst_lines(out_dist, security_names)
+        dist_upgrade_count = len(dist_pkgs)
+
+        if rc1 != 0 and not packages:
+            error = "apt-get not available or failed"
+    except Exception as exc:  # pylint: disable=broad-except
+        error = str(exc)
+
+    try:
+        apt_lists = Path("/var/lib/apt/lists/")
+        if apt_lists.exists():
+            mtime = apt_lists.stat().st_mtime
+            last_update = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    return jsonify({
+        "upgradable": packages,
+        "count": len(packages),
+        "security_count": security_count,
+        "dist_upgrade_count": dist_upgrade_count,
+        "last_update": last_update,
+        "error": error,
+    })
 
 
 @app.route("/api/network/bandwidth")
