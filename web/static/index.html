@@ -1024,6 +1024,14 @@
 
   <hr class="divider">
 
+  <!-- VPN Kill Switch -->
+  <div class="card" id="card-killswitch">
+    <div class="card-title">&#x1F6AB; VPN Kill Switch</div>
+    <div id="killswitch-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Logs -->
   <div class="card full-width">
     <div class="card-title">
@@ -3976,6 +3984,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTempHistory();
   fetchBandwidthHistory();
   fetchDnsResolvers();
+  fetchKillSwitchStatus();
 });
 
 async function fetchJournal() {
@@ -4169,6 +4178,7 @@ async function refreshAll() {
   fetchWanUplinks();
   fetchSystemResources();
   fetchBandwidthHistory();
+  fetchKillSwitchStatus();
 }
 
 async function init() {
@@ -6070,6 +6080,47 @@ async function fetchSshKeys() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load SSH keys</span>';
+  }
+}
+
+// ── VPN Kill Switch ───────────────────────────────────────────────────────────
+
+async function fetchKillSwitchStatus() {
+  const el = document.getElementById('killswitch-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/vpn/killswitch');
+    const d = await resp.json();
+
+    const statusColor = d.enabled ? '#22c55e' : '#6b7280';
+    const statusLabel = d.enabled ? 'ENABLED' : 'DISABLED';
+    const statusIcon = d.enabled ? '&#x2705;' : '&#x274C;';
+
+    let html = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">`;
+    html += `<span style="background:${statusColor};color:#fff;border-radius:4px;padding:3px 10px;font-size:13px;font-weight:700;">${statusIcon} ${statusLabel}</span>`;
+    if (d.method) {
+      html += `<span style="font-size:12px;color:var(--text-dim);">via ${escHtml(d.method)}</span>`;
+    }
+    html += '</div>';
+
+    if (d.vpn_interfaces && d.vpn_interfaces.length > 0) {
+      html += `<div style="font-size:12px;margin-bottom:6px;">VPN interfaces: <code style="font-size:12px;">${d.vpn_interfaces.map(escHtml).join(', ')}</code></div>`;
+    }
+
+    if (d.details && d.details.length > 0) {
+      html += `<ul style="margin:0;padding-left:16px;font-size:12px;color:var(--text-dim);">`;
+      for (const detail of d.details) {
+        html += `<li>${escHtml(detail)}</li>`;
+      }
+      html += '</ul>';
+    } else if (!d.enabled) {
+      html += `<div style="font-size:12px;color:var(--text-dim);">No kill switch firewall rules detected. Traffic may leak if VPN drops.</div>`;
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load kill switch status</span>';
   }
 }
 

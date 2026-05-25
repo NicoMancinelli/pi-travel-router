@@ -6444,6 +6444,78 @@ def api_system_temp_history():
     })
 
 
+# ── VPN Kill Switch ───────────────────────────────────────────────────────────
+
+@app.route("/api/vpn/killswitch", methods=["GET"])
+@require_auth
+def api_vpn_killswitch():
+    """Return kill switch status: whether traffic is blocked if VPN drops."""
+    import re
+
+    result = {
+        "enabled": False,
+        "method": None,
+        "details": [],
+        "vpn_interfaces": [],
+    }
+
+    # Detect WireGuard interfaces
+    wg_out, wg_rc = _run(["wg", "show", "interfaces"])
+    wg_ifaces = wg_out.strip().split() if wg_rc == 0 and wg_out.strip() else []
+    result["vpn_interfaces"] = wg_ifaces
+
+    # Check nftables for kill switch rules
+    nft_out, nft_rc = _run(["nft", "list", "ruleset"])
+    if nft_rc == 0:
+        rules = nft_out
+        # Kill switch typically: default drop policy + accept on wg/tun iface
+        has_drop_forward = "drop" in rules and ("forward" in rules.lower() or "output" in rules.lower())
+        has_wg_accept = any(iface in rules for iface in wg_ifaces) if wg_ifaces else False
+        if has_drop_forward:
+            result["enabled"] = True
+            result["method"] = "nftables"
+            result["details"].append("nftables: default drop policy detected")
+            if has_wg_accept:
+                result["details"].append(f"WireGuard interface(s) explicitly allowed: {', '.join(wg_ifaces)}")
+
+    # Check iptables if nft not conclusive
+    if not result["enabled"]:
+        ipt_out, ipt_rc = _run(["iptables", "-L", "FORWARD", "-n"])
+        if ipt_rc == 0:
+            # Kill switch: FORWARD chain policy DROP
+            if "policy DROP" in ipt_out or "Chain FORWARD (policy DROP)" in ipt_out:
+                result["enabled"] = True
+                result["method"] = "iptables"
+                result["details"].append("iptables: FORWARD chain policy is DROP")
+        ipt_out2, ipt_rc2 = _run(["iptables", "-L", "OUTPUT", "-n"])
+        if ipt_rc2 == 0 and "policy DROP" in ipt_out2:
+            result["enabled"] = True
+            result["method"] = result["method"] or "iptables"
+            result["details"].append("iptables: OUTPUT chain policy is DROP")
+
+    # Check for common kill switch systemd service or config marker
+    out3, rc3 = _run(["systemctl", "is-active", "travel-router-killswitch"])
+    if rc3 == 0 and out3.strip() == "active":
+        result["enabled"] = True
+        result["method"] = result["method"] or "systemd"
+        result["details"].append("systemd: travel-router-killswitch.service is active")
+
+    # Check /etc/default/travel-router for KILL_SWITCH setting
+    try:
+        with open("/etc/default/travel-router") as f:
+            for line in f:
+                m = re.match(r'^KILL_SWITCH\s*=\s*["\']?(\w+)["\']?', line.strip())
+                if m:
+                    val = m.group(1).lower()
+                    result["config_value"] = val
+                    if val in ("1", "true", "yes", "on"):
+                        result["details"].append(f"/etc/default/travel-router: KILL_SWITCH={val}")
+    except OSError:
+        pass
+
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
