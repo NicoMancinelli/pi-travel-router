@@ -1233,6 +1233,22 @@
 
   <hr class="divider">
 
+  <!-- Key Sysctl -->
+  <div class="card">
+    <div class="card-title">
+      Key Sysctl
+      <button class="btn btn-sm" onclick="fetchSysctl()" style="margin-left:8px;">&#x21BB; Refresh</button>
+    </div>
+    <div id="sysctl-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <div class="card" id="card-memory-breakdown">
+    <div class="card-title">Memory Breakdown</div>
+    <div id="memory-breakdown-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Logs -->
   <div class="card full-width">
     <div class="card-title">
@@ -4281,6 +4297,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCpuTemp();
   fetchLoggedInUsers();
   fetchCpuStats();
+  fetchSysctl();
+  fetchMemoryBreakdown();
 });
 
 async function fetchJournal() {
@@ -4506,6 +4524,8 @@ async function refreshAll() {
   fetchKernelModules();
   fetchLoggedInUsers();
   fetchCpuStats();
+  fetchSysctl();
+  fetchMemoryBreakdown();
 }
 
 async function init() {
@@ -8207,6 +8227,112 @@ async function fetchCpuStats() {
   }
 }
 
+async function fetchSysctl() {
+  const el = document.getElementById('sysctl-content');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/sysctl');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    if (!d.params || d.params.length === 0) { el.textContent = 'No sysctl data'; return; }
+    const _FORWARD_KEYS = new Set([
+      'net.ipv4.ip_forward',
+      'net.ipv6.conf.all.forwarding',
+    ]);
+    const fmtBytes = b => {
+      if (typeof b !== 'number') return b;
+      if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+      if (b >= 1024) return (b / 1024).toFixed(0) + ' KB';
+      return b + ' B';
+    };
+    const fmtValue = p => {
+      if (_FORWARD_KEYS.has(p.key)) {
+        return p.value === 1
+          ? '<span style="color:#4caf50;font-weight:bold;">&#x2714; 1</span>'
+          : '<span style="color:#e53935;font-weight:bold;">&#x2718; ' + p.value + '</span>';
+      }
+      if (p.key === 'net.core.rmem_max' || p.key === 'net.core.wmem_max') {
+        return typeof p.value === 'number'
+          ? fmtBytes(p.value) + ' <span style="color:var(--text-dim);font-size:11px;">(' + p.value.toLocaleString() + ')</span>'
+          : String(p.value);
+      }
+      if (p.key === 'vm.swappiness') {
+        const v = p.value;
+        const colour = v <= 10 ? '#4caf50' : v <= 60 ? '#ff9800' : '#e53935';
+        return '<span style="color:' + colour + ';font-weight:bold;">' + v + '</span>';
+      }
+      return typeof p.value === 'number' ? p.value.toLocaleString() : String(p.value);
+    };
+    let html = '<table style="width:100%;border-collapse:collapse;">';
+    html += '<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">' +
+      '<th style="text-align:left;padding:3px 8px;">Parameter</th>' +
+      '<th style="text-align:right;padding:3px 8px;">Value</th>' +
+      '</tr></thead><tbody>';
+    for (const p of d.params) {
+      html += '<tr style="border-bottom:1px solid var(--border);">' +
+        '<td style="padding:3px 8px;font-family:monospace;">' + p.key + '</td>' +
+        '<td style="padding:3px 8px;text-align:right;">' + fmtValue(p) + '</td>' +
+        '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (el) el.textContent = 'Failed: ' + e;
+  }
+}
+
+async function fetchMemoryBreakdown() {
+  const el = document.getElementById('memory-breakdown-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/memory-breakdown');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    const fmtBytes = b => {
+      if (b >= 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+      if (b >= 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+      if (b >= 1024) return (b / 1024).toFixed(0) + ' kB';
+      return b + ' B';
+    };
+    const pct = d.used_pct || 0;
+    const barColor = pct >= 80 ? '#e74c3c' : pct >= 60 ? '#e67e22' : '#2ecc71';
+    const swapTotal = d.swaptotal || 0;
+    const swapFree = d.swapfree || 0;
+    const swapUsed = swapTotal - swapFree;
+    const rows = [
+      ['Used',      d.used_bytes],
+      ['Available', d.memavailable],
+      ['Buffers',   d.buffers],
+      ['Cached',    d.cached],
+    ];
+    const rowsHtml = rows.map(([label, val]) =>
+      `<tr>
+        <td style="color:var(--text-dim);padding:2px 0;min-width:90px;">${label}</td>
+        <td style="padding:2px 0 2px 12px;">${fmtBytes(val || 0)}</td>
+      </tr>`
+    ).join('');
+    const swapRow = swapTotal > 0
+      ? `<tr><td style="color:var(--text-dim);padding:2px 0;">Swap Used</td><td style="padding:2px 0 2px 12px;">${fmtBytes(swapUsed)} / ${fmtBytes(swapTotal)}</td></tr>`
+      : `<tr><td style="color:var(--text-dim);padding:2px 0;">Swap</td><td style="padding:2px 0 2px 12px;color:var(--text-dim);">No swap</td></tr>`;
+    el.innerHTML = `
+      <div style="margin-bottom:8px;">
+        <div style="margin-bottom:4px;">
+          <strong>${fmtBytes(d.used_bytes || 0)}</strong> used of <strong>${fmtBytes(d.memtotal || 0)}</strong>
+          <span style="color:var(--text-dim);margin-left:6px;">(${pct.toFixed(1)}%)</span>
+        </div>
+        <div style="background:var(--border);border-radius:4px;height:10px;">
+          <div style="background:${barColor};width:${Math.min(pct,100)}%;height:10px;border-radius:4px;transition:width 0.3s;"></div>
+        </div>
+      </div>
+      <table style="border-collapse:collapse;font-size:13px;">${rowsHtml}${swapRow}</table>
+    `;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
 
 async function runLanScan() {
