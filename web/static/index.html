@@ -1351,6 +1351,14 @@
 
   <hr class="divider">
 
+  <!-- IP Rules -->
+  <div class="card" id="card-ip-rules">
+    <h2>&#x1F4CB; IP Rules</h2>
+    <div id="ip-rules-content"><em>Loading&hellip;</em></div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Logs -->
   <div class="card full-width">
     <div class="card-title">
@@ -4419,6 +4427,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSocketSummary();
   fetchBlockDevices();
   fetchDnsConfig();
+  fetchIpRules();
 });
 
 async function fetchJournal() {
@@ -4663,6 +4672,7 @@ async function refreshAll() {
   fetchSocketSummary();
   fetchBlockDevices();
   fetchDnsConfig();
+  fetchIpRules();
 }
 
 async function init() {
@@ -8814,6 +8824,33 @@ async function fetchDnsConfig() {
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger,#ef4444)">Failed to load DNS config</span>';
   }
+}
+
+// ── IP Rules ──────────────────────────────────────────────────────────────────
+
+async function fetchIpRules() {
+  const el = document.getElementById('ip-rules-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/network/ip-rules');
+    const d = await r.json();
+    if (d.error) { el.textContent = 'Error: ' + d.error; return; }
+    const rules = d.rules || [];
+    if (rules.length === 0) { el.textContent = 'No rules found.'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Priority</th>';
+    html += '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Rule</th>';
+    html += '</tr></thead><tbody>';
+    for (const rule of rules) {
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;color:var(--text-dim);white-space:nowrap;">' + (rule.priority !== null ? rule.priority : '?') + '</td>';
+      html += '<td style="padding:4px 8px;font-family:monospace;">' + rule.rule + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) { el.textContent = 'Error: ' + e; }
 }
 
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
