@@ -880,6 +880,17 @@
     <button class="btn btn-primary" onclick="addWgPeer()">Add Peer</button>
   </div>
 
+  <!-- Service Control Panel -->
+  <div class="card full-width" id="card-services" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x2699; Services</span>
+      <button class="btn btn-sm" onclick="fetchServices()">&#x21BB; Refresh</button>
+    </div>
+    <div id="services-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <!-- Journal Logs -->
   <div class="card full-width" id="card-journal" style="margin-top:16px;">
     <div class="card-title" style="justify-content:space-between;">
@@ -3282,6 +3293,7 @@ async function refreshAll() {
   fetchDnsHosts();
   fetchUpdateCheck();
   fetchJournal();
+  fetchServices();
 }
 
 async function init() {
@@ -3708,6 +3720,60 @@ async function deleteDnsHost(hostname) {
     toast('Error: ' + e, 'err');
   }
 }
+// ── Service Control Panel ─────────────────────────────────────────────────────
+
+async function fetchServices() {
+  const el = document.getElementById('services-content');
+  try {
+    const r = await apiFetch('/api/services/status');
+    const d = await r.json();
+    const services = d.services || [];
+    if (services.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);">No services</span>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Service</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Status</th>';
+    html += '<th style="padding:4px 8px;border-bottom:1px solid var(--border);"></th>';
+    html += '</tr></thead><tbody>';
+    for (const svc of services) {
+      const isActive = svc.state === 'active';
+      const isFailed = svc.state === 'failed';
+      const color = isActive ? 'var(--success,#4c4)' : isFailed ? 'var(--error,#e55)' : 'var(--text-dim)';
+      const dot = isActive ? '●' : isFailed ? '✖' : '○';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + svc.unit + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:' + color + ';">' + dot + ' ' + svc.state + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;">'
+        + '<button class="btn btn-sm" onclick="restartService(\'' + svc.unit.replace(/'/g, "\\'") + '\', this)">&#x21BA; Restart</button>'
+        + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function restartService(unit, btn) {
+  if (!confirm('Restart ' + unit + '?')) return;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const r = await apiFetch('/api/service/' + encodeURIComponent(unit) + '/restart', { method: 'POST' });
+    const d = await r.json();
+    if (r.ok) {
+      toast('Restarted ' + unit, 'ok');
+      setTimeout(fetchServices, 2000);
+    } else {
+      toast((d.error || 'Failed to restart ' + unit), 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↺ Restart'; }
+  }
+}
+
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
 
 async function runLanScan() {
