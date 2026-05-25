@@ -1067,10 +1067,10 @@
     <div id="connections-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <!-- Entropy Pool -->
+  <!-- Entropy / RNG -->
   <div class="card" id="card-entropy">
-    <div class="card-title">&#x1F3B2; Entropy Pool</div>
-    <div id="entropy-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+    <h2>🎲 Entropy / RNG</h2>
+    <div id="entropy-content"><em>Loading…</em></div>
   </div>
 
   <hr class="divider">
@@ -1263,6 +1263,18 @@
         <div class="card" id="card-mount-info">
           <h2>💾 Mount Points</h2>
           <div id="mount-info-content"><em>Loading…</em></div>
+        </div>
+
+        <!-- Top Processes -->
+        <div class="card" id="card-top-processes">
+          <h2>🔝 Top Processes</h2>
+          <div id="top-processes-content"><em>Loading…</em></div>
+        </div>
+
+        <!-- WiFi Info -->
+        <div class="card" id="card-wifi-info">
+          <h2>📶 WiFi Details</h2>
+          <div id="wifi-info-content"><em>Loading…</em></div>
         </div>
 
   <hr class="divider">
@@ -4320,6 +4332,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchMemoryBreakdown();
   fetchCronJobs();
   fetchMountInfo();
+  fetchTopProcesses();
+  fetchWifiInfo();
 });
 
 async function fetchJournal() {
@@ -4550,6 +4564,8 @@ async function refreshAll() {
   fetchMemoryBreakdown();
   fetchCronJobs();
   fetchMountInfo();
+  fetchTopProcesses();
+  fetchWifiInfo();
 }
 
 async function init() {
@@ -8404,6 +8420,50 @@ async function fetchMemoryBreakdown() {
           return `<tr><td style="font-family:monospace">${m.mountpoint}</td><td>${m.fstype}</td><td>${used}</td><td>${inodes}</td></tr>`;
         }).join('');
         el.innerHTML = `<table class="info-table"><thead><tr><th>Mount</th><th>Type</th><th>Space</th><th>Inodes</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+    async function fetchTopProcesses() {
+      const el = document.getElementById('top-processes-content');
+      try {
+        const r = await fetch('/api/system/top-processes');
+        const d = await r.json();
+        const mkTable = (procs, label) => {
+          if (!procs || !procs.length) return `<p>${label}: no data</p>`;
+          const rows = procs.map(p =>
+            `<tr><td>${p.pid}</td><td>${p.user}</td><td style="text-align:right">${p.cpu_pct}%</td><td style="text-align:right">${p.mem_pct}%</td><td style="font-family:monospace;word-break:break-all">${p.comm}</td></tr>`
+          ).join('');
+          return `<p style="margin:4px 0 2px;font-weight:600">${label}</p><table class="info-table"><thead><tr><th>PID</th><th>User</th><th>CPU</th><th>Mem</th><th>Command</th></tr></thead><tbody>${rows}</tbody></table>`;
+        };
+        el.innerHTML = mkTable(d.by_cpu, 'Top by CPU') + mkTable(d.by_mem, 'Top by Memory');
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+    async function fetchWifiInfo() {
+      const el = document.getElementById('wifi-info-content');
+      try {
+        const r = await fetch('/api/network/wifi-info');
+        const d = await r.json();
+        if (d.error) { el.textContent = d.error; return; }
+        if (!d.interfaces || !d.interfaces.length) { el.textContent = 'No wireless interfaces'; return; }
+        let html = '';
+        for (const iface of d.interfaces) {
+          html += `<p style="margin:4px 0 2px;font-weight:600">${iface.interface}</p>`;
+          const rows = [
+            iface.ssid ? `<tr><td>SSID</td><td>${iface.ssid}</td></tr>` : '',
+            iface.signal_dbm ? `<tr><td>Signal</td><td>${iface.signal_dbm}</td></tr>` : '',
+            iface.band ? `<tr><td>Band</td><td>${iface.band} (${iface.freq_mhz} MHz)</td></tr>` : '',
+            iface.tx_bitrate ? `<tr><td>TX Bitrate</td><td>${iface.tx_bitrate}</td></tr>` : '',
+            iface.rx_bitrate ? `<tr><td>RX Bitrate</td><td>${iface.rx_bitrate}</td></tr>` : '',
+            iface.station_count !== undefined ? `<tr><td>Clients</td><td>${iface.station_count}</td></tr>` : '',
+          ].filter(Boolean).join('');
+          if (rows) html += `<table class="info-table"><tbody>${rows}</tbody></table>`;
+          if (iface.stations && iface.stations.length) {
+            const staRows = iface.stations.map(s =>
+              `<tr><td style="font-family:monospace">${s.mac}</td><td>${s.signal_dbm || '?'}</td><td>${s.tx_bitrate || '?'}</td></tr>`
+            ).join('');
+            html += `<table class="info-table" style="margin-top:4px"><thead><tr><th>MAC</th><th>Signal</th><th>TX Rate</th></tr></thead><tbody>${staRows}</tbody></table>`;
+          }
+        }
+        el.innerHTML = html || 'No data';
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
