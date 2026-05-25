@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.43.0] - 2026-05-25
+
+### Added
+
+- **System load average card** (`web/app.py`, `web/static/index.html`): `GET /api/system/loadavg` reads `/proc/loadavg` (1m/5m/15m averages, running/total processes, last PID) and `/proc/cpuinfo` for CPU count. Dashboard card with load bars colour-coded relative to CPU count (green <50%, orange 50-80%, red ≥80%), process summary row. Auto-refreshes on poll.
+- **OS info card** (`web/app.py`, `web/static/index.html`): `GET /api/system/osinfo` reads `/proc/version`, `/etc/os-release`, `uname -m`, `uptime -p`, and `/proc/sys/kernel/hostname`. Dashboard card showing hostname header with Distro/Kernel/Arch/Uptime table rows. Auto-refreshes on poll.
+- **Socket statistics card** (`web/app.py`, `web/static/index.html`): `GET /api/network/sockstat` reads `/proc/net/sockstat` and `/proc/net/sockstat6`, parses per-protocol used/orphaned/tw/alloc/mem fields. Dashboard card with Protocol/In-Use/Orphaned/Time-Wait/Alloc table, orange warnings when tw>100 or orphan>0. Auto-refreshes on poll.
+
 ## [2.42.0] - 2026-05-25
 
 ### Added
