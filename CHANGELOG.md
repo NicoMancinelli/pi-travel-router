@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.32.0] - 2026-05-25
+
+### Added
+
+- **Route table viewer** (`web/app.py`, `web/static/index.html`): `GET /api/network/routes` runs `ip -4 route show` and `ip -6 route show`, parses each line into destination, gateway, interface, proto, and metric fields, filters IPv6 link-local and loopback routes. Dashboard card with grouped IPv4/IPv6 sub-tables; default routes highlighted in accent colour. Auto-refreshes on poll.
+- **WireGuard peer health** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/wireguard/peers` reads `wg show all dump` (tab-separated 9-column format), computes last-handshake age in seconds, classifies each peer as `recent` (<3 min), `stale` (<10 min), or `idle`/`never`. Returns pubkey short form, endpoint, allowed IPs, RX/TX in human-readable form. Added `_format_duration()` and `_fmt_bytes()` module-level helpers. Dashboard card with colour-coded status badges. Auto-refreshes on poll.
+- **Monthly data cap tracker** (`web/app.py`, `web/static/index.html`): `GET /api/network/datacap` reads `MONTHLY_CAP_GB` from `/etc/default/travel-router`, queries `vnstat --json m` for current month RX/TX on the busiest interface, computes percent used and GB remaining. Dashboard card with colour-coded progress bar (green/orange/red at 70%/90%) when cap is set, plain GB totals otherwise. Auto-refreshes on poll.
+
 ## [2.31.0] - 2026-05-25
 
 ### Added
