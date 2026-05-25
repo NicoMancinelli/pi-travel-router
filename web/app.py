@@ -7657,6 +7657,48 @@ def api_system_cpufreq():
     return jsonify({"cpus": cpus, "count": len(cpus)})
 
 
+# ── IP Routing Table ──────────────────────────────────────────────────────────
+
+@app.route("/api/network/routes", methods=["GET"])
+@require_auth
+def api_network_routes():
+    """Return the kernel IP routing table by running `ip route show`."""
+    out, rc = _run(["ip", "route", "show"])
+    if rc != 0:
+        return jsonify({"routes": [], "count": 0, "error": out.strip() or "ip route show failed"})
+    routes = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        tokens = line.split()
+        route = {
+            "dest": tokens[0] if tokens else "",
+            "via": None,
+            "dev": None,
+            "metric": 0,
+            "proto": None,
+            "scope": None,
+            "src": None,
+        }
+        i = 1
+        while i < len(tokens):
+            key = tokens[i]
+            if key in ("via", "dev", "proto", "scope", "src") and i + 1 < len(tokens):
+                route[key] = tokens[i + 1]
+                i += 2
+            elif key == "metric" and i + 1 < len(tokens):
+                try:
+                    route["metric"] = int(tokens[i + 1])
+                except ValueError:
+                    route["metric"] = 0
+                i += 2
+            else:
+                i += 1
+        routes.append(route)
+    return jsonify({"routes": routes, "count": len(routes)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

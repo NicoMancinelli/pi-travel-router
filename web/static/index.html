@@ -1167,6 +1167,10 @@
     <div id="cpufreq-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-route-table">
+    <div id="route-table-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4197,6 +4201,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
+  fetchRouteTable();
 });
 
 async function fetchJournal() {
@@ -4404,6 +4409,7 @@ async function refreshAll() {
   fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
+  fetchRouteTable();
 }
 
 async function init() {
@@ -7159,6 +7165,49 @@ async function fetchCpuFreq() {
       </tr>`;
     }
     html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── IP Routing Table ──────────────────────────────────────────────────────────
+
+async function fetchRouteTable() {
+  const el = document.getElementById('route-table-content');
+  try {
+    const r = await fetch('/api/network/routes');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error && d.routes.length === 0) {
+      el.textContent = 'Error: ' + d.error;
+      return;
+    }
+    const badge = `<span style="background:var(--accent);color:#fff;border-radius:9px;padding:1px 7px;font-size:11px;margin-left:6px;">${d.count}</span>`;
+    let html = `<div class="card-title">&#x1F5FA; Routing Table ${badge}</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 8px;">Destination</th>
+      <th style="text-align:left;padding:3px 8px;">Via</th>
+      <th style="text-align:left;padding:3px 8px;">Interface</th>
+      <th style="text-align:right;padding:3px 8px;">Metric</th>
+      <th style="text-align:left;padding:3px 8px;">Proto</th>
+    </tr></thead><tbody>`;
+    for (const route of d.routes) {
+      const isDefault = route.dest === 'default';
+      const bold = isDefault ? 'font-weight:bold;' : '';
+      html += `<tr style="border-bottom:1px solid var(--border);${bold}">
+        <td style="padding:3px 8px;font-family:monospace;">${route.dest}</td>
+        <td style="padding:3px 8px;font-family:monospace;">${route.via || '—'}</td>
+        <td style="padding:3px 8px;font-family:monospace;">${route.dev || '—'}</td>
+        <td style="padding:3px 8px;text-align:right;">${route.metric}</td>
+        <td style="padding:3px 8px;color:var(--text-dim);">${route.proto || '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    if (d.error) {
+      html += `<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">Note: ${d.error}</div>`;
+    }
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
