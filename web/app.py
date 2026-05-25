@@ -12224,58 +12224,75 @@ def api_system_login_history():
 @app.route("/api/system/open-fds", methods=["GET"])
 @require_auth
 def api_system_open_fds():
-    """Return system-wide open file descriptor stats and top processes by FD count."""
+    """Return open FD stats from /proc/sys/fs/file-nr, inode-nr, lsof, and top procs."""
+    import subprocess as _sp
+    error = None
+    allocated = free = max_fds = 0
+    inodes_allocated = inodes_free = None
+    lsof_total = None
+    top_procs = []
     try:
-        # Read system-wide FD stats from /proc/sys/fs/file-nr
-        system = {"allocated": 0, "unused": 0, "max": 0, "used_pct": 0.0}
-        try:
-            nr = Path("/proc/sys/fs/file-nr").read_text().strip().split()
-            if len(nr) >= 3:
-                allocated = int(nr[0])
-                unused = int(nr[1])
-                max_fds = int(nr[2])
-                used_pct = round((allocated / max_fds * 100), 1) if max_fds > 0 else 0.0
-                system = {
-                    "allocated": allocated,
-                    "unused": unused,
-                    "max": max_fds,
-                    "used_pct": used_pct,
-                }
-        except Exception:
-            pass
-
-        # Walk /proc/[0-9]*/fd to count per-process FD usage
-        proc_fds = []
-        total_scanned = 0
-        proc_root = Path("/proc")
-        for pid_dir in proc_root.iterdir():
-            if not pid_dir.name.isdigit():
-                continue
-            fd_dir = pid_dir / "fd"
-            try:
-                fd_count = sum(1 for _ in fd_dir.iterdir())
-            except (PermissionError, FileNotFoundError, OSError):
-                continue
-            total_scanned += 1
-            # Read process name
-            name = pid_dir.name
-            try:
-                name = (pid_dir / "comm").read_text().strip()
-            except (PermissionError, FileNotFoundError, OSError):
-                pass
-            proc_fds.append({"pid": int(pid_dir.name), "name": name, "fds": fd_count})
-
-        # Sort descending by FD count and take top 10
-        proc_fds.sort(key=lambda x: x["fds"], reverse=True)
-        top_processes = proc_fds[:10]
-
-        return jsonify({
-            "system": system,
-            "top_processes": top_processes,
-            "total_scanned": total_scanned,
-        })
+        # /proc/sys/fs/file-nr: allocated, unused(free), max
+        nr = Path("/proc/sys/fs/file-nr").read_text().strip().split()
+        if len(nr) >= 3:
+            allocated = int(nr[0])
+            free = int(nr[1])
+            max_fds = int(nr[2])
     except Exception as exc:
-        return jsonify({"error": str(exc), "system": {}, "top_processes": [], "total_scanned": 0})
+        error = str(exc)
+
+    # /proc/sys/fs/inode-nr: allocated inodes, free inodes
+    try:
+        inr = Path("/proc/sys/fs/inode-nr").read_text().strip().split()
+        if len(inr) >= 2:
+            inodes_allocated = int(inr[0])
+            inodes_free = int(inr[1])
+    except Exception:
+        pass
+
+    # lsof total open files (subtract 1 for header)
+    try:
+        result = _sp.run(
+            ["lsof", "-s"],
+            capture_output=True, text=True, timeout=10,
+        )
+        lines = result.stdout.strip().splitlines()
+        lsof_total = max(0, len(lines) - 1)
+    except Exception:
+        lsof_total = None
+
+    # top-10 processes by FD count via lsof
+    try:
+        result2 = _sp.run(
+            ["lsof", "-s"],
+            capture_output=True, text=True, timeout=10,
+        )
+        counts = {}
+        for line in result2.stdout.strip().splitlines()[1:]:
+            parts = line.split()
+            if parts:
+                name = parts[0]
+                counts[name] = counts.get(name, 0) + 1
+        top_procs = [
+            {"name": k, "count": v}
+            for k, v in sorted(counts.items(), key=lambda x: -x[1])[:10]
+        ]
+    except Exception:
+        top_procs = []
+
+    pct_used = round((allocated - free) / max_fds * 100, 1) if max_fds > 0 else 0.0
+
+    return jsonify({
+        "allocated": allocated,
+        "free": free,
+        "max": max_fds,
+        "pct_used": pct_used,
+        "inodes_allocated": inodes_allocated,
+        "inodes_free": inodes_free,
+        "lsof_total": lsof_total,
+        "top_procs": top_procs,
+        "error": error,
+    })
 
 
 # ── Crontab ───────────────────────────────────────────────────────────────────
