@@ -5879,6 +5879,124 @@ def api_dns_adguard_stats():
     })
 
 
+# ── System Services Status ────────────────────────────────────────────────────
+
+TRAVEL_ROUTER_SERVICES = [
+    "wg-quick@wg0",
+    "hostapd",
+    "dnsmasq",
+    "adguardhome",
+    "tailscaled",
+    "travel-router-web",
+    "wan-watchdog",
+    "failover-watchdog",
+    "wireguard-watchdog",
+    "vnstat",
+    "ntpd",
+    "ssh",
+]
+
+@app.route("/api/system/services", methods=["GET"])
+@require_auth
+def api_system_services():
+    """Return status of key travel-router systemd services."""
+    services = []
+    for svc in TRAVEL_ROUTER_SERVICES:
+        out, rc = _run(["systemctl", "is-active", svc])
+        active_state = out.strip() if out.strip() else "unknown"
+        # is-active returns: active, inactive, activating, deactivating, failed, unknown
+        enabled_out, enabled_rc = _run(["systemctl", "is-enabled", svc])
+        enabled_state = enabled_out.strip() if enabled_out.strip() else "unknown"
+        services.append({
+            "name": svc,
+            "active": active_state,
+            "enabled": enabled_state,
+            "running": active_state == "active",
+        })
+    return jsonify({"services": services, "count": len(services)})
+
+
+# ── Tailscale Status ──────────────────────────────────────────────────────────
+
+@app.route("/api/vpn/tailscale/status", methods=["GET"])
+@require_auth
+def api_vpn_tailscale_status():
+    """Return Tailscale status: self node, peers, and connectivity."""
+    import json as _json
+
+    # Try tailscale status --json
+    out, rc = _run(["tailscale", "status", "--json"])
+    if rc != 0:
+        return jsonify({"available": False, "error": "tailscale not installed or not running"})
+
+    try:
+        data = _json.loads(out)
+    except ValueError:
+        return jsonify({"available": False, "error": "failed to parse tailscale output"})
+
+    # Extract self node info
+    self_node = data.get("Self", {})
+    self_info = {
+        "hostname": self_node.get("HostName", ""),
+        "dns_name": self_node.get("DNSName", "").rstrip("."),
+        "tailscale_ips": self_node.get("TailscaleIPs", []),
+        "os": self_node.get("OS", ""),
+        "online": self_node.get("Online", False),
+        "relay": self_node.get("Relay", ""),
+    }
+
+    # Extract peer info
+    peers_raw = data.get("Peer", {})
+    peers = []
+    for _key, peer in peers_raw.items():
+        last_seen = peer.get("LastSeen", "")
+        # Active peers have LastHandshake or Active=true
+        active = peer.get("Active", False)
+        peers.append({
+            "hostname": peer.get("HostName", ""),
+            "dns_name": peer.get("DNSName", "").rstrip("."),
+            "tailscale_ips": peer.get("TailscaleIPs", []),
+            "os": peer.get("OS", ""),
+            "online": peer.get("Online", False),
+            "active": active,
+            "relay": peer.get("Relay", ""),
+            "rx_bytes": peer.get("RxBytes", 0),
+            "tx_bytes": peer.get("TxBytes", 0),
+            "last_seen": last_seen,
+        })
+
+    def fmt_bytes(b):
+        b = int(b)
+        if b < 1024:
+            return f"{b} B"
+        elif b < 1024 * 1024:
+            return f"{b / 1024:.1f} KB"
+        elif b < 1024 * 1024 * 1024:
+            return f"{b / (1024*1024):.1f} MB"
+        else:
+            return f"{b / (1024*1024*1024):.2f} GB"
+
+    for p in peers:
+        p["rx_label"] = fmt_bytes(p["rx_bytes"])
+        p["tx_label"] = fmt_bytes(p["tx_bytes"])
+
+    # Sort: online first, then by hostname
+    peers.sort(key=lambda x: (0 if x["online"] else 1, x["hostname"]))
+
+    backend_state = data.get("BackendState", "unknown")
+    version = data.get("Version", "")
+
+    return jsonify({
+        "available": True,
+        "backend_state": backend_state,
+        "version": version,
+        "self": self_info,
+        "peers": peers,
+        "peer_count": len(peers),
+        "online_count": sum(1 for p in peers if p["online"]),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
