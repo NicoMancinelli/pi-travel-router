@@ -491,14 +491,12 @@
   </div>
 
   <!-- Network Interface Stats -->
-  <div class="card full-width" id="card-iface-stats" style="margin-top:16px;">
-    <div class="card-title" style="justify-content:space-between;">
-      <span>&#x1F4CA; Interface Stats</span>
-      <button class="btn btn-sm" onclick="fetchIfaceStats()">&#x21BB; Refresh</button>
+  <div class="card full-width" id="card-iface-stats">
+    <div class="card-title">
+      &#x1F4F6; Interface Statistics
+      <button class="btn btn-sm" onclick="fetchIfaceStats()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
-    <div id="iface-stats-content">
-      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
-    </div>
+    <div id="iface-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <hr class="divider">
@@ -4076,6 +4074,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKillSwitchStatus();
   fetchLogSummary();
   fetchVnstatDataCap();
+  fetchIfaceStats();
 });
 
 async function fetchJournal() {
@@ -4400,41 +4399,52 @@ async function fetchThrottle() {
   }
 }
 
+// ── Network Interface Stats ───────────────────────────────────────────────────
+
 async function fetchIfaceStats() {
   const el = document.getElementById('iface-stats-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/network/interfaces');
-    const d = await r.json();
-    const ifaces = d.interfaces || [];
-    if (ifaces.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No interfaces found</span>';
+    const resp = await apiFetch('/api/network/iface/stats');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+    if (!d.interfaces || d.interfaces.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No network interfaces found.</span>';
       return;
     }
     let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead><tr>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Interface</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">State</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">RX</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">TX</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">RX Err</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">TX Err</th>';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Interface</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">RX</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">TX</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">RX Pkts</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">TX Pkts</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">RX Err/Drop</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">TX Err/Drop/Coll</th>';
     html += '</tr></thead><tbody>';
-    for (const iface of ifaces) {
-      const stateColor = iface.operstate === 'up' ? 'var(--success,#4c4)' : 'var(--text-dim)';
-      const dot = iface.operstate === 'up' ? '●' : '○';
-      html += '<tr>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + iface.interface + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:' + stateColor + ';">' + dot + ' ' + iface.operstate + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + _fmtBytes(iface.rx_bytes) + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + _fmtBytes(iface.tx_bytes) + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + (iface.rx_errors > 0 ? 'var(--error,#e55)' : 'var(--text-dim)') + ';">' + iface.rx_errors + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + (iface.tx_errors > 0 ? 'var(--error,#e55)' : 'var(--text-dim)') + ';">' + iface.tx_errors + '</td>';
+    for (const iface of d.interfaces) {
+      const errColor = iface.has_errors ? '#ef4444' : 'var(--text-dim)';
+      const rxErr = `${iface.rx_errors}/${iface.rx_drop}`;
+      const txErr = `${iface.tx_errors}/${iface.tx_drop}/${iface.tx_colls}`;
+      const active = (iface.rx_bytes + iface.tx_bytes) > 0;
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:${active ? '600' : '400'};">${escHtml(iface.name)}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;color:#60a5fa;">${escHtml(iface.rx_human)}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;color:#34d399;">${escHtml(iface.tx_human)}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;color:var(--text-dim);font-size:11px;">${iface.rx_packets.toLocaleString()}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;color:var(--text-dim);font-size:11px;">${iface.tx_packets.toLocaleString()}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;font-size:11px;color:${errColor};">${rxErr}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;font-size:11px;color:${errColor};">${txErr}</td>`;
       html += '</tr>';
     }
     html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load interface stats</span>';
   }
 }
 
