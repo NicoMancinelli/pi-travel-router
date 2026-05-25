@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-05-24
+
+### Added
+
+- **WiFi QR code card** (`web/app.py`, `web/static/index.html`): `GET /api/wifi/qr` reads SSID and WPA passphrase from `/etc/raspap/hostapd.ini` (falls back to `/etc/hostapd/hostapd.conf`), builds a `WIFI:T:WPA;S:...;P:...;;` string, and generates a PNG via `qrencode` with SVG fallback. Dashboard card shows scannable QR image with SSID label and raw WiFi string for guest joining.
+- **AP info & channel selector** (`web/app.py`, `web/static/index.html`): `GET /api/wifi/ap-config` returns current SSID, channel, hw_mode, country code, and TX power. `POST /api/wifi/ap-config` validates channel (0=auto, 1–13 for 2.4 GHz, 36–165 for 5 GHz), atomically rewrites the hostapd config, and restarts hostapd. Dashboard card shows current AP config with a channel selector drop-down and Apply button.
+- **Journald log viewer** (`web/app.py`, `web/static/index.html`): `GET /api/system/journal?unit=<name>&lines=<n>` runs `journalctl -u <unit> -n <lines> --no-pager --output=short-iso` against a whitelist of 13 travel-router service units. Dashboard card with service drop-down (10 units), line-count selector (50/100/200/500), scrollable `<pre>` output that auto-scrolls to the bottom.
+
 ## [2.14.0] - 2026-05-24
 
 ### Added
