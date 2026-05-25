@@ -8804,6 +8804,90 @@ def api_system_kernel_modules():
         return jsonify({"modules": [], "total": 0, "error": str(exc)}), 500
 
 
+@app.route("/api/system/logged-in-users", methods=["GET"])
+@require_auth
+def api_system_logged_in_users():
+    """Return currently logged-in users parsed from 'who -u'."""
+    try:
+        out, rc = _run("who -u")
+        if rc != 0 or not out.strip():
+            return jsonify({"users": [], "count": 0})
+        users = []
+        for line in out.splitlines():
+            parts = line.split()
+            # who -u format: user tty date time [idle] pid [from]
+            # minimum fields: user tty date time idle pid
+            if len(parts) < 6:
+                continue
+            username = parts[0]
+            tty = parts[1]
+            login_time = parts[2] + " " + parts[3]
+            idle = parts[4]
+            try:
+                pid = int(parts[5])
+            except ValueError:
+                pid = 0
+            from_host = parts[6] if len(parts) >= 7 else ""
+            # Strip surrounding parens from from field if present
+            if from_host.startswith("(") and from_host.endswith(")"):
+                from_host = from_host[1:-1]
+            users.append({
+                "username": username,
+                "tty": tty,
+                "login_time": login_time,
+                "idle": idle,
+                "pid": pid,
+                "from": from_host,
+            })
+        return jsonify({"users": users, "count": len(users)})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"users": [], "count": 0, "error": str(exc)}), 500
+
+
+# ── Disk I/O Stats (spec-aligned) ────────────────────────────────────────────
+
+@app.route("/api/system/disk-io", methods=["GET"])
+@require_auth
+def api_system_disk_io():
+    """Parse /proc/diskstats for block devices (exclude loop/ram devices)."""
+    import re as _re
+    devices = []
+    try:
+        with open("/proc/diskstats", "r") as fh:
+            for line in fh:
+                cols = line.split()
+                if len(cols) < 14:
+                    continue
+                name = cols[2]
+                if _re.search(r"^(loop|ram)\d+", name):
+                    continue
+                try:
+                    reads_completed  = int(cols[3])
+                    reads_merged     = int(cols[4])
+                    sectors_read     = int(cols[5])
+                    time_reading_ms  = int(cols[6])
+                    writes_completed = int(cols[7])
+                    writes_merged    = int(cols[8])
+                    sectors_written  = int(cols[9])
+                    time_writing_ms  = int(cols[10])
+                except (ValueError, IndexError):
+                    continue
+                devices.append({
+                    "name":             name,
+                    "reads_completed":  reads_completed,
+                    "reads_merged":     reads_merged,
+                    "read_bytes":       sectors_read * 512,
+                    "time_reading_ms":  time_reading_ms,
+                    "writes_completed": writes_completed,
+                    "writes_merged":    writes_merged,
+                    "written_bytes":    sectors_written * 512,
+                    "time_writing_ms":  time_writing_ms,
+                })
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"devices": [], "error": str(exc)})
+    return jsonify({"devices": devices})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
