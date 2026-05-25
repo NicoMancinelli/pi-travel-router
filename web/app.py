@@ -7512,6 +7512,40 @@ def api_system_diskio():
     return jsonify({"devices": devices})
 
 
+# ── Memory Info ───────────────────────────────────────────────────────────────
+
+@app.route("/api/system/meminfo", methods=["GET"])
+@require_auth
+def api_system_meminfo():
+    info = {}
+    try:
+        with open("/proc/meminfo", "r") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) >= 2:
+                    key = parts[0].rstrip(":")
+                    try:
+                        val = int(parts[1])
+                    except ValueError:
+                        val = 0
+                    info[key] = val
+    except OSError as exc:
+        return jsonify({"error": str(exc)}), 503
+    kb = 1024
+    result = {
+        "total_kb":     info.get("MemTotal", 0),
+        "free_kb":      info.get("MemFree", 0),
+        "available_kb": info.get("MemAvailable", 0),
+        "buffers_kb":   info.get("Buffers", 0),
+        "cached_kb":    info.get("Cached", 0),
+        "swap_total_kb":info.get("SwapTotal", 0),
+        "swap_free_kb": info.get("SwapFree", 0),
+        "used_kb":      info.get("MemTotal", 0) - info.get("MemAvailable", 0),
+    }
+    _ = kb  # suppress unused warning
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

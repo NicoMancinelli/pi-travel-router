@@ -1148,6 +1148,11 @@
     <div id="diskio-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <div class="card full-width" id="card-meminfo">
+    <div class="card-title">&#x1F9E0; Memory Details</div>
+    <div id="meminfo-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4174,6 +4179,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWgConfigQr();
   fetchKernelModules();
   fetchDiskIO();
+  fetchMemInfo();
 });
 
 async function fetchJournal() {
@@ -4377,6 +4383,7 @@ async function refreshAll() {
   fetchProcTop();
   fetchSystemTemps();
   fetchDiskIO();
+  fetchMemInfo();
 }
 
 async function init() {
@@ -6994,6 +7001,43 @@ async function fetchDiskIO() {
     }
     html += '</tbody></table>';
     el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+async function fetchMemInfo() {
+  const el = document.getElementById('meminfo-content');
+  try {
+    const r = await fetch('/api/system/meminfo');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    const fmt = kb => kb >= 1024 * 1024
+      ? (kb / 1024 / 1024).toFixed(1) + ' GB'
+      : kb >= 1024
+        ? (kb / 1024).toFixed(0) + ' MB'
+        : kb + ' kB';
+    const pct = d.total_kb > 0 ? Math.round(d.used_kb / d.total_kb * 100) : 0;
+    const swapPct = d.swap_total_kb > 0
+      ? Math.round((d.swap_total_kb - d.swap_free_kb) / d.swap_total_kb * 100) : 0;
+    el.innerHTML = `
+      <div style="margin-bottom:6px;">
+        <strong>RAM:</strong> ${fmt(d.used_kb)} used / ${fmt(d.total_kb)} total
+        <div style="background:var(--border);border-radius:4px;height:8px;margin-top:4px;">
+          <div style="background:var(--accent);width:${pct}%;height:8px;border-radius:4px;"></div>
+        </div>
+        <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${pct}% used &mdash; available ${fmt(d.available_kb)}, buffers ${fmt(d.buffers_kb)}, cached ${fmt(d.cached_kb)}</div>
+      </div>
+      ${d.swap_total_kb > 0 ? `
+      <div>
+        <strong>Swap:</strong> ${fmt(d.swap_total_kb - d.swap_free_kb)} used / ${fmt(d.swap_total_kb)} total
+        <div style="background:var(--border);border-radius:4px;height:6px;margin-top:4px;">
+          <div style="background:#e67e22;width:${swapPct}%;height:6px;border-radius:4px;"></div>
+        </div>
+        <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${swapPct}% used</div>
+      </div>` : '<div style="color:var(--text-dim);">No swap configured</div>'}
+    `;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
   }
