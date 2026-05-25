@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.20.0] - 2026-05-24
+
+### Added
+
+- **WireGuard peer QR code & remove** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/wireguard/peer/<pubkey>/qr` generates a client config template with the server's public key and returns a base64 PNG data URL via `qrencode`. `DELETE /api/vpn/wireguard/peer/<pubkey>` removes the peer block from `wg0.conf` atomically and calls `wg set wg0 peer <pubkey> remove` for live state. Dashboard peer list gains per-row QR (modal overlay) and Remove buttons.
+- **ntfy notification config** (`web/app.py`, `web/static/index.html`): `GET /api/notify/config` reads `NTFY_TOPIC` and `NTFY_SERVER` from `/etc/default/travel-router`. `POST /api/notify/test` validates topic, fires a `curl` POST to the ntfy endpoint with a timestamped test message, returns the HTTP status code. Dashboard "🔔 Notifications" card shows current config with a Send Test button and inline result display.
+- **Bandwidth quota status** (`web/app.py`, `web/static/index.html`): `GET /api/datacap/status` queries `vnstat --json m 1` for current-month rx+tx, computes percentage against the configured cap, and returns `over_alert`/`over_cap` flags. Dashboard data cap card gains a color-coded progress bar (green/orange/red) with threshold indicator and a Check Usage button. Also removed a duplicate datacap card from the HTML.
+
 ## [2.19.0] - 2026-05-24
 
 ### Added
