@@ -8591,16 +8591,17 @@ def api_network_firewall_stats():
 @require_auth
 def api_system_usb_devices():
     devices = []
-    out, rc = _run(["lsusb"])
-    if rc == 0:
-        for line in out.splitlines():
-            # Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
-            m = re.match(r'Bus (\d+) Device (\d+): ID ([0-9a-f:]+)\s+(.*)', line)
-            if m:
-                devices.append({"bus": m.group(1), "device": m.group(2),
-                                 "id": m.group(3), "description": m.group(4).strip()})
-    tree_out, tree_rc = _run(["lsusb", "-t"])
-    return jsonify({"devices": devices, "tree": tree_out if tree_rc == 0 else None})
+    out, rc = _run("lsusb")
+    if rc != 0:
+        err = out.strip() if out.strip() else "lsusb failed or not found"
+        return jsonify({"error": err, "devices": [], "count": 0})
+    for line in out.splitlines():
+        # Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+        m = re.match(r'Bus (\d+) Device (\d+): ID ([0-9a-f:]+)\s+(.*)', line)
+        if m:
+            devices.append({"bus": m.group(1), "device": m.group(2),
+                             "id": m.group(3), "description": m.group(4).strip()})
+    return jsonify({"devices": devices, "count": len(devices), "source": "lsusb"})
 
 
 @app.route("/api/system/cpu-temp", methods=["GET"])

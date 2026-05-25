@@ -1088,6 +1088,12 @@
     <div id="routes-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- USB Devices -->
+  <div class="card" id="usb-card">
+    <h2>🔌 USB Devices</h2>
+    <div id="usb-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1251,17 +1257,6 @@
   <div class="card" id="entropy-card">
     <h2>🎲 System Entropy</h2>
     <div id="entropy-content"><p class="muted">Loading…</p></div>
-  </div>
-
-  <hr class="divider">
-
-  <!-- USB Devices -->
-  <div class="card full-width" id="card-usb-devices">
-    <div class="card-title">
-      &#x1F50C; USB Devices
-      <button class="btn btn-sm" onclick="fetchUsbDevices()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="usb-devices-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <hr class="divider">
@@ -7193,46 +7188,22 @@ async function fetchEntropy() {
   } catch(e) { document.getElementById('entropy-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
-// ── USB Device Inventory ──────────────────────────────────────────────────────
-
+// ── USB Devices ───────────────────────────────────────────────────────────────
 async function fetchUsbDevices() {
-  const el = document.getElementById('usb-devices-content');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/system/usb-devices');
+    const r = await fetch('/api/system/usb-devices');
     const d = await r.json();
-    if (!r.ok) {
-      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error fetching USB devices') + '</span>';
-      return;
-    }
-    if (!d.devices || d.devices.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No USB devices detected.</span>';
-      return;
-    }
-    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
-    html += '<th style="text-align:left;padding:4px 8px;">Bus</th>';
-    html += '<th style="text-align:left;padding:4px 8px;">Device</th>';
-    html += '<th style="text-align:left;padding:4px 8px;">ID</th>';
-    html += '<th style="text-align:left;padding:4px 8px;">Description</th>';
-    html += '</tr></thead><tbody>';
+    const el = document.getElementById('usb-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (!d.devices || d.devices.length === 0) { el.innerHTML = '<p class="muted">No USB devices found.</p>'; return; }
+    let html = `<p class="muted" style="margin-bottom:6px">Devices: <strong>${d.count}</strong></p>`;
+    html += '<table class="table"><thead><tr><th>Bus</th><th>Device</th><th>ID</th><th>Description</th></tr></thead><tbody>';
     for (const dev of d.devices) {
-      html += '<tr style="border-bottom:1px solid var(--border);">';
-      html += '<td style="padding:4px 8px;">' + dev.bus + '</td>';
-      html += '<td style="padding:4px 8px;">' + dev.device + '</td>';
-      html += '<td style="padding:4px 8px;font-family:monospace;">' + dev.id + '</td>';
-      html += '<td style="padding:4px 8px;">' + (dev.description || '') + '</td>';
-      html += '</tr>';
+      html += `<tr><td>${dev.bus}</td><td>${dev.device}</td><td><code>${dev.id}</code></td><td>${dev.description}</td></tr>`;
     }
     html += '</tbody></table>';
-    if (d.tree) {
-      html += '<pre style="margin-top:12px;font-size:12px;overflow-x:auto;background:var(--bg-alt);padding:8px;border-radius:4px;">' + d.tree + '</pre>';
-    }
     el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load USB devices</span>';
-  }
+  } catch(e) { document.getElementById('usb-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── System Temperature Details ────────────────────────────────────────────────
