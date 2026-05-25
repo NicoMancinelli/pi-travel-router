@@ -1277,6 +1277,18 @@
           <div id="wifi-info-content"><em>Loading…</em></div>
         </div>
 
+        <!-- CPU Governors -->
+        <div class="card" id="card-cpu-governors">
+          <h2>⚙️ CPU Governors</h2>
+          <div id="cpu-governors-content"><em>Loading…</em></div>
+        </div>
+
+        <!-- System Timers -->
+        <div class="card" id="card-system-timers">
+          <h2>⏱ System Timers</h2>
+          <div id="system-timers-content"><em>Loading…</em></div>
+        </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4334,6 +4346,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchMountInfo();
   fetchTopProcesses();
   fetchWifiInfo();
+  fetchCpuGovernors();
+  fetchSystemTimers();
 });
 
 async function fetchJournal() {
@@ -4566,6 +4580,8 @@ async function refreshAll() {
   fetchMountInfo();
   fetchTopProcesses();
   fetchWifiInfo();
+  fetchCpuGovernors();
+  fetchSystemTimers();
 }
 
 async function init() {
@@ -8428,6 +8444,34 @@ async function fetchMemoryBreakdown() {
           }
         }
         el.innerHTML = html || 'No data';
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+    async function fetchCpuGovernors() {
+      const el = document.getElementById('cpu-governors-content');
+      try {
+        const r = await fetch('/api/system/cpu-governors');
+        const d = await r.json();
+        if (!d.cores || !d.cores.length) { el.textContent = 'No cpufreq data'; return; }
+        const fmtMhz = hz => hz ? (hz / 1000).toFixed(0) + ' MHz' : '?';
+        const rows = d.cores.map(c =>
+          `<tr><td>${c.cpu}</td><td>${c.scaling_governor || '?'}</td><td style="text-align:right">${fmtMhz(c.scaling_cur_freq)}</td><td style="text-align:right">${fmtMhz(c.scaling_min_freq)}</td><td style="text-align:right">${fmtMhz(c.scaling_max_freq)}</td></tr>`
+        ).join('');
+        const avail = d.available_governors && d.available_governors.length
+          ? `<p style="margin:0 0 4px;font-size:0.85em;color:#888">Available: ${d.available_governors.join(', ')}</p>` : '';
+        el.innerHTML = avail + `<table class="info-table"><thead><tr><th>Core</th><th>Governor</th><th>Current</th><th>Min</th><th>Max</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+    async function fetchSystemTimers() {
+      const el = document.getElementById('system-timers-content');
+      try {
+        const r = await fetch('/api/system/timers');
+        const d = await r.json();
+        if (d.error) { el.textContent = d.error; return; }
+        if (!d.timers || !d.timers.length) { el.textContent = 'No timers'; return; }
+        const rows = d.timers.map(t =>
+          `<tr><td style="font-family:monospace">${t.unit}</td><td>${t.next || '—'}</td><td style="color:#888">${t.left}</td><td>${t.activates}</td></tr>`
+        ).join('');
+        el.innerHTML = `<p style="margin:0 0 6px">${d.count} timer(s)</p><table class="info-table"><thead><tr><th>Unit</th><th>Next</th><th>In</th><th>Activates</th></tr></thead><tbody>${rows}</tbody></table>`;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
