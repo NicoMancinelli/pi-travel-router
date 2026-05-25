@@ -10012,6 +10012,43 @@ def api_network_interfaces():
     return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
+# ── Open Sockets Summary ──────────────────────────────────────────────────────
+
+@app.route("/api/system/open-sockets", methods=["GET"])
+@require_auth
+def api_system_open_sockets():
+    """Return open sockets grouped by protocol using ss -tunap."""
+    out, rc = _run(["ss", "-tunap"])
+    sockets = []
+    if rc == 0:
+        lines = out.splitlines()
+        for line in lines[1:]:  # skip header
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            proto = parts[0]
+            state = parts[1]
+            local = parts[4]
+            peer = parts[5]
+            process = " ".join(parts[6:]) if len(parts) > 6 else ""
+            sockets.append({
+                "proto": proto,
+                "state": state,
+                "local": local,
+                "peer": peer,
+                "process": process,
+            })
+    # Count by protocol
+    counts = {}
+    for s in sockets:
+        counts[s["proto"]] = counts.get(s["proto"], 0) + 1
+    return jsonify({
+        "sockets": sockets,
+        "count": len(sockets),
+        "by_proto": counts,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

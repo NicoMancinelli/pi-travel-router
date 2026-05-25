@@ -911,6 +911,15 @@
     <div id="network-interfaces-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Open Sockets -->
+  <div class="card full-width" id="card-open-sockets">
+    <div class="card-title">
+      &#x1F50C; Open Sockets
+      <button class="btn btn-sm" onclick="fetchOpenSockets()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="open-sockets-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4496,6 +4505,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchProcessTree();
   fetchKernelMessages();
   fetchNetworkInterfaces();
+  fetchOpenSockets();
 });
 
 async function fetchJournal() {
@@ -4752,6 +4762,7 @@ async function refreshAll() {
   fetchKernelMessages();
   fetchSystemServices();
   fetchNetworkInterfaces();
+  fetchOpenSockets();
 }
 
 async function init() {
@@ -9256,6 +9267,53 @@ async function fetchNetworkInterfaces() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchNetworkInterfaces error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load interfaces</span>';
+  }
+}
+
+// ── Open Sockets ──────────────────────────────────────────────────────────────
+
+async function fetchOpenSockets() {
+  const el = document.getElementById('open-sockets-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/open-sockets');
+    const d = await r.json();
+    const sockets = d.sockets || [];
+    const byProto = d.by_proto || {};
+    if (!sockets.length) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No open sockets</span>';
+      return;
+    }
+    // Protocol summary chips
+    let html = '<div style="margin-bottom:8px;">';
+    for (const [proto, cnt] of Object.entries(byProto)) {
+      html += `<span style="display:inline-block;margin:2px;padding:2px 8px;border-radius:12px;background:var(--accent);color:#fff;font-size:12px;">${proto}: ${cnt}</span>`;
+    }
+    html += '</div>';
+    // Table
+    html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:4px 8px;">Proto</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">State</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Local</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Peer</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Process</th>';
+    html += '</tr></thead><tbody>';
+    for (const s of sockets.slice(0, 50)) {
+      html += `<tr style="border-bottom:1px solid var(--border-faint,#333);">`;
+      html += `<td style="padding:3px 8px;font-family:monospace;">${s.proto}</td>`;
+      html += `<td style="padding:3px 8px;">${s.state}</td>`;
+      html += `<td style="padding:3px 8px;font-family:monospace;">${s.local}</td>`;
+      html += `<td style="padding:3px 8px;font-family:monospace;">${s.peer}</td>`;
+      html += `<td style="padding:3px 8px;color:var(--text-dim);font-size:11px;">${s.process}</td>`;
+      html += `</tr>`;
+    }
+    html += '</tbody></table></div>';
+    if (sockets.length > 50) html += `<div style="font-size:11px;color:var(--text-dim);margin-top:4px;">(showing 50 of ${sockets.length})</div>`;
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchOpenSockets error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load sockets</span>';
   }
 }
 
