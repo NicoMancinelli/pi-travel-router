@@ -841,6 +841,22 @@
     </div>
   </div>
 
+  <!-- ntfy Notifications -->
+  <div class="card" id="card-ntfy" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F514; Notifications</span>
+      <button class="btn btn-sm" onclick="fetchNtfyConfig()">&#x21BB; Refresh</button>
+    </div>
+    <div id="ntfy-config-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <input id="ntfy-test-topic" type="text" placeholder="topic (or leave blank to use config)" style="flex:2;min-width:150px;font-family:monospace;">
+      <button class="btn btn-primary" id="ntfy-test-btn" onclick="sendNtfyTest()" style="white-space:nowrap;">&#x1F514; Send Test</button>
+      <span id="ntfy-test-msg" style="font-size:12px;"></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Upstream WiFi -->
@@ -3763,6 +3779,7 @@ async function refreshAll() {
   fetchRouterConfig();
   fetchServices();
   fetchIfaceStats();
+  fetchNtfyConfig();
 }
 
 async function init() {
@@ -3925,6 +3942,56 @@ async function fetchIfaceStats() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+// ── ntfy notification config ──────────────────────────────────────────────────
+async function fetchNtfyConfig() {
+  const el = document.getElementById('ntfy-config-content');
+  try {
+    const r = await apiFetch('/api/notify/config');
+    const d = await r.json();
+    let html = '<table style="font-size:13px;border-collapse:collapse;">';
+    html += '<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;">Topic</td>';
+    if (d.topic) {
+      html += '<td style="font-family:monospace;">' + d.topic + '</td></tr>';
+    } else {
+      html += '<td style="color:var(--error,#e55);">Not configured — set NTFY_TOPIC in /etc/default/travel-router</td></tr>';
+    }
+    html += '<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;">Server</td><td style="font-family:monospace;">' + d.server + '</td></tr>';
+    html += '</table>';
+    el.innerHTML = html;
+    // Pre-fill topic input
+    const inp = document.getElementById('ntfy-test-topic');
+    if (inp && d.topic) inp.placeholder = d.topic + ' (configured)';
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function sendNtfyTest() {
+  const btn = document.getElementById('ntfy-test-btn');
+  const msg = document.getElementById('ntfy-test-msg');
+  const topicEl = document.getElementById('ntfy-test-topic');
+  const topic = topicEl ? topicEl.value.trim() : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  msg.textContent = '';
+  try {
+    const r = await apiFetch('/api/notify/test', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({topic}) });
+    const d = await r.json();
+    if (r.ok) {
+      msg.textContent = '✓ Sent to ' + d.url;
+      msg.style.color = 'var(--success,#4c4)';
+    } else {
+      msg.textContent = d.error || 'Failed';
+      msg.style.color = 'var(--error,#e55)';
+    }
+  } catch (e) {
+    msg.textContent = 'Error: ' + e;
+    msg.style.color = 'var(--error,#e55)';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔔 Send Test'; }
+    setTimeout(() => { msg.textContent = ''; }, 5000);
   }
 }
 
