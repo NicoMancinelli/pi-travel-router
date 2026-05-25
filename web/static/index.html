@@ -1369,6 +1369,12 @@
     <div id="net-bandwidth-content"><em>Loading&hellip;</em></div>
   </div>
 
+  <!-- Firewall Rules -->
+  <div class="card" id="card-iptables">
+    <h2>&#x1F525; Firewall Rules</h2>
+    <div id="iptables-content"><em>Loading&hellip;</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4445,6 +4451,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWifiClients();
   fetchPackageUpdates();
   fetchNetBandwidth();
+  fetchIptables();
 });
 
 async function fetchJournal() {
@@ -4694,6 +4701,7 @@ async function refreshAll() {
   fetchActiveConnections();
   fetchPackageUpdates();
   fetchNetBandwidth();
+  fetchIptables();
 }
 
 async function init() {
@@ -8955,6 +8963,53 @@ async function fetchNetBandwidth() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load bandwidth data</span>';
+  }
+}
+
+// ── Firewall Rules (iptables) ─────────────────────────────────────────────────
+
+async function fetchIptables() {
+  const el = document.getElementById('iptables-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/network/iptables');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error loading iptables') + '</span>';
+      return;
+    }
+    let html = '';
+    const chainOrder = ['input', 'forward', 'output'];
+    const chainLabels = { input: 'INPUT', forward: 'FORWARD', output: 'OUTPUT' };
+    const versions = [];
+    if (d.ipv4) versions.push({ label: 'IPv4', data: d.ipv4 });
+    if (d.ipv6) versions.push({ label: 'IPv6', data: d.ipv6 });
+    if (versions.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">iptables data unavailable</span>';
+      return;
+    }
+    for (const ver of versions) {
+      html += '<div style="margin-bottom:12px;">';
+      html += '<div style="font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:6px;">' + ver.label + '</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+      for (const chain of chainOrder) {
+        const text = ver.data[chain] || '';
+        const lineCount = text ? text.split('\n').length : 0;
+        html += '<details style="flex:1;min-width:200px;">';
+        html += '<summary style="cursor:pointer;font-size:13px;font-weight:600;padding:4px 0;">'
+          + chainLabels[chain]
+          + ' <span style="font-size:11px;color:var(--text-dim);font-weight:400;">(' + lineCount + ' lines)</span>'
+          + '</summary>';
+        html += '<pre style="font-size:11px;max-height:200px;overflow:auto;margin:4px 0;padding:8px;background:var(--bg-card,#1a1a1a);border-radius:4px;white-space:pre;">'
+          + (text ? text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') : '<em>empty</em>')
+          + '</pre>';
+        html += '</details>';
+      }
+      html += '</div></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load firewall rules</span>';
   }
 }
 

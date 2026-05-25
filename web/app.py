@@ -9789,6 +9789,33 @@ def api_network_bandwidth():
     return jsonify({"interfaces": interfaces})
 
 
+@app.route("/api/network/iptables")
+@require_auth
+def api_network_iptables():
+    def parse_chains(output):
+        chains = {}
+        current = None
+        lines = []
+        for line in output.splitlines():
+            if line.startswith("Chain "):
+                if current:
+                    chains[current] = "\n".join(lines)
+                parts = line.split()
+                current = parts[1].lower()
+                lines = [line]
+            elif current:
+                lines.append(line)
+        if current:
+            chains[current] = "\n".join(lines)
+        return chains
+
+    out4, rc4 = _run(["iptables", "-L", "-n", "-v", "--line-numbers"])
+    ipv4 = parse_chains(out4) if rc4 == 0 else None
+    out6, rc6 = _run(["ip6tables", "-L", "-n", "-v", "--line-numbers"])
+    ipv6 = parse_chains(out6) if rc6 == 0 else None
+    return jsonify({"ipv4": ipv4, "ipv6": ipv6})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
