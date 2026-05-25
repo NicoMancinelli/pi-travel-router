@@ -11926,6 +11926,107 @@ def api_system_login_history():
     return jsonify({"entries": entries, "count": len(entries), "source": "last"})
 
 
+@app.route("/api/system/crontab", methods=["GET"])
+@require_auth
+def api_system_crontab():
+    """Return parsed cron entries from all standard sources."""
+    entries = []
+    sources_seen = []
+
+    def _parse_cron_line(line, source, has_user_field):
+        """Parse a single cron line into a dict. Returns None if unparseable."""
+        line = line.strip()
+        if not line or line.startswith("#"):
+            return None
+        parts = line.split()
+        if len(parts) < 2:
+            return None
+        # Handle @-shortcuts like @reboot, @daily, etc.
+        if parts[0].startswith("@"):
+            schedule = parts[0]
+            if has_user_field and len(parts) >= 3:
+                user = parts[1]
+                command = " ".join(parts[2:])
+            else:
+                user = ""
+                command = " ".join(parts[1:])
+            return {"schedule": schedule, "user": user, "command": command, "source": source}
+        # Standard 5-field schedule
+        if len(parts) < 6:
+            return None
+        schedule = " ".join(parts[:5])
+        if has_user_field:
+            if len(parts) < 7:
+                return None
+            user = parts[5]
+            command = " ".join(parts[6:])
+        else:
+            user = ""
+            command = " ".join(parts[5:])
+        return {"schedule": schedule, "user": user, "command": command, "source": source}
+
+    # root's personal crontab
+    out, rc = _run("crontab -l 2>/dev/null")
+    if rc == 0 and out.strip():
+        source = "crontab"
+        sources_seen.append(source)
+        for line in out.splitlines():
+            entry = _parse_cron_line(line, source, has_user_field=False)
+            if entry:
+                entries.append(entry)
+
+    # /etc/crontab
+    etc_crontab = Path("/etc/crontab")
+    if etc_crontab.exists():
+        source = "/etc/crontab"
+        sources_seen.append(source)
+        try:
+            for line in etc_crontab.read_text().splitlines():
+                entry = _parse_cron_line(line, source, has_user_field=True)
+                if entry:
+                    entries.append(entry)
+        except OSError:
+            pass
+
+    # /etc/cron.d/*
+    for cron_dir, has_user in [
+        ("/etc/cron.d", True),
+        ("/etc/cron.daily", False),
+        ("/etc/cron.hourly", False),
+        ("/etc/cron.weekly", False),
+        ("/etc/cron.monthly", False),
+    ]:
+        cron_path = Path(cron_dir)
+        if not cron_path.is_dir():
+            continue
+        try:
+            files = sorted(cron_path.iterdir())
+        except OSError:
+            continue
+        for f in files:
+            if not f.is_file():
+                continue
+            source = str(f)
+            try:
+                text = f.read_text()
+            except OSError:
+                continue
+            found_any = False
+            for line in text.splitlines():
+                entry = _parse_cron_line(line, source, has_user_field=has_user)
+                if entry:
+                    entries.append(entry)
+                    found_any = True
+            if found_any:
+                sources_seen.append(source)
+
+    return jsonify({
+        "entries": entries,
+        "total": len(entries),
+        "sources": sources_seen,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
