@@ -1054,8 +1054,13 @@
 
   <!-- Kernel Modules -->
   <div class="card" id="kernel-modules-card">
-    <h2>🧩 Kernel Modules</h2>
-    <div id="kernel-modules-content"><p class="muted">Loading…</p></div>
+    <div class="card-header">
+      <span>🧩 Kernel Modules</span>
+      <span class="card-badge" id="kernel-modules-count">—</span>
+    </div>
+    <div class="card-body" id="kernel-modules-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <!-- Mount Points -->
@@ -8648,20 +8653,45 @@ async function fetchRoutes() {
 
 // ── Kernel Modules ────────────────────────────────────────────────────────────
 async function fetchKernelModules() {
+  const el = document.getElementById('kernel-modules-content');
+  const badge = document.getElementById('kernel-modules-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
     const r = await fetch('/api/system/kernel-modules');
     const d = await r.json();
-    const el = document.getElementById('kernel-modules-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    let html = `<p class="muted" style="margin-bottom:6px">Loaded modules: <strong>${d.count}</strong></p>`;
-    html += '<div style="max-height:200px;overflow-y:auto"><table class="table"><thead><tr><th>Module</th><th>Size</th><th>Used By</th></tr></thead><tbody>';
-    for (const m of (d.modules || [])) {
-      const dep = m.dependents.length ? m.dependents.join(', ') : '-';
-      html += `<tr><td><code>${m.name}</code></td><td>${m.size.toLocaleString()}</td><td>${dep}</td></tr>`;
+    if (badge) badge.textContent = `${d.count} modules`;
+    let html = '';
+    if (d.kernel) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">Kernel: <strong style="color:var(--text)">${d.kernel}</strong></div>`;
     }
-    html += '</tbody></table></div>';
+    const mods = d.modules || [];
+    if (mods.length === 0) {
+      html += '<p class="muted">No module data available.</p>';
+    } else {
+      const fmtSize = b => b >= 1048576 ? (b/1048576).toFixed(1)+'M' : b >= 1024 ? (b/1024).toFixed(0)+'K' : b+'B';
+      html += '<div style="max-height:280px;overflow-y:auto;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+      html += `<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">
+        <th style="text-align:left;padding:2px 5px;">Module</th>
+        <th style="text-align:right;padding:2px 5px;">Size</th>
+        <th style="text-align:right;padding:2px 5px;">Used</th>
+        <th style="text-align:left;padding:2px 5px;">Used By</th>
+      </tr></thead><tbody>`;
+      for (const m of mods) {
+        const usedBy = (m.used_by || []).join(', ') || '—';
+        html += `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:2px 5px;font-family:monospace;font-weight:500">${m.name}</td>
+          <td style="padding:2px 5px;text-align:right;color:var(--text-dim)">${fmtSize(m.size)}</td>
+          <td style="padding:2px 5px;text-align:right">${m.used_count}</td>
+          <td style="padding:2px 5px;font-size:10px;color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${usedBy}</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+    if (d.error) html += `<p style="font-size:11px;color:var(--danger);margin-top:6px;">${d.error}</p>`;
     el.innerHTML = html;
-  } catch(e) { document.getElementById('kernel-modules-content').innerHTML = `<p class="error">${e}</p>`; }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 async function fetchDiskIO() {
