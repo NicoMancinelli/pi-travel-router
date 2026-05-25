@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.39.0] - 2026-05-25
+
+### Added
+
+- **ARP neighbor table card** (`web/app.py`, `web/static/index.html`): `GET /api/network/arp` parses `/proc/net/arp`, skips null MACs, maps flags to REACHABLE/STALE/INCOMPLETE/UNKNOWN states. Dashboard card with IP/MAC/Interface/State table and state colour-coding (green/orange/red/grey). Auto-refreshes on poll.
+- **IP routing table card** (`web/app.py`, `web/static/index.html`): `GET /api/network/routes` runs `ip route show`, token-parses dest/via/dev/metric/proto/scope/src per route. Dashboard card with compact table, default route bolded, count badge. Auto-refreshes on poll.
+- **Journal errors card** (`web/app.py`, `web/static/index.html`): `GET /api/system/journal-errors` runs `journalctl -p warning -n 30 --output=short-iso`, validates optional `?priority=` param against allowlist. Dashboard card with per-entry priority badges (red=err+, orange=warning), count badge, green "No errors" when clean. Auto-refreshes on poll.
+
 ## [2.38.0] - 2026-05-25
 
 ### Added
