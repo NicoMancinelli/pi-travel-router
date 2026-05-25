@@ -1167,6 +1167,10 @@
     <div id="cpufreq-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-arp-table">
+    <div id="arp-table-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4197,6 +4201,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
+  fetchArpTable();
 });
 
 async function fetchJournal() {
@@ -4404,6 +4409,7 @@ async function refreshAll() {
   fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
+  fetchArpTable();
 }
 
 async function init() {
@@ -7156,6 +7162,41 @@ async function fetchCpuFreq() {
         <td style="padding:3px 8px;text-align:right;">${fmtMhz(cpu.min_khz)}</td>
         <td style="padding:3px 8px;text-align:right;">${fmtMhz(cpu.max_khz)}</td>
         <td style="padding:3px 8px;color:var(--text-dim);">${cpu.governor || '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── ARP / Neighbor Table ──────────────────────────────────────────────────────
+
+async function fetchArpTable() {
+  const el = document.getElementById('arp-table-content');
+  try {
+    const r = await fetch('/api/network/arp');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    const stateColor = { REACHABLE: '#2ecc71', STALE: '#f39c12', INCOMPLETE: '#e74c3c', UNKNOWN: '#95a5a6' };
+    let html = `<div class="card-title">&#x1F5A7; ARP Table <span style="font-size:11px;background:var(--border);border-radius:10px;padding:1px 7px;margin-left:6px;">${d.count}</span></div>`;
+    if (d.error) { html += `<div style="color:var(--text-dim);font-size:13px;">${d.error}</div>`; el.innerHTML = html; return; }
+    if (!d.entries || d.entries.length === 0) { html += '<div style="color:var(--text-dim);font-size:13px;">No ARP entries found</div>'; el.innerHTML = html; return; }
+    html += '<table style="width:100%;border-collapse:collapse;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 8px;">IP</th>
+      <th style="text-align:left;padding:3px 8px;">MAC</th>
+      <th style="text-align:left;padding:3px 8px;">Interface</th>
+      <th style="text-align:left;padding:3px 8px;">State</th>
+    </tr></thead><tbody>`;
+    for (const e of d.entries) {
+      const color = stateColor[e.state] || stateColor.UNKNOWN;
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 8px;font-family:monospace;">${e.ip}</td>
+        <td style="padding:3px 8px;font-family:monospace;color:var(--text-dim);">${e.mac}</td>
+        <td style="padding:3px 8px;">${e.iface}</td>
+        <td style="padding:3px 8px;"><span style="color:${color};font-weight:600;">${e.state}</span></td>
       </tr>`;
     }
     html += '</tbody></table>';
