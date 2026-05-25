@@ -9693,6 +9693,32 @@ def api_system_block_devices():
     return jsonify({"devices": devices, "source": "lsblk-pairs"})
 
 
+@app.route("/api/network/dns-config")
+@require_auth
+def api_network_dns_config():
+    result = {"nameservers": [], "search": [], "options": []}
+    try:
+        for line in Path("/etc/resolv.conf").read_text().splitlines():
+            line = line.strip()
+            if line.startswith("nameserver"):
+                result["nameservers"].append(line.split()[1])
+            elif line.startswith("search"):
+                result["search"] = line.split()[1:]
+            elif line.startswith("options"):
+                result["options"] = line.split()[1:]
+    except OSError:
+        pass
+    # resolvectl status
+    out, rc = _run(["resolvectl", "status"])
+    if rc != 0:
+        out, rc = _run(["systemd-resolve", "--status"])
+    result["resolvectl"] = "\n".join(out.splitlines()[:20]) if rc == 0 else None
+    # AdGuard Home
+    _, rc2 = _run(["systemctl", "is-active", "AdGuardHome"])
+    result["adguard_active"] = rc2 == 0
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
