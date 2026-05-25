@@ -11678,6 +11678,64 @@ def api_inotify_stats():
         return jsonify({"error": str(exc), "max_watches": 0, "current_watchers": 0})
 
 
+# ── Thermal Zones ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/thermal-zones")
+@require_auth
+def api_thermal_zones():
+    try:
+        zones = []
+        thermal_base = Path("/sys/class/thermal")
+        if thermal_base.exists():
+            for zone_dir in sorted(thermal_base.glob("thermal_zone*")):
+                try:
+                    zone_id = int(zone_dir.name.replace("thermal_zone", ""))
+                    zone_type = (zone_dir / "type").read_text().strip()
+                    temp_mc = int((zone_dir / "temp").read_text().strip())
+                    temp_c = round(temp_mc / 1000.0, 2)
+                    temp_f = round(temp_c * 9 / 5 + 32, 2)
+                    hot_threshold_c = None
+                    trip_path = zone_dir / "trip_point_0_temp"
+                    if trip_path.exists():
+                        try:
+                            hot_threshold_c = round(int(trip_path.read_text().strip()) / 1000.0, 2)
+                        except (ValueError, OSError):
+                            pass
+                    if temp_c >= 80:
+                        status = "hot"
+                    elif temp_c >= 60:
+                        status = "warm"
+                    else:
+                        status = "normal"
+                    zones.append({
+                        "id": zone_id,
+                        "type": zone_type,
+                        "temp_c": temp_c,
+                        "temp_f": temp_f,
+                        "hot_threshold_c": hot_threshold_c,
+                        "status": status,
+                    })
+                except (ValueError, OSError):
+                    continue
+        vcgencmd_gpu_c = None
+        out, rc = _run("vcgencmd measure_temp")
+        if rc == 0 and out:
+            import re as _re
+            m = _re.search(r"temp=([\d.]+)", out)
+            if m:
+                vcgencmd_gpu_c = round(float(m.group(1)), 2)
+        max_temp_c = max((z["temp_c"] for z in zones), default=0.0)
+        return jsonify({
+            "zones": zones,
+            "count": len(zones),
+            "max_temp_c": max_temp_c,
+            "vcgencmd_gpu_c": vcgencmd_gpu_c,
+            "source": "sysfs",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "zones": [], "count": 0})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

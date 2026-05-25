@@ -1154,6 +1154,12 @@
     <div id="dns-config-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- Thermal Zones -->
+  <div class="card" id="thermal-card">
+    <h2>🌡️ Thermal Zones</h2>
+    <div id="thermal-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4728,6 +4734,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchPacketStats();
   fetchI2cDevices();
   fetchInotifyStats();
+  fetchThermalZones();
 });
 
 async function fetchJournal() {
@@ -5011,6 +5018,7 @@ async function refreshAll() {
   fetchPacketStats();
   fetchI2cDevices();
   fetchInotifyStats();
+  fetchThermalZones();
 }
 
 async function init() {
@@ -7452,6 +7460,28 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Thermal Zones ─────────────────────────────────────────────────────────────
+async function fetchThermalZones() {
+  try {
+    const r = await fetch('/api/system/thermal-zones');
+    const d = await r.json();
+    const el = document.getElementById('thermal-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (!d.zones || d.zones.length === 0) { el.innerHTML = '<p class="muted">No thermal zones found.</p>'; return; }
+    const maxColor = d.max_temp_c >= 80 ? 'var(--red)' : d.max_temp_c >= 60 ? 'var(--amber)' : 'var(--green)';
+    let html = `<p class="muted" style="margin-bottom:8px">Peak: <span style="color:${maxColor};font-weight:600">${d.max_temp_c?.toFixed(1)}°C</span>`;
+    if (d.vcgencmd_gpu_c !== null) html += ` · GPU (vcgencmd): <strong>${d.vcgencmd_gpu_c?.toFixed(1)}°C</strong>`;
+    html += '</p>';
+    html += '<table class="table"><thead><tr><th>Zone</th><th>Type</th><th>°C</th><th>°F</th><th>Status</th></tr></thead><tbody>';
+    for (const z of d.zones) {
+      const tempColor = z.status === 'hot' ? 'color:var(--red)' : z.status === 'warm' ? 'color:var(--amber)' : 'color:var(--green)';
+      html += `<tr><td>${z.id}</td><td>${z.type}</td><td style="${tempColor}">${z.temp_c.toFixed(1)}</td><td>${z.temp_f.toFixed(1)}</td><td style="${tempColor}">${z.status}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('thermal-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── I2C Devices ───────────────────────────────────────────────────────────────
