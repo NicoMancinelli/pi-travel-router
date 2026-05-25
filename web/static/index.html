@@ -1337,6 +1337,12 @@
     <div id="socket-summary-content"><em>Loading…</em></div>
   </div>
 
+  <!-- Block Devices -->
+  <div class="card" id="card-block-devices">
+    <h2>&#x1F4BE; Block Devices</h2>
+    <div id="block-devices-content"><em>Loading&hellip;</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4405,6 +4411,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchVmstat();
   fetchUptimeHistory();
   fetchSocketSummary();
+  fetchBlockDevices();
 });
 
 async function fetchJournal() {
@@ -4647,6 +4654,7 @@ async function refreshAll() {
   fetchVmstat();
   fetchUptimeHistory();
   fetchSocketSummary();
+  fetchBlockDevices();
 }
 
 async function init() {
@@ -8714,6 +8722,38 @@ async function fetchSocketSummary() {
   } catch (e) { el.textContent = 'Error: ' + e; }
 }
 
+// ── Block Devices ─────────────────────────────────────────────────────────────
+async function fetchBlockDevices() {
+  const el = document.getElementById('block-devices-content');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/block-devices');
+    const d = await r.json();
+    const devs = d.devices || [];
+    if (!devs.length) { el.textContent = 'No block devices found.'; return; }
+    const headers = ['Name', 'Size', 'Type', 'FS Type', 'Mount Point', 'Model'];
+    let html = '<table class="info-table"><thead><tr>' +
+      headers.map(h => '<th>' + h + '</th>').join('') +
+      '</tr></thead><tbody>';
+    function flatten(nodes, prefix) {
+      for (const dev of nodes) {
+        const row = [
+          (prefix || '') + (dev.name || ''),
+          dev.size || '',
+          dev.type || '',
+          dev.fstype || '',
+          dev.mountpoint || '',
+          dev.model || ''
+        ];
+        html += '<tr>' + row.map(v => '<td>' + (v || '') + '</td>').join('') + '</tr>';
+        if (dev.children && dev.children.length) flatten(dev.children, '&nbsp;&nbsp;');
+      }
+    }
+    flatten(devs, '');
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) { el.textContent = 'Error: ' + e; }
+}
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
 
 async function runLanScan() {
