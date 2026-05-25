@@ -7079,56 +7079,51 @@ def api_proctop():
 
 # ── System Entropy ────────────────────────────────────────────────────────────
 
-@app.route("/api/system/entropy", methods=["GET"])
+@app.route("/api/system/entropy")
 @require_auth
 def api_system_entropy():
-    """Return kernel entropy pool health metrics."""
-    import os
-
+    """Return kernel entropy pool stats and hardware RNG availability."""
     result = {}
 
-    # Read available entropy bits
+    # entropy_avail
     try:
-        with open("/proc/sys/kernel/random/entropy_avail") as f:
-            available_bits = int(f.read().strip())
-        result["available_bits"] = available_bits
-        result["urandom_entropy_avail"] = available_bits
-    except OSError as exc:
-        result["error"] = f"entropy_avail: {exc}"
-        available_bits = None
+        result["entropy_avail"] = int(Path("/proc/sys/kernel/random/entropy_avail").read_text().strip())
+    except (OSError, ValueError):
+        result["entropy_avail"] = None
 
-    # Read pool size
+    # pool size
     try:
-        with open("/proc/sys/kernel/random/poolsize") as f:
-            pool_size = int(f.read().strip())
-        result["pool_size"] = pool_size
-    except OSError as exc:
-        result.setdefault("error", f"poolsize: {exc}")
-        pool_size = None
+        result["pool_size"] = int(Path("/proc/sys/kernel/random/poolsize").read_text().strip())
+    except (OSError, ValueError):
+        result["pool_size"] = None
 
-    # Compute percent
-    if available_bits is not None and pool_size and pool_size > 0:
-        result["percent"] = round(available_bits / pool_size * 100, 1)
-    else:
-        result["percent"] = None
-
-    # Detect entropy source
-    if os.path.isdir("/sys/bus/platform/drivers/bcm2835-rng"):
-        source = "hardware_rng"
-    elif os.path.exists("/dev/hwrng"):
-        source = "hwrng"
-    else:
-        source = "software"
-    result["source"] = source
-
-    # Test getrandom syscall (non-blocking)
+    # read_wakeup_threshold
     try:
-        os.getrandom(32, os.GRND_NONBLOCK)
-        result["getrandom_ok"] = True
-    except BlockingIOError:
-        result["getrandom_ok"] = False
-    except OSError:
-        result["getrandom_ok"] = False
+        result["read_wakeup_threshold"] = int(
+            Path("/proc/sys/kernel/random/read_wakeup_threshold").read_text().strip()
+        )
+    except (OSError, ValueError):
+        result["read_wakeup_threshold"] = None
+
+    # hardware RNG device presence
+    import glob as _glob
+    hwrng_devices = _glob.glob("/dev/hwrng*")
+    result["hwrng_devices"] = hwrng_devices
+
+    # rng-tools or haveged running
+    out_ps, rc_ps = _run(["ps", "aux"])
+    rng_daemons = []
+    if rc_ps == 0:
+        for line in out_ps.splitlines():
+            if any(d in line for d in ("rngd", "haveged", "jitterentropy")):
+                parts = line.split(None, 10)
+                if parts:
+                    rng_daemons.append(parts[-1] if len(parts) > 10 else line.strip())
+    result["rng_daemons"] = rng_daemons
+
+    # pct filled
+    if result["entropy_avail"] is not None and result["pool_size"]:
+        result["fill_pct"] = round(result["entropy_avail"] / result["pool_size"] * 100, 1)
 
     return jsonify(result)
 
@@ -9129,6 +9124,115 @@ def api_system_mounts():
                         pass
         mounts.append(entry)
     return jsonify({"mounts": mounts, "count": len(mounts)})
+
+
+@app.route("/api/system/top-processes")
+@require_auth
+def api_system_top_processes():
+    """Return top processes by CPU and memory usage."""
+    # top 15 by CPU
+    out_cpu, rc_cpu = _run([
+        "ps", "aux", "--sort=-%cpu",
+        "--no-headers", "-o", "pid,user,%cpu,%mem,vsz,rss,comm"
+    ])
+    # top 15 by memory
+    out_mem, rc_mem = _run([
+        "ps", "aux", "--sort=-%mem",
+        "--no-headers", "-o", "pid,user,%cpu,%mem,vsz,rss,comm"
+    ])
+
+    def _parse_ps(output, limit=15):
+        procs = []
+        for line in output.strip().splitlines()[:limit]:
+            parts = line.split(None, 6)
+            if len(parts) < 7:
+                continue
+            procs.append({
+                "pid": parts[0],
+                "user": parts[1],
+                "cpu_pct": parts[2],
+                "mem_pct": parts[3],
+                "vsz_kb": parts[4],
+                "rss_kb": parts[5],
+                "comm": parts[6],
+            })
+        return procs
+
+    return jsonify({
+        "by_cpu": _parse_ps(out_cpu) if rc_cpu == 0 else [],
+        "by_mem": _parse_ps(out_mem) if rc_mem == 0 else [],
+    })
+
+
+@app.route("/api/network/wifi-info")
+@require_auth
+def api_network_wifi_info():
+    """Return detailed WiFi interface info: SSID, signal, channel, bitrate."""
+    result = {}
+
+    # iw dev — list wireless interfaces
+    out_dev, rc_dev = _run(["iw", "dev"])
+    if rc_dev != 0:
+        return jsonify({"error": "iw not available", "interfaces": []})
+
+    interfaces = []
+    current_iface = None
+    for line in out_dev.splitlines():
+        line = line.strip()
+        if line.startswith("Interface "):
+            current_iface = line.split()[-1]
+            interfaces.append(current_iface)
+
+    iface_data = []
+    for iface in interfaces:
+        info = {"interface": iface}
+
+        # iw <iface> link
+        out_link, rc_link = _run(["iw", iface, "link"])
+        if rc_link == 0:
+            for line in out_link.splitlines():
+                line = line.strip()
+                if line.startswith("SSID:"):
+                    info["ssid"] = line.split(":", 1)[1].strip()
+                elif line.startswith("signal:"):
+                    info["signal_dbm"] = line.split(":", 1)[1].strip()
+                elif line.startswith("tx bitrate:"):
+                    info["tx_bitrate"] = line.split(":", 1)[1].strip()
+                elif line.startswith("rx bitrate:"):
+                    info["rx_bitrate"] = line.split(":", 1)[1].strip()
+                elif "freq:" in line:
+                    try:
+                        freq = int(line.split("freq:")[1].strip().split()[0])
+                        info["freq_mhz"] = freq
+                        info["band"] = "5 GHz" if freq >= 5000 else "2.4 GHz"
+                    except (ValueError, IndexError):
+                        pass
+
+        # iw <iface> station dump (for AP mode: connected clients)
+        out_sta, rc_sta = _run(["iw", iface, "station", "dump"])
+        if rc_sta == 0 and out_sta.strip():
+            stations = []
+            current_sta = {}
+            for line in out_sta.splitlines():
+                line = line.strip()
+                if line.startswith("Station "):
+                    if current_sta:
+                        stations.append(current_sta)
+                    current_sta = {"mac": line.split()[1]}
+                elif "signal:" in line and current_sta:
+                    current_sta["signal_dbm"] = line.split(":", 1)[1].strip()
+                elif "tx bitrate:" in line and current_sta:
+                    current_sta["tx_bitrate"] = line.split(":", 1)[1].strip()
+                elif "connected time:" in line and current_sta:
+                    current_sta["connected_time"] = line.split(":", 1)[1].strip()
+            if current_sta:
+                stations.append(current_sta)
+            info["stations"] = stations
+            info["station_count"] = len(stations)
+
+        iface_data.append(info)
+
+    return jsonify({"interfaces": iface_data})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
