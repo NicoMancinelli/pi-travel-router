@@ -10707,6 +10707,94 @@ def api_system_tcp_state_counts():
     })
 
 
+# ── Pi Hardware Info ──────────────────────────────────────────────────────────
+
+@app.route("/api/system/pi-hardware", methods=["GET"])
+@require_auth
+def api_system_pi_hardware():
+    """Return Raspberry Pi hardware information from /proc/cpuinfo and vcgencmd."""
+    info = {
+        "model": None,
+        "revision": None,
+        "serial": None,
+        "hardware": None,
+        "memory_mb": None,
+        "is_pi": False,
+        "firmware_version": None,
+        "bootloader_version": None,
+        "arm_freq_mhz": None,
+        "core_freq_mhz": None,
+        "sdram_freq_mhz": None,
+    }
+
+    # Parse /proc/cpuinfo
+    try:
+        cpuinfo = Path("/proc/cpuinfo").read_text()
+        for line in cpuinfo.splitlines():
+            if ":" not in line:
+                continue
+            key, _, val = line.partition(":")
+            key = key.strip().lower()
+            val = val.strip()
+            if key == "model name" and info["model"] is None:
+                info["model"] = val
+            elif key == "hardware":
+                info["hardware"] = val
+                if val.startswith("BCM") or "Pi" in cpuinfo:
+                    info["is_pi"] = True
+            elif key == "revision":
+                info["revision"] = val
+            elif key == "serial":
+                info["serial"] = val
+        # Also check for "Model" line (newer kernels)
+        for line in cpuinfo.splitlines():
+            if line.startswith("Model"):
+                _, _, val = line.partition(":")
+                info["model"] = val.strip()
+                if "Raspberry Pi" in val:
+                    info["is_pi"] = True
+                break
+    except OSError:
+        pass
+
+    # Memory total from /proc/meminfo
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                kb = int(line.split()[1])
+                info["memory_mb"] = round(kb / 1024)
+                break
+    except OSError:
+        pass
+
+    # vcgencmd readings (Pi-only)
+    fw_out, fw_rc = _run(["vcgencmd", "version"])
+    if fw_rc == 0:
+        info["is_pi"] = True
+        for line in fw_out.splitlines():
+            if line.strip():
+                info["firmware_version"] = line.strip()
+                break
+
+    # Clock frequencies
+    for clock, key in [("arm", "arm_freq_mhz"), ("core", "core_freq_mhz"), ("sdram_c", "sdram_freq_mhz")]:
+        out, rc = _run(["vcgencmd", "measure_clock", clock])
+        if rc == 0:
+            m = re.search(r'=(\d+)', out)
+            if m:
+                info[key] = round(int(m.group(1)) / 1_000_000)
+
+    # Bootloader version
+    bl_out, bl_rc = _run(["rpi-eeprom-update"])
+    if bl_rc == 0:
+        for line in bl_out.splitlines():
+            if "BOOTLOADER:" in line or "Current bootloader" in line.lower():
+                info["bootloader_version"] = line.strip()
+                break
+
+    return jsonify(info)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

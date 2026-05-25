@@ -1001,6 +1001,15 @@
     <div id="tcp-state-counts-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Pi Hardware Info -->
+  <div class="card full-width" id="card-pi-hardware">
+    <div class="card-title">
+      &#x1F4BB; Pi Hardware Info
+      <button class="btn btn-sm" onclick="fetchPiHardware()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="pi-hardware-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4596,6 +4605,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoggedInSessions();
   fetchDnsCache();
   fetchTcpStateCounts();
+  fetchPiHardware();
 });
 
 async function fetchJournal() {
@@ -4862,6 +4872,7 @@ async function refreshAll() {
   fetchLoggedInSessions();
   fetchDnsCache();
   fetchTcpStateCounts();
+  fetchPiHardware();
 }
 
 async function init() {
@@ -9706,6 +9717,50 @@ async function fetchTcpStateCounts() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchTcpStateCounts error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load TCP state counts</span>';
+  }
+}
+
+// ── Pi Hardware Info ──────────────────────────────────────────────────────────
+
+async function fetchPiHardware() {
+  const el = document.getElementById('pi-hardware-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/pi-hardware');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>'; return; }
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px;">';
+    const items = [
+      { label: 'Model', value: d.model || '—' },
+      { label: 'Hardware', value: d.hardware || '—' },
+      { label: 'Revision', value: d.revision || '—' },
+      { label: 'Serial', value: d.serial ? d.serial.slice(-8) : '—' },
+      { label: 'Memory', value: d.memory_mb ? d.memory_mb + ' MB' : '—' },
+      { label: 'ARM Freq', value: d.arm_freq_mhz ? d.arm_freq_mhz + ' MHz' : '—' },
+      { label: 'Core Freq', value: d.core_freq_mhz ? d.core_freq_mhz + ' MHz' : '—' },
+      { label: 'SDRAM Freq', value: d.sdram_freq_mhz ? d.sdram_freq_mhz + ' MHz' : '—' },
+    ];
+    items.forEach(it => {
+      html += '<div style="background:var(--bg2);border-radius:6px;padding:8px 12px;">';
+      html += '<div style="font-size:11px;color:var(--text-dim);">' + it.label + '</div>';
+      html += '<div style="font-size:14px;font-weight:600;word-break:break-all;">' + it.value + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    if (d.firmware_version) {
+      html += '<div style="color:var(--text-dim);font-size:11px;">Firmware: ' + d.firmware_version + '</div>';
+    }
+    if (d.bootloader_version) {
+      html += '<div style="color:var(--text-dim);font-size:11px;margin-top:2px;">' + d.bootloader_version + '</div>';
+    }
+    if (!d.is_pi) {
+      html += '<div style="color:var(--text-dim);font-size:12px;margin-top:8px;font-style:italic;">vcgencmd not available — Pi-specific fields unavailable on this hardware</div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchPiHardware error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load Pi hardware info</span>';
   }
 }
 
