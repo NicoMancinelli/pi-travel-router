@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.52.0] - 2026-05-25
+
+### Added
+- `GET /api/system/uptime-history` — reboot/shutdown history from `last reboot/shutdown` (up to 10 entries each) with current uptime from `/proc/uptime`; dashboard card shows boot/down badges
+- `GET /api/network/socket-summary` — socket statistics via `ss -s` (total, TCP states, UDP, RAW) with `/proc/net/sockstat` fallback
+- `GET /api/system/block-devices` — block device listing via `lsblk --json` with key-value fallback; dashboard table shows name, size, type, filesystem, mount point, model with child partition indentation
+- Dashboard cards: Uptime History (🔄), Socket Summary (🔗), Block Devices (💾)
+
 ## [2.51.0] - 2026-05-25
 
 ### Added
