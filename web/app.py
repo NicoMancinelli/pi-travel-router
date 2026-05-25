@@ -8005,6 +8005,140 @@ def api_network_netdev():
     return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
+# ── TCP Connections ───────────────────────────────────────────────────────────
+
+_TCP_STATES = {
+    "01": "ESTABLISHED",
+    "02": "SYN_SENT",
+    "03": "SYN_RECV",
+    "04": "FIN_WAIT1",
+    "05": "FIN_WAIT2",
+    "06": "TIME_WAIT",
+    "07": "CLOSE",
+    "08": "CLOSE_WAIT",
+    "09": "LAST_ACK",
+    "0A": "LISTEN",
+    "0B": "CLOSING",
+}
+
+
+def _parse_tcp_addr_v4(hex_addr):
+    """Convert hex 'AABBCCDD:PPPP' to ('ddd.ddd.ddd.ddd', port_int)."""
+    addr_hex, port_hex = hex_addr.split(":")
+    # Linux stores IPv4 in little-endian hex
+    ip_int = int(addr_hex, 16)
+    ip = (
+        f"{ip_int & 0xFF}.{(ip_int >> 8) & 0xFF}"
+        f".{(ip_int >> 16) & 0xFF}.{(ip_int >> 24) & 0xFF}"
+    )
+    port = int(port_hex, 16)
+    return ip, port
+
+
+def _parse_tcp_addr_v6(hex_addr):
+    """Convert hex IPv6 addr:port to ('x:x:x:x:x:x:x:x', port_int)."""
+    addr_hex, port_hex = hex_addr.split(":")
+    # Four 32-bit little-endian words
+    groups = []
+    for i in range(0, 32, 8):
+        word = int(addr_hex[i:i + 8], 16)
+        hi = (word & 0xFFFF)
+        lo = (word >> 16) & 0xFFFF
+        groups.append(f"{hi:04x}")
+        groups.append(f"{lo:04x}")
+    ip = ":".join(groups)
+    port = int(port_hex, 16)
+    return ip, port
+
+
+def _is_loopback_v4(ip):
+    return ip.startswith("127.")
+
+
+def _is_loopback_v6(ip):
+    # ::1 expanded
+    return ip in ("00000000:00000000:00000000:00000000:00000000:00000000:00000000:00000001",
+                  "0000:0000:0000:0000:0000:0000:0000:0001") or ip == "::1"
+
+
+def _parse_proc_tcp(path, family):
+    """Parse /proc/net/tcp or /proc/net/tcp6. Returns list of connection dicts."""
+    conns = []
+    try:
+        with open(path, "r") as fh:
+            lines = fh.readlines()
+    except OSError:
+        return conns
+
+    for line in lines[1:]:  # skip header
+        parts = line.split()
+        if len(parts) < 10:
+            continue
+        local_raw = parts[1]
+        remote_raw = parts[2]
+        state_hex = parts[3].upper()
+        state = _TCP_STATES.get(state_hex, state_hex)
+
+        try:
+            if family == "ipv4":
+                local_ip, local_port = _parse_tcp_addr_v4(local_raw)
+                remote_ip, remote_port = _parse_tcp_addr_v4(remote_raw)
+                if _is_loopback_v4(local_ip) and _is_loopback_v4(remote_ip):
+                    continue
+            else:
+                local_ip, local_port = _parse_tcp_addr_v6(local_raw)
+                remote_ip, remote_port = _parse_tcp_addr_v6(remote_raw)
+                if _is_loopback_v6(local_ip) and _is_loopback_v6(remote_ip):
+                    continue
+        except (ValueError, IndexError):
+            continue
+
+        conns.append({
+            "local_ip": local_ip,
+            "local_port": local_port,
+            "remote_ip": remote_ip,
+            "remote_port": remote_port,
+            "state": state,
+            "family": family,
+        })
+
+    return conns
+
+
+def _tcp_sort_key(conn):
+    order = {"LISTEN": 0, "ESTABLISHED": 1}
+    return order.get(conn["state"], 2)
+
+
+@app.route("/api/network/tcp", methods=["GET"])
+@require_auth
+def api_network_tcp():
+    conns = []
+    error = None
+
+    for path, family in [("/proc/net/tcp", "ipv4"), ("/proc/net/tcp6", "ipv6")]:
+        try:
+            conns.extend(_parse_proc_tcp(path, family))
+        except Exception as exc:  # pylint: disable=broad-except
+            error = str(exc)
+
+    if not conns and error:
+        return jsonify({"connections": [], "count": 0, "error": error})
+
+    conns.sort(key=_tcp_sort_key)
+    conns = conns[:50]
+
+    established = sum(1 for c in conns if c["state"] == "ESTABLISHED")
+    listening = sum(1 for c in conns if c["state"] == "LISTEN")
+
+    return jsonify({
+        "connections": conns,
+        "count": len(conns),
+        "listening": listening,
+        "established": established,
+    })
+
+
 # ── Battery / UPS Status ──────────────────────────────────────────────────────
 
 @app.route("/api/system/battery", methods=["GET"])
