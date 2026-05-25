@@ -3837,6 +3837,106 @@ def api_system_journal():
     })
 
 
+# ── Travel-router config editor ───────────────────────────────────────────────
+
+_TRAVEL_ROUTER_CONFIG = "/etc/default/travel-router"
+
+# Keys that are safe to display and edit (allowlist)
+_CONFIG_EDITABLE_KEYS = {
+    "NTFY_TOPIC", "NTFY_SERVER", "IPHONE_BT_MAC", "AP_SSID", "AP_SUBNET",
+    "AP_GATEWAY", "ENABLE_DOT", "ENABLE_ADGUARD", "ENABLE_VPN_KILLSWITCH",
+    "ENABLE_TOR_TRANSPARENT", "ENABLE_CLIENT_QOS", "ENABLE_CAKE_AUTOTUNE",
+    "ENABLE_BANDWIDTH_DASHBOARD", "ENABLE_AP_SCHEDULE", "AP_DISABLE_TIME",
+    "AP_ENABLE_TIME", "ENABLE_AUTO_UPDATES", "UPS_SHUTDOWN_THRESHOLD",
+    "FAILOVER_PROBE_TIMEOUT", "SPLIT_TUNNEL_DOMAINS", "ENABLE_SPLIT_TUNNEL",
+}
+
+
+def _read_travel_router_config() -> dict:
+    """Parse /etc/default/travel-router into a dict of key->value."""
+    cfg = {}
+    try:
+        text = Path(_TRAVEL_ROUTER_CONFIG).read_text()
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line:
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key in _CONFIG_EDITABLE_KEYS:
+                    cfg[key] = val
+    except OSError:
+        pass
+    return cfg
+
+
+@app.route("/api/config/travel-router", methods=["GET"])
+@require_auth
+def api_config_get():
+    """Return editable config keys from /etc/default/travel-router."""
+    cfg = _read_travel_router_config()
+    return jsonify({"config": cfg, "editable_keys": sorted(_CONFIG_EDITABLE_KEYS)})
+
+
+@app.route("/api/config/travel-router", methods=["POST"])
+@require_auth_always
+def api_config_post():
+    """Update one or more config keys in /etc/default/travel-router."""
+    body = request.get_json(silent=True) or {}
+    updates = body.get("updates", {})
+    if not isinstance(updates, dict):
+        return jsonify({"error": "updates must be a dict"}), 400
+    # Validate keys
+    bad_keys = [k for k in updates if k not in _CONFIG_EDITABLE_KEYS]
+    if bad_keys:
+        return jsonify({"error": f"keys not editable: {bad_keys}"}), 400
+    # Validate values: no newlines, no shell injection
+    for k, v in updates.items():
+        if not isinstance(v, str):
+            return jsonify({"error": f"value for {k} must be a string"}), 400
+        if "\n" in v or "\r" in v:
+            return jsonify({"error": f"value for {k} contains newlines"}), 400
+    try:
+        try:
+            text = Path(_TRAVEL_ROUTER_CONFIG).read_text()
+        except OSError:
+            text = ""
+        lines = text.splitlines()
+        applied = set()
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                key = stripped.partition("=")[0].strip()
+                if key in updates:
+                    new_lines.append(f'{key}="{updates[key]}"')
+                    applied.add(key)
+                    continue
+            new_lines.append(line)
+        # Append any keys not already present in the file
+        for key, val in updates.items():
+            if key not in applied:
+                new_lines.append(f'{key}="{val}"')
+        new_text = "\n".join(new_lines) + "\n"
+        # Atomic write
+        d = str(Path(_TRAVEL_ROUTER_CONFIG).parent)
+        fd, tmp = tempfile.mkstemp(dir=d)
+        try:
+            with os.fdopen(fd, "w") as fh:
+                fh.write(new_text)
+            os.replace(tmp, _TRAVEL_ROUTER_CONFIG)
+        except Exception:
+            import contextlib
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+        return jsonify({"ok": True, "updated": list(updates.keys())})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

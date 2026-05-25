@@ -760,6 +760,20 @@
     </div>
   </div>
 
+  <!-- Config Editor -->
+  <div class="card full-width" id="card-config-editor" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x2699;&#xFE0F; Router Config</span>
+      <button class="btn btn-sm" onclick="fetchRouterConfig()">&#x21BB; Refresh</button>
+    </div>
+    <div id="config-editor-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+    <div style="margin-top:10px;text-align:right;">
+      <button class="btn btn-primary" id="config-save-btn" onclick="saveRouterConfig()" style="display:none;">&#x1F4BE; Save Changes</button>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Upstream WiFi -->
@@ -1861,6 +1875,73 @@ async function saveConfig() {
     else toast('Save failed: ' + (d.error || 'Unknown error'), 'err');
   } catch (e) {
     toast('Save failed: ' + e.message, 'err');
+  }
+}
+
+// ── Router Config Editor ──────────────────────────────────────────────────────
+let _configEdits = {};
+
+async function fetchRouterConfig() {
+  const el = document.getElementById('config-editor-content');
+  _configEdits = {};
+  document.getElementById('config-save-btn').style.display = 'none';
+  try {
+    const r = await apiFetch('/api/config/travel-router');
+    const d = await r.json();
+    const cfg = d.config || {};
+    const keys = Object.keys(cfg).sort();
+    if (keys.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">/etc/default/travel-router not found or no editable keys set</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    for (const key of keys) {
+      const val = cfg[key];
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;white-space:nowrap;color:var(--text-dim);width:40%;">' + key + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">'
+        + '<input type="text" data-key="' + key + '" value="' + val.replace(/"/g,'&quot;') + '" '
+        + 'style="width:100%;font-family:monospace;font-size:12px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 6px;" '
+        + 'oninput="configChanged(this)">'
+        + '</td>';
+      html += '</tr>';
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+function configChanged(input) {
+  const key = input.dataset.key;
+  _configEdits[key] = input.value;
+  document.getElementById('config-save-btn').style.display = '';
+}
+
+async function saveRouterConfig() {
+  if (Object.keys(_configEdits).length === 0) return;
+  const btn = document.getElementById('config-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const r = await apiFetch('/api/config/travel-router', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ updates: _configEdits })
+    });
+    const d = await r.json();
+    if (r.ok) {
+      toast('Config saved (' + (d.updated || []).join(', ') + ')', 'ok');
+      _configEdits = {};
+      if (btn) btn.style.display = 'none';
+      fetchRouterConfig();
+    } else {
+      toast(d.error || 'Save failed', 'err');
+    }
+  } catch (e) {
+    toast('Error: ' + e, 'err');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Save Changes'; }
   }
 }
 
@@ -3293,6 +3374,7 @@ async function refreshAll() {
   fetchDnsHosts();
   fetchUpdateCheck();
   fetchJournal();
+  fetchRouterConfig();
   fetchServices();
 }
 
