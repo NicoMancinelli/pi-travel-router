@@ -587,17 +587,6 @@
 
   <hr class="divider">
 
-  <!-- Login History -->
-  <div class="card" id="card-login-history">
-    <div class="card-title">
-      &#x1F464; Login History
-      <button class="btn btn-sm" onclick="fetchLoginHistory()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="login-history-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
-
-  <hr class="divider">
-
   <!-- Backup & Restore -->
   <div class="card full-width" id="card-backup">
     <div class="card-title">&#x1F4BE; Backup &amp; Restore</div>
@@ -1189,8 +1178,13 @@
 
   <!-- Login History -->
   <div class="card" id="login-history-card">
-    <h2>📋 Login History</h2>
-    <div id="login-history-content"><p class="muted">Loading…</p></div>
+    <div class="card-header">
+      <span>👤 Login History</span>
+      <span class="card-badge" id="login-history-count">—</span>
+    </div>
+    <div class="card-body" id="login-history-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <!-- Open File Descriptors -->
@@ -5223,22 +5217,54 @@ async function deletePingHost(host) {
 
 // ── Login History ─────────────────────────────────────────────────────────────
 async function fetchLoginHistory() {
+  const el = document.getElementById('login-history-content');
+  const badge = document.getElementById('login-history-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
     const r = await fetch('/api/system/login-history');
     const d = await r.json();
-    const el = document.getElementById('login-history-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    if (!d.entries || d.entries.length === 0) { el.innerHTML = '<p class="muted">No login history.</p>'; return; }
-    let html = `<p class="muted" style="margin-bottom:6px">Last ${d.count} entries</p>`;
-    html += '<div style="max-height:200px;overflow-y:auto"><table class="table"><thead><tr><th>User</th><th>TTY</th><th>From</th><th>Login</th><th>Duration</th></tr></thead><tbody>';
-    for (const e of d.entries) {
-      const stillColor = e.still_logged_in ? 'color:var(--green)' : '';
-      const dur = e.still_logged_in ? '<span style="color:var(--green)">active</span>' : e.duration;
-      html += `<tr><td style="${stillColor}">${e.user}</td><td>${e.tty}</td><td>${e.from || '-'}</td><td style="font-size:0.8em">${e.login_time}</td><td>${dur}</td></tr>`;
+    if (badge) {
+      const active = d.still_logged_in || 0;
+      badge.textContent = active > 0 ? `${active} active` : `${d.count || 0} sessions`;
     }
-    html += '</tbody></table></div>';
+    let html = '';
+    const logins = d.logins || [];
+    if (logins.length === 0) {
+      html = '<p class="muted">No login history available.</p>';
+    } else {
+      html += '<div style="max-height:280px;overflow-y:auto;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+      html += `<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">
+        <th style="text-align:left;padding:2px 5px;">User</th>
+        <th style="text-align:left;padding:2px 5px;">TTY</th>
+        <th style="text-align:left;padding:2px 5px;">From</th>
+        <th style="text-align:left;padding:2px 5px;">Login</th>
+        <th style="text-align:left;padding:2px 5px;">Duration</th>
+      </tr></thead><tbody>`;
+      for (const l of logins) {
+        const isActive = l.still_logged_in;
+        html += `<tr style="border-bottom:1px solid var(--border);${isActive ? 'background:var(--bg2);' : ''}">
+          <td style="padding:2px 5px;font-weight:${isActive ? '600' : '400'}">${l.user}</td>
+          <td style="padding:2px 5px;color:var(--text-dim)">${l.tty || '—'}</td>
+          <td style="padding:2px 5px;color:var(--text-dim);font-size:10px">${l.host || 'local'}</td>
+          <td style="padding:2px 5px;font-size:10px;color:var(--text-dim)">${l.login_time ? l.login_time.slice(0, 16) : '—'}</td>
+          <td style="padding:2px 5px;">${isActive ? '<span style="color:var(--success,#16a34a);font-size:10px;font-weight:600">● active</span>' : (l.duration || '—')}</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+    const failed = d.failed_attempts || [];
+    if (failed.length > 0) {
+      html += `<div style="margin-top:10px;padding:6px;background:rgba(220,38,38,0.08);border-radius:5px;border-left:3px solid #dc2626;">
+        <div style="font-size:11px;font-weight:600;color:#dc2626;margin-bottom:3px;">⚠ ${d.failed_count} failed login attempt${d.failed_count !== 1 ? 's' : ''} (last 10)</div>`;
+      for (const f of failed.slice(0, 5)) {
+        html += `<div style="font-size:10px;color:var(--text-dim);">${f.user} from ${f.host || 'local'} at ${f.login_time ? f.login_time.slice(0, 16) : '—'}</div>`;
+      }
+      html += '</div>';
+    }
     el.innerHTML = html;
-  } catch(e) { document.getElementById('login-history-content').innerHTML = `<p class="error">${e}</p>`; }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 async function refreshAll() {
