@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.49.0] - 2026-05-25
+
+### Added
+- `GET /api/system/cpu-governors` — CPU frequency scaling governor and current/min/max frequencies per core via `/sys/devices/system/cpu/*/cpufreq`
+- `GET /api/network/mdns` — mDNS/Avahi service discovery via `avahi-browse` (dns-sd fallback), returns deduplicated service list with name, type, hostname, address, port
+- `GET /api/system/timers` — systemd timers via `systemctl list-timers --all`, with next/last trigger times and activated unit
+- Dashboard cards: CPU Governors (⚙️), mDNS Services (📡), System Timers (⏱)
+
 ## [2.48.0] - 2026-05-25
 
 ### Added
