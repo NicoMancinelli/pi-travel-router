@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.75.0] - 2026-05-25
+
+### Added
+- `GET /api/system/dmesg` — last 100 kernel ring buffer messages via `dmesg --time-format iso`; parses ISO and uptime timestamps; classifies severity (error/warn/info) by keyword; dashboard card shows scrollable monospace log with red/amber color-coding and error/warning counts
+- `GET /api/system/swap` — swap partition stats from `/proc/swaps` (used/total/pct per partition), cumulative vmstat counters (page faults, major faults, swap I/O, OOM kills), and zram device compression ratios from `/sys/block/zram*/mm_stat`; dashboard card shows fill bars per partition and VM stat tiles
+- `GET /api/network/firewall` — active firewall rules via nftables (`nft list ruleset`) with iptables fallback; chains with policy badges (DROP/ACCEPT) and rule listings; dashboard card shows per-chain rule counts and first 10 rules
+- Dashboard cards: Kernel Ring Buffer (🔔), Swap & Virtual Memory (💾), Firewall Rules (🛡️)
+
 ## [2.74.0] - 2026-05-25
 
 ### Added
