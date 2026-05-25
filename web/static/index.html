@@ -2643,56 +2643,50 @@ function renderWgPeers(peers) {
       <td>${rx}</td>
       <td>${tx}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-sm" title="Show QR code" onclick="showWgQr('${keyEnc}')">&#x1F4F1; QR</button>
-        <button class="btn btn-sm btn-danger" title="Remove peer" onclick="removeWgPeer('${keyEnc}', '${keyShort}')">&#x1F5D1; Remove</button>
+        <button class="btn btn-sm" title="Show QR code" onclick="showWgPeerQr('${keyEnc}')">&#x1F4F1; QR</button>
+        <button class="btn btn-sm btn-danger" title="Remove peer" onclick="removeWgPeer('${keyEnc}')">&#x1F5D1; Remove</button>
       </td>
     </tr>`;
   }).join('');
   el.innerHTML = `<table><thead><tr><th>Public Key</th><th>Allowed IPs</th><th>Last Handshake</th><th>RX</th><th>TX</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-async function removeWgPeer(keyEnc, keyLabel) {
-  if (!confirm(`Remove WireGuard peer ${keyLabel}?\nThis cannot be undone.`)) return;
+async function removeWgPeer(pubkey) {
+  const label = decodeURIComponent(pubkey).slice(0, 12) + '…';
+  if (!confirm('Remove WireGuard peer ' + label + '?\nThis cannot be undone.')) return;
   try {
-    const resp = await apiFetch('/api/vpn/wireguard/peer/' + keyEnc, { method: 'DELETE' });
+    const resp = await apiFetch('/api/vpn/wireguard/peer/' + pubkey, { method: 'DELETE' });
     const d = await resp.json();
     if (resp.ok) {
       toast('Peer removed', 'ok');
       fetchWgPeers();
     } else {
-      toast('Remove failed: ' + (d.error || '?'), 'err');
+      toast(d.error || 'Failed', 'err');
     }
   } catch (e) {
-    toast('Error: ' + e.message, 'err');
+    toast('Error: ' + e, 'err');
   }
 }
 
-function showWgQr(keyEnc) {
-  const modal = document.getElementById('qr-modal');
-  const img = document.getElementById('qr-img');
-  const spinner = document.getElementById('qr-spinner');
-  img.style.display = 'none';
-  img.src = '';
-  spinner.style.display = '';
-  modal.classList.add('open');
-
-  const headers = {};
-  if (_token) headers['Authorization'] = 'Bearer ' + _token;
-  fetch('/api/vpn/wireguard/peer/' + keyEnc + '/qr', { headers })
-    .then(resp => {
-      if (!resp.ok) return resp.json().then(d => { throw new Error(d.error || 'QR failed'); });
-      return resp.blob();
-    })
-    .then(blob => {
-      img.src = URL.createObjectURL(blob);
-      img.style.display = '';
-      spinner.style.display = 'none';
-    })
-    .catch(e => {
-      spinner.style.display = 'none';
-      toast('QR error: ' + e.message, 'err');
-      modal.classList.remove('open');
-    });
+async function showWgPeerQr(pubkey) {
+  try {
+    const r = await apiFetch('/api/vpn/wireguard/peer/' + pubkey + '/qr');
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'err'); return; }
+    let msg = '';
+    if (d.qr_data_url) {
+      msg = '<img src="' + d.qr_data_url + '" style="max-width:200px;background:#fff;padding:8px;border-radius:8px;"><br>';
+    }
+    msg += '<pre style="font-size:10px;text-align:left;white-space:pre-wrap;margin-top:8px;">' + escHtml(d.client_config || '') + '</pre>';
+    if (d.note) msg += '<p style="font-size:11px;color:var(--text-dim);">' + escHtml(d.note) + '</p>';
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = '<div style="background:var(--bg2,#1e1e2e);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:380px;text-align:center;max-height:80vh;overflow-y:auto;">'
+      + '<div style="font-weight:600;margin-bottom:12px;">Peer Config QR</div>' + msg
+      + '<button class="btn btn-sm" onclick="this.closest(\'[style*=z-index]\').remove()" style="margin-top:12px;">Close</button>'
+      + '</div>';
+    document.body.appendChild(overlay);
+  } catch (e) { toast('Error: ' + e, 'err'); }
 }
 
 function closeQrModal(evt) {
