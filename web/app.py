@@ -3937,6 +3937,94 @@ def api_config_post():
         return jsonify({"error": str(exc)}), 500
 
 
+# ── Ping monitor ──────────────────────────────────────────────────────────────
+
+PING_HOSTS_FILE = "/var/lib/travel-router/ping-hosts.json"
+
+
+def _read_ping_hosts() -> list:
+    try:
+        text = Path(PING_HOSTS_FILE).read_text().strip()
+        return json.loads(text) if text else []
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def _write_ping_hosts(hosts: list) -> None:
+    d = str(Path(PING_HOSTS_FILE).parent)
+    fd, tmp = tempfile.mkstemp(dir=d)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(hosts, fh)
+        os.replace(tmp, PING_HOSTS_FILE)
+    except Exception:
+        import contextlib
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def _ping_host(host: str) -> dict:
+    """Ping a host once, return {host, up, latency_ms}."""
+    try:
+        out, _ = _run(["ping", "-c", "1", "-W", "2", host], timeout=5)
+        if out and "1 received" in out:
+            # Parse time= from ping output
+            import re as _re
+            m = _re.search(r'time=(\d+\.?\d*)\s*ms', out)
+            latency = float(m.group(1)) if m else None
+            return {"host": host, "up": True, "latency_ms": latency}
+        return {"host": host, "up": False, "latency_ms": None}
+    except Exception:
+        return {"host": host, "up": False, "latency_ms": None}
+
+
+@app.route("/api/monitor/ping", methods=["GET"])
+@require_auth
+def api_monitor_ping_get():
+    """Return stored host list with current up/down status."""
+    hosts = _read_ping_hosts()
+    results = [_ping_host(h["host"]) for h in hosts]
+    # Merge label back in
+    labels = {h["host"]: h.get("label", "") for h in hosts}
+    for r in results:
+        r["label"] = labels.get(r["host"], "")
+    return jsonify({"results": results})
+
+
+@app.route("/api/monitor/ping", methods=["POST"])
+@require_auth_always
+def api_monitor_ping_post():
+    """Add a host to the ping monitor list."""
+    body = request.get_json(silent=True) or {}
+    host = str(body.get("host", "")).strip()
+    label = str(body.get("label", ""))[:64].strip()
+    if not host or len(host) > 253:
+        return jsonify({"error": "invalid host"}), 400
+    # Basic validation: no spaces, no shell chars
+    if any(c in host for c in (' ', ';', '&', '|', '`', '$', '>', '<')):
+        return jsonify({"error": "invalid host"}), 400
+    hosts = _read_ping_hosts()
+    if any(h["host"] == host for h in hosts):
+        return jsonify({"error": "host already monitored"}), 409
+    if len(hosts) >= 20:
+        return jsonify({"error": "maximum 20 hosts"}), 400
+    hosts.append({"host": host, "label": label})
+    _write_ping_hosts(hosts)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/monitor/ping/<path:host>", methods=["DELETE"])
+@require_auth_always
+def api_monitor_ping_delete(host):
+    hosts = _read_ping_hosts()
+    new_hosts = [h for h in hosts if h["host"] != host]
+    if len(new_hosts) == len(hosts):
+        return jsonify({"error": "not found"}), 404
+    _write_ping_hosts(new_hosts)
+    return jsonify({"ok": True})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
