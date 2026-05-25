@@ -7653,60 +7653,75 @@ def api_system_journal_errors():
 @app.route("/api/system/swap", methods=["GET"])
 @require_auth
 def api_system_swap():
-    """Return swap usage from /proc/meminfo and swapon --show."""
+    """Swap usage and virtual memory stats."""
+    result = {"swaps": [], "vmstat": {}, "zram": []}
     try:
-        total_kb = 0
-        free_kb = 0
-        cached_kb = 0
-        with open("/proc/meminfo", "r") as fh:
-            for line in fh:
+        # /proc/swaps
+        swaps_out, _ = _run("cat /proc/swaps")
+        lines = swaps_out.strip().splitlines()
+        if len(lines) > 1:  # skip header
+            for line in lines[1:]:
                 parts = line.split()
-                if len(parts) >= 2:
-                    key = parts[0].rstrip(":")
-                    try:
-                        val = int(parts[1])
-                    except ValueError:
-                        val = 0
-                    if key == "SwapTotal":
-                        total_kb = val
-                    elif key == "SwapFree":
-                        free_kb = val
-                    elif key == "SwapCached":
-                        cached_kb = val
-
-        used_kb = total_kb - free_kb
-        use_pct = round(used_kb / total_kb * 100, 1) if total_kb > 0 else 0
-
-        devices = []
-        out, rc = _run(["swapon", "--show", "--noheadings", "--bytes"])
-        if rc == 0:
-            for line in (out or "").splitlines():
-                parts = line.split()
-                if len(parts) < 5:
-                    continue
-                try:
-                    devices.append({
-                        "name": parts[0],
+                if len(parts) >= 5:
+                    total_kb = int(parts[2])
+                    used_kb = int(parts[3])
+                    result["swaps"].append({
+                        "filename": parts[0],
                         "type": parts[1],
-                        "size_bytes": int(parts[2]),
-                        "used_bytes": int(parts[3]),
+                        "total_kb": total_kb,
+                        "used_kb": used_kb,
+                        "free_kb": total_kb - used_kb,
+                        "pct_used": round(used_kb / total_kb * 100, 1) if total_kb > 0 else 0,
                         "priority": int(parts[4]),
                     })
-                except (ValueError, IndexError):
-                    continue
+    except Exception as e:
+        result["swaps_error"] = str(e)
 
-        return jsonify({
-            "total_kb": total_kb,
-            "free_kb": free_kb,
-            "used_kb": used_kb,
-            "cached_kb": cached_kb,
-            "use_pct": use_pct,
-            "devices": devices,
-            "enabled": total_kb > 0,
-            "source": "proc+swapon",
-        })
-    except Exception as exc:
-        return jsonify({"error": str(exc), "total_kb": 0, "enabled": False})
+    try:
+        # Key vmstat fields
+        vmstat_out, _ = _run("cat /proc/vmstat")
+        keys_wanted = {
+            "pgfault": "page_faults",
+            "pgmajfault": "major_faults",
+            "pswpin": "swap_in_pages",
+            "pswpout": "swap_out_pages",
+            "pgpgin": "pages_read_in",
+            "pgpgout": "pages_written_out",
+            "oom_kill": "oom_kills",
+        }
+        for line in vmstat_out.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[0] in keys_wanted:
+                result["vmstat"][keys_wanted[parts[0]]] = int(parts[1])
+    except Exception as e:
+        result["vmstat_error"] = str(e)
+
+    try:
+        # zram devices
+        zram_out, _ = _run("ls /sys/block/ 2>/dev/null")
+        for dev in zram_out.split():
+            if not dev.startswith("zram"):
+                continue
+            zr = {"device": dev}
+            for attr in ("orig_data_size", "compr_data_size", "mem_used_total", "disksize"):
+                val, rc = _run(f"cat /sys/block/{dev}/mm_stat 2>/dev/null || cat /sys/block/{dev}/{attr} 2>/dev/null")
+                if attr == "orig_data_size" and val.strip():
+                    # Try mm_stat: orig compr mem_used
+                    parts = val.strip().split()
+                    if len(parts) >= 3:
+                        zr["orig_bytes"] = int(parts[0])
+                        zr["compr_bytes"] = int(parts[1])
+                        zr["mem_used_bytes"] = int(parts[2])
+                        break
+            else:
+                ds, _ = _run(f"cat /sys/block/{dev}/disksize 2>/dev/null")
+                if ds.strip().isdigit():
+                    zr["disksize_bytes"] = int(ds.strip())
+            result["zram"].append(zr)
+    except Exception:
+        pass
+
+    return jsonify(result)
 
 
 # ── WiFi Network Scan ─────────────────────────────────────────────────────────

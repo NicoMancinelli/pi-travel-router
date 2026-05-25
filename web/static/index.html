@@ -1260,6 +1260,16 @@
     </div>
   </div>
 
+  <!-- Swap Stats -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">&#x1F4BE; Swap &amp; Virtual Memory</span>
+    </div>
+    <div class="card-body" id="swap-stats-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4821,6 +4831,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRouteTable();
   fetchJournalErrors();
   fetchSwapInfo();
+  fetchSwapStats();
   fetchWifiScan();
   fetchNetdev();
   fetchTcpConnections();
@@ -5091,6 +5102,7 @@ async function refreshAll() {
   fetchRouteTable();
   fetchJournalErrors();
   fetchSwapInfo();
+  fetchSwapStats();
   fetchNetdev();
   fetchTcpConnections();
   fetchProcMem();
@@ -8517,6 +8529,83 @@ async function fetchSwap() {
 
 async function fetchSwapInfo() {
   return fetchSwap();
+}
+
+// ── Swap & Virtual Memory ─────────────────────────────────────────────────────
+async function fetchSwapStats() {
+  const el = document.getElementById('swap-stats-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/swap');
+    const d = await r.json();
+    const fmtKb = kb => kb >= 1024*1024 ? (kb/1024/1024).toFixed(1)+' GB' : kb >= 1024 ? (kb/1024).toFixed(0)+' MB' : kb+' kB';
+    const fmtBytes = b => b >= 1073741824 ? (b/1073741824).toFixed(1)+' GB' : b >= 1048576 ? (b/1048576).toFixed(1)+' MB' : b >= 1024 ? (b/1024).toFixed(0)+' kB' : b+' B';
+    let html = '';
+
+    const swaps = d.swaps || [];
+    if (swaps.length === 0) {
+      html += '<p class="muted" style="margin-bottom:8px">No swap configured.</p>';
+    } else {
+      for (const s of swaps) {
+        const pct = s.pct_used || 0;
+        const barColor = pct >= 80 ? '#dc2626' : pct >= 50 ? '#f59e0b' : '#16a34a';
+        html += `<div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:12px">
+            <span style="font-family:monospace">${s.filename}</span>
+            <span style="color:var(--text-dim)">${s.type} &middot; priority ${s.priority}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:12px">
+            <span><strong>${fmtKb(s.used_kb)}</strong> used of ${fmtKb(s.total_kb)}</span>
+            <span style="color:var(--text-dim)">${pct}%</span>
+          </div>
+          <div style="background:var(--border);border-radius:4px;height:6px">
+            <div style="background:${barColor};width:${Math.min(pct,100)}%;height:6px;border-radius:4px"></div>
+          </div>
+        </div>`;
+      }
+    }
+
+    // vmstat
+    const vm = d.vmstat || {};
+    const vmKeys = [
+      ['page_faults', 'Page Faults'], ['major_faults', 'Major Faults'],
+      ['swap_in_pages', 'Swap In'], ['swap_out_pages', 'Swap Out'],
+      ['oom_kills', 'OOM Kills'],
+    ];
+    const vmRows = vmKeys.filter(([k]) => vm[k] !== undefined);
+    if (vmRows.length > 0) {
+      html += '<div style="margin-top:8px"><div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">VM Stats (cumulative)</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+      for (const [k, label] of vmRows) {
+        const val = vm[k];
+        const isWarning = k === 'oom_kills' && val > 0;
+        html += `<div style="background:var(--bg2);border-radius:6px;padding:6px 12px;text-align:center;min-width:90px">
+          <div style="font-size:1.1em;font-weight:700;${isWarning ? 'color:var(--red,#ef4444)' : ''}">${val.toLocaleString()}</div>
+          <div style="font-size:11px;color:var(--text-dim)">${label}</div>
+        </div>`;
+      }
+      html += '</div></div>';
+    }
+
+    // zram
+    const zrams = d.zram || [];
+    if (zrams.length > 0) {
+      html += '<div style="margin-top:8px"><div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">ZRAM Devices</div>';
+      for (const z of zrams) {
+        const ratio = z.orig_bytes && z.compr_bytes && z.compr_bytes > 0
+          ? (z.orig_bytes / z.compr_bytes).toFixed(1) + 'x' : '&mdash;';
+        html += `<div style="font-size:12px;margin-bottom:4px">
+          <code>${z.device}</code>
+          ${z.orig_bytes !== undefined ? ` &mdash; ${fmtBytes(z.orig_bytes)} &rarr; ${fmtBytes(z.compr_bytes)} (${ratio} ratio, ${fmtBytes(z.mem_used_bytes)} RAM)` : ''}
+          ${z.disksize_bytes !== undefined ? ` &mdash; ${fmtBytes(z.disksize_bytes)} disk size` : ''}
+        </div>`;
+      }
+      html += '</div>';
+    }
+
+    el.innerHTML = html || '<p class="muted">No data available.</p>';
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── WiFi Scan ─────────────────────────────────────────────────────────────────
