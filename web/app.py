@@ -1472,6 +1472,61 @@ def api_guest_network_post():
     return jsonify({"ok": True, "enabled": new_enabled})
 
 
+# ── WiFi QR code ──────────────────────────────────────────────────────────────
+
+
+@app.route("/api/wifi/qr", methods=["GET"])
+@require_auth
+def api_wifi_qr():
+    """Return WiFi QR code as a PNG data-URL and the raw WiFi string."""
+    # Read SSID and WPA passphrase from /etc/raspap/hostapd.ini or hostapd.conf
+    ssid = "TravelRouter"
+    password = ""
+    try:
+        # Try RaspAP config first
+        conf_path = Path("/etc/raspap/hostapd.ini")
+        if not conf_path.exists():
+            conf_path = Path("/etc/hostapd/hostapd.conf")
+        text = conf_path.read_text()
+        for line in text.splitlines():
+            if line.startswith("ssid="):
+                ssid = line.split("=", 1)[1].strip()
+            elif line.startswith("wpa_passphrase="):
+                password = line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    # Build WiFi QR string: WIFI:T:WPA;S:<ssid>;P:<pass>;;
+    wifi_str = f"WIFI:T:WPA;S:{ssid};P:{password};;"
+    # Try to generate QR code PNG via qrencode
+    qr_data_url = None
+    try:
+        import base64
+        result, rc = _run(["qrencode", "-o", "-", "-t", "PNG", "--size=6", wifi_str], timeout=5)
+        if result:
+            qr_data_url = "data:image/png;base64," + base64.b64encode(
+                result.encode() if isinstance(result, str) else result
+            ).decode()
+    except Exception:
+        pass
+    # Also try generating as SVG fallback
+    if not qr_data_url:
+        try:
+            import base64
+            result, _ = _run(["qrencode", "-o", "-", "-t", "SVG", wifi_str], timeout=5)
+            if result:
+                qr_data_url = "data:image/svg+xml;base64," + base64.b64encode(
+                    result.encode() if isinstance(result, str) else result
+                ).decode()
+        except Exception:
+            pass
+    return jsonify({
+        "ssid": ssid,
+        "wifi_string": wifi_str,
+        "qr_data_url": qr_data_url,
+        "has_qrencode": qr_data_url is not None,
+    })
+
+
 # ── QoS endpoints ─────────────────────────────────────────────────────────────
 
 
