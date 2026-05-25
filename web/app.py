@@ -7123,6 +7123,50 @@ def api_tailscale_exitnode():
     })
 
 
+# ── Top Processes ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/proctop", methods=["GET"])
+@require_auth
+def api_proctop():
+    """Return top 10 processes by CPU% and top 10 by MEM%."""
+    out, rc = _run(["ps", "aux", "--no-header"])
+    if rc != 0:
+        return jsonify({"error": "ps command failed", "by_cpu": [], "by_mem": [], "total_processes": 0})
+
+    processes = []
+    for line in out.splitlines():
+        cols = line.split(None, 10)
+        if len(cols) < 11:
+            continue
+        try:
+            name = os.path.basename(cols[10].split()[0]) if cols[10].split() else ""
+        except (IndexError, AttributeError):
+            name = ""
+        if not name or name == "-":
+            continue
+        try:
+            proc = {
+                "pid": int(cols[1]),
+                "name": name,
+                "cpu_pct": float(cols[2]),
+                "mem_pct": float(cols[3]),
+                "state": cols[7],
+                "user": cols[0],
+            }
+        except (ValueError, IndexError):
+            continue
+        processes.append(proc)
+
+    by_cpu = sorted(processes, key=lambda p: p["cpu_pct"], reverse=True)[:10]
+    by_mem = sorted(processes, key=lambda p: p["mem_pct"], reverse=True)[:10]
+
+    return jsonify({
+        "by_cpu": by_cpu,
+        "by_mem": by_mem,
+        "total_processes": len(processes),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

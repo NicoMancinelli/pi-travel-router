@@ -1088,6 +1088,17 @@
 
   <hr class="divider">
 
+  <!-- Top Processes -->
+  <div class="card full-width" id="card-proctop">
+    <div class="card-title">
+      &#x1F4CA; Top Processes
+      <button class="btn btn-sm" onclick="fetchProcTop()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="proctop-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Logs -->
   <div class="card full-width">
     <div class="card-title">
@@ -4105,6 +4116,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchConnections();
   fetchTsExitNode();
   fetchCronJobsSystem();
+  fetchProcTop();
 });
 
 async function fetchJournal() {
@@ -4304,6 +4316,7 @@ async function refreshAll() {
   fetchSystemUpdates();
   fetchConnections();
   fetchCronJobsSystem();
+  fetchProcTop();
 }
 
 async function init() {
@@ -6566,6 +6579,59 @@ async function fetchTsExitNode() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load exit node status</span>';
+  }
+}
+
+// ── Top Processes ─────────────────────────────────────────────────────────────
+
+async function fetchProcTop() {
+  const el = document.getElementById('proctop-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/proctop');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error loading processes') + '</span>';
+      return;
+    }
+
+    function renderProcTable(rows, highlightCol) {
+      if (!rows || rows.length === 0) return '<span style="color:var(--text-dim);">No data</span>';
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border);">';
+      html += '<th style="text-align:left;padding:3px 6px;">Name</th>';
+      html += '<th style="text-align:left;padding:3px 6px;">User</th>';
+      html += '<th style="text-align:right;padding:3px 6px;">CPU%</th>';
+      html += '<th style="text-align:right;padding:3px 6px;">MEM%</th>';
+      html += '<th style="text-align:center;padding:3px 6px;">State</th>';
+      html += '</tr></thead><tbody>';
+      rows.forEach(p => {
+        let cpuStyle = '';
+        if (p.cpu_pct > 50) cpuStyle = 'color:#e55;font-weight:600;';
+        else if (p.cpu_pct > 10) cpuStyle = 'color:#f90;font-weight:600;';
+        let memStyle = '';
+        if (p.mem_pct > 10) memStyle = 'color:#f90;font-weight:600;';
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += '<td style="padding:3px 6px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + p.name + '">' + p.name + '</td>';
+        html += '<td style="padding:3px 6px;color:var(--text-dim);">' + p.user + '</td>';
+        html += '<td style="text-align:right;padding:3px 6px;' + cpuStyle + '">' + p.cpu_pct.toFixed(1) + '</td>';
+        html += '<td style="text-align:right;padding:3px 6px;' + memStyle + '">' + p.mem_pct.toFixed(1) + '</td>';
+        html += '<td style="text-align:center;padding:3px 6px;color:var(--text-dim);">' + p.state + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      return html;
+    }
+
+    const total = d.total_processes || 0;
+    el.innerHTML = '<div style="margin-bottom:8px;color:var(--text-dim);font-size:12px;">Total processes: ' + total + '</div>'
+      + '<div style="display:flex;gap:16px;flex-wrap:wrap;">'
+      + '<div style="flex:1;min-width:280px;"><div style="font-weight:600;margin-bottom:6px;font-size:12px;">By CPU</div>' + renderProcTable(d.by_cpu, 'cpu') + '</div>'
+      + '<div style="flex:1;min-width:280px;"><div style="font-weight:600;margin-bottom:6px;font-size:12px;">By Memory</div>' + renderProcTable(d.by_mem, 'mem') + '</div>'
+      + '</div>';
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed to load process data</span>';
   }
 }
 
