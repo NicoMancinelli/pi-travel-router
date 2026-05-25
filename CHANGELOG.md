@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.74.0] - 2026-05-25
+
+### Added
+- `GET /api/system/interrupts` — CPU interrupt statistics from `/proc/interrupts`; top 30 IRQs by total count with per-CPU breakdown; dashboard card shows IRQ table with proportional distribution bars
+- `GET /api/system/hardware` — Raspberry Pi hardware profile from `/proc/cpuinfo`, `uname`, `/etc/os-release`, `/proc/uptime`, `vcgencmd version`, and thermal zone; fields include model, CPU, RAM, architecture, temperature (color-coded), OS, kernel, uptime, firmware, serial; non-Pi devices shown with note
+- `GET /api/network/wifi-survey` — nearby WiFi networks via `iwlist scan` with `nmcli` fallback; per-network SSID, BSSID, channel, signal strength (dBm + fill bar), and encryption badge (WPA2/WPA/OPEN); sorted by signal strength descending
+- Dashboard cards: CPU Interrupts (⚡), Hardware Info (🖥️), WiFi Survey (📡)
+
 ## [2.73.0] - 2026-05-25
 
 ### Added
