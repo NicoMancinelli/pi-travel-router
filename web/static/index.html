@@ -1214,6 +1214,15 @@
     <div id="bonding-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- System Environment -->
+  <div class="card full-width" id="card-system-environment">
+    <div class="card-title">
+      &#x1F310; System Environment (<span id="env-total">0</span> variables)
+      <button class="btn btn-sm" onclick="fetchEnvironment()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="env-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4799,6 +4808,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCrontab();
   fetchKernelConfig();
   fetchBonding();
+  fetchEnvironment();
 });
 
 async function fetchJournal() {
@@ -5064,6 +5074,7 @@ async function refreshAll() {
   fetchCrontab();
   fetchKernelConfig();
   fetchBonding();
+  fetchEnvironment();
 }
 
 async function init() {
@@ -7505,6 +7516,37 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── System Environment ────────────────────────────────────────────────────────
+async function fetchEnvironment() {
+  const el = document.getElementById('env-content');
+  const totalEl = document.getElementById('env-total');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/environment');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (totalEl) totalEl.textContent = d.total || 0;
+    const vars = d.variables || [];
+    if (vars.length === 0) {
+      el.innerHTML = '<p class="muted">No environment variables found.</p>';
+      return;
+    }
+    let html = '<div style="max-height:320px;overflow-y:auto"><table class="table"><thead><tr><th>Variable</th><th>Value</th><th>Source</th></tr></thead><tbody>';
+    for (const v of vars) {
+      const val = v.value || '';
+      const displayVal = val.length > 60 ? val.slice(0, 60) + '…' : val;
+      const titleAttr = val.length > 60 ? ` title="${val.replace(/"/g, '&quot;')}"` : '';
+      const badgeStyle = v.source === 'process'
+        ? 'background:var(--blue,#3b82f6);color:#fff;padding:1px 6px;border-radius:9px;font-size:0.8em'
+        : 'background:var(--text-dim,#888);color:#fff;padding:1px 6px;border-radius:9px;font-size:0.8em';
+      html += `<tr><td style="font-family:monospace;white-space:nowrap;font-weight:600">${v.key}</td><td${titleAttr} style="font-family:monospace;word-break:break-all">${displayVal}</td><td><span style="${badgeStyle}">${v.source}</span></td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Network Bonding ───────────────────────────────────────────────────────────
