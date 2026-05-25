@@ -5337,62 +5337,65 @@ def api_doh_resolver_post():
     })
 
 
-# ── Login history ─────────────────────────────────────────────────────────────
+# ── Login History ─────────────────────────────────────────────────────────────
 
 @app.route("/api/system/logins", methods=["GET"])
 @require_auth
 def api_system_logins():
-    """Return recent login history from `last`."""
-    limit = min(int(request.args.get("limit", 20)), 100)
-    logins = []
-    try:
-        out, _ = _run(["last", "-n", str(limit), "-w"], timeout=5)
-        for line in (out or "").splitlines():
-            line = line.strip()
-            if not line or line.startswith("wtmp") or line.startswith("btmp"):
-                continue
-            parts = line.split()
-            if len(parts) < 3:
-                continue
-            user = parts[0]
-            tty = parts[1] if len(parts) > 1 else ""
-            host = parts[2] if len(parts) > 2 else ""
-            # Skip "reboot" and "shutdown" entries if desired, keep them for completeness
-            # Date/time is parts[3:7] approximately
-            date_str = " ".join(parts[3:8]) if len(parts) > 7 else " ".join(parts[3:])
-            # Duration/status is often at the end
-            still_on = "still logged in" in line
-            crashed = "crash" in line.lower()
-            logins.append({
-                "user": user,
-                "tty": tty,
-                "host": host if host not in ("", "-") else "",
-                "date": date_str,
-                "still_on": still_on,
-                "crashed": crashed,
-            })
-    except Exception:
-        pass
-    # Also check failed logins from btmp if available
-    failed = []
-    try:
-        out, _ = _run(["lastb", "-n", "10", "-w"], timeout=5)
-        for line in (out or "").splitlines():
-            line = line.strip()
-            if not line or line.startswith("btmp"):
-                continue
-            parts = line.split()
-            if len(parts) < 3:
-                continue
-            failed.append({
-                "user": parts[0],
-                "tty": parts[1] if len(parts) > 1 else "",
-                "host": parts[2] if len(parts) > 2 else "",
-                "date": " ".join(parts[3:8]) if len(parts) > 7 else " ".join(parts[3:]),
-            })
-    except Exception:
-        pass
-    return jsonify({"logins": logins[:limit], "failed": failed[:10]})
+    """Return recent login history from `last` command."""
+    import re
+
+    entries = []
+
+    out, rc = _run(["last", "-n", "30", "-F"])
+    if rc != 0:
+        # Try without -F (some systems don't support it)
+        out, rc = _run(["last", "-n", "30"])
+    if rc != 0:
+        return jsonify({"error": "last command not available", "entries": []})
+
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line.startswith("wtmp") or line.startswith("btmp") or line.startswith("reboot"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        user = parts[0]
+        tty = parts[1]
+        host = parts[2] if len(parts) > 2 else ""
+        # Don't include system pseudo-logins
+        if user in ("reboot", "shutdown", "runlevel", "LOGIN"):
+            continue
+        # Rest of line is date info
+        date_str = " ".join(parts[3:])
+        # Check for 'still logged in' or 'logged in' vs duration
+        still_logged_in = "still logged in" in line or "logged in" in line
+        entries.append({
+            "user": user,
+            "tty": tty,
+            "host": host if host and not host.startswith("Mon") and not host.startswith("Tue") and not host.startswith("Wed") and not host.startswith("Thu") and not host.startswith("Fri") and not host.startswith("Sat") and not host.startswith("Sun") else "",
+            "date_raw": date_str[:40],
+            "active": still_logged_in,
+        })
+        if len(entries) >= 20:
+            break
+
+    # Also check currently logged in users via `who`
+    who_out, who_rc = _run(["who"])
+    active_users = set()
+    if who_rc == 0:
+        for wline in who_out.splitlines():
+            wparts = wline.split()
+            if wparts:
+                active_users.add(wparts[0])
+
+    # Mark active
+    for e in entries:
+        if e["user"] in active_users:
+            e["active"] = True
+
+    return jsonify({"entries": entries, "count": len(entries), "active_users": list(active_users)})
 
 
 # ── DNS lookup tool ───────────────────────────────────────────────────────────
@@ -6862,6 +6865,69 @@ def api_network_datacap():
         "month": f"{now.year}-{now.month:02d}",
     }
     return jsonify(result)
+
+
+# ── Network Interface Stats ───────────────────────────────────────────────────
+
+@app.route("/api/network/iface/stats", methods=["GET"])
+@require_auth
+def api_network_iface_stats():
+    """Return per-interface RX/TX stats including errors and drops from /proc/net/dev."""
+    interfaces = []
+
+    try:
+        with open("/proc/net/dev") as f:
+            lines = f.readlines()
+    except OSError:
+        return jsonify({"error": "Cannot read /proc/net/dev", "interfaces": []})
+
+    # Skip first two header lines
+    for line in lines[2:]:
+        line = line.strip()
+        if not line:
+            continue
+        colon = line.index(":")
+        name = line[:colon].strip()
+        fields = line[colon + 1:].split()
+        if len(fields) < 16:
+            continue
+        # /proc/net/dev columns:
+        # RX: bytes packets errs drop fifo frame compressed multicast
+        # TX: bytes packets errs drop fifo colls carrier compressed
+        rx_bytes = int(fields[0])
+        rx_packets = int(fields[1])
+        rx_errors = int(fields[2])
+        rx_drop = int(fields[3])
+        tx_bytes = int(fields[8])
+        tx_packets = int(fields[9])
+        tx_errors = int(fields[10])
+        tx_drop = int(fields[11])
+        tx_colls = int(fields[13])
+
+        # Skip loopback and zero-traffic virtual interfaces (but keep wg, tun, eth, wlan, usb)
+        if name == "lo":
+            continue
+
+        interfaces.append({
+            "name": name,
+            "rx_bytes": rx_bytes,
+            "rx_packets": rx_packets,
+            "rx_errors": rx_errors,
+            "rx_drop": rx_drop,
+            "tx_bytes": tx_bytes,
+            "tx_packets": tx_packets,
+            "tx_errors": tx_errors,
+            "tx_drop": tx_drop,
+            "tx_colls": tx_colls,
+            "rx_human": _fmt_bytes(rx_bytes),
+            "tx_human": _fmt_bytes(tx_bytes),
+            "has_errors": (rx_errors + tx_errors + rx_drop + tx_drop + tx_colls) > 0,
+        })
+
+    # Sort: active interfaces first (most traffic), then by name
+    interfaces.sort(key=lambda i: -(i["rx_bytes"] + i["tx_bytes"]))
+
+    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
