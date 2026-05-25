@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.31.0] - 2026-05-25
+
+### Added
+
+- **Connected clients ARP table** (`web/app.py`, `web/static/index.html`): `GET /api/network/clients` parses `/proc/net/arp`, resolves hostnames via `getent hosts`, enriches with dnsmasq lease file (tries three common paths), and adds OUI vendor hints for known MAC prefixes (Raspberry Pi, Apple, Intel, Google, VMware, VirtualBox). Dashboard card with IP/MAC/Hostname/Vendor/Interface table. Auto-refreshes on poll.
+- **VPN kill switch status** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/killswitch` detects active kill switch via nftables default-drop policy, iptables FORWARD/OUTPUT chain policy, `travel-router-killswitch` systemd service, and `/etc/default/travel-router` KILL_SWITCH config key. Returns enabled status, detection method, and detail list. Dashboard card with ENABLED/DISABLED badge and detail list. Auto-refreshes on poll.
+- **Log summary and export** (`web/app.py`, `web/static/index.html`): `GET /api/logs/summary` queries journald for last 1000 lines at warning level and above, counts errors/warnings, extracts up to 5 recent error lines, and lists failed systemd units. `GET /api/logs/export` streams a downloadable text bundle of journald (500 lines), per-service logs (100 lines each for 6 services), and syslog (200 lines). Dashboard card shows error/warning/failed-service counts with recent errors panel and Export button. Loaded on page init.
+
 ## [2.30.0] - 2026-05-25
 
 ### Added
