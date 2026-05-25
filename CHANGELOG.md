@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.47.0] - 2026-05-25
+
+### Added
+- `GET /api/network/ping` — pings gateway, Cloudflare DNS, Google DNS, and Tailscale relay; returns RTT min/avg/max and packet loss per host
+- `GET /api/system/cron-jobs` — enumerates scheduled tasks from `/etc/crontab`, `/etc/cron.d/*`, and root's crontab
+- `GET /api/system/mounts` — lists non-virtual mount points with disk space (df -B1) and inode usage (df -i)
+- Dashboard cards: Network Ping (🏓), Cron Jobs (⏰), Mount Points (💾)
+
 ## [2.46.0] - 2026-05-25
 
 ### Added
