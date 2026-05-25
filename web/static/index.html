@@ -1060,6 +1060,15 @@
     <div id="system-updates-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Cron Jobs -->
+  <div class="card full-width" id="card-cron-system">
+    <div class="card-title">
+      &#x23F0; Cron Jobs
+      <button class="btn btn-sm" onclick="fetchCronJobsSystem()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="cron-system-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4075,6 +4084,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoginHistory();
   fetchIfaceStats();
   fetchSystemUpdates();
+  fetchCronJobsSystem();
 });
 
 async function fetchJournal() {
@@ -4272,6 +4282,7 @@ async function refreshAll() {
   fetchKillSwitchStatus();
   fetchVnstatDataCap();
   fetchSystemUpdates();
+  fetchCronJobsSystem();
 }
 
 async function init() {
@@ -6378,6 +6389,51 @@ async function fetchVnstatDataCap() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load data usage</span>';
+  }
+}
+
+// ── Cron Jobs Viewer ──────────────────────────────────────────────────────────
+
+async function fetchCronJobsSystem() {
+  const el = document.getElementById('cron-system-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/cron');
+    const d = await resp.json();
+    if (!d.jobs || d.jobs.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No cron jobs found.</span>';
+      return;
+    }
+    // Group by source
+    const bySource = {};
+    for (const job of d.jobs) {
+      if (!bySource[job.source]) bySource[job.source] = [];
+      bySource[job.source].push(job);
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} job${d.count !== 1 ? 's' : ''}</div>`;
+    for (const [source, sourceJobs] of Object.entries(bySource)) {
+      html += `<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin:8px 0 4px;font-family:monospace;">${escHtml(source)}</div>`;
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;">';
+      html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      html += '<th style="padding:4px 8px;">Schedule</th>';
+      if (sourceJobs.some(j => j.user)) html += '<th style="padding:4px 8px;">User</th>';
+      html += '<th style="padding:4px 8px;">Command</th>';
+      html += '</tr></thead><tbody>';
+      for (const job of sourceJobs) {
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;white-space:nowrap;color:#60a5fa;">${escHtml(job.schedule)}</td>`;
+        if (sourceJobs.some(j => j.user)) {
+          html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${job.user ? escHtml(job.user) : '&mdash;'}</td>`;
+        }
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;max-width:400px;">${escHtml(job.command)}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load cron jobs</span>';
   }
 }
 
