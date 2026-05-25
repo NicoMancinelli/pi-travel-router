@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.85.0] - 2026-05-25
+
+### Added
+- `GET /api/system/temperature` — thermal zone temps from `/sys/class/thermal/thermal_zone*/temp` + `vcgencmd measure_temp` for GPU; warn (≥70°C) and critical (≥80°C) flags; dashboard card 🌡️ Temperature Sensors with color-coded per-zone table
+- `GET /api/network/latency` — ping latency to Google/Cloudflare/Quad9 DNS + default gateway using `ping -c 3 -W 2`; RTT in ms, reachability, overall all_reachable flag; dashboard card 📶 Ping Latency with RTT bars (green/yellow/red) and per-target status
+- `GET /api/network/firewall` — iptables chain summary via `iptables -L -n -v`; chain policy, rule count, packet/byte stats; IPv6 availability; dashboard card 🛡️ Firewall Rules with per-chain policy badges (DROP=red, ACCEPT=green)
+- Dashboard cards: Temperature Sensors (🌡️), Ping Latency (📶), Firewall Rules (🛡️)
+
 ## [2.84.0] - 2026-05-25
 
 ### Added
