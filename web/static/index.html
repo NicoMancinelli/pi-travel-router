@@ -782,15 +782,13 @@
     </div>
   </div>
 
-  <!-- Active DHCP Leases -->
-  <div class="card full-width" id="card-dhcp-leases" style="margin-top:16px;">
-    <div class="card-title" style="justify-content:space-between;">
-      <span>&#x1F4CB; DHCP Leases</span>
-      <button class="btn btn-sm" onclick="fetchDhcpLeases()">&#x21BB; Refresh</button>
+  <!-- DHCP Leases -->
+  <div class="card full-width" id="card-dhcp-leases">
+    <div class="card-title">
+      &#x1F4CB; DHCP Leases (<span id="dhcp-leases-count">0</span>)
+      <button class="btn btn-sm" onclick="fetchDhcpLeases()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
-    <div id="dhcp-leases-content">
-      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
-    </div>
+    <div id="dhcp-leases-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <!-- DNS Lookup Tool -->
@@ -3874,6 +3872,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSystemResources();
   fetchListeningPorts();
   fetchStorage();
+  fetchDhcpLeases();
 });
 
 async function fetchJournal() {
@@ -4780,39 +4779,56 @@ async function restartService(unit, btn) {
   }
 }
 
-// ── Active DHCP Leases ────────────────────────────────────────────────────────
+// ── DHCP Leases ───────────────────────────────────────────────────────────────
 
 async function fetchDhcpLeases() {
   const el = document.getElementById('dhcp-leases-content');
+  const countEl = document.getElementById('dhcp-leases-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/dhcp/leases');
-    const d = await r.json();
-    const leases = d.leases || [];
-    if (leases.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No active DHCP leases</span>';
+    const resp = await apiFetch('/api/network/dhcp/leases');
+    const data = await resp.json();
+    countEl.textContent = data.count || 0;
+    if (data.error) {
+      el.innerHTML = `<span style="color:var(--danger)">Error: ${escHtml(data.error)}</span>`;
       return;
     }
-    let html = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">' + d.count + ' active lease(s)</div>';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">IP</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">MAC</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Hostname</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Expires</th>';
+    if (!data.leases_file) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No dnsmasq leases file found. Is dnsmasq running?</span>';
+      return;
+    }
+    if (!data.leases || data.leases.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No active DHCP leases.</span>';
+      return;
+    }
+    function ttlColor(ttl_label) {
+      if (ttl_label === 'expired') return '#ef4444';
+      if (ttl_label === 'static') return '#6366f1';
+      return 'var(--text)';
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">IP</th>';
+    html += '<th style="padding:5px 8px;">MAC</th>';
+    html += '<th style="padding:5px 8px;">Hostname</th>';
+    html += '<th style="padding:5px 8px;">Expires</th>';
     html += '</tr></thead><tbody>';
-    for (const l of leases) {
-      const expColor = l.expired ? 'var(--error,#e55)' : l.remaining_s < 300 ? '#e93' : 'var(--text-dim)';
-      html += '<tr>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + l.ip + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;font-size:11px;">' + l.mac + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (l.hostname || '—') + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + expColor + ';font-family:monospace;font-size:12px;">' + l.remaining + '</td>';
+    for (const l of data.leases) {
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:5px 8px;font-family:monospace;">${escHtml(l.ip)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(l.mac)}</td>`;
+      html += `<td style="padding:5px 8px;">${l.hostname ? escHtml(l.hostname) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += `<td style="padding:5px 8px;color:${ttlColor(l.ttl_label)};">${escHtml(l.ttl_label)}</td>`;
       html += '</tr>';
     }
     html += '</tbody></table>';
+    if (data.leases_file) {
+      html += `<div style="margin-top:6px;font-size:11px;color:var(--text-dim);">Source: ${escHtml(data.leases_file)}</div>`;
+    }
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load DHCP leases</span>';
   }
 }
 
