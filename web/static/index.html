@@ -974,6 +974,15 @@
     <div id="tailscale-status-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Speedtest -->
+  <div class="card full-width" id="card-speedtest">
+    <div class="card-title">
+      &#x26A1; Speed Test
+      <button class="btn btn-sm" id="speedtest-run-btn" onclick="runSpeedtest()" style="margin-left:8px;">&#x25B6; Run Test</button>
+    </div>
+    <div id="speedtest-content" style="font-size:13px;color:var(--text-dim);">Click "Run Test" to measure internet speed. This may take 30–60 seconds.</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -5701,6 +5710,54 @@ async function fetchTailscaleStatus() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load Tailscale status</span>';
+  }
+}
+
+// ── Speedtest ─────────────────────────────────────────────────────────────────
+
+async function runSpeedtest() {
+  const el = document.getElementById('speedtest-content');
+  const btn = document.getElementById('speedtest-run-btn');
+  if (!el) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Testing…'; }
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Running speed test… this may take 30–60 seconds.</span>';
+  try {
+    const resp = await apiFetch('/api/network/speedtest');
+    const data = await resp.json();
+    if (!data.available) {
+      el.innerHTML = `<span style="color:var(--text-dim)">Speedtest not available: ${escHtml(data.error || '')}</span>`;
+      return;
+    }
+
+    function speedBar(mbps, maxMbps) {
+      if (mbps == null) return '<span style="color:var(--text-dim)">—</span>';
+      const pct = Math.min(100, (mbps / maxMbps) * 100);
+      const color = mbps >= 50 ? '#22c55e' : mbps >= 10 ? '#f97316' : '#ef4444';
+      return `<div style="display:flex;align-items:center;gap:8px;">
+        <div style="flex:0 0 80px;background:var(--bg2);border-radius:3px;height:8px;">
+          <div style="background:${color};border-radius:3px;height:8px;width:${pct.toFixed(1)}%;"></div>
+        </div>
+        <strong style="color:${color};">${mbps} Mbps</strong>
+      </div>`;
+    }
+
+    const maxMbps = Math.max(data.download_mbps || 0, data.upload_mbps || 0, 100);
+
+    let html = '<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 16px;align-items:center;font-size:13px;max-width:500px;">';
+    html += `<span style="color:var(--text-dim);">&#x2B07; Download</span>${speedBar(data.download_mbps, maxMbps)}`;
+    html += `<span style="color:var(--text-dim);">&#x2B06; Upload</span>${speedBar(data.upload_mbps, maxMbps)}`;
+    html += `<span style="color:var(--text-dim);">&#x1F4E1; Ping</span><span>${data.ping_ms != null ? `<strong>${data.ping_ms} ms</strong>` : '<span style="color:var(--text-dim)">—</span>'}</span>`;
+    html += '</div>';
+
+    if (data.server_name || data.server_sponsor) {
+      html += `<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">Server: ${escHtml(data.server_sponsor || data.server_name)} ${data.server_country ? '(' + escHtml(data.server_country) + ')' : ''} &mdash; via ${escHtml(data.tool)}</div>`;
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Speed test failed</span>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '▶ Run Test'; }
   }
 }
 
