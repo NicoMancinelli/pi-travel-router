@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.63.0] - 2026-05-25
+
+### Added
+- `GET /api/system/kernel-modules` — loaded kernel modules via `lsmod`; returns module name, size, reference count, and dependent module list; dashboard card shows scrollable table of all loaded modules
+- `GET /api/network/arp-table` — ARP/NDP neighbor table via `ip -j neigh show` with `arp -n` fallback; filters FAILED entries; dashboard card color-codes REACHABLE (green) and STALE (amber) state entries
+- `GET /api/system/process-top` — top 15 processes by CPU and memory via `ps aux`; returns pid, user, cpu%, mem%, rss_kb, and truncated command; dashboard card shows dual ranked tables with color-coded high-usage cells
+- Dashboard cards: Kernel Modules (🧩), ARP Table (📡), Top Processes (⚡)
+
 ## [2.62.0] - 2026-05-25
 
 ### Added
