@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.68.0] - 2026-05-25
+
+### Added
+- `GET /api/system/i2c-devices` — I2C bus scan via `i2cdetect -y -r`; lists all `/dev/i2c-*` buses and device addresses (hex + decimal); graceful no-op when no buses or i2cdetect not installed; dashboard card shows per-bus device table
+- `GET /api/network/packet-stats` — per-interface RX/TX statistics from `/proc/net/dev`; returns bytes (as MB), packets, errors, and drops; skips loopback; dashboard card color-codes non-zero error counts
+- `GET /api/system/inotify-stats` — inotify limits from `/proc/sys/fs/inotify/`; counts current watchers via grep of `/proc/*/fdinfo/`; dashboard card shows metric grid and usage fill bar
+- Dashboard cards: I2C Devices (🔧), Packet Statistics (📦), Inotify Watches (👁️)
+
 ## [2.67.0] - 2026-05-25
 
 ### Added
