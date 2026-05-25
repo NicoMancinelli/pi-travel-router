@@ -863,6 +863,15 @@
     <div id="traceroute-result" style="font-size:13px;color:var(--text-dim);">Enter a hostname and click Trace.</div>
   </div>
 
+  <!-- System Resources -->
+  <div class="card full-width" id="card-system-resources" style="margin-top:16px;">
+    <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>&#x1F4CA; System Resources</span>
+      <button class="btn btn-sm" id="sysres-refresh-btn" onclick="fetchSystemResources()">&#x27F3; Refresh</button>
+    </div>
+    <div id="sysres-content"><span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Wi-Fi Clients -->
@@ -3813,6 +3822,7 @@ async function fetchClientHistory(limitOverride) {
 document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('client-history-limit');
   if (sel) sel.addEventListener('change', () => fetchClientHistory());
+  fetchSystemResources();
 });
 
 async function fetchJournal() {
@@ -4997,6 +5007,85 @@ async function fetchWifiClients() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Error: ' + e + '</span>';
+  }
+}
+
+// ── System Resources ──────────────────────────────────────────────────────────
+
+async function fetchSystemResources() {
+  const el = document.getElementById('sysres-content');
+  const btn = document.getElementById('sysres-refresh-btn');
+  if (!el) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳'; }
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/resources');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>';
+      return;
+    }
+
+    function pct(val) { return val != null ? val.toFixed(1) + '%' : '—'; }
+    function num(val, unit) { return val != null ? val + unit : '—'; }
+    function bar(val, color) {
+      const pct = val != null ? Math.min(100, Math.max(0, val)) : 0;
+      const bg = val == null ? 'var(--border)' : (pct > 85 ? '#e55' : pct > 65 ? '#e90' : color);
+      return '<div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;margin:4px 0;">'
+        + '<div style="height:100%;width:' + pct + '%;background:' + bg + ';transition:width 0.3s;"></div>'
+        + '</div>';
+    }
+
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;font-size:13px;">';
+
+    // CPU
+    html += '<div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">';
+    html += '<span style="font-weight:600;">CPU</span>';
+    html += '<span style="display:flex;gap:6px;align-items:center;">';
+    if (d.cpu_temp_c != null) {
+      const tempColor = d.cpu_temp_c > 75 ? '#e55' : d.cpu_temp_c > 60 ? '#e90' : '#4c4';
+      html += '<span style="font-size:11px;padding:1px 6px;border-radius:10px;background:' + tempColor + '20;color:' + tempColor + ';border:1px solid ' + tempColor + '40;">'
+        + d.cpu_temp_c.toFixed(1) + '°C</span>';
+    }
+    html += '<span style="color:var(--text-dim);">' + pct(d.cpu_percent) + '</span>';
+    html += '</span></div>';
+    html += bar(d.cpu_percent, '#4a9eff');
+    html += '</div>';
+
+    // Memory
+    html += '<div>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">';
+    html += '<span style="font-weight:600;">Memory</span>';
+    html += '<span style="color:var(--text-dim);">';
+    if (d.mem_used_mb != null && d.mem_total_mb != null) {
+      html += d.mem_used_mb.toFixed(0) + ' / ' + d.mem_total_mb.toFixed(0) + ' MB';
+    } else {
+      html += '—';
+    }
+    html += ' (' + pct(d.mem_percent) + ')</span>';
+    html += '</div>';
+    html += bar(d.mem_percent, '#a78bfa');
+    html += '</div>';
+
+    // Uptime + load grid
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;">';
+    html += '<div><span style="color:var(--text-dim);">Uptime</span><br><span>' + (d.uptime_human || '—') + '</span></div>';
+    html += '<div><span style="color:var(--text-dim);">Load (1/5/15m)</span><br><span>';
+    if (d.load_1 != null) {
+      html += d.load_1.toFixed(2) + ' / ' + d.load_5.toFixed(2) + ' / ' + d.load_15.toFixed(2);
+    } else {
+      html += '—';
+    }
+    html += '</span></div>';
+    html += '</div>';
+
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
   }
 }
 

@@ -5171,6 +5171,107 @@ def api_wifi_clients():
     return jsonify({"interface": iface, "clients": clients, "count": len(clients)})
 
 
+# ── System Resources ──────────────────────────────────────────────────────────
+
+@app.route("/api/system/resources", methods=["GET"])
+@require_auth
+def api_system_resources():
+    """Return CPU, memory, uptime, and load average stats."""
+    import time as _time
+
+    # CPU percent — two samples 0.5s apart
+    def _read_cpu_stat():
+        try:
+            line = Path("/proc/stat").read_text().splitlines()[0]
+            parts = line.split()
+            user, nice, system, idle, iowait, irq, softirq = (
+                int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]),
+                int(parts[5]), int(parts[6]), int(parts[7]),
+            )
+            total = user + nice + system + idle + iowait + irq + softirq
+            return total, idle
+        except Exception:
+            return None, None
+
+    total1, idle1 = _read_cpu_stat()
+    _time.sleep(0.5)
+    total2, idle2 = _read_cpu_stat()
+    if total1 is not None and total2 is not None and (total2 - total1) > 0:
+        cpu_percent = round(100.0 * (1.0 - (idle2 - idle1) / (total2 - total1)), 1)
+    else:
+        cpu_percent = None
+
+    # CPU temperature
+    cpu_temp = None
+    out, rc = _run(["vcgencmd", "measure_temp"])
+    if rc == 0 and out.strip():
+        try:
+            cpu_temp = float(out.strip().replace("temp=", "").replace("'C", ""))
+        except ValueError:
+            cpu_temp = None
+    if cpu_temp is None:
+        try:
+            raw = Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()
+            cpu_temp = round(int(raw) / 1000.0, 1)
+        except Exception:
+            cpu_temp = None
+
+    # Memory from /proc/meminfo
+    mem_total_mb = mem_free_mb = mem_available_mb = None
+    try:
+        meminfo = {}
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            key, _, val = line.partition(":")
+            meminfo[key.strip()] = int(val.split()[0])
+        mem_total_mb = round(meminfo.get("MemTotal", 0) / 1024, 1)
+        mem_free_mb = round(meminfo.get("MemFree", 0) / 1024, 1)
+        mem_available_mb = round(meminfo.get("MemAvailable", meminfo.get("MemFree", 0)) / 1024, 1)
+        mem_used_mb = round(mem_total_mb - mem_available_mb, 1)
+        mem_percent = round(100.0 * mem_used_mb / mem_total_mb, 1) if mem_total_mb else None
+    except Exception:
+        mem_used_mb = mem_percent = None
+
+    # Uptime from /proc/uptime
+    uptime_seconds = None
+    uptime_human = None
+    try:
+        raw_uptime = float(Path("/proc/uptime").read_text().split()[0])
+        uptime_seconds = int(raw_uptime)
+        days = uptime_seconds // 86400
+        hours = (uptime_seconds % 86400) // 3600
+        minutes = (uptime_seconds % 3600) // 60
+        if days > 0:
+            uptime_human = f"{days}d {hours}h {minutes}m"
+        else:
+            uptime_human = f"{hours}h {minutes}m"
+    except Exception:
+        pass
+
+    # Load averages from /proc/loadavg
+    load_1 = load_5 = load_15 = None
+    try:
+        parts = Path("/proc/loadavg").read_text().split()
+        load_1 = float(parts[0])
+        load_5 = float(parts[1])
+        load_15 = float(parts[2])
+    except Exception:
+        pass
+
+    return jsonify({
+        "cpu_percent": cpu_percent,
+        "cpu_temp_c": cpu_temp,
+        "mem_total_mb": mem_total_mb,
+        "mem_used_mb": mem_used_mb,
+        "mem_free_mb": mem_free_mb,
+        "mem_percent": mem_percent,
+        "uptime_seconds": uptime_seconds,
+        "uptime_human": uptime_human,
+        "load_1": load_1,
+        "load_5": load_5,
+        "load_15": load_15,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
