@@ -9749,6 +9749,46 @@ def api_system_package_updates():
     return jsonify({"packages": packages, "count": len(packages)})
 
 
+@app.route("/api/network/bandwidth")
+@require_auth
+def api_network_bandwidth():
+    def read_net_dev():
+        stats = {}
+        try:
+            for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
+                parts = line.split(":")
+                if len(parts) < 2:
+                    continue
+                iface = parts[0].strip()
+                fields = parts[1].split()
+                if len(fields) >= 9:
+                    stats[iface] = {"rx": int(fields[0]), "tx": int(fields[8])}
+        except (OSError, ValueError):
+            pass
+        return stats
+
+    s1 = read_net_dev()
+    time.sleep(1)
+    s2 = read_net_dev()
+
+    interfaces = []
+    for iface in s2:
+        if iface == "lo":
+            continue
+        if iface in s1:
+            rx_bps = max(0, s2[iface]["rx"] - s1[iface]["rx"])
+            tx_bps = max(0, s2[iface]["tx"] - s1[iface]["tx"])
+            interfaces.append({
+                "name": iface,
+                "rx_bps": rx_bps,
+                "tx_bps": tx_bps,
+                "rx_bytes_total": s2[iface]["rx"],
+                "tx_bytes_total": s2[iface]["tx"],
+            })
+    interfaces.sort(key=lambda x: x["name"])
+    return jsonify({"interfaces": interfaces})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
