@@ -1213,6 +1213,10 @@
     <div id="firewall-stats-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-cpu-temp">
+    <div id="cpu-temp-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4259,6 +4263,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchBatteryStatus();
   fetchInterrupts();
   fetchFirewallStats();
+  fetchCpuTemp();
 });
 
 async function fetchJournal() {
@@ -4457,6 +4462,7 @@ async function refreshAll() {
   fetchConnections();
   fetchCronJobsSystem();
   fetchEntropy();
+  fetchUsbDevices();
   fetchProcTop();
   fetchSystemTemps();
   fetchDiskIO();
@@ -4478,6 +4484,7 @@ async function refreshAll() {
   fetchBatteryStatus();
   fetchInterrupts();
   fetchFirewallStats();
+  fetchCpuTemp();
 }
 
 async function init() {
@@ -6775,40 +6782,39 @@ async function fetchUsbDevices() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/system/usb');
+    const r = await apiFetch('/api/system/usb-devices');
     const d = await r.json();
     if (!r.ok) {
       el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error fetching USB devices') + '</span>';
       return;
     }
     if (!d.devices || d.devices.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No USB devices found.</span>';
+      el.innerHTML = '<span style="color:var(--text-dim)">No USB devices detected.</span>';
       return;
     }
-    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    let html = '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">' + d.count + ' device' + (d.count !== 1 ? 's' : '') + ' connected</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += '<thead><tr style="border-bottom:1px solid var(--border);">';
     html += '<th style="text-align:left;padding:4px 8px;">Bus</th>';
-    html += '<th style="text-align:left;padding:4px 8px;">Device</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Dev</th>';
     html += '<th style="text-align:left;padding:4px 8px;">ID</th>';
     html += '<th style="text-align:left;padding:4px 8px;">Description</th>';
     html += '</tr></thead><tbody>';
     for (const dev of d.devices) {
       const desc = dev.description || '';
-      let rowStyle = '';
-      if (/ethernet|rndis|ecm/i.test(desc)) {
-        rowStyle = 'color:#4caf50;';
-      } else if (/modem|lte|sierra|huawei|zte/i.test(desc)) {
-        rowStyle = 'color:#2196f3;';
+      const isNet = /ethernet|wlan|wireless/i.test(desc);
+      let badge = '';
+      if (isNet) {
+        badge = ' <span style="font-size:11px;padding:1px 5px;border-radius:3px;background:rgba(33,150,243,0.15);color:#2196f3;border:1px solid rgba(33,150,243,0.3);">network</span>';
       }
       html += '<tr style="border-bottom:1px solid var(--border);">';
-      html += '<td style="padding:4px 8px;' + rowStyle + '">' + dev.bus + '</td>';
-      html += '<td style="padding:4px 8px;' + rowStyle + '">' + dev.device + '</td>';
-      html += '<td style="padding:4px 8px;font-family:monospace;' + rowStyle + '">' + dev.vendor_id + ':' + dev.product_id + '</td>';
-      html += '<td style="padding:4px 8px;' + rowStyle + '">' + desc + '</td>';
+      html += '<td style="padding:4px 8px;">' + dev.bus + '</td>';
+      html += '<td style="padding:4px 8px;">' + dev.device + '</td>';
+      html += '<td style="padding:4px 8px;font-family:monospace;">' + dev.vendor_id + ':' + dev.product_id + '</td>';
+      html += '<td style="padding:4px 8px;">' + desc + badge + '</td>';
       html += '</tr>';
     }
     html += '</tbody></table>';
-    html += '<div style="margin-top:6px;font-size:12px;color:var(--text-dim);">' + d.count + ' device' + (d.count !== 1 ? 's' : '') + '</div>';
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load USB devices</span>';
@@ -7991,6 +7997,49 @@ async function fetchFirewallStats() {
     el.innerHTML = html;
   } catch (e) {
     if (el) el.innerHTML = '<div class="card-title">&#x1F6E1; Firewall Rules</div><span style="color:var(--danger)">Failed: ' + e + '</span>';
+  }
+}
+
+// ── CPU Temperature ───────────────────────────────────────────────────────────
+
+async function fetchCpuTemp() {
+  const el = document.getElementById('cpu-temp-content');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/system/cpu-temp');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    if (d.error) {
+      el.innerHTML = `<div class="card-title">&#x1F321; CPU Temperature</div><span style="color:var(--danger)">${d.error}</span>`;
+      return;
+    }
+    const zones = d.zones || [];
+    const maxTemp = d.max_temp_c;
+    const tempColour = (t) => {
+      if (t === null) return 'var(--muted)';
+      if (t < 50) return 'var(--info,#4fa3e0)';
+      if (t < 65) return 'var(--success)';
+      if (t < 80) return 'var(--warning)';
+      return 'var(--danger)';
+    };
+    const badge = (t) => {
+      if (t === null) return '<span style="color:var(--muted)">N/A</span>';
+      const c = tempColour(t);
+      return `<span style="background:${c};color:#fff;border-radius:4px;padding:1px 7px;font-size:0.82em;font-weight:600;">${t.toFixed(1)}&thinsp;&deg;C</span>`;
+    };
+    const maxDisplay = maxTemp !== null
+      ? `<span style="font-size:1.6em;font-weight:600;color:${tempColour(maxTemp)};">${maxTemp.toFixed(1)}&thinsp;&deg;C</span>`
+      : '<span style="color:var(--muted)">N/A</span>';
+    const zoneRows = zones.length
+      ? zones.map(z => `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:0.88em;">
+          <span style="color:var(--text);">${z.zone}</span>${badge(z.temp_c)}</div>`).join('')
+      : '<div style="color:var(--muted);font-size:0.88em;">No thermal zones found</div>';
+    el.innerHTML = `
+      <div class="card-title">&#x1F321; CPU Temperature</div>
+      <div style="margin:6px 0 10px;">Max: ${maxDisplay}</div>
+      <div>${zoneRows}</div>`;
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="card-title">&#x1F321; CPU Temperature</div><span style="color:var(--danger)">Failed: ${e}</span>`;
   }
 }
 
