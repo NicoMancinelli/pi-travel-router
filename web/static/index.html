@@ -901,6 +901,24 @@
     <div id="tailscale-peers-content"><span class="spinner"></span></div>
   </div>
 
+  <!-- Tailscale Exit Node -->
+  <div class="card" id="card-ts-exit-node" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F310; Exit Node</span>
+      <button class="btn btn-sm" onclick="fetchTsExitNode()">&#x21BB; Refresh</button>
+    </div>
+    <div id="ts-exit-node-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <select id="ts-exit-node-select" style="flex:1;font-size:13px;padding:4px 8px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+        <option value="">— None (direct) —</option>
+      </select>
+      <button class="btn btn-primary" onclick="setTsExitNode()" style="white-space:nowrap;">Apply</button>
+      <span id="ts-exit-node-msg" style="font-size:12px;"></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- WireGuard add peer -->
@@ -2602,6 +2620,71 @@ function renderTailscalePeers(d) {
   el.innerHTML = html;
 }
 
+// ── Tailscale exit node ────────────────────────────────────────────────────────
+
+async function fetchTsExitNode() {
+  const el = document.getElementById('ts-exit-node-content');
+  try {
+    const r = await apiFetch('/api/tailscale/exit-node');
+    const d = await r.json();
+    if (d.error && d.error.includes('not running')) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Tailscale not running</span>';
+      return;
+    }
+    // Update status display
+    if (d.current) {
+      el.innerHTML = '<span style="color:var(--success,#4c4);font-size:13px;">&#9679; Active: <strong>' + d.current + '</strong></span>';
+    } else {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">&#9675; No exit node (direct routing)</span>';
+    }
+    // Populate select
+    const sel = document.getElementById('ts-exit-node-select');
+    if (sel) {
+      // Keep "None" option, rebuild rest
+      while (sel.options.length > 1) sel.remove(1);
+      for (const peer of (d.peers || [])) {
+        const opt = document.createElement('option');
+        opt.value = peer.ip || peer.name;
+        opt.textContent = peer.name + (peer.ip ? ' (' + peer.ip + ')' : '') + (peer.active ? ' ✓' : '') + (!peer.online ? ' [offline]' : '');
+        if (peer.active) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      if (d.peers && d.peers.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.disabled = true;
+        opt.textContent = 'No exit node peers available';
+        sel.appendChild(opt);
+      }
+    }
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function setTsExitNode() {
+  const sel = document.getElementById('ts-exit-node-select');
+  const msg = document.getElementById('ts-exit-node-msg');
+  const node = sel ? sel.value : '';
+  msg.textContent = 'Applying…';
+  msg.style.color = 'var(--text-dim)';
+  try {
+    const r = await apiFetch('/api/tailscale/exit-node', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({node}) });
+    const d = await r.json();
+    if (r.ok) {
+      msg.textContent = node ? '✓ Exit node set' : '✓ Cleared';
+      msg.style.color = 'var(--success,#4c4)';
+      setTimeout(() => { msg.textContent = ''; fetchTsExitNode(); }, 2000);
+    } else {
+      msg.textContent = d.error || 'Failed';
+      msg.style.color = 'var(--error,#e55)';
+    }
+  } catch (e) {
+    msg.textContent = 'Error: ' + e;
+    msg.style.color = 'var(--error,#e55)';
+  }
+}
+
 // ── Guest Network ─────────────────────────────────────────────────────────────
 async function fetchGuestNetwork() {
   try {
@@ -3471,6 +3554,7 @@ async function refreshAll() {
   fetchApConfig();
   fetchFirewallRules();
   fetchTailscalePeers();
+  fetchTsExitNode();
   fetchMdnsServices();
   fetchCronJobs();
   fetchDnsHosts();
