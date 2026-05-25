@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.37.0] - 2026-05-25
+
+### Added
+
+- **Memory details card** (`web/app.py`, `web/static/index.html`): `GET /api/system/meminfo` parses `/proc/meminfo` and returns total/free/available/buffers/cached/swap stats in kB. Dashboard card shows RAM and swap usage bars with percentage and human-readable labels. Auto-refreshes on poll.
+- **Firewall rules summary** (`web/app.py`, `web/static/index.html`): `GET /api/network/firewall` queries iptables filter/nat/mangle tables and returns chain names, policies, and rule counts per table. Dashboard card shows per-table chain breakdown with policy colour-coding (DROP=red, ACCEPT=green). On-demand refresh.
+- **Disk I/O stats card** (`web/app.py`, `web/static/index.html`): `GET /api/system/diskio` parses `/proc/diskstats`, filters out loop/ram devices and partitions, returns reads/writes completed, bytes read/written, and I/O time in ms per whole-disk device. Dashboard card with compact table and human-readable byte counts. Auto-refreshes on poll.
+
 ## [2.36.0] - 2026-05-25
 
 ### Added
