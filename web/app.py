@@ -8888,6 +8888,42 @@ def api_system_disk_io():
     return jsonify({"devices": devices})
 
 
+@app.route("/api/system/memory-breakdown", methods=["GET"])
+@require_auth
+def api_system_memory_breakdown():
+    """Parse /proc/meminfo and return a detailed memory breakdown."""
+    fields = {
+        "MemTotal", "MemFree", "MemAvailable", "Buffers", "Cached", "SwapCached",
+        "Active", "Inactive", "Active(anon)", "Inactive(anon)", "Active(file)",
+        "Inactive(file)", "SwapTotal", "SwapFree", "Dirty", "Writeback", "Shmem",
+        "Slab", "SReclaimable", "SUnreclaim",
+    }
+    try:
+        data: dict = {}
+        with open("/proc/meminfo", "r") as fh:
+            for line in fh:
+                parts = line.split(":")
+                if len(parts) != 2:
+                    continue
+                key = parts[0].strip()
+                if key not in fields:
+                    continue
+                val_str = parts[1].strip().split()[0]
+                data[key] = int(val_str) * 1024
+        result: dict = {}
+        for key, val in data.items():
+            norm = key.replace("(", "_").replace(")", "").lower()
+            result[norm] = val
+        mem_total = data.get("MemTotal", 0)
+        mem_avail = data.get("MemAvailable", 0)
+        used = mem_total - mem_avail
+        result["used_bytes"] = used
+        result["used_pct"] = round(used / mem_total * 100, 2) if mem_total > 0 else 0.0
+        return jsonify(result)
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
