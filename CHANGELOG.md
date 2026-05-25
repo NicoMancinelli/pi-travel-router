@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.70.0] - 2026-05-25
+
+### Added
+- `GET /api/system/memory-detail` — comprehensive `/proc/meminfo` breakdown with 15+ fields; includes human-readable free/used/available calculations and MemAvailable utilisation fill bar; dashboard card shows memory grid
+- `GET /api/system/containers` — running Docker and Podman container inventory; parses `docker ps` and `podman ps` JSON output; graceful no-op when neither runtime is present; dashboard card shows image, status, runtime, and port mappings
+- `GET /api/system/login-history` — last 20 login events via `last -n 20`; parses user, terminal, source IP/host, and date/time; dashboard card highlights currently logged-in sessions vs. historical entries
+- Dashboard cards: Memory Detail (🧠), Containers (🐳), Login History (📋)
+
 ## [2.69.0] - 2026-05-25
 
 ### Added
