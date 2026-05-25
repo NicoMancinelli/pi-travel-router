@@ -1112,6 +1112,12 @@
     <div id="sysctl-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- Inotify Stats -->
+  <div class="card" id="inotify-card">
+    <h2>👁️ Inotify Watches</h2>
+    <div id="inotify-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4695,6 +4701,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchFailedUnits();
   fetchRoutes();
   fetchSysctlSecurity();
+  fetchInotifyStats();
 });
 
 async function fetchJournal() {
@@ -4973,6 +4980,7 @@ async function refreshAll() {
   fetchFailedUnits();
   fetchRoutes();
   fetchSysctlSecurity();
+  fetchInotifyStats();
 }
 
 async function init() {
@@ -7373,6 +7381,34 @@ async function fetchIPv6Addresses() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('ipv6-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Inotify Stats ─────────────────────────────────────────────────────────────
+async function fetchInotifyStats() {
+  try {
+    const r = await fetch('/api/system/inotify-stats');
+    const d = await r.json();
+    const el = document.getElementById('inotify-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    const pct = (d.watch_usage_pct || 0).toFixed(1);
+    const barColor = d.watch_usage_pct >= 80 ? 'var(--red)' : d.watch_usage_pct >= 50 ? 'var(--amber)' : 'var(--green)';
+    let html = `<div class="metric-grid">
+      <div class="metric"><span class="metric-label">Watchers</span><span class="metric-value">${d.current_watchers}</span></div>
+      <div class="metric"><span class="metric-label">Max Watches</span><span class="metric-value">${d.max_watches.toLocaleString()}</span></div>
+      <div class="metric"><span class="metric-label">Max Instances</span><span class="metric-value">${d.max_instances.toLocaleString()}</span></div>
+      <div class="metric"><span class="metric-label">Max Queue</span><span class="metric-value">${d.max_queued_events.toLocaleString()}</span></div>
+    </div>`;
+    html += `<div style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span class="muted">Watch usage</span>
+        <span style="color:${barColor}">${pct}%</span>
+      </div>
+      <div style="background:var(--bg2);border-radius:4px;height:6px">
+        <div style="width:${Math.min(100,d.watch_usage_pct||0)}%;background:${barColor};height:6px;border-radius:4px"></div>
+      </div>
+    </div>`;
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('inotify-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Sysctl Security ───────────────────────────────────────────────────────────

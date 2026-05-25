@@ -11495,6 +11495,33 @@ def api_sysctl_security():
         return jsonify({"error": str(exc), "params": [], "count": 0})
 
 
+@app.route("/api/system/inotify-stats")
+@require_auth
+def api_inotify_stats():
+    try:
+        def _read_int(path):
+            with open(path) as f:
+                return int(f.read().strip())
+        max_watches = _read_int("/proc/sys/fs/inotify/max_user_watches")
+        max_instances = _read_int("/proc/sys/fs/inotify/max_user_instances")
+        max_queued = _read_int("/proc/sys/fs/inotify/max_queued_events")
+        out, _rc = _run(
+            "grep -r 'inotify' /proc/*/fdinfo/ --include='*' -l 2>/dev/null | wc -l"
+        )
+        current_watchers = int(out.strip()) if out.strip().isdigit() else 0
+        watch_pct = min(100.0, current_watchers / max_watches * 100) if max_watches else 0.0
+        return jsonify({
+            "max_watches": max_watches,
+            "max_instances": max_instances,
+            "max_queued_events": max_queued,
+            "current_watchers": current_watchers,
+            "watch_usage_pct": round(watch_pct, 2),
+            "source": "proc-sysfs",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "max_watches": 0, "current_watchers": 0})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
