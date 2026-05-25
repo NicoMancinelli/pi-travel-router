@@ -832,6 +832,15 @@
     <div id="arp-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
   </div>
 
+  <!-- System Updates -->
+  <div class="card full-width" id="card-updates" style="margin-top:16px;">
+    <div class="card-header">
+      <span>📦 System Updates</span>
+      <button class="btn btn-sm" id="check-updates-btn" onclick="fetchSystemUpdates()">Check</button>
+    </div>
+    <div id="updates-content"><span style="color:var(--text-dim);font-size:13px;">Click Check to scan for updates.</span></div>
+  </div>
+
   <!-- Config Backup -->
   <div class="card" id="card-config-backup" style="margin-top:16px;">
     <div class="card-header">
@@ -4817,16 +4826,51 @@ async function fetchArpTable() {
   }
 }
 
+// ── System Update Checker ─────────────────────────────────────────────────────
+
+async function fetchSystemUpdates() {
+  const el = document.getElementById('updates-content');
+  const btn = document.getElementById('check-updates-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Checking…'; }
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Checking for updates…</span>';
+  try {
+    const r = await apiFetch('/api/system/updates');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);">' + (d.error || 'Error') + '</span>'; return; }
+    if (d.count === 0) {
+      el.innerHTML = '<span style="color:var(--ok,#4c4);font-size:13px;">✓ System is up to date</span>';
+      return;
+    }
+    let html = '<div style="font-size:12px;color:var(--warn,#e93);margin-bottom:8px;font-weight:600;">' + d.count + ' update(s) available</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Package</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">New Version</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Current</th>';
+    html += '</tr></thead><tbody>';
+    for (const p of d.packages) {
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + p.package + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--ok,#4c4);font-family:monospace;font-size:12px;">' + (p.new_version || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);font-family:monospace;font-size:12px;">' + (p.old_version || '—') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Check'; }
+  }
+}
+
 // ── Config Backup ─────────────────────────────────────────────────────────────
 
 function downloadConfigBackup() {
   const status = document.getElementById('backup-status');
   status.textContent = 'Preparing backup…';
-  // Open the download URL directly — the browser handles the file save
   const token = window._authToken || '';
   const url = '/api/config/backup';
-  // Use a hidden anchor to trigger download with auth header isn't straightforward;
-  // instead open in same window — the Content-Disposition header will trigger download
   fetch(url, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} })
     .then(r => {
       if (!r.ok) { status.textContent = 'Error: ' + r.status; return; }
