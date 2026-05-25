@@ -947,6 +947,15 @@
     <div id="net-interfaces-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- AdGuard Home Stats -->
+  <div class="card full-width" id="card-adguard-stats">
+    <div class="card-title">
+      &#x1F6E1; AdGuard Home
+      <button class="btn btn-sm" onclick="fetchAdguardStats()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="adguard-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- System Services -->
   <div class="card full-width" id="card-system-services">
     <div class="card-title">
@@ -3911,6 +3920,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWgPeerHealth();
   fetchDhcpLeases();
   fetchNetInterfaces();
+  fetchAdguardStats();
   fetchSystemServices();
   fetchTailscaleStatus();
 });
@@ -5516,6 +5526,60 @@ async function fetchNetInterfaces() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load interfaces</span>';
+  }
+}
+
+// ── AdGuard Home Stats ────────────────────────────────────────────────────────
+
+async function fetchAdguardStats() {
+  const el = document.getElementById('adguard-stats-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/dns/adguard/stats');
+    const data = await resp.json();
+    if (!data.available) {
+      el.innerHTML = `<span style="color:var(--text-dim)">AdGuard Home not available: ${escHtml(data.error || '')}</span>`;
+      return;
+    }
+
+    const blockColor = data.block_percent >= 30 ? '#22c55e' : data.block_percent >= 10 ? '#f97316' : '#6b7280';
+
+    let html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px;">';
+    html += `<div style="text-align:center;padding:10px;background:var(--bg2);border-radius:6px;">`;
+    html += `<div style="font-size:22px;font-weight:700;">${data.num_dns_queries.toLocaleString()}</div>`;
+    html += `<div style="font-size:11px;color:var(--text-dim);">Total Queries</div></div>`;
+    html += `<div style="text-align:center;padding:10px;background:var(--bg2);border-radius:6px;">`;
+    html += `<div style="font-size:22px;font-weight:700;color:${blockColor};">${data.total_blocked.toLocaleString()}</div>`;
+    html += `<div style="font-size:11px;color:var(--text-dim);">Blocked (${data.block_percent}%)</div></div>`;
+    html += `<div style="text-align:center;padding:10px;background:var(--bg2);border-radius:6px;">`;
+    const avgMs = data.avg_processing_time ? (data.avg_processing_time * 1000).toFixed(1) : '—';
+    html += `<div style="font-size:22px;font-weight:700;">${avgMs}</div>`;
+    html += `<div style="font-size:11px;color:var(--text-dim);">Avg ms/query</div></div>`;
+    html += '</div>';
+
+    function topList(title, items) {
+      if (!items || items.length === 0) return '';
+      let out = `<div style="margin-bottom:10px;"><div style="font-weight:600;font-size:12px;margin-bottom:4px;">${title}</div>`;
+      out += '<div style="font-size:12px;">';
+      for (const item of items) {
+        const [name, count] = typeof item === 'object' ? Object.entries(item)[0] : [item, ''];
+        out += `<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid var(--border);">`;
+        out += `<span style="font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70%;">${escHtml(name)}</span>`;
+        out += `<span style="color:var(--text-dim);">${count}</span></div>`;
+      }
+      out += '</div></div>';
+      return out;
+    }
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">';
+    html += '<div>' + topList('Top Blocked Domains', data.top_blocked_domains) + '</div>';
+    html += '<div>' + topList('Top Clients', data.top_clients) + '</div>';
+    html += '</div>';
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load AdGuard stats</span>';
   }
 }
 
