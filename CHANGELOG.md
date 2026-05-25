@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.21.0] - 2026-05-24
+
+### Added
+
+- **SSH login history** (`web/app.py`, `web/static/index.html`): `GET /api/system/logins` parses `last -n <limit> -w` for recent logins (user, tty, host, date, still-on/crashed status) and `lastb -n 10 -w` for failed login attempts. Dashboard "Login History" card shows a sortable table with color-coded active/failed rows.
+- **Active DHCP leases** (`web/app.py`, `web/static/index.html`): `GET /api/dhcp/leases` parses `/var/lib/misc/dnsmasq.leases` (5-field format), computes human-readable remaining time with color-coding (red = expired, orange = <5 min). Dashboard card shows IP/MAC/hostname/expires columns sorted by IP.
+- **DNS-over-HTTPS resolver selector** (`web/app.py`, `web/static/index.html`): `GET /api/dns/doh-resolver` reads current resolver from `/etc/default/travel-router` and systemd-resolved config. `POST /api/dns/doh-resolver` validates against `_DOH_RESOLVERS` dict (Cloudflare, Quad9, Google, NextDNS, AdGuard) and calls `set-doh-resolver.sh`. Dashboard card with dropdown and live apply button.
+
 ## [2.20.0] - 2026-05-24
 
 ### Added
