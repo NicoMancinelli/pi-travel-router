@@ -974,6 +974,15 @@
     <div id="traffic-shaping-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Logged-In Sessions -->
+  <div class="card full-width" id="card-logged-in-sessions">
+    <div class="card-title">
+      &#x1F464; Active Sessions
+      <button class="btn btn-sm" onclick="fetchLoggedInSessions()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="logged-in-sessions-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4565,6 +4574,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchOomEvents();
   fetchHardwareSensors();
   fetchFirewallRulesFull();
+  fetchLoggedInSessions();
 });
 
 async function fetchJournal() {
@@ -4827,6 +4837,7 @@ async function refreshAll() {
   fetchOomEvents();
   fetchHardwareSensors();
   fetchFirewallRulesFull();
+  fetchLoggedInSessions();
 }
 
 async function init() {
@@ -9593,6 +9604,46 @@ async function fetchFirewallRulesFull() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchFirewallRulesFull error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load firewall rules</span>';
+  }
+}
+
+// ── Logged-In Sessions ────────────────────────────────────────────────────────
+
+async function fetchLoggedInSessions() {
+  const el = document.getElementById('logged-in-sessions-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/logged-in-sessions');
+    const d = await r.json();
+    const sessions = d.sessions || [];
+    if (!sessions.length) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No active sessions</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:4px 8px;">User</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">TTY/Type</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">State</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">From</th>';
+    html += '</tr></thead><tbody>';
+    for (const s of sessions) {
+      const remoteBadge = s.remote
+        ? `<span style="background:#3b82f6;color:#fff;padding:1px 4px;border-radius:3px;font-size:10px;margin-left:4px;">SSH</span>`
+        : '';
+      const stateColor = s.state === 'active' ? 'var(--success)' : 'var(--text-dim)';
+      html += `<tr style="border-bottom:1px solid var(--border-faint,#333);">`;
+      html += `<td style="padding:3px 8px;font-weight:600;">${s.user}${remoteBadge}</td>`;
+      html += `<td style="padding:3px 8px;font-family:monospace;">${s.tty || s.type || '—'}</td>`;
+      html += `<td style="padding:3px 8px;color:${stateColor};">${s.state || 'active'}</td>`;
+      html += `<td style="padding:3px 8px;font-family:monospace;font-size:11px;">${s.remote_host || (s.login_time || '—')}</td>`;
+      html += `</tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchLoggedInSessions error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load sessions</span>';
   }
 }
 

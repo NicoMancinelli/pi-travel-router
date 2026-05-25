@@ -10521,6 +10521,73 @@ def api_network_traffic_shaping():
     })
 
 
+# ── Logged-In Sessions ────────────────────────────────────────────────────────
+
+@app.route("/api/system/logged-in-sessions", methods=["GET"])
+@require_auth
+def api_system_logged_in_sessions():
+    """Return currently logged-in user sessions."""
+    sessions = []
+
+    # Primary: loginctl list-sessions
+    out, rc = _run(["loginctl", "list-sessions", "--no-legend"])
+    if rc == 0 and out.strip():
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) >= 4:
+                session_id = parts[0]
+                uid = parts[1]
+                user = parts[2]
+                seat = parts[3] if len(parts) > 3 else ""
+                tty = parts[4] if len(parts) > 4 else ""
+                # Get more detail per session
+                detail_out, detail_rc = _run(["loginctl", "show-session", session_id,
+                                              "--property=Type,Remote,RemoteHost,State,Service,Scope"])
+                detail = {}
+                if detail_rc == 0:
+                    for dline in detail_out.splitlines():
+                        if "=" in dline:
+                            k, _, v = dline.partition("=")
+                            detail[k.strip()] = v.strip()
+                sessions.append({
+                    "session_id": session_id,
+                    "uid": uid,
+                    "user": user,
+                    "seat": seat,
+                    "tty": tty,
+                    "type": detail.get("Type", ""),
+                    "remote": detail.get("Remote", "no").lower() == "yes",
+                    "remote_host": detail.get("RemoteHost", ""),
+                    "state": detail.get("State", ""),
+                    "service": detail.get("Service", ""),
+                })
+    else:
+        # Fallback: who -a
+        out, rc = _run(["who", "-a"])
+        if rc == 0:
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) >= 3 and parts[0] not in ("system", "run-level", "boot"):
+                    user = parts[0]
+                    tty = parts[1] if len(parts) > 1 else ""
+                    login_time = " ".join(parts[2:4]) if len(parts) >= 4 else ""
+                    sessions.append({
+                        "session_id": "",
+                        "uid": "",
+                        "user": user,
+                        "seat": "",
+                        "tty": tty,
+                        "type": "tty",
+                        "remote": False,
+                        "remote_host": "",
+                        "state": "active",
+                        "service": "",
+                        "login_time": login_time,
+                    })
+
+    return jsonify({"sessions": sessions, "count": len(sessions)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
