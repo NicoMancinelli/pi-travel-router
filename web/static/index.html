@@ -1019,6 +1019,15 @@
     <div id="dhcp-server-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Network Link Status -->
+  <div class="card full-width" id="card-link-status">
+    <div class="card-title">
+      &#x1F517; Network Link Status
+      <button class="btn btn-sm" onclick="fetchLinkStatus()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="link-status-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4616,6 +4625,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTcpStateCounts();
   fetchPiHardware();
   fetchDhcpServerStats();
+  fetchLinkStatus();
 });
 
 async function fetchJournal() {
@@ -4884,6 +4894,7 @@ async function refreshAll() {
   fetchTcpStateCounts();
   fetchPiHardware();
   fetchDhcpServerStats();
+  fetchLinkStatus();
 }
 
 async function init() {
@@ -9690,6 +9701,46 @@ async function fetchLoggedInSessions() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchLoggedInSessions error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load sessions</span>';
+  }
+}
+
+// ── Network Link Status ───────────────────────────────────────────────────────
+
+async function fetchLinkStatus() {
+  const el = document.getElementById('link-status-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/network/link-status');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>'; return; }
+    const links = d.links || [];
+    if (links.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);">No interfaces found</span>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Interface</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">State</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Speed</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Duplex</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">MTU</th>';
+    html += '</tr></thead><tbody>';
+    links.forEach(l => {
+      const up = l.carrier || l.operstate === 'UP';
+      const stateColor = up ? 'var(--ok,#4c4)' : 'var(--text-dim)';
+      const stateIcon = up ? '●' : '○';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;font-weight:600;">' + l.name + '</td>';
+      html += '<td style="padding:4px 8px;color:' + stateColor + ';">' + stateIcon + ' ' + (l.operstate || '?') + '</td>';
+      html += '<td style="padding:4px 8px;">' + (l.speed_mbps ? l.speed_mbps + ' Mb/s' : '—') + '</td>';
+      html += '<td style="padding:4px 8px;color:var(--text-dim);">' + (l.duplex || '—') + '</td>';
+      html += '<td style="padding:4px 8px;color:var(--text-dim);">' + (l.mtu || '—') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchLinkStatus error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load link status</span>';
   }
 }
 

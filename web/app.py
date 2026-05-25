@@ -10892,6 +10892,66 @@ def api_network_dhcp_server_stats():
     return jsonify(stats)
 
 
+# ── Network Link Status ───────────────────────────────────────────────────────
+
+@app.route("/api/network/link-status", methods=["GET"])
+@require_auth
+def api_network_link_status():
+    """Return physical link status for network interfaces via ip link show."""
+    links = []
+
+    # Get interface list from ip -j link show
+    out, rc = _run(["ip", "-j", "link", "show"])
+    if rc == 0:
+        try:
+            ifaces = json.loads(out)
+        except (ValueError, KeyError):
+            ifaces = []
+
+        for iface in ifaces:
+            name = iface.get("ifname", "")
+            if name in ("lo",):
+                continue
+            flags = iface.get("flags", [])
+            operstate = iface.get("operstate", "UNKNOWN").upper()
+            carrier = "UP" in flags or operstate in ("UP", "LOWER_UP")
+            link_type = iface.get("link_type", "")
+            mtu = iface.get("mtu")
+            mac = iface.get("address", "")
+
+            entry = {
+                "name": name,
+                "operstate": operstate,
+                "carrier": carrier,
+                "mtu": mtu,
+                "mac": mac,
+                "link_type": link_type,
+                "speed_mbps": None,
+                "duplex": None,
+                "port": None,
+                "ethtool_available": False,
+            }
+
+            # Try ethtool for speed/duplex (may fail on virtual interfaces)
+            eth_out, eth_rc = _run(["ethtool", name])
+            if eth_rc == 0:
+                entry["ethtool_available"] = True
+                for line in eth_out.splitlines():
+                    line = line.strip()
+                    if line.startswith("Speed:"):
+                        m = re.search(r'(\d+)\s*Mb/s', line)
+                        if m:
+                            entry["speed_mbps"] = int(m.group(1))
+                    elif line.startswith("Duplex:"):
+                        entry["duplex"] = line.split(":", 1)[1].strip()
+                    elif line.startswith("Port:"):
+                        entry["port"] = line.split(":", 1)[1].strip()
+
+            links.append(entry)
+
+    return jsonify({"links": links, "count": len(links)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
