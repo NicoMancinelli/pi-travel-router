@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.46.0] - 2026-05-25
+
+### Added
+
+- **CPU utilisation card** (`web/app.py`, `web/static/index.html`): `GET /api/system/cpu-stats` reads `/proc/stat` for overall + per-core user/nice/system/idle/iowait/irq/softirq percentages. Dashboard card with overall utilisation bar (green/orange/red), breakdown row (User/System/IOWait/IRQ), compact per-core bars when multi-core. Auto-refreshes on poll.
+- **Key sysctl card** (`web/app.py`, `web/static/index.html`): `GET /api/system/sysctl` reads 10 key `/proc/sys/` paths (ip_forward, ipv6 forwarding, syncookies, rp_filter, rmem_max, wmem_max, swappiness, dirty_ratio, hostname, randomize_va_space). Forwarding flags show green ✓/red ✗ badges, swappiness colour-coded, buffer sizes human-readable. On-demand Refresh + auto-polls.
+- **Memory breakdown card** (`web/app.py`, `web/static/index.html`): `GET /api/system/memory-breakdown` reads `/proc/meminfo` for 20 fields normalised to bytes. Dashboard card with colour-coded usage bar (green <60%, orange 60-80%, red ≥80%), labelled rows (Used/Available/Buffers/Cached/Swap Used). Auto-refreshes on poll.
+
 ## [2.45.0] - 2026-05-25
 
 ### Added
