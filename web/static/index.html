@@ -897,6 +897,15 @@
     <div id="wifi-clients-content" style="font-size:13px;color:var(--text-dim);">Loading…</div>
   </div>
 
+  <!-- Listening Ports -->
+  <div class="card full-width" id="card-listening-ports">
+    <div class="card-title">
+      Listening Ports (<span id="ports-count">0</span>)
+      <button class="btn btn-sm" onclick="fetchListeningPorts()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="ports-content" style="overflow-x:auto;font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3838,6 +3847,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (sel) sel.addEventListener('change', () => fetchClientHistory());
   fetchFirewallRules();
   fetchSystemResources();
+  fetchListeningPorts();
 });
 
 async function fetchJournal() {
@@ -5183,6 +5193,51 @@ async function fetchSystemResources() {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
+  }
+}
+
+// ── Listening Ports ───────────────────────────────────────────────────────────
+
+async function fetchListeningPorts() {
+  const el = document.getElementById('ports-content');
+  const countEl = document.getElementById('ports-count');
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/ports');
+    if (!resp.ok) { el.innerHTML = '<span style="color:var(--danger)">Error fetching ports</span>'; return; }
+    const data = await resp.json();
+    const ports = data.ports || [];
+    countEl.textContent = data.count || 0;
+    if (ports.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No listening ports found.</span>';
+      return;
+    }
+    function portBadge(port) {
+      let color = '#6b7280'; // gray default
+      if (port === 22)             color = '#3b82f6'; // blue  — SSH
+      else if (port === 80 || port === 443) color = '#22c55e'; // green — HTTP/S
+      else if (port === 53)        color = '#a855f7'; // purple — DNS
+      else if (port === 8080)      color = '#f97316'; // orange — web UI
+      return `<span style="display:inline-block;background:${color};color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">${port}</span>`;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);">';
+    html += '<th style="padding:4px 8px;">Proto</th><th style="padding:4px 8px;">Port</th>';
+    html += '<th style="padding:4px 8px;">Address</th><th style="padding:4px 8px;">Program</th>';
+    html += '<th style="padding:4px 8px;">PID</th></tr></thead><tbody>';
+    for (const p of ports) {
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:4px 8px;">${escHtml(p.proto)}</td>`;
+      html += `<td style="padding:4px 8px;">${portBadge(p.local_port)}</td>`;
+      html += `<td style="padding:4px 8px;font-family:var(--mono)">${escHtml(p.local_addr)}</td>`;
+      html += `<td style="padding:4px 8px;">${p.program ? escHtml(p.program) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += `<td style="padding:4px 8px;font-family:var(--mono)">${p.pid != null ? p.pid : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load ports</span>';
   }
 }
 
