@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.61.0] - 2026-05-25
+
+### Added
+- `GET /api/system/tcp-state-counts` — TCP/UDP connection state breakdown via `ss -tan` and `ss -uan`; returns per-state counts plus convenience keys for ESTABLISHED, LISTEN, TIME-WAIT, CLOSE-WAIT, total TCP, and UDP socket count; dashboard card color-codes TIME-WAIT (>50) and CLOSE-WAIT (>10) amber
+- `GET /api/system/pi-hardware` — Raspberry Pi hardware info from `/proc/cpuinfo` and `/proc/meminfo` with `vcgencmd version`, `vcgencmd measure_clock {arm,core,sdram_c}`, and `rpi-eeprom-update`; returns model, hardware, revision, serial, memory, clock frequencies, firmware, and bootloader version; gracefully no-ops `vcgencmd` fields on non-Pi hardware
+- `GET /api/network/dhcp-server-stats` — dnsmasq DHCP server stats: process status via `pgrep`, active/total lease counts from lease file (3 candidate paths), DHCP range parsing from config files, pool size via `ipaddress.IPv4Address` arithmetic; dashboard card shows running status, pool utilization (amber >80%), and lease file path
+- Dashboard cards: TCP States (📶), Pi Hardware (💻), DHCP Server Stats (📡)
+
 ## [2.60.0] - 2026-05-25
 
 ### Added
