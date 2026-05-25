@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.76.0] - 2026-05-25
+
+### Added
+- `GET /api/system/load-history` — CPU load averages (1/5/15 min) from `/proc/loadavg` plus running/total process counts; per-CPU user/system/iowait/idle breakdown from `/proc/stat`; dashboard card shows color-coded load tiles (green/amber/red relative to CPU count) and stacked per-CPU bars
+- `GET /api/network/dhcp-leases` — active DHCP leases from dnsmasq lease files with isc-dhcpd fallback; per-lease IP, hostname, MAC, and time-to-expiry; dashboard card shows scrollable lease table sorted by IP
+- `GET /api/system/services` — systemd service status overview via `systemctl list-units --type=service`; summary counts (total/active/failed/inactive); top 50 services sorted failed-first; dashboard card shows summary tiles and per-service table with color-coded state
+- Dashboard cards: CPU Load (📊), DHCP Leases (📋), Services (⚙️)
+
 ## [2.75.0] - 2026-05-25
 
 ### Added
