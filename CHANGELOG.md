@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.84.0] - 2026-05-25
+
+### Added
+- `GET /api/network/geoip` — public WAN IP and geolocation via ipinfo.io (ip-api.com fallback); 60-second module-level cache; returns IP, city, region, country, org/ASN, timezone, coordinates; dashboard card WAN IP & Location (🌍) with IP badge, location rows, and coordinate display
+- Dashboard card: WAN IP & Location (🌍)
+
 ## [2.83.0] - 2026-05-25
 
 ### Added
