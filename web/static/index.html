@@ -1019,6 +1019,15 @@
     <div id="dhcp-server-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Boot Time Analysis -->
+  <div class="card full-width" id="card-boot-analysis">
+    <div class="card-title">
+      &#x1F680; Boot Time Analysis
+      <button class="btn btn-sm" onclick="fetchBootAnalysis()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="boot-analysis-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4616,6 +4625,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTcpStateCounts();
   fetchPiHardware();
   fetchDhcpServerStats();
+  fetchBootAnalysis();
 });
 
 async function fetchJournal() {
@@ -4884,6 +4894,7 @@ async function refreshAll() {
   fetchTcpStateCounts();
   fetchPiHardware();
   fetchDhcpServerStats();
+  fetchBootAnalysis();
 }
 
 async function init() {
@@ -9690,6 +9701,57 @@ async function fetchLoggedInSessions() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchLoggedInSessions error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load sessions</span>';
+  }
+}
+
+// ── Boot Time Analysis ────────────────────────────────────────────────────────
+
+async function fetchBootAnalysis() {
+  const el = document.getElementById('boot-analysis-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/boot-analysis');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>'; return; }
+    if (!d.systemd_analyze_available) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">systemd-analyze not available</span>';
+      return;
+    }
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:16px;">';
+    const phases = [
+      { label: 'Firmware', val: d.firmware_seconds },
+      { label: 'Loader', val: d.loader_seconds },
+      { label: 'Kernel', val: d.kernel_seconds },
+      { label: 'Initrd', val: d.initrd_seconds },
+      { label: 'Userspace', val: d.userspace_seconds },
+      { label: 'Total', val: d.total_seconds },
+    ];
+    phases.forEach(p => {
+      if (p.val == null) return;
+      const color = p.label === 'Total' ? 'var(--info,#49f)' : (p.val > 10 ? 'var(--warning,#fa0)' : 'inherit');
+      html += '<div style="background:var(--bg2);border-radius:6px;padding:8px 12px;">';
+      html += '<div style="font-size:11px;color:var(--text-dim);">' + p.label + '</div>';
+      html += '<div style="font-size:16px;font-weight:600;color:' + color + ';">' + p.val.toFixed(2) + 's</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    if (d.blame && d.blame.length > 0) {
+      html += '<div style="font-size:12px;color:var(--text-dim);font-weight:600;margin-bottom:4px;">Slowest units:</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      d.blame.forEach((b, i) => {
+        const bg = i % 2 === 0 ? 'var(--bg2)' : 'transparent';
+        html += '<tr style="background:' + bg + ';">';
+        html += '<td style="padding:3px 8px;color:var(--text-dim);">' + b.time_str + '</td>';
+        html += '<td style="padding:3px 8px;">' + b.unit + '</td>';
+        html += '</tr>';
+      });
+      html += '</table>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchBootAnalysis error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load boot analysis</span>';
   }
 }
 
