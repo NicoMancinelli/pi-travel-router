@@ -9586,6 +9586,90 @@ def api_system_uptime_history():
     return jsonify({"events": events, "uptime_seconds": uptime_seconds})
 
 
+@app.route("/api/network/socket-summary")
+@require_auth
+def api_network_socket_summary():
+    """Return socket statistics summary from ss -s, falling back to /proc/net/sockstat."""
+    out, rc = _run(["ss", "-s"])
+    if rc == 0:
+        result = {}
+        for line in out.splitlines():
+            line = line.strip()
+            # "Total: 123" or "Total: 123 (kernel 456)"
+            if line.startswith("Total:"):
+                m = line.split()
+                try:
+                    result["total"] = int(m[1])
+                except (IndexError, ValueError):
+                    pass
+            # "TCP:   10 (estab 3, closed 2, orphaned 0, timewait 1)"
+            elif line.startswith("TCP:"):
+                parts = line.split(":", 1)
+                if len(parts) == 2:
+                    rest = parts[1].strip()
+                    nums = rest.split("(")[0].strip()
+                    try:
+                        result["tcp_total"] = int(nums)
+                    except ValueError:
+                        pass
+                    # parse parenthesised states
+                    import re
+                    for m in re.finditer(r'(\w+)\s+(\d+)', rest):
+                        key, val = m.group(1), m.group(2)
+                        if key in ("estab", "closed", "orphaned", "timewait"):
+                            result["tcp_" + key] = int(val)
+            # "UDP:   5"
+            elif line.startswith("UDP:"):
+                parts = line.split()
+                try:
+                    result["udp"] = int(parts[1])
+                except (IndexError, ValueError):
+                    pass
+            # "RAW:   0"
+            elif line.startswith("RAW:"):
+                parts = line.split()
+                try:
+                    result["raw"] = int(parts[1])
+                except (IndexError, ValueError):
+                    pass
+        result["source"] = "ss"
+        return jsonify(result)
+
+    # Fallback: parse /proc/net/sockstat
+    result = {"source": "sockstat"}
+    try:
+        content = Path("/proc/net/sockstat").read_text()
+    except OSError:
+        return jsonify({"error": "cannot read socket statistics"})
+
+    for line in content.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        label = parts[0].rstrip(":")
+        # Build a dict of key/value pairs from the rest
+        kv = {}
+        i = 1
+        while i < len(parts) - 1:
+            try:
+                kv[parts[i]] = int(parts[i + 1])
+            except ValueError:
+                pass
+            i += 2
+        if label == "sockets":
+            result["total"] = kv.get("used", 0)
+        elif label == "TCP":
+            result["tcp_total"] = kv.get("inuse", 0)
+            result["tcp_timewait"] = kv.get("tw", 0)
+            result["tcp_orphaned"] = kv.get("orphan", 0)
+        elif label == "UDP":
+            result["udp"] = kv.get("inuse", 0)
+        elif label == "RAW":
+            result["raw"] = kv.get("inuse", 0)
+
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

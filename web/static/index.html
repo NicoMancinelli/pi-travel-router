@@ -1331,6 +1331,12 @@
     <div id="uptime-history-content"><em>Loading…</em></div>
   </div>
 
+  <!-- Socket Summary -->
+  <div class="card" id="card-socket-summary">
+    <h2>🔗 Socket Summary</h2>
+    <div id="socket-summary-content"><em>Loading…</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4398,6 +4404,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchHardwareInfo();
   fetchVmstat();
   fetchUptimeHistory();
+  fetchSocketSummary();
 });
 
 async function fetchJournal() {
@@ -4639,6 +4646,7 @@ async function refreshAll() {
   fetchHardwareInfo();
   fetchVmstat();
   fetchUptimeHistory();
+  fetchSocketSummary();
 }
 
 async function init() {
@@ -8679,6 +8687,30 @@ async function fetchUptimeHistory() {
       html += '</tbody></table>';
     }
     el.innerHTML = html;
+  } catch (e) { el.textContent = 'Error: ' + e; }
+}
+
+// ── Socket Summary ────────────────────────────────────────────────────────────
+
+async function fetchSocketSummary() {
+  const el = document.getElementById('socket-summary-content');
+  try {
+    const r = await fetch('/api/network/socket-summary');
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    const fmt = n => n !== undefined ? n.toLocaleString() : '—';
+    const rows = [
+      ['Total sockets', fmt(d.total)],
+      ['TCP total', fmt(d.tcp_total)],
+      ['TCP established', fmt(d.tcp_estab)],
+      ['TCP time-wait', fmt(d.tcp_timewait)],
+      ['TCP closed', fmt(d.tcp_closed)],
+      ['TCP orphaned', fmt(d.tcp_orphaned)],
+      ['UDP', fmt(d.udp)],
+      ['RAW', fmt(d.raw)],
+      ['Source', d.source || '—'],
+    ].map(([k, v]) => `<tr><td>${k}</td><td style="text-align:right;font-family:monospace">${v}</td></tr>`).join('');
+    el.innerHTML = `<table class="info-table"><tbody>${rows}</tbody></table>`;
   } catch (e) { el.textContent = 'Error: ' + e; }
 }
 
