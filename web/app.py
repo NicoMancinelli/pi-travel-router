@@ -1423,6 +1423,7 @@ def api_wg_peer_qr(pubkey_encoded):
         "PersistentKeepalive = 25\n"
     )
 
+    qr_data_url = None
     try:
         result = subprocess.run(
             ["qrencode", "-t", "PNG", "-o", "-"],
@@ -1431,15 +1432,20 @@ def api_wg_peer_qr(pubkey_encoded):
             text=False,
             timeout=10,
         )
+        if result.returncode == 0 and result.stdout:
+            import base64 as _b64
+            qr_data_url = "data:image/png;base64," + _b64.b64encode(result.stdout).decode()
     except FileNotFoundError:
-        return jsonify({"error": "qrencode not installed"}), 503
-    except Exception as exc:
-        return jsonify({"error": f"qrencode failed: {exc}"}), 503
+        pass  # qrencode not installed — return config without QR image
+    except Exception:
+        pass
 
-    if result.returncode != 0:
-        return jsonify({"error": "qrencode failed"}), 503
-
-    return Response(result.stdout, mimetype="image/png")
+    return jsonify({
+        "pubkey": pubkey,
+        "client_config": client_conf,
+        "qr_data_url": qr_data_url,
+        "note": "Replace REPLACE_WITH_CLIENT_PRIVATE_KEY with the peer's private key before scanning.",
+    })
 
 
 # ── Guest network ─────────────────────────────────────────────────────────────
