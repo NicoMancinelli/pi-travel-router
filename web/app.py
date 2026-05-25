@@ -4715,6 +4715,95 @@ def api_notify_test():
         return jsonify({"error": str(exc)}), 500
 
 
+# ── DoH resolver selector ─────────────────────────────────────────────────────
+
+_DOH_RESOLVERS = {
+    "cloudflare": {"name": "Cloudflare", "url": "https://1.1.1.1/dns-query"},
+    "quad9":      {"name": "Quad9",      "url": "https://dns.quad9.net/dns-query"},
+    "google":     {"name": "Google",     "url": "https://dns.google/dns-query"},
+    "nextdns":    {"name": "NextDNS",    "url": "https://dns.nextdns.io/"},
+    "adguard":    {"name": "AdGuard",    "url": "https://dns.adguard-dns.com/dns-query"},
+}
+
+# Resolvers that set-doh-resolver.sh accepts by name (no https:// needed)
+_DOH_SCRIPT_PRESETS = {"cloudflare", "quad9", "nextdns", "adguard", "system"}
+
+
+@app.route("/api/dns/doh-resolver", methods=["GET"])
+@require_auth
+def api_doh_resolver_get():
+    """Return current DoH resolver and available options."""
+    current = "cloudflare"
+    # Try to read current resolver from /etc/default/travel-router
+    try:
+        text = Path(DEFAULTS_FILE).read_text()
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("DOH_RESOLVER=") or line.startswith("DNS_RESOLVER="):
+                val = line.split("=", 1)[1].strip().strip('"').strip("'").lower()
+                if val in _DOH_RESOLVERS:
+                    current = val
+                    break
+                # Match by URL
+                for name, info in _DOH_RESOLVERS.items():
+                    if val == info["url"]:
+                        current = name
+                        break
+                break
+    except OSError:
+        pass
+    # Also check systemd-resolved DoH config
+    try:
+        resolved_conf = Path("/etc/systemd/resolved.conf.d/doh.conf")
+        text = resolved_conf.read_text()
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("DNS="):
+                dns_host = line.split("=", 1)[1].strip().lower()
+                for name, info in _DOH_RESOLVERS.items():
+                    if dns_host in info["url"]:
+                        current = name
+                        break
+                break
+    except OSError:
+        pass
+    return jsonify({
+        "current": current,
+        "resolvers": [{"id": k, **v} for k, v in _DOH_RESOLVERS.items()],
+    })
+
+
+@app.route("/api/dns/doh-resolver", methods=["POST"])
+@require_auth_always
+def api_doh_resolver_post():
+    """Switch DoH resolver via set-doh-resolver.sh."""
+    body = request.get_json(silent=True) or {}
+    resolver = str(body.get("resolver", "")).strip().lower()
+    if resolver not in _DOH_RESOLVERS:
+        return jsonify({"error": f"unknown resolver: {resolver}", "valid": list(_DOH_RESOLVERS.keys())}), 400
+    # Determine what to pass to the script:
+    # - known script presets → pass by name
+    # - others (e.g. google) → pass by URL
+    if resolver in _DOH_SCRIPT_PRESETS:
+        script_arg = resolver
+    else:
+        script_arg = _DOH_RESOLVERS[resolver]["url"]
+    script = Path(DOH_SCRIPT)
+    if script.exists():
+        out, rc = _run(["bash", str(script), script_arg], timeout=15)
+        if rc != 0:
+            return jsonify({"error": out.strip() or "Script failed", "resolver": resolver}), 503
+        _push_event("doh_change", {"resolver": resolver})
+        return jsonify({"ok": True, "resolver": resolver, "output": (out or "").strip()})
+    # Fallback: record in config only
+    _push_event("doh_change", {"resolver": resolver})
+    return jsonify({
+        "ok": True,
+        "resolver": resolver,
+        "note": "set-doh-resolver.sh not installed; set DOH_RESOLVER in /etc/default/travel-router",
+    })
+
+
 # ── Login history ─────────────────────────────────────────────────────────────
 
 @app.route("/api/system/logins", methods=["GET"])
