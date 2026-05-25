@@ -11522,6 +11522,67 @@ def api_inotify_stats():
         return jsonify({"error": str(exc), "max_watches": 0, "current_watchers": 0})
 
 
+@app.route("/api/system/login-history", methods=["GET"])
+@require_auth
+def api_system_login_history():
+    """Return last 20 login events from the `last` command."""
+    entries = []
+    out, rc = _run(["last", "-n", "20", "--time-format", "iso"])
+    if rc != 0:
+        return jsonify({"error": "last command not available or --time-format iso not supported", "entries": [], "count": 0})
+    for line in out.splitlines():
+        line = line.rstrip()
+        if not line or line.startswith("wtmp begins"):
+            continue
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        user = parts[0]
+        tty = parts[1]
+        # Determine 'from' field: if parts[2] looks like a date (starts with digit), there is no from field
+        idx = 2
+        from_host = ""
+        if not (parts[2][0].isdigit() or parts[2].startswith("-")):
+            from_host = parts[2]
+            idx = 3
+        # Login time
+        login_time = parts[idx] if idx < len(parts) else ""
+        # Logout time / duration
+        still_logged_in = False
+        logout_time = ""
+        duration = ""
+        rest = " ".join(parts[idx + 1:]) if idx + 1 < len(parts) else ""
+        if "still logged in" in rest:
+            still_logged_in = True
+            logout_time = "still logged in"
+        elif "logged in" in rest:
+            still_logged_in = True
+            logout_time = "still logged in"
+        else:
+            # Format: - logout_time  (duration)
+            dash_pos = rest.find(" - ")
+            if dash_pos != -1:
+                after_dash = rest[dash_pos + 3:].strip()
+                # Split on whitespace: first token is logout time, rest may have duration in parens
+                after_parts = after_dash.split()
+                logout_time = after_parts[0] if after_parts else ""
+                # Duration in parentheses
+                paren_start = rest.find("(")
+                paren_end = rest.find(")")
+                if paren_start != -1 and paren_end != -1:
+                    duration = rest[paren_start + 1:paren_end]
+        entries.append({
+            "user": user,
+            "tty": tty,
+            "from": from_host,
+            "login_time": login_time,
+            "logout_time": logout_time,
+            "duration": duration,
+            "still_logged_in": still_logged_in,
+        })
+    return jsonify({"entries": entries, "count": len(entries), "source": "last"})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
