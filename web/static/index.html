@@ -689,6 +689,23 @@
     </div>
   </div>
 
+  <!-- Static DHCP Reservations -->
+  <div class="card full-width" id="card-dhcp-reservations" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4CC; Static DHCP</span>
+      <button class="btn btn-sm" onclick="fetchDhcpReservations()">&#x21BB; Refresh</button>
+    </div>
+    <div id="dhcp-reservations-content">
+      <span style="color:var(--text-dim);font-size:13px;">Loading&hellip;</span>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      <input id="dhcp-res-mac" type="text" placeholder="MAC (aa:bb:cc:dd:ee:ff)" style="flex:1;min-width:150px;">
+      <input id="dhcp-res-ip" type="text" placeholder="IP (e.g. 10.3.141.50)" style="flex:1;min-width:120px;">
+      <input id="dhcp-res-hostname" type="text" placeholder="Hostname (optional)" style="flex:1;min-width:120px;">
+      <button class="btn btn-primary" onclick="addDhcpReservation()" style="white-space:nowrap;">&#x2795; Reserve</button>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3372,6 +3389,7 @@ async function refreshAll() {
   fetchMdnsServices();
   fetchCronJobs();
   fetchDnsHosts();
+  fetchDhcpReservations();
   fetchUpdateCheck();
   fetchJournal();
   fetchRouterConfig();
@@ -3802,6 +3820,70 @@ async function deleteDnsHost(hostname) {
     toast('Error: ' + e, 'err');
   }
 }
+// ── Static DHCP Reservations ─────────────────────────────────────────────────
+
+async function fetchDhcpReservations() {
+  const el = document.getElementById('dhcp-reservations-content');
+  try {
+    const r = await apiFetch('/api/dhcp/reservations');
+    const d = await r.json();
+    const entries = d.reservations || [];
+    if (entries.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No static reservations configured</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">MAC</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">IP</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Hostname</th>';
+    html += '<th style="padding:4px 8px;border-bottom:1px solid var(--border);"></th>';
+    html += '</tr></thead><tbody>';
+    for (const e of entries) {
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + e.mac + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + e.ip + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (e.hostname || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;">'
+        + '<button class="btn btn-sm" style="color:var(--error,#e55);" onclick="deleteDhcpReservation(\'' + e.mac + '\')">&#x2715;</button>'
+        + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function addDhcpReservation() {
+  const mac = document.getElementById('dhcp-res-mac').value.trim();
+  const ip = document.getElementById('dhcp-res-ip').value.trim();
+  const hostname = document.getElementById('dhcp-res-hostname').value.trim();
+  if (!mac || !ip) { toast('MAC and IP are required', 'err'); return; }
+  try {
+    const r = await apiFetch('/api/dhcp/reservations', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({mac, ip, hostname}) });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'err'); return; }
+    document.getElementById('dhcp-res-mac').value = '';
+    document.getElementById('dhcp-res-ip').value = '';
+    document.getElementById('dhcp-res-hostname').value = '';
+    toast(d.updated ? 'Reservation updated' : 'Reservation added', 'ok');
+    await fetchDhcpReservations();
+  } catch (e) { toast('Error: ' + e, 'err'); }
+}
+
+async function deleteDhcpReservation(mac) {
+  if (!confirm('Delete reservation for ' + mac + '?')) return;
+  try {
+    const r = await apiFetch('/api/dhcp/reservations/' + encodeURIComponent(mac), { method: 'DELETE' });
+    const d = await r.json();
+    if (!r.ok) { toast(d.error || 'Failed', 'err'); return; }
+    toast('Reservation deleted', 'ok');
+    await fetchDhcpReservations();
+  } catch (e) { toast('Error: ' + e, 'err'); }
+}
+
 // ── Service Control Panel ─────────────────────────────────────────────────────
 
 async function fetchServices() {

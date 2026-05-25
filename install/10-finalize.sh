@@ -94,6 +94,11 @@ run_finalize() {
     touch /etc/hosts.travel-router 2>/dev/null || true
     ok "DNS hosts override store initialised"
 
+    # ── Static DHCP reservations store ────────────────────────────────────────────
+    section "Static DHCP reservations store"
+    touch /var/lib/travel-router/dhcp-reservations.json 2>/dev/null || true
+    ok "Static DHCP reservations store initialised"
+
     # ── Data cap store ────────────────────────────────────────────────────────────
     section "Data cap store"
     touch /var/lib/travel-router/datacap.json 2>/dev/null || true
