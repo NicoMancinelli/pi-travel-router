@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.77.0] - 2026-05-25
+
+### Added
+- `GET /api/system/processes` — top 25 processes by CPU usage via `ps aux`; per-process PID, user, CPU%, MEM%, RSS/VSZ, stat, start time, and command; dashboard card shows Top Processes (🔍) table with scrollable list
+- `GET /api/system/disk-usage` — filesystem usage from `df -Th` (all non-tmpfs mounts) plus top directory sizes via `du`; per-mount used/total/available with color-coded fill bars (green/amber/red at 70%/90%); dashboard card Disk Usage (🗂️)
+- `GET /api/network/connected-clients` — WiFi AP stations from `iw dev station dump` (MAC, signal dBm, RX/TX bytes, connected time) plus all LAN neighbors from `ip neigh`; hostname enrichment from dnsmasq leases; dashboard card Connected Clients (👥)
+- Dashboard cards: Top Processes (🔍), Disk Usage (🗂️), Connected Clients (👥)
+
 ## [2.76.0] - 2026-05-25
 
 ### Added
