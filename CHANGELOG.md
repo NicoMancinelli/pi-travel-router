@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.56.0] - 2026-05-25
+
+### Added
+- `GET /api/system/thermal-history` — thermal zone readings from `/sys/class/thermal/thermal_zone*/temp` with zone types; `vcgencmd measure_temp` GPU temp when available; dashboard card color-codes temps (green <60°C, yellow 60–80°C, red ≥80°C)
+- `GET /api/network/neighbors` — ARP/NDP neighbor table via `ip neigh show` / `ip -6 neigh show`, filtered to entries with MAC addresses, deduped by IP; dashboard card highlights REACHABLE (green) and STALE (yellow) states
+- `GET /api/system/process-tree` — top 20 processes by CPU from `ps -eo pid,ppid,user,%cpu,%mem,comm --sort=-%cpu`; dashboard card color-codes high CPU usage
+- Dashboard cards: Thermal Zones (🌡️), Network Neighbors (🔗), Top Processes (🌳)
+
 ## [2.55.0] - 2026-05-25
 
 ### Added
