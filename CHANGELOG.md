@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.80.0] - 2026-05-25
+
+### Added
+- `GET /api/network/arp` — ARP/neighbor table from `ip neigh show` (IPv4+IPv6); per-entry IP, MAC, interface, state; sorted reachable-first; dashboard card ARP / Neighbors (📡) with scrollable table and reachable/stale counts
+- `GET /api/system/open-fds` — file descriptor usage from `/proc/sys/fs/file-nr` and `/proc/sys/fs/inode-nr`; lsof total and top-10 processes by FD count; dashboard card Open File Descriptors (📂) with usage bar, stat pills, and per-process bar chart
+- `GET /api/system/login-history` — last 30 sessions from `last --time-format iso`; failed attempts from `lastb`; active session detection; dashboard card Login History (👤) with session table, active highlight, and failed-login warning panel
+- Dashboard cards: ARP / Neighbors (📡), Open File Descriptors (📂), Login History (👤)
+
 ## [2.79.0] - 2026-05-25
 
 ### Added
