@@ -1154,8 +1154,13 @@
 
   <!-- Journal Errors -->
   <div class="card" id="journal-errors-card">
-    <h2>🚨 Recent Errors</h2>
-    <div id="journal-errors-content"><p class="muted">Loading…</p></div>
+    <div class="card-header">
+      <span>📜 Journal Errors</span>
+      <span class="card-badge" id="journal-errors-badge">—</span>
+    </div>
+    <div class="card-body" id="journal-errors-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <!-- DNS Config -->
@@ -1357,6 +1362,17 @@
       <span class="card-badge" id="usb-devices-count">—</span>
     </div>
     <div class="card-body" id="usb-devices-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
+  <!-- CPU Frequency -->
+  <div class="card" id="cpufreq-card">
+    <div class="card-header">
+      <span>⚡ CPU Frequency</span>
+      <span class="card-badge" id="cpufreq-governor-badge">—</span>
+    </div>
+    <div class="card-body" id="cpufreq-content">
       <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
     </div>
   </div>
@@ -8633,25 +8649,52 @@ async function fetchNtpStatus() {
 
 // ── CPU Frequency ─────────────────────────────────────────────────────────────
 async function fetchCpuFreq() {
+  const el = document.getElementById('cpufreq-content');
+  const badge = document.getElementById('cpufreq-governor-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await fetch('/api/system/cpu-freq');
+    const r = await fetch('/api/system/cpufreq');
     const d = await r.json();
-    const el = document.getElementById('cpu-freq-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    let html = `<div class="metric-grid" style="margin-bottom:8px">
-      <div class="metric"><span class="metric-label">Avg Freq</span><span class="metric-value">${d.avg_mhz?.toFixed(0)} MHz</span></div>
-      <div class="metric"><span class="metric-label">Governor</span><span class="metric-value">${d.governor || '-'}</span></div>
-      <div class="metric"><span class="metric-label">Cores</span><span class="metric-value">${d.core_count}</span></div>
-    </div>`;
-    html += '<table class="table"><thead><tr><th>Core</th><th>Current</th><th>Min</th><th>Max</th><th>Governor</th></tr></thead><tbody>';
-    for (const c of (d.cores || [])) {
-      const pct = d.cores[0]?.max_mhz > 0 ? (c.cur_mhz / d.cores[0].max_mhz * 100) : 0;
-      const freqColor = pct > 80 ? 'color:var(--amber)' : '';
-      html += `<tr><td>CPU${c.core}</td><td style="${freqColor}">${c.cur_mhz.toFixed(0)} MHz</td><td>${c.min_mhz.toFixed(0)}</td><td>${c.max_mhz.toFixed(0)}</td><td>${c.governor}</td></tr>`;
+    if (badge && d.governor) {
+      badge.textContent = d.governor;
+      const govColor = {'performance': '#16a34a', 'powersave': '#4a9eff', 'ondemand': '#f59e0b', 'schedutil': '#8b5cf6'}[d.governor] || '#6b7280';
+      badge.style.background = govColor;
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
     }
-    html += '</tbody></table>';
+    let html = '';
+    const cpus = d.cpus || [];
+    if (cpus.length > 0) {
+      const maxMhz = d.arm_freq_mhz || Math.max(...cpus.map(c => c.max_mhz || 0));
+      html += '<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px;">';
+      for (const cpu of cpus) {
+        const pct = maxMhz > 0 ? Math.round((cpu.cur_mhz / maxMhz) * 100) : 0;
+        const col = pct >= 90 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#16a34a';
+        html += `<div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:40px;font-size:11px;color:var(--text-dim);text-align:right;flex-shrink:0;">CPU${cpu.id}</div>
+          <div style="flex:1;background:var(--border);border-radius:3px;height:14px;position:relative;overflow:hidden;">
+            <div style="position:absolute;left:0;top:0;height:14px;width:${pct}%;background:${col};transition:width 0.3s;"></div>
+          </div>
+          <div style="width:70px;font-size:11px;text-align:right;flex-shrink:0;font-family:monospace;">${cpu.cur_mhz?.toFixed(0)} MHz</div>
+        </div>`;
+      }
+      html += '</div>';
+      if (d.arm_freq_mhz) {
+        html += `<div style="font-size:11px;color:var(--text-dim);">Pi arm_freq max: <strong>${d.arm_freq_mhz} MHz</strong></div>`;
+      }
+    } else if (d.error) {
+      html = `<p class="muted">${d.error}</p>`;
+    } else {
+      html = '<p class="muted">No CPU frequency data available.</p>';
+    }
+    if (d.governors_available?.length > 0) {
+      html += `<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">Available governors: ${d.governors_available.join(', ')}</div>`;
+    }
     el.innerHTML = html;
-  } catch(e) { document.getElementById('cpu-freq-content').innerHTML = `<p class="error">${e}</p>`; }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Failed Systemd Units ──────────────────────────────────────────────────────
@@ -8924,20 +8967,49 @@ async function fetchRouteTable() {
 
 // ── Journal Errors ────────────────────────────────────────────────────────────
 async function fetchJournalErrors() {
+  const el = document.getElementById('journal-errors-content');
+  const badge = document.getElementById('journal-errors-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
     const r = await fetch('/api/system/journal-errors');
     const d = await r.json();
-    const el = document.getElementById('journal-errors-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    if (d.count === 0) { el.innerHTML = '<p style="color:var(--green)">✓ No recent errors</p>'; return; }
-    let html = `<p class="muted" style="margin-bottom:6px">Last 50 errors: <strong>${d.count}</strong> found</p>`;
-    html += '<div style="max-height:220px;overflow-y:auto"><table class="table"><thead><tr><th>Time</th><th>Unit</th><th>Message</th></tr></thead><tbody>';
-    for (const e of d.errors) {
-      html += `<tr><td style="white-space:nowrap;font-size:0.8em">${e.timestamp}</td><td><code style="font-size:0.75em">${e.unit}</code></td><td style="font-size:0.8em">${e.message}</td></tr>`;
+    if (badge) {
+      const errCount = d.error_count || 0;
+      badge.textContent = errCount > 0 ? `${errCount} errors` : 'Clean';
+      badge.style.background = errCount > 0 ? 'var(--danger,#dc2626)' : 'var(--success,#16a34a)';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
     }
-    html += '</tbody></table></div>';
+    let html = '';
+    const entries = d.entries || [];
+    if (entries.length === 0) {
+      html = '<p class="muted" style="color:var(--success,#16a34a);">✓ No recent errors or warnings.</p>';
+    } else {
+      const levelColor = p => p <= 2 ? '#dc2626' : p === 3 ? '#ef4444' : p === 4 ? '#f59e0b' : '#6b7280';
+      html += `<div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+        <div style="background:var(--bg2);border-radius:5px;padding:5px 12px;font-size:12px;"><span style="color:#ef4444;font-weight:700">${d.error_count || 0}</span> <span style="color:var(--text-dim)">errors</span></div>
+        <div style="background:var(--bg2);border-radius:5px;padding:5px 12px;font-size:12px;"><span style="color:#f59e0b;font-weight:700">${d.warning_count || 0}</span> <span style="color:var(--text-dim)">warnings</span></div>
+      </div>`;
+      html += '<div style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">';
+      for (const e of entries) {
+        const col = levelColor(e.priority);
+        html += `<div style="background:var(--bg2);border-radius:4px;padding:5px 8px;border-left:3px solid ${col};">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);margin-bottom:2px;">
+            <span style="font-weight:600;color:${col}">${e.level?.toUpperCase() || 'ERR'}</span>
+            <span>${e.unit || ''}</span>
+            <span>${e.ts || ''}</span>
+          </div>
+          <div style="font-size:11px;font-family:monospace;word-break:break-all;">${e.message || ''}</div>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    if (d.error) html += `<p style="font-size:11px;color:var(--danger);margin-top:4px;">${d.error}</p>`;
     el.innerHTML = html;
-  } catch(e) { document.getElementById('journal-errors-content').innerHTML = `<p class="error">${e}</p>`; }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Swap Usage ────────────────────────────────────────────────────────────────
