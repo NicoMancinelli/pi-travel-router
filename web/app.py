@@ -9613,7 +9613,6 @@ def api_network_socket_summary():
                     except ValueError:
                         pass
                     # parse parenthesised states
-                    import re
                     for m in re.finditer(r'(\w+)\s+(\d+)', rest):
                         key, val = m.group(1), m.group(2)
                         if key in ("estab", "closed", "orphaned", "timewait"):
@@ -9668,6 +9667,30 @@ def api_network_socket_summary():
             result["raw"] = kv.get("inuse", 0)
 
     return jsonify(result)
+
+
+@app.route("/api/system/block-devices")
+@require_auth
+def api_system_block_devices():
+    """Return block device list from lsblk --json, with key=value fallback."""
+    out, rc = _run(["lsblk", "--json", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,LABEL,RM,RO,MODEL"])
+    if rc == 0:
+        try:
+            data = json.loads(out)
+            return jsonify({"devices": data.get("blockdevices", []), "source": "lsblk-json"})
+        except (ValueError, KeyError):
+            pass
+    # fallback: lsblk -P (key=value pairs)
+    out2, rc2 = _run(["lsblk", "-P", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE"])
+    devices = []
+    if rc2 == 0:
+        for line in out2.splitlines():
+            dev = {}
+            for m in re.finditer(r'(\w+)="([^"]*)"', line):
+                dev[m.group(1).lower()] = m.group(2)
+            if dev:
+                devices.append(dev)
+    return jsonify({"devices": devices, "source": "lsblk-pairs"})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
