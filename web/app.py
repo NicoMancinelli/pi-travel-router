@@ -5015,6 +5015,40 @@ def api_network_arp():
     return jsonify({"neighbors": neighbors, "count": len(neighbors)})
 
 
+# ── System update checker ─────────────────────────────────────────────────────
+
+@app.route("/api/system/updates", methods=["GET"])
+@require_auth
+def api_system_updates():
+    """Check for available apt package updates."""
+    packages = []
+    try:
+        # Run apt list --upgradable (non-interactive, no color)
+        out, rc = _run(
+            ["apt", "list", "--upgradable"],
+            timeout=30,
+        )
+        for line in (out or "").splitlines():
+            line = line.strip()
+            # Lines look like: package/suite version arch [upgradable from: old_version]
+            if not line or line.startswith("Listing") or line.startswith("WARNING"):
+                continue
+            parts = line.split("/", 1)
+            pkg = parts[0]
+            rest = parts[1] if len(parts) > 1 else ""
+            # Extract new version (first word after /)
+            tokens = rest.split()
+            new_ver = tokens[1] if len(tokens) > 1 else ""
+            # Extract old version
+            old_ver = ""
+            if "upgradable from:" in line:
+                old_ver = line.split("upgradable from:")[-1].strip().rstrip("]")
+            packages.append({"package": pkg, "new_version": new_ver, "old_version": old_ver})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"count": len(packages), "packages": packages})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
