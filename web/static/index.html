@@ -1177,6 +1177,14 @@
     <div id="tcp-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-battery">
+    <div id="battery-content">Loading&hellip;</div>
+  </div>
+
+  <div class="card" id="card-interrupts">
+    <div id="interrupts-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4214,6 +4222,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWifiScan();
   fetchNetdev();
   fetchTcpConnections();
+  fetchBatteryStatus();
+  fetchInterrupts();
 });
 
 async function fetchJournal() {
@@ -4424,6 +4434,8 @@ async function refreshAll() {
   fetchSwapInfo();
   fetchNetdev();
   fetchTcpConnections();
+  fetchBatteryStatus();
+  fetchInterrupts();
 }
 
 async function init() {
@@ -7223,7 +7235,6 @@ async function fetchJournalErrors() {
   }
 }
 
-<<<<<<< HEAD
 // ── Swap / zRAM Info ──────────────────────────────────────────────────────────
 
 async function fetchSwapInfo() {
@@ -7471,6 +7482,123 @@ async function fetchTcpConnections() {
           `<td style="padding:2px 6px;font-family:monospace;">${remote}</td>` +
           `<td style="padding:2px 6px;color:${color};font-weight:bold;">${c.state}</td>` +
           `</tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── Battery / UPS Status ──────────────────────────────────────────────────────
+
+async function fetchBatteryStatus() {
+  const el = document.getElementById('battery-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/battery');
+    const d = await r.json();
+
+    if (d.error) {
+      el.innerHTML = '<div class="card-title">&#x1F50B; Battery / UPS</div>' +
+        `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+      return;
+    }
+
+    const batteries = d.batteries || [];
+    const countBadge = d.count > 0
+      ? ` <span style="background:var(--accent,#0af);color:#000;border-radius:10px;padding:1px 8px;font-size:12px;">${d.count}</span>`
+      : '';
+    let html = `<div class="card-title">&#x1F50B; Battery / UPS${countBadge}</div>`;
+
+    if (batteries.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No battery detected.</div>';
+      el.innerHTML = html;
+      return;
+    }
+
+    for (const bat of batteries) {
+      const cap = bat.capacity_pct != null ? bat.capacity_pct : null;
+      let barColor = '#28a745';
+      if (cap != null) {
+        if (cap < 20) barColor = '#dc3545';
+        else if (cap < 50) barColor = '#fd7e14';
+      }
+
+      const statusColors = {
+        'Discharging': '#fd7e14',
+        'Charging':    '#28a745',
+        'Full':        '#17a2b8',
+      };
+      const statusColor = bat.status ? (statusColors[bat.status] || '#6c757d') : '#6c757d';
+      const statusLabel = bat.status || 'Unknown';
+
+      html += `<div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border-color,#333);">`;
+      html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">`;
+      html += `<span style="font-weight:bold;font-size:13px;">${bat.name}</span>`;
+      html += `<span style="background:${statusColor};color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;">${statusLabel}</span>`;
+      if (bat.model) {
+        html += `<span style="font-size:12px;color:var(--text-dim);">${bat.model}</span>`;
+      }
+      html += '</div>';
+
+      if (cap != null) {
+        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">`;
+        html += `<div style="flex:1;background:var(--border-color,#333);border-radius:4px;height:10px;overflow:hidden;">`;
+        html += `<div style="width:${cap}%;background:${barColor};height:100%;border-radius:4px;transition:width 0.3s;"></div>`;
+        html += `</div>`;
+        html += `<span style="font-size:12px;min-width:34px;text-align:right;">${cap}%</span>`;
+        html += `</div>`;
+      }
+
+      const details = [];
+      if (bat.voltage_v != null) details.push(`${bat.voltage_v} V`);
+      if (bat.technology)        details.push(bat.technology);
+      if (bat.manufacturer)      details.push(bat.manufacturer);
+      if (details.length > 0) {
+        html += `<div style="font-size:12px;color:var(--text-dim);">${details.join(' · ')}</div>`;
+      }
+
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── IRQ Interrupts ────────────────────────────────────────────────────────────
+async function fetchInterrupts() {
+  const el = document.getElementById('interrupts-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/interrupts');
+    const d = await r.json();
+    const irqs = d.interrupts || [];
+    const countBadge = `<span class="badge badge-blue" style="margin-left:6px;">${d.count ?? irqs.length}</span>`;
+    let html = `<div class="card-title">&#x26A1; IRQ Interrupts ${countBadge}` +
+      `<button class="btn btn-sm" onclick="fetchInterrupts()" style="margin-left:auto;">&#x21BB; Refresh</button></div>`;
+    if (d.error && irqs.length === 0) {
+      html += `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+    } else if (irqs.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No interrupts found.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">' +
+        '<th style="text-align:left;padding:4px 6px;">IRQ</th>' +
+        '<th style="text-align:right;padding:4px 6px;">Total</th>' +
+        '<th style="text-align:left;padding:4px 6px;">Type</th>' +
+        '<th style="text-align:left;padding:4px 6px;">Description</th>' +
+        '</tr></thead><tbody>';
+      for (const irq of irqs) {
+        html += `<tr style="border-bottom:1px solid var(--border-color,#222);">` +
+          `<td style="padding:3px 6px;font-weight:bold;">${irq.irq}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${irq.total.toLocaleString()}</td>` +
+          `<td style="padding:3px 6px;color:var(--text-dim);">${irq.type || '—'}</td>` +
+          `<td style="padding:3px 6px;">${irq.description || '—'}</td>` +
+          '</tr>';
       }
       html += '</tbody></table></div>';
     }

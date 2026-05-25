@@ -8139,6 +8139,132 @@ def api_network_tcp():
     })
 
 
+# ── Battery / UPS Status ──────────────────────────────────────────────────────
+
+@app.route("/api/system/battery", methods=["GET"])
+@require_auth
+def api_system_battery():
+    """Return battery/UPS status from /sys/class/power_supply/ sysfs entries."""
+    ps_dir = "/sys/class/power_supply"
+    try:
+        entries = os.listdir(ps_dir)
+    except OSError as exc:
+        return jsonify({"error": str(exc)})
+
+    batteries = []
+    for name in sorted(entries):
+        base = os.path.join(ps_dir, name)
+
+        def _read(fname):
+            try:
+                with open(os.path.join(base, fname), "r") as fh:
+                    return fh.read().strip()
+            except OSError:
+                return None
+
+        ptype = _read("type")
+        if ptype in ("Mains", "USB"):
+            continue
+
+        bat = {"name": name, "type": ptype}
+
+        status = _read("status")
+        if status is not None:
+            bat["status"] = status
+
+        capacity = _read("capacity")
+        if capacity is not None:
+            try:
+                bat["capacity_pct"] = int(capacity)
+            except ValueError:
+                pass
+
+        voltage_now = _read("voltage_now")
+        if voltage_now is not None:
+            try:
+                bat["voltage_v"] = round(int(voltage_now) / 1_000_000, 2)
+            except ValueError:
+                pass
+
+        current_now = _read("current_now")
+        if current_now is not None:
+            try:
+                bat["current_a"] = round(int(current_now) / 1_000_000, 4)
+            except ValueError:
+                pass
+
+        manufacturer = _read("manufacturer")
+        if manufacturer is not None:
+            bat["manufacturer"] = manufacturer
+
+        model = _read("model_name")
+        if model is not None:
+            bat["model"] = model
+
+        technology = _read("technology")
+        if technology is not None:
+            bat["technology"] = technology
+
+        present = _read("present")
+        if present is not None:
+            bat["present"] = present == "1"
+
+        batteries.append(bat)
+
+    return jsonify({
+        "batteries": batteries,
+        "count": len(batteries),
+        "any_present": len(batteries) > 0,
+    })
+
+
+# ── IRQ Interrupts ────────────────────────────────────────────────────────────
+@app.route("/api/system/interrupts", methods=["GET"])
+@require_auth
+def api_system_interrupts():
+    """Return top IRQ interrupt counts from /proc/interrupts."""
+    try:
+        with open("/proc/interrupts", "r") as fh:
+            lines = fh.readlines()
+    except OSError as exc:
+        return jsonify({"interrupts": [], "count": 0, "error": str(exc)})
+
+    if not lines:
+        return jsonify({"interrupts": [], "count": 0, "error": "empty file"})
+
+    # First line: CPU headers — count CPUs
+    cpu_count = len(lines[0].split())
+
+    results = []
+    for line in lines[1:]:
+        parts = line.split()
+        if not parts:
+            continue
+        irq = parts[0].rstrip(":")
+        # Count fields are next cpu_count integers
+        try:
+            counts = [int(parts[i + 1]) for i in range(cpu_count)]
+        except (IndexError, ValueError):
+            continue
+        total = sum(counts)
+        if total == 0:
+            continue
+        # Remaining fields after the counts: optional type + description
+        remainder = parts[1 + cpu_count:]
+        irq_type = remainder[0] if len(remainder) > 0 else ""
+        description = " ".join(remainder[1:]) if len(remainder) > 1 else ""
+        results.append({
+            "irq": irq,
+            "total": total,
+            "type": irq_type,
+            "description": description,
+        })
+
+    results.sort(key=lambda x: x["total"], reverse=True)
+    top = results[:15]
+    return jsonify({"interrupts": top, "cpus": cpu_count, "count": len(top)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
