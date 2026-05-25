@@ -2135,6 +2135,101 @@ def api_uplink_reconnect():
     return jsonify({"ok": True, "message": "Reconnecting uplink…"})
 
 
+# ── Uplink history ────────────────────────────────────────────────────────────
+
+UPLINK_HISTORY_FILE = "/var/lib/travel-router/uplink-history.json"
+_uplink_history_lock = threading.Lock()
+
+
+def _get_current_uplink() -> dict:
+    """Detect current default route interface and its type."""
+    try:
+        out, _ = _run(["ip", "route", "show", "default"], timeout=3)
+        for line in (out or "").splitlines():
+            parts = line.split()
+            if "dev" in parts:
+                idx = parts.index("dev")
+                iface = parts[idx + 1] if idx + 1 < len(parts) else ""
+                # Classify interface type
+                if iface.startswith("wg"):
+                    itype = "wireguard"
+                elif iface.startswith("tun") or iface.startswith("tap"):
+                    itype = "vpn"
+                elif iface.startswith("bnep") or iface.startswith("bt"):
+                    itype = "bluetooth"
+                elif iface.startswith("enx") or iface.startswith("usb") or iface.startswith("rndis"):
+                    itype = "usb-tether"
+                elif iface.startswith("wlan"):
+                    itype = "wifi"
+                elif iface.startswith("eth"):
+                    itype = "ethernet"
+                else:
+                    itype = "other"
+                # Get metric
+                metric = ""
+                if "metric" in parts:
+                    midx = parts.index("metric")
+                    metric = parts[midx + 1] if midx + 1 < len(parts) else ""
+                return {"interface": iface, "type": itype, "metric": metric}
+    except Exception:
+        pass
+    return {"interface": "unknown", "type": "unknown", "metric": ""}
+
+
+def _uplink_history_sampler_loop():
+    """Sample active uplink every 60s and append changes to history."""
+    import time as _time
+    last_iface = None
+    while True:
+        try:
+            current = _get_current_uplink()
+            iface = current["interface"]
+            if iface != last_iface:
+                # Record the transition
+                entry = dict(current)
+                entry["timestamp"] = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
+                with _uplink_history_lock:
+                    try:
+                        text = Path(UPLINK_HISTORY_FILE).read_text().strip()
+                        history = json.loads(text) if text else []
+                    except (OSError, json.JSONDecodeError):
+                        history = []
+                    history.append(entry)
+                    history = history[-200:]  # Keep last 200 transitions
+                    d = str(Path(UPLINK_HISTORY_FILE).parent)
+                    fd, tmp = tempfile.mkstemp(dir=d)
+                    try:
+                        with os.fdopen(fd, "w") as fh:
+                            json.dump(history, fh)
+                        os.replace(tmp, UPLINK_HISTORY_FILE)
+                    except Exception:
+                        import contextlib
+                        with contextlib.suppress(OSError):
+                            os.unlink(tmp)
+                last_iface = iface
+        except Exception:
+            pass
+        _time.sleep(60)
+
+
+# Start uplink history sampler
+threading.Thread(target=_uplink_history_sampler_loop, daemon=True).start()
+
+
+@app.route("/api/uplink/history", methods=["GET"])
+@require_auth
+def api_uplink_history():
+    """Return uplink transition history (newest first)."""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    with _uplink_history_lock:
+        try:
+            text = Path(UPLINK_HISTORY_FILE).read_text().strip()
+            history = json.loads(text) if text else []
+        except (OSError, json.JSONDecodeError):
+            history = []
+    return jsonify({"history": list(reversed(history))[:limit], "total": len(history)})
+
+
 # ── Uplink WiFi scan ──────────────────────────────────────────────────────────
 
 
