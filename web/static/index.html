@@ -1049,6 +1049,12 @@
     <div id="killswitch-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Data Cap Tracker -->
+  <div class="card" id="card-vnstat-datacap">
+    <div class="card-title">&#x1F4CA; Monthly Data Usage</div>
+    <div id="vnstat-datacap-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4006,6 +4012,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchConnectedClients();
   fetchKillSwitchStatus();
   fetchLogSummary();
+  fetchVnstatDataCap();
 });
 
 async function fetchJournal() {
@@ -4201,6 +4208,7 @@ async function refreshAll() {
   fetchSystemResources();
   fetchBandwidthHistory();
   fetchKillSwitchStatus();
+  fetchVnstatDataCap();
 }
 
 async function init() {
@@ -6217,6 +6225,57 @@ async function fetchLogSummary() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load log summary</span>';
+  }
+}
+
+// ── Data Cap Tracker ──────────────────────────────────────────────────────────
+
+async function fetchVnstatDataCap() {
+  const el = document.getElementById('vnstat-datacap-content');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/network/datacap');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+
+    const totalGb = d.total_gb.toFixed(2);
+    const rxGb = d.rx_gb.toFixed(2);
+    const txGb = d.tx_gb.toFixed(2);
+
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${escHtml(d.month)} · ${escHtml(d.interface)}</div>`;
+
+    if (d.cap_gb && d.percent_used !== null) {
+      const pct = Math.min(d.percent_used, 100);
+      const barColor = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f97316' : '#22c55e';
+      const remaining = d.remaining_gb !== null ? (d.remaining_gb > 0 ? d.remaining_gb.toFixed(2) + ' GB left' : 'OVER CAP') : '';
+      html += `<div style="margin-bottom:10px;">`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">`;
+      html += `<span style="font-weight:600;">${totalGb} GB used</span>`;
+      html += `<span style="color:var(--text-dim);">of ${d.cap_gb} GB cap (${d.percent_used}%)</span>`;
+      html += `</div>`;
+      html += `<div style="background:var(--bg2);border-radius:4px;height:12px;overflow:hidden;">`;
+      html += `<div style="background:${barColor};width:${pct}%;height:100%;border-radius:4px;transition:width 0.3s;"></div>`;
+      html += `</div>`;
+      if (remaining) {
+        html += `<div style="font-size:11px;color:${barColor};margin-top:4px;font-weight:600;">${remaining}</div>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div style="font-size:18px;font-weight:700;margin-bottom:8px;">${totalGb} <span style="font-size:13px;font-weight:400;color:var(--text-dim);">GB total</span></div>`;
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Set MONTHLY_CAP_GB in /etc/default/travel-router for usage bar</div>`;
+    }
+
+    html += `<div style="display:flex;gap:24px;font-size:12px;color:var(--text-dim);">`;
+    html += `<span>&#x2193; RX: <strong style="color:var(--fg);">${rxGb} GB</strong></span>`;
+    html += `<span>&#x2191; TX: <strong style="color:var(--fg);">${txGb} GB</strong></span>`;
+    html += `</div>`;
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load data usage</span>';
   }
 }
 
