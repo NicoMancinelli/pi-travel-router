@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.51.0] - 2026-05-25
+
+### Added
+- `GET /api/network/open-ports` — listening TCP/UDP ports via `ss -tlunp` (netstat fallback), sorted by port number with process names and PIDs
+- `GET /api/system/hardware` — Raspberry Pi hardware info: board model, hardware ID, revision, serial, RAM total, SD card size, and `vcgencmd get_throttled` state
+- `GET /api/system/vmstat` — VM statistics from `/proc/vmstat` (paging, swapping, faults, OOM kills, dirty pages) plus `/proc/sys/vm` tunables (swappiness, dirty ratios, overcommit)
+- Dashboard cards: Open Ports (🔌), Hardware Info (🖥), VM Statistics (📊)
+
 ## [2.50.0] - 2026-05-25
 
 ### Added
