@@ -4076,6 +4076,65 @@ def api_network_routes():
     return jsonify({"routes": routes, "count": len(routes)})
 
 
+# ── Active Connections ────────────────────────────────────────────────────────
+
+@app.route("/api/network/connections", methods=["GET"])
+@require_auth
+def api_network_connections():
+    """Return active TCP/UDP connections from ss."""
+    import re
+
+    connections = []
+
+    # ss -tunatp: TCP+UDP, numeric, all states, with process info
+    out, rc = _run(["ss", "-tunatp"])
+    if rc != 0:
+        return jsonify({"error": "ss not available", "connections": []})
+
+    for line in out.splitlines()[1:]:  # skip header
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+
+        proto = parts[0]
+        state = parts[1] if proto == "tcp" or proto.startswith("tcp") else "—"
+        local = parts[4] if len(parts) > 4 else ""
+        peer = parts[5] if len(parts) > 5 else ""
+        process = parts[6] if len(parts) > 6 else ""
+
+        # Skip LISTEN on loopback and TIME-WAIT/CLOSE-WAIT clutter
+        if state in ("TIME-WAIT", "CLOSE-WAIT"):
+            continue
+
+        # Extract process name from ss output like users:(("sshd",pid=1234,fd=3))
+        proc_name = None
+        m = re.search(r'users:\(\("([^"]+)"', process)
+        if m:
+            proc_name = m.group(1)
+
+        # Skip pure loopback connections (both sides 127.x or ::1)
+        if (local.startswith("127.") or local.startswith("[::1]")) and \
+           (peer.startswith("127.") or peer.startswith("[::1]") or peer == "*"):
+            continue
+
+        connections.append({
+            "proto": proto,
+            "state": state,
+            "local": local,
+            "peer": peer,
+            "process": proc_name,
+        })
+
+    # Sort: ESTABLISHED first, then by proto
+    state_order = {"ESTABLISHED": 0, "LISTEN": 1, "SYN-SENT": 2, "SYN-RECV": 3}
+    connections.sort(key=lambda c: (state_order.get(c["state"], 9), c["proto"], c["local"]))
+
+    return jsonify({"connections": connections, "count": len(connections)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])
@@ -7000,6 +7059,68 @@ def api_system_cron():
         parse_crontab(out2, "travel-router crontab")
 
     return jsonify({"jobs": jobs, "count": len(jobs)})
+
+
+# ── Tailscale Exit Node ───────────────────────────────────────────────────────
+
+@app.route("/api/vpn/tailscale/exitnode", methods=["GET"])
+@require_auth
+def api_tailscale_exitnode():
+    """Return current Tailscale exit node and list of available exit nodes."""
+    import json
+
+    out, rc = _run(["tailscale", "status", "--json"])
+    if rc != 0:
+        return jsonify({"error": "tailscale not available or not running", "current": None, "available": []})
+
+    try:
+        data = json.loads(out)
+    except (ValueError, KeyError):
+        return jsonify({"error": "Failed to parse tailscale status", "current": None, "available": []})
+
+    # Find current exit node (ExitNodeStatus in Self)
+    self_node = data.get("Self", {})
+    current_exit = None
+
+    # ExitNodeStatus is set when an exit node is in use
+    exit_node_status = data.get("ExitNodeStatus")
+    if exit_node_status:
+        current_exit = {
+            "tailscale_ip": exit_node_status.get("TailscaleIPs", [None])[0],
+            "hostname": exit_node_status.get("HostName", ""),
+            "dns_name": exit_node_status.get("DNSName", ""),
+            "online": exit_node_status.get("Online", False),
+        }
+
+    # Collect all peers that advertise as exit nodes
+    peers = data.get("Peer", {})
+    available = []
+    for node_id, peer in peers.items():
+        # ExitNodeOption=True means it can be used as exit node
+        if peer.get("ExitNodeOption", False):
+            is_current = peer.get("ExitNode", False)
+            available.append({
+                "id": node_id,
+                "hostname": peer.get("HostName", ""),
+                "dns_name": peer.get("DNSName", ""),
+                "tailscale_ip": peer.get("TailscaleIPs", [None])[0],
+                "online": peer.get("Online", False),
+                "current": is_current,
+                "os": peer.get("OS", ""),
+            })
+
+    # Sort: current first, then online, then offline
+    available.sort(key=lambda p: (not p["current"], not p["online"], p["hostname"]))
+
+    # Is this device itself acting as an exit node?
+    self_is_exit = self_node.get("ExitNodeOption", False)
+
+    return jsonify({
+        "current": current_exit,
+        "available": available,
+        "self_is_exit_node": self_is_exit,
+        "self_hostname": self_node.get("HostName", ""),
+    })
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
