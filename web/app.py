@@ -9233,6 +9233,61 @@ def api_network_wifi_info():
     return jsonify({"interfaces": iface_data})
 
 
+@app.route("/api/system/cpu-governors")
+@require_auth
+def api_system_cpu_governors():
+    """Return CPU frequency scaling governor and freq limits per core."""
+    import glob as _glob
+    cores = []
+    for cpu_dir in sorted(_glob.glob("/sys/devices/system/cpu/cpu[0-9]*")):
+        cpu_id = cpu_dir.split("/")[-1]
+        freq_dir = cpu_dir + "/cpufreq"
+        info = {"cpu": cpu_id}
+        for fname in ("scaling_governor", "scaling_cur_freq", "scaling_min_freq",
+                      "scaling_max_freq", "cpuinfo_min_freq", "cpuinfo_max_freq"):
+            fpath = freq_dir + "/" + fname
+            try:
+                val = Path(fpath).read_text().strip()
+                info[fname] = int(val) if val.isdigit() else val
+            except OSError:
+                pass
+        if len(info) > 1:
+            cores.append(info)
+
+    # available governors (same for all cores — read from cpu0)
+    avail = []
+    try:
+        avail = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors").read_text().strip().split()
+    except OSError:
+        pass
+
+    return jsonify({"cores": cores, "available_governors": avail})
+
+
+@app.route("/api/system/timers")
+@require_auth
+def api_system_timers():
+    """Return systemd timers list with last/next trigger times."""
+    out, rc = _run(["systemctl", "list-timers", "--all", "--no-pager", "--no-legend"])
+    if rc != 0:
+        return jsonify({"timers": [], "error": "systemctl unavailable"})
+    timers = []
+    for line in out.strip().splitlines():
+        # format: NEXT LEFT LAST PASSED UNIT ACTIVATES
+        parts = line.split(None, 5)
+        if len(parts) < 6:
+            continue
+        timers.append({
+            "next": parts[0] if parts[0] != "n/a" else None,
+            "left": parts[1],
+            "last": parts[2] if parts[2] != "n/a" else None,
+            "passed": parts[3],
+            "unit": parts[4],
+            "activates": parts[5],
+        })
+    return jsonify({"timers": timers, "count": len(timers)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
