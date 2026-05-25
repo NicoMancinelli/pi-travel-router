@@ -7487,6 +7487,88 @@ def api_system_meminfo():
     return jsonify(result)
 
 
+# ── NTP / Time Sync Status ────────────────────────────────────────────────────
+
+@app.route("/api/system/ntp", methods=["GET"])
+@require_auth
+def api_system_ntp():
+    """Return NTP/time sync status via timedatectl and chronyc/ntpq."""
+    result = {
+        "synced": False,
+        "service": None,
+        "time_utc": None,
+        "timezone": None,
+        "offset_ms": None,
+        "stratum": None,
+        "server": None,
+        "peers": [],
+    }
+
+    # timedatectl gives us basic sync status
+    out, rc = _run(["timedatectl", "show", "--no-pager"])
+    if rc == 0:
+        for line in out.splitlines():
+            if "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip()
+            if k == "NTPSynchronized":
+                result["synced"] = v == "yes"
+            elif k == "Timezone":
+                result["timezone"] = v
+            elif k == "TimeUSec":
+                result["time_utc"] = v
+
+    # Try chronyc tracking for detailed offset info
+    out2, rc2 = _run(["chronyc", "tracking"])
+    if rc2 == 0:
+        result["service"] = "chrony"
+        for line in out2.splitlines():
+            line = line.strip()
+            if line.startswith("Reference ID"):
+                # "Reference ID    : A29FC801 (time.cloudflare.com)"
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    ref = parts[1].strip()
+                    if "(" in ref and ")" in ref:
+                        result["server"] = ref[ref.index("(")+1:ref.index(")")]
+            elif line.startswith("System time"):
+                # "System time     : 0.000123456 seconds fast of NTP time"
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    try:
+                        val = float(parts[1].strip().split()[0])
+                        result["offset_ms"] = round(val * 1000, 3)
+                    except (ValueError, IndexError):
+                        pass
+            elif line.startswith("Stratum"):
+                parts = line.split(":", 1)
+                if len(parts) > 1:
+                    try:
+                        result["stratum"] = int(parts[1].strip())
+                    except ValueError:
+                        pass
+    elif _run(["ntpq", "-p"])[1] == 0:
+        out3, _ = _run(["ntpq", "-p"])
+        result["service"] = "ntpd"
+        for line in out3.splitlines():
+            if line.startswith(("*", "o")):
+                parts = line[1:].split()
+                if len(parts) >= 9:
+                    result["server"] = parts[0]
+                    try:
+                        result["stratum"] = int(parts[2])
+                        result["offset_ms"] = float(parts[8])
+                    except (ValueError, IndexError):
+                        pass
+                break
+    else:
+        result["service"] = "systemd-timesyncd"
+
+    return jsonify(result)
+
+
 # ── Open File Descriptors ─────────────────────────────────────────────────────
 
 @app.route("/api/system/openfiles", methods=["GET"])
@@ -7573,6 +7655,7 @@ def api_system_cpufreq():
     if not cpus:
         return jsonify({"error": "cpufreq sysfs not available", "cpus": []})
     return jsonify({"cpus": cpus, "count": len(cpus)})
+
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 

@@ -1152,6 +1152,11 @@
     <div id="meminfo-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-ntp-status">
+    <div class="card-title">&#x1F553; NTP Sync Status</div>
+    <div id="ntp-status-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <div class="card full-width" id="card-open-files">
     <div class="card-title">&#x1F4C2; Open File Descriptors</div>
     <div id="open-files-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
@@ -4189,6 +4194,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKernelModules();
   fetchDiskIO();
   fetchMemInfo();
+  fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
 });
@@ -4395,6 +4401,7 @@ async function refreshAll() {
   fetchSystemTemps();
   fetchDiskIO();
   fetchMemInfo();
+  fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
 }
@@ -7048,6 +7055,29 @@ async function fetchMemInfo() {
         </div>
         <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${swapPct}% used</div>
       </div>` : '<div style="color:var(--text-dim);">No swap configured</div>'}
+    `;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+async function fetchNtpStatus() {
+  const el = document.getElementById('ntp-status-content');
+  try {
+    const r = await fetch('/api/system/ntp');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    const syncColor = d.synced ? '#2ecc71' : '#e74c3c';
+    const syncLabel = d.synced ? '&#x2705; Synchronized' : '&#x274C; Not synchronized';
+    const rows = [];
+    if (d.timezone) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Timezone</td><td style="padding:2px 0 2px 12px;">${d.timezone}</td></tr>`);
+    if (d.service) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Service</td><td style="padding:2px 0 2px 12px;">${d.service}</td></tr>`);
+    if (d.server) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Server</td><td style="padding:2px 0 2px 12px;font-family:monospace;">${d.server}</td></tr>`);
+    if (d.stratum !== null && d.stratum !== undefined) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Stratum</td><td style="padding:2px 0 2px 12px;">${d.stratum}</td></tr>`);
+    if (d.offset_ms !== null && d.offset_ms !== undefined) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Offset</td><td style="padding:2px 0 2px 12px;">${d.offset_ms > 0 ? '+' : ''}${d.offset_ms} ms</td></tr>`);
+    el.innerHTML = `
+      <div style="margin-bottom:8px;font-size:14px;color:${syncColor};">${syncLabel}</div>
+      ${rows.length ? `<table style="border-collapse:collapse;">${rows.join('')}</table>` : ''}
     `;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
