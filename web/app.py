@@ -10432,6 +10432,95 @@ def api_network_firewall_rules():
     })
 
 
+# ── Traffic Shaping (tc) ─────────────────────────────────────────────────────
+
+@app.route("/api/network/traffic-shaping", methods=["GET"])
+@require_auth
+def api_network_traffic_shaping():
+    """Return tc qdisc stats for all network interfaces."""
+    qdiscs = []
+
+    out, rc = _run(["tc", "-s", "qdisc", "show"])
+    if rc == 0:
+        current = None
+        for line in out.splitlines():
+            line = line.strip()
+            # New qdisc entry: "qdisc <type> <handle> dev <iface> ..."
+            if line.startswith("qdisc "):
+                if current is not None:
+                    qdiscs.append(current)
+                parts = line.split()
+                qtype = parts[1] if len(parts) > 1 else ""
+                handle = parts[2] if len(parts) > 2 else ""
+                # Find "dev <iface>"
+                dev = ""
+                if "dev" in parts:
+                    idx = parts.index("dev")
+                    dev = parts[idx + 1] if idx + 1 < len(parts) else ""
+                # Find "root" or "parent"
+                root = "root" in parts
+                parent = ""
+                if "parent" in parts:
+                    idx = parts.index("parent")
+                    parent = parts[idx + 1] if idx + 1 < len(parts) else ""
+                current = {
+                    "type": qtype,
+                    "handle": handle,
+                    "dev": dev,
+                    "root": root,
+                    "parent": parent,
+                    "sent_bytes": 0,
+                    "sent_pkts": 0,
+                    "dropped": 0,
+                    "overlimits": 0,
+                    "requeues": 0,
+                    "backlog_bytes": 0,
+                    "backlog_pkts": 0,
+                }
+            elif current is not None:
+                # Stats line: "Sent X bytes Y pkts (dropped Z, overlimits W requeues R)"
+                m = re.search(r'Sent\s+(\d+)\s+bytes\s+(\d+)\s+pkt', line)
+                if m:
+                    current["sent_bytes"] = int(m.group(1))
+                    current["sent_pkts"] = int(m.group(2))
+                m = re.search(r'dropped\s+(\d+)', line)
+                if m:
+                    current["dropped"] = int(m.group(1))
+                m = re.search(r'overlimits\s+(\d+)', line)
+                if m:
+                    current["overlimits"] = int(m.group(1))
+                m = re.search(r'requeues\s+(\d+)', line)
+                if m:
+                    current["requeues"] = int(m.group(1))
+                m = re.search(r'backlog\s+(\d+)b\s+(\d+)p', line)
+                if m:
+                    current["backlog_bytes"] = int(m.group(1))
+                    current["backlog_pkts"] = int(m.group(2))
+        if current is not None:
+            qdiscs.append(current)
+
+    def fmt_bytes(b):
+        if b < 1024:
+            return f"{b} B"
+        elif b < 1024 * 1024:
+            return f"{b / 1024:.1f} KB"
+        elif b < 1024 * 1024 * 1024:
+            return f"{b / (1024*1024):.1f} MB"
+        else:
+            return f"{b / (1024*1024*1024):.2f} GB"
+
+    for q in qdiscs:
+        q["sent_label"] = fmt_bytes(q["sent_bytes"])
+
+    # Only include root qdiscs (one per interface) unless there are none
+    root_qdiscs = [q for q in qdiscs if q["root"]]
+    return jsonify({
+        "qdiscs": root_qdiscs if root_qdiscs else qdiscs,
+        "count": len(root_qdiscs if root_qdiscs else qdiscs),
+        "tc_available": rc == 0,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
