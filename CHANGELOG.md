@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.17.0] - 2026-05-24
+
+### Added
+
+- **Static DHCP reservations** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`): `GET/POST /api/dhcp/reservations` and `DELETE /api/dhcp/reservations/<mac>`. Validates MAC and IP, writes JSON store, regenerates `/etc/dnsmasq.d/99-travel-router-reservations.conf` with `dhcp-host=` entries, and reloads dnsmasq. Dashboard "📌 Static DHCP" card with table and inline add form.
+- **Ping monitor** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`): `GET /api/monitor/ping` pings all stored hosts (max 20) and returns `{host, up, latency_ms, label}`. `POST/DELETE /api/monitor/ping` manage the host list with shell-char validation. Dashboard on-demand card (not auto-refreshed) showing ● UP / ○ DOWN with latency column and per-host delete.
+- **Tailscale exit node control** (`web/app.py`, `web/static/index.html`): `GET /api/tailscale/exit-node` returns current active exit node and list of peers with `ExitNodeOption`. `POST /api/tailscale/exit-node` calls `tailscale set --exit-node=<node>` (empty string clears). Dashboard card with status indicator, peer dropdown populated from live Tailscale status, and Apply button.
+
 ## [2.16.0] - 2026-05-24
 
 ### Added
