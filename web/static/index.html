@@ -582,6 +582,17 @@
     <div id="fw-updated" style="font-size:11px;color:var(--text-dim);margin-top:6px;"></div>
   </div>
 
+  <!-- Login History -->
+  <div class="card full-width" id="card-logins" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F512; Login History</span>
+      <button class="btn btn-sm" onclick="fetchLoginHistory()">&#x21BB; Refresh</button>
+    </div>
+    <div id="login-history-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Backup & Restore -->
@@ -3742,6 +3753,52 @@ async function deletePingHost(host) {
   } catch (e) { toast('Error: ' + e, 'err'); }
 }
 
+async function fetchLoginHistory() {
+  const el = document.getElementById('login-history-content');
+  try {
+    const r = await apiFetch('/api/system/logins?limit=15');
+    const d = await r.json();
+    const logins = d.logins || [];
+    const failed = d.failed || [];
+    let html = '';
+    if (logins.length === 0) {
+      html = '<span style="color:var(--text-dim);font-size:13px;">No login history available</span>';
+    } else {
+      html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Recent logins</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr>';
+      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">User</th>';
+      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">From</th>';
+      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">When</th>';
+      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Status</th>';
+      html += '</tr></thead><tbody>';
+      for (const l of logins) {
+        const statusColor = l.still_on ? 'var(--success,#4c4)' : l.crashed ? 'var(--error,#e55)' : 'var(--text-dim)';
+        const status = l.still_on ? '● active' : l.crashed ? '✖ crash' : '—';
+        html += '<tr>';
+        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + l.user + '</td>';
+        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (l.host || l.tty || '—') + '</td>';
+        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + l.date + '</td>';
+        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:' + statusColor + ';">' + status + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    if (failed.length > 0) {
+      html += '<div style="font-size:12px;color:var(--error,#e55);margin-top:10px;margin-bottom:4px;">&#x26A0; Failed login attempts (' + failed.length + ')</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">User</th><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">From</th><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">When</th></tr></thead><tbody>';
+      for (const f of failed) {
+        html += '<tr><td style="padding:3px 8px;border-bottom:1px solid var(--border);font-family:monospace;color:var(--error,#e55);">' + f.user + '</td><td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (f.host || f.tty || '—') + '</td><td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + f.date + '</td></tr>';
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
 async function refreshAll() {
   await fetchStatus();
   await fetchQosLimits();
@@ -3787,6 +3844,7 @@ async function refreshAll() {
   fetchServices();
   fetchIfaceStats();
   fetchNtfyConfig();
+  fetchLoginHistory();
 }
 
 async function init() {

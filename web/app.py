@@ -4779,6 +4779,64 @@ def api_notify_test():
         return jsonify({"error": str(exc)}), 500
 
 
+# ── Login history ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/logins", methods=["GET"])
+@require_auth
+def api_system_logins():
+    """Return recent login history from `last`."""
+    limit = min(int(request.args.get("limit", 20)), 100)
+    logins = []
+    try:
+        out, _ = _run(["last", "-n", str(limit), "-w"], timeout=5)
+        for line in (out or "").splitlines():
+            line = line.strip()
+            if not line or line.startswith("wtmp") or line.startswith("btmp"):
+                continue
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            user = parts[0]
+            tty = parts[1] if len(parts) > 1 else ""
+            host = parts[2] if len(parts) > 2 else ""
+            # Skip "reboot" and "shutdown" entries if desired, keep them for completeness
+            # Date/time is parts[3:7] approximately
+            date_str = " ".join(parts[3:8]) if len(parts) > 7 else " ".join(parts[3:])
+            # Duration/status is often at the end
+            still_on = "still logged in" in line
+            crashed = "crash" in line.lower()
+            logins.append({
+                "user": user,
+                "tty": tty,
+                "host": host if host not in ("", "-") else "",
+                "date": date_str,
+                "still_on": still_on,
+                "crashed": crashed,
+            })
+    except Exception:
+        pass
+    # Also check failed logins from btmp if available
+    failed = []
+    try:
+        out, _ = _run(["lastb", "-n", "10", "-w"], timeout=5)
+        for line in (out or "").splitlines():
+            line = line.strip()
+            if not line or line.startswith("btmp"):
+                continue
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            failed.append({
+                "user": parts[0],
+                "tty": parts[1] if len(parts) > 1 else "",
+                "host": parts[2] if len(parts) > 2 else "",
+                "date": " ".join(parts[3:8]) if len(parts) > 7 else " ".join(parts[3:]),
+            })
+    except Exception:
+        pass
+    return jsonify({"logins": logins[:limit], "failed": failed[:10]})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
