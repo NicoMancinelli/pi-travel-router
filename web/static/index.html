@@ -947,6 +947,15 @@
     <div id="net-interfaces-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Tailscale Status -->
+  <div class="card full-width" id="card-tailscale-status">
+    <div class="card-title">
+      &#x1F331; Tailscale (<span id="tailscale-online-count">0</span>/<span id="tailscale-peer-count">0</span> peers online)
+      <button class="btn btn-sm" onclick="fetchTailscaleStatus()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="tailscale-status-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3893,6 +3902,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWgPeerHealth();
   fetchDhcpLeases();
   fetchNetInterfaces();
+  fetchTailscaleStatus();
 });
 
 async function fetchJournal() {
@@ -5496,6 +5506,76 @@ async function fetchNetInterfaces() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load interfaces</span>';
+  }
+}
+
+// ── Tailscale Status ──────────────────────────────────────────────────────────
+
+async function fetchTailscaleStatus() {
+  const el = document.getElementById('tailscale-status-content');
+  const onlineEl = document.getElementById('tailscale-online-count');
+  const totalEl = document.getElementById('tailscale-peer-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/vpn/tailscale/status');
+    const data = await resp.json();
+    if (!data.available) {
+      el.innerHTML = `<span style="color:var(--text-dim)">Tailscale not available: ${escHtml(data.error || 'unknown error')}</span>`;
+      onlineEl.textContent = '0';
+      totalEl.textContent = '0';
+      return;
+    }
+    onlineEl.textContent = data.online_count || 0;
+    totalEl.textContent = data.peer_count || 0;
+
+    function onlineBadge(online) {
+      const color = online ? '#22c55e' : '#6b7280';
+      const label = online ? 'online' : 'offline';
+      return `<span style="display:inline-block;background:${color};color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;">${label}</span>`;
+    }
+
+    // Self node summary
+    const s = data.self || {};
+    const selfIp = (s.tailscale_ips || []).find(ip => ip.includes('.')) || (s.tailscale_ips || [])[0] || '—';
+    let html = `<div style="margin-bottom:10px;padding:8px 10px;background:var(--bg2);border-radius:6px;font-size:12px;">`;
+    html += `<strong>This node:</strong> ${escHtml(s.hostname || '—')}`;
+    if (s.dns_name) html += ` <span style="color:var(--text-dim);">(${escHtml(s.dns_name)})</span>`;
+    html += ` &mdash; <span style="font-family:monospace;">${escHtml(selfIp)}</span>`;
+    html += ` &mdash; ${onlineBadge(s.online)}`;
+    if (data.backend_state && data.backend_state !== 'Running') {
+      html += ` <span style="color:#f97316;font-size:11px;margin-left:6px;">State: ${escHtml(data.backend_state)}</span>`;
+    }
+    html += `</div>`;
+
+    if (!data.peers || data.peers.length === 0) {
+      html += '<div style="color:var(--text-dim);">No Tailscale peers.</div>';
+      el.innerHTML = html;
+      return;
+    }
+
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Hostname</th>';
+    html += '<th style="padding:5px 8px;">IP</th>';
+    html += '<th style="padding:5px 8px;">OS</th>';
+    html += '<th style="padding:5px 8px;">Status</th>';
+    html += '<th style="padding:5px 8px;">RX / TX</th>';
+    html += '</tr></thead><tbody>';
+    for (const p of data.peers) {
+      const ip = (p.tailscale_ips || []).find(ip => ip.includes('.')) || (p.tailscale_ips || [])[0] || '—';
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:5px 8px;">${escHtml(p.hostname || '—')}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(ip)}</td>`;
+      html += `<td style="padding:5px 8px;">${escHtml(p.os || '—')}</td>`;
+      html += `<td style="padding:5px 8px;">${onlineBadge(p.online)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(p.rx_label)} / ${escHtml(p.tx_label)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load Tailscale status</span>';
   }
 }
 
