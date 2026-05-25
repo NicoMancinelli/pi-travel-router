@@ -9679,6 +9679,33 @@ def api_network_dns_config():
     return jsonify(result)
 
 
+@app.route("/api/network/ip-rules")
+@require_auth
+def api_network_ip_rules():
+    out, rc = _run(["ip", "rule", "show"])
+    if rc != 0:
+        return jsonify({"rules": [], "raw": None, "error": "ip rule show failed"})
+    rules = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # "0:      from all lookup local"
+        # "32766:  from all lookup main"
+        parts = line.split(":", 1)
+        try:
+            priority = int(parts[0].strip())
+        except ValueError:
+            priority = None
+        rest = parts[1].strip() if len(parts) > 1 else line
+        # Extract table from "lookup <table>"
+        table = None
+        if "lookup " in rest:
+            table = rest.split("lookup ")[-1].strip().split()[0]
+        rules.append({"priority": priority, "rule": rest, "table": table})
+    return jsonify({"rules": rules, "raw": out})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
