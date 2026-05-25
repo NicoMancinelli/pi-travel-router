@@ -956,6 +956,15 @@
     <div id="hardware-sensors-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Firewall Rules -->
+  <div class="card full-width" id="card-firewall-rules">
+    <div class="card-title">
+      &#x1F6E1; Firewall Rules
+      <button class="btn btn-sm" onclick="fetchFirewallRulesFull()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="firewall-rules-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4546,6 +4555,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCgroupStats();
   fetchOomEvents();
   fetchHardwareSensors();
+  fetchFirewallRulesFull();
 });
 
 async function fetchJournal() {
@@ -4807,6 +4817,7 @@ async function refreshAll() {
   fetchCgroupStats();
   fetchOomEvents();
   fetchHardwareSensors();
+  fetchFirewallRulesFull();
 }
 
 async function init() {
@@ -9542,6 +9553,37 @@ async function fetchHardwareSensors() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchHardwareSensors error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load hardware sensors</span>';
+  }
+}
+
+// ── Firewall Rules ────────────────────────────────────────────────────────────
+
+async function fetchFirewallRulesFull() {
+  const el = document.getElementById('firewall-rules-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/network/firewall-rules');
+    const d = await r.json();
+    if (d.backend === 'none' || !d.rule_count) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No firewall rules found (nftables/iptables not available)</span>';
+      return;
+    }
+    let html = `<div style="margin-bottom:8px;font-size:12px;color:var(--text-dim);">Backend: <strong style="color:var(--fg);">${d.backend}</strong> &nbsp;·&nbsp; ${d.rule_count} rules in ${d.chain_count} chains</div>`;
+    const chains = d.chains || {};
+    for (const [chainKey, chainRules] of Object.entries(chains)) {
+      html += `<div style="margin-bottom:10px;">`;
+      html += `<div style="font-weight:600;font-size:12px;padding:3px 6px;background:var(--card-alt,#1e1e2e);border-radius:3px;margin-bottom:4px;font-family:monospace;">${chainKey}</div>`;
+      html += `<div style="font-family:monospace;font-size:11px;line-height:1.6;padding:4px 8px;border-left:2px solid var(--border);">`;
+      for (const rule of chainRules.slice(0, 15)) {
+        html += `${rule}<br>`;
+      }
+      if (chainRules.length > 15) html += `<span style="color:var(--text-dim)">…${chainRules.length - 15} more</span>`;
+      html += '</div></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchFirewallRulesFull error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load firewall rules</span>';
   }
 }
 
