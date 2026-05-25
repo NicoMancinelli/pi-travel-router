@@ -2104,6 +2104,90 @@ def api_uplink_connect():
     return jsonify({"ok": True, "ssid": ssid})
 
 
+# ── AP info & channel selector ────────────────────────────────────────────────
+
+
+@app.route("/api/wifi/ap-config", methods=["GET"])
+@require_auth
+def api_wifi_ap_config_get():
+    """Return current AP configuration from hostapd."""
+    cfg = {"ssid": "", "channel": "", "hw_mode": "", "country_code": "", "tx_power": "", "interface": "uap0"}
+    try:
+        conf_path = Path("/etc/raspap/hostapd.ini")
+        if not conf_path.exists():
+            conf_path = Path("/etc/hostapd/hostapd.conf")
+        text = conf_path.read_text()
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("ssid="):
+                cfg["ssid"] = line.split("=", 1)[1].strip()
+            elif line.startswith("channel="):
+                cfg["channel"] = line.split("=", 1)[1].strip()
+            elif line.startswith("hw_mode="):
+                cfg["hw_mode"] = line.split("=", 1)[1].strip()
+            elif line.startswith("country_code="):
+                cfg["country_code"] = line.split("=", 1)[1].strip()
+            elif line.startswith("interface="):
+                cfg["interface"] = line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    # Get TX power from iw
+    try:
+        out, _ = _run(["iw", "dev", cfg["interface"], "info"], timeout=3)
+        for line in (out or "").splitlines():
+            if "txpower" in line.lower():
+                cfg["tx_power"] = line.strip()
+                break
+    except Exception:
+        pass
+    return jsonify(cfg)
+
+
+@app.route("/api/wifi/ap-config", methods=["POST"])
+@require_auth_always
+def api_wifi_ap_config_post():
+    """Change AP channel — writes hostapd config and restarts hostapd."""
+    body = request.get_json(silent=True) or {}
+    channel = str(body.get("channel", "")).strip()
+    # Validate: must be 0 (auto) or 1-13 (2.4GHz) or 36-165 (5GHz)
+    valid_channels = {"0"} | {str(i) for i in range(1, 14)} | {str(i) for i in range(36, 166, 4)}
+    if channel not in valid_channels:
+        return jsonify({"error": f"invalid channel: {channel}"}), 400
+    try:
+        conf_path = Path("/etc/raspap/hostapd.ini")
+        if not conf_path.exists():
+            conf_path = Path("/etc/hostapd/hostapd.conf")
+        text = conf_path.read_text()
+        new_lines = []
+        found = False
+        for line in text.splitlines():
+            if line.strip().startswith("channel="):
+                new_lines.append(f"channel={channel}")
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
+            new_lines.append(f"channel={channel}")
+        new_text = "\n".join(new_lines) + "\n"
+        # Atomic write
+        d = str(conf_path.parent)
+        fd, tmp = tempfile.mkstemp(dir=d)
+        try:
+            with os.fdopen(fd, "w") as fh:
+                fh.write(new_text)
+            os.replace(tmp, str(conf_path))
+        except Exception:
+            import contextlib
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
+        # Restart hostapd to apply
+        _run(["systemctl", "restart", "hostapd"], timeout=10)
+        return jsonify({"ok": True, "channel": channel})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── DNS-over-HTTPS resolver ───────────────────────────────────────────────────
 
 
