@@ -1094,6 +1094,12 @@
     <div id="usb-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- NTP Status -->
+  <div class="card" id="ntp-card">
+    <h2>🕐 NTP Status</h2>
+    <div id="ntp-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -7360,6 +7366,33 @@ async function fetchIPv6Addresses() {
   } catch(e) { document.getElementById('ipv6-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
+// ── NTP Status ────────────────────────────────────────────────────────────────
+async function fetchNtpStatus() {
+  try {
+    const r = await fetch('/api/system/ntp-status');
+    const d = await r.json();
+    const el = document.getElementById('ntp-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    const syncColor = d.ntp_synced ? 'var(--green)' : 'var(--red)';
+    const syncLabel = d.ntp_synced ? '✓ Synchronized' : '✗ Not synchronized';
+    let html = `<div class="metric-grid">
+      <div class="metric"><span class="metric-label">Sync</span><span class="metric-value" style="color:${syncColor}">${syncLabel}</span></div>
+      <div class="metric"><span class="metric-label">NTP</span><span class="metric-value">${d.ntp_enabled ? 'Enabled' : 'Disabled'}</span></div>
+      <div class="metric"><span class="metric-label">Timezone</span><span class="metric-value">${d.timezone || '-'}</span></div>
+      <div class="metric"><span class="metric-label">Server</span><span class="metric-value">${d.ntp_server || '-'}</span></div>
+    </div>`;
+    if (d.offset_ms !== null) {
+      html += `<div class="metric-grid" style="margin-top:6px">
+        <div class="metric"><span class="metric-label">Offset</span><span class="metric-value">${d.offset_ms?.toFixed(2)} ms</span></div>
+        <div class="metric"><span class="metric-label">Delay</span><span class="metric-value">${d.delay_ms?.toFixed(2)} ms</span></div>
+        <div class="metric"><span class="metric-label">Jitter</span><span class="metric-value">${d.jitter_ms?.toFixed(2)} ms</span></div>
+      </div>`;
+    }
+    if (d.local_time) html += `<p class="muted" style="margin-top:6px;font-size:0.85em">Local time: ${d.local_time}</p>`;
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('ntp-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
 // ── Failed Systemd Units ──────────────────────────────────────────────────────
 async function fetchFailedUnits() {
   try {
@@ -7493,29 +7526,6 @@ async function fetchMemInfo() {
         </div>
         <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${swapPct}% used</div>
       </div>` : '<div style="color:var(--text-dim);">No swap configured</div>'}
-    `;
-  } catch (e) {
-    el.textContent = 'Failed: ' + e;
-  }
-}
-
-async function fetchNtpStatus() {
-  const el = document.getElementById('ntp-status-content');
-  try {
-    const r = await fetch('/api/system/ntp');
-    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
-    const d = await r.json();
-    const syncColor = d.synced ? '#2ecc71' : '#e74c3c';
-    const syncLabel = d.synced ? '&#x2705; Synchronized' : '&#x274C; Not synchronized';
-    const rows = [];
-    if (d.timezone) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Timezone</td><td style="padding:2px 0 2px 12px;">${d.timezone}</td></tr>`);
-    if (d.service) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Service</td><td style="padding:2px 0 2px 12px;">${d.service}</td></tr>`);
-    if (d.server) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Server</td><td style="padding:2px 0 2px 12px;font-family:monospace;">${d.server}</td></tr>`);
-    if (d.stratum !== null && d.stratum !== undefined) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Stratum</td><td style="padding:2px 0 2px 12px;">${d.stratum}</td></tr>`);
-    if (d.offset_ms !== null && d.offset_ms !== undefined) rows.push(`<tr><td style="color:var(--text-dim);padding:2px 0;">Offset</td><td style="padding:2px 0 2px 12px;">${d.offset_ms > 0 ? '+' : ''}${d.offset_ms} ms</td></tr>`);
-    el.innerHTML = `
-      <div style="margin-bottom:8px;font-size:14px;color:${syncColor};">${syncLabel}</div>
-      ${rows.length ? `<table style="border-collapse:collapse;">${rows.join('')}</table>` : ''}
     `;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
