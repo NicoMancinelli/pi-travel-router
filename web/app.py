@@ -9933,6 +9933,80 @@ def api_network_neighbors():
     return jsonify({"neighbors": result, "count": len(result)})
 
 
+@app.route("/api/system/kernel-messages")
+@require_auth
+def api_system_kernel_messages():
+    """Return recent kernel error/warn messages parsed from dmesg."""
+    # Regex for dmesg -T timestamps: [Mon Jan  1 00:00:00 2024]
+    _TS_RE = re.compile(r"^\[([^\]]+)\]\s+(\S+):\s+(.*)")
+    _TS_BARE_RE = re.compile(r"^\[([^\]]+)\]\s+(.*)")
+    # Level keywords for fallback classification
+    _LEVEL_KEYWORDS = {
+        "emerg": ["emerg"],
+        "alert": ["alert"],
+        "crit": ["crit"],
+        "err": ["error", " err "],
+        "warn": ["warn"],
+    }
+
+    def _classify_level(text):
+        tl = text.lower()
+        for lvl, keywords in _LEVEL_KEYWORDS.items():
+            for kw in keywords:
+                if kw in tl:
+                    return lvl
+        return "warn"
+
+    def _parse_lines(output, has_timestamps):
+        messages = []
+        for line in output.splitlines()[-50:]:
+            line = line.strip()
+            if not line:
+                continue
+            if has_timestamps:
+                m = _TS_RE.match(line)
+                if m:
+                    messages.append({
+                        "timestamp": m.group(1).strip(),
+                        "level": m.group(2).strip(" :[]").lower(),
+                        "message": m.group(3).strip(),
+                    })
+                else:
+                    m2 = _TS_BARE_RE.match(line)
+                    if m2:
+                        messages.append({
+                            "timestamp": m2.group(1).strip(),
+                            "level": _classify_level(m2.group(2)),
+                            "message": m2.group(2).strip(),
+                        })
+                    else:
+                        messages.append({
+                            "timestamp": "",
+                            "level": _classify_level(line),
+                            "message": line,
+                        })
+            else:
+                messages.append({
+                    "timestamp": "",
+                    "level": _classify_level(line),
+                    "message": line,
+                })
+        return messages
+
+    out, rc = _run(["dmesg", "--level=err,warn,crit,alert,emerg", "-T", "--no-pager"])
+    if rc == 0:
+        messages = _parse_lines(out, has_timestamps=True)
+        return jsonify({"messages": messages, "count": len(messages)})
+
+    # Fallback: dmesg without -T (no human-readable timestamps)
+    out2, rc2 = _run(["dmesg", "-l", "err,warn,crit"])
+    if rc2 == 0:
+        messages = _parse_lines(out2, has_timestamps=False)
+        return jsonify({"messages": messages, "count": len(messages)})
+
+    return jsonify({"messages": [], "count": 0, "error": "dmesg unavailable"})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
