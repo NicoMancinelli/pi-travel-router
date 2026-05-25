@@ -6079,8 +6079,18 @@ def api_system_services():
     total = len(services)
     active_count = sum(1 for s in services if s["active"] == "active")
     failed_count = sum(1 for s in services if s["active"] == "failed")
+    inactive_count = sum(1 for s in services if s["active"] == "inactive")
+    # Sort: failed first, then active, then others
+    services.sort(key=lambda s: (0 if s["active"] == "failed" else 1 if s["active"] == "active" else 2, s["name"]))
+    summary = {
+        "total": total,
+        "active": active_count,
+        "failed": failed_count,
+        "inactive": inactive_count,
+    }
     return jsonify({
-        "services": services,
+        "services": services[:50],
+        "summary": summary,
         "total": total,
         "active": active_count,
         "failed": failed_count,
@@ -12839,57 +12849,6 @@ def api_network_dhcp_leases():
     if not source:
         result["error"] = "No DHCP lease file found (checked dnsmasq and dhcpd paths)"
     return jsonify(result)
-
-
-@app.route("/api/system/services")
-def api_system_services():
-    """Systemd service status overview."""
-    try:
-        # Get all services with their state
-        out, rc = _run(
-            "systemctl list-units --type=service --all --no-pager --no-legend "
-            "--output=json 2>/dev/null"
-        )
-        services = []
-        if rc == 0 and out.strip().startswith("["):
-            import json as _json
-            units = _json.loads(out)
-            for u in units:
-                services.append({
-                    "name": u.get("unit", "").replace(".service", ""),
-                    "load": u.get("load", ""),
-                    "active": u.get("active", ""),
-                    "sub": u.get("sub", ""),
-                    "description": u.get("description", ""),
-                })
-        else:
-            # Fallback: plain text output
-            out2, _ = _run(
-                "systemctl list-units --type=service --all --no-pager --no-legend 2>/dev/null"
-            )
-            for line in out2.strip().splitlines():
-                parts = line.split(None, 4)
-                if len(parts) >= 4:
-                    name = parts[0].replace(".service", "").lstrip("●").strip()
-                    services.append({
-                        "name": name,
-                        "load": parts[1],
-                        "active": parts[2],
-                        "sub": parts[3],
-                        "description": parts[4] if len(parts) > 4 else "",
-                    })
-        # Summary counts
-        summary = {
-            "total": len(services),
-            "active": sum(1 for s in services if s["active"] == "active"),
-            "failed": sum(1 for s in services if s["active"] == "failed"),
-            "inactive": sum(1 for s in services if s["active"] == "inactive"),
-        }
-        # Put failed first, then active, then others
-        services.sort(key=lambda s: (0 if s["active"] == "failed" else 1 if s["active"] == "active" else 2, s["name"]))
-        return jsonify({"services": services[:50], "summary": summary, "total": len(services)})
-    except Exception as e:
-        return jsonify({"error": str(e), "services": [], "summary": {}})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
