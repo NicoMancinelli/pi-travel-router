@@ -42,6 +42,7 @@ WOL_TARGETS_FILE = "/var/lib/travel-router/wol-targets.json"
 DATACAP_FILE = "/var/lib/travel-router/datacap.json"
 ALIASES_FILE = "/var/lib/travel-router/aliases.json"
 PORT_FORWARD_FILE = "/var/lib/travel-router/portforward.json"
+SPEEDTEST_HISTORY_FILE = "/var/lib/travel-router/speedtest-history.json"
 
 AP_SUBNETS = ("192.168.4.", "10.3.141.")
 
@@ -3304,6 +3305,32 @@ def api_diagnostic():
         return jsonify({"error": "Diagnostic timed out"}), 504
 
 
+def _append_speedtest_result(result: dict) -> None:
+    """Append a speedtest result to the history file (max 50 entries)."""
+    try:
+        try:
+            text = Path(SPEEDTEST_HISTORY_FILE).read_text().strip()
+            history = json.loads(text) if text else []
+        except (OSError, json.JSONDecodeError):
+            history = []
+        import time as _time
+        result["timestamp"] = _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime())
+        history.append(result)
+        history = history[-50:]  # Keep last 50
+        d = str(Path(SPEEDTEST_HISTORY_FILE).parent)
+        fd, tmp = tempfile.mkstemp(dir=d)
+        try:
+            with os.fdopen(fd, "w") as fh:
+                json.dump(history, fh)
+            os.replace(tmp, SPEEDTEST_HISTORY_FILE)
+        except Exception:
+            import contextlib
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+    except Exception:
+        pass  # Best-effort — don't break speedtest if history write fails
+
+
 @app.route('/api/system/speedtest', methods=['GET'])
 @require_auth
 def api_speedtest_get():
@@ -3352,6 +3379,14 @@ def api_speedtest_post():
     _SPEEDTEST_RESULT["ts"] = time.time()
     _SPEEDTEST_RESULT["result"] = data
 
+    _append_speedtest_result({
+        "download_mbps": data.get("download_mbps"),
+        "upload_mbps": data.get("upload_mbps"),
+        "ping_ms": data.get("ping_ms"),
+        "server": data.get("server"),
+        "method": data.get("method"),
+    })
+
     return jsonify({
         "ok": True,
         "cached": False,
@@ -3361,6 +3396,18 @@ def api_speedtest_post():
         "server": data.get("server"),
         "method": data.get("method"),
     })
+
+
+@app.route("/api/system/speedtest/history", methods=["GET"])
+@require_auth
+def api_speedtest_history():
+    """Return speedtest history (newest first)."""
+    try:
+        text = Path(SPEEDTEST_HISTORY_FILE).read_text().strip()
+        history = json.loads(text) if text else []
+    except (OSError, json.JSONDecodeError):
+        history = []
+    return jsonify({"history": list(reversed(history)), "count": len(history)})
 
 
 @app.route('/api/system/ota-update', methods=['POST'])
