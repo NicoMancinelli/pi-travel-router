@@ -12331,6 +12331,108 @@ def api_system_environment():
     return jsonify({"variables": variables, "total": len(variables)})
 
 
+# ── GPU / VideoCore Info ──────────────────────────────────────────────────────
+
+@app.route("/api/system/gpu", methods=["GET"])
+@require_auth
+def api_gpu_info():
+    """Return Raspberry Pi VideoCore GPU information via vcgencmd."""
+    # Check if vcgencmd is available
+    _, rc_check = _run("vcgencmd version")
+    if rc_check != 0:
+        return jsonify({"vcgencmd_available": False, "error": "vcgencmd not found — not a Raspberry Pi?"})
+
+    def _parse_kv(output):
+        """Parse 'key=value' output, returning value string or None."""
+        if not output:
+            return None
+        m = re.search(r"=(.+)", output.strip())
+        return m.group(1).strip() if m else output.strip()
+
+    # ARM memory
+    arm_mem_mb = None
+    out, rc = _run("vcgencmd get_mem arm")
+    if rc == 0 and out:
+        m = re.search(r"(\d+)M", out)
+        if m:
+            arm_mem_mb = int(m.group(1))
+
+    # GPU memory
+    gpu_mem_mb = None
+    out, rc = _run("vcgencmd get_mem gpu")
+    if rc == 0 and out:
+        m = re.search(r"(\d+)M", out)
+        if m:
+            gpu_mem_mb = int(m.group(1))
+
+    # Core voltage
+    core_voltage_v = None
+    out, rc = _run("vcgencmd measure_volts core")
+    if rc == 0 and out:
+        m = re.search(r"volt=([\d.]+)V", out)
+        if m:
+            core_voltage_v = round(float(m.group(1)), 4)
+
+    # SDRAM core voltage
+    sdram_voltage_v = None
+    out, rc = _run("vcgencmd measure_volts sdram_c")
+    if rc == 0 and out:
+        m = re.search(r"volt=([\d.]+)V", out)
+        if m:
+            sdram_voltage_v = round(float(m.group(1)), 4)
+
+    # ARM clock
+    arm_clock_hz = None
+    out, rc = _run("vcgencmd measure_clock arm")
+    if rc == 0 and out:
+        m = re.search(r"frequency\(\d+\)=(\d+)", out)
+        if m:
+            arm_clock_hz = int(m.group(1))
+
+    # Core clock
+    core_clock_hz = None
+    out, rc = _run("vcgencmd measure_clock core")
+    if rc == 0 and out:
+        m = re.search(r"frequency\(\d+\)=(\d+)", out)
+        if m:
+            core_clock_hz = int(m.group(1))
+
+    # Throttle flags
+    throttled_info = {"raw": None, "undervoltage": False, "freq_capped": False, "throttled": False, "undervoltage_occurred": False}
+    out, rc = _run("vcgencmd get_throttled")
+    if rc == 0 and out:
+        m = re.search(r"throttled=(0x[0-9a-fA-F]+|\d+)", out)
+        if m:
+            raw_val = m.group(1)
+            throttled_info["raw"] = raw_val
+            flags = int(raw_val, 16) if raw_val.startswith("0x") else int(raw_val)
+            throttled_info["undervoltage"] = bool(flags & (1 << 0))
+            throttled_info["freq_capped"] = bool(flags & (1 << 1))
+            throttled_info["throttled"] = bool(flags & (1 << 2))
+            throttled_info["undervoltage_occurred"] = bool(flags & (1 << 16))
+
+    # Config integers (best-effort, not required)
+    config_ints = {}
+    out, rc = _run("vcgencmd get_config int")
+    if rc == 0 and out:
+        for line in out.strip().splitlines():
+            m = re.match(r"^([a-zA-Z0-9_]+)=(\d+)$", line.strip())
+            if m:
+                config_ints[m.group(1)] = int(m.group(2))
+
+    return jsonify({
+        "vcgencmd_available": True,
+        "arm_mem_mb": arm_mem_mb,
+        "gpu_mem_mb": gpu_mem_mb,
+        "arm_clock_hz": arm_clock_hz,
+        "core_clock_hz": core_clock_hz,
+        "core_voltage_v": core_voltage_v,
+        "sdram_voltage_v": sdram_voltage_v,
+        "throttled": throttled_info,
+        "config_ints": config_ints,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
