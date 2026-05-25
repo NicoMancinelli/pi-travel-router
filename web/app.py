@@ -8005,6 +8005,53 @@ def api_network_netdev():
     return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
+# ── IRQ Interrupts ────────────────────────────────────────────────────────────
+@app.route("/api/system/interrupts", methods=["GET"])
+@require_auth
+def api_system_interrupts():
+    """Return top IRQ interrupt counts from /proc/interrupts."""
+    try:
+        with open("/proc/interrupts", "r") as fh:
+            lines = fh.readlines()
+    except OSError as exc:
+        return jsonify({"interrupts": [], "count": 0, "error": str(exc)})
+
+    if not lines:
+        return jsonify({"interrupts": [], "count": 0, "error": "empty file"})
+
+    # First line: CPU headers — count CPUs
+    cpu_count = len(lines[0].split())
+
+    results = []
+    for line in lines[1:]:
+        parts = line.split()
+        if not parts:
+            continue
+        irq = parts[0].rstrip(":")
+        # Count fields are next cpu_count integers
+        try:
+            counts = [int(parts[i + 1]) for i in range(cpu_count)]
+        except (IndexError, ValueError):
+            continue
+        total = sum(counts)
+        if total == 0:
+            continue
+        # Remaining fields after the counts: optional type + description
+        remainder = parts[1 + cpu_count:]
+        irq_type = remainder[0] if len(remainder) > 0 else ""
+        description = " ".join(remainder[1:]) if len(remainder) > 1 else ""
+        results.append({
+            "irq": irq,
+            "total": total,
+            "type": irq_type,
+            "description": description,
+        })
+
+    results.sort(key=lambda x: x["total"], reverse=True)
+    top = results[:15]
+    return jsonify({"interrupts": top, "cpus": cpu_count, "count": len(top)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
