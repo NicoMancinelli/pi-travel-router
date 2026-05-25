@@ -1295,6 +1295,12 @@
           <div id="mdns-content"><em>Loading…</em></div>
         </div>
 
+        <!-- IP Geolocation -->
+        <div class="card" id="card-ip-geo">
+          <h2>🌍 Public IP & Location</h2>
+          <div id="ip-geo-content"><em>Loading…</em></div>
+        </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4355,6 +4361,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCpuGovernors();
   fetchSystemTimers();
   fetchMdns();
+  fetchIpGeo();
 });
 
 async function fetchJournal() {
@@ -4590,6 +4597,7 @@ async function refreshAll() {
   fetchCpuGovernors();
   fetchSystemTimers();
   fetchMdns();
+  fetchIpGeo();
 }
 
 async function init() {
@@ -8493,6 +8501,25 @@ async function fetchMemoryBreakdown() {
           `<tr><td>${s.name}</td><td style="font-family:monospace;font-size:0.85em">${s.type}</td><td style="font-family:monospace">${s.hostname}</td><td>${s.address}</td><td style="text-align:right">${s.port}</td></tr>`
         ).join('');
         el.innerHTML = `<p style="margin:0 0 6px">${d.count} service(s)</p><table class="info-table"><thead><tr><th>Name</th><th>Type</th><th>Host</th><th>Address</th><th>Port</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+
+    async function fetchIpGeo() {
+      const el = document.getElementById('ip-geo-content');
+      try {
+        const r = await fetch('/api/network/ip-geo');
+        const d = await r.json();
+        if (d.error) { el.textContent = 'Error: ' + d.error; return; }
+        const rows = [
+          d.ip ? `<tr><td>Public IP</td><td style="font-family:monospace;font-weight:600">${d.ip}</td></tr>` : '',
+          d.country ? `<tr><td>Country</td><td>${d.country}</td></tr>` : '',
+          d.region ? `<tr><td>Region</td><td>${d.region}</td></tr>` : '',
+          d.city ? `<tr><td>City</td><td>${d.city}</td></tr>` : '',
+          d.isp ? `<tr><td>ISP</td><td>${d.isp}</td></tr>` : '',
+          d.org ? `<tr><td>Org</td><td>${d.org}</td></tr>` : '',
+          d.asn ? `<tr><td>ASN</td><td style="font-family:monospace">${d.asn}</td></tr>` : '',
+        ].filter(Boolean).join('');
+        el.innerHTML = `<table class="info-table"><tbody>${rows}</tbody></table>`;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
 // ── LAN Network Scanner ───────────────────────────────────────────────────────

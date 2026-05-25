@@ -9321,6 +9321,36 @@ def api_network_mdns():
         })
 
     return jsonify({"services": services, "count": len(services)})
+
+
+@app.route("/api/network/ip-geo")
+@require_auth
+def api_network_ip_geo():
+    """Return public IP and geolocation from ip-api.com (no key required)."""
+    import urllib.request as _urlreq
+    import json as _json
+    try:
+        req = _urlreq.Request(
+            "http://ip-api.com/json/?fields=status,message,country,regionName,city,isp,org,as,query",
+            headers={"User-Agent": "pi-travel-router/2.x"},
+        )
+        with _urlreq.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read().decode())
+        if data.get("status") != "success":
+            return jsonify({"error": data.get("message", "lookup failed"), "ip": None})
+        return jsonify({
+            "ip": data.get("query"),
+            "country": data.get("country"),
+            "region": data.get("regionName"),
+            "city": data.get("city"),
+            "isp": data.get("isp"),
+            "org": data.get("org"),
+            "asn": data.get("as"),
+        })
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc), "ip": None})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
