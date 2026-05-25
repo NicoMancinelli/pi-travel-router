@@ -1357,6 +1357,12 @@
     <div id="ip-rules-content"><em>Loading&hellip;</em></div>
   </div>
 
+  <!-- Log Summary -->
+  <div class="card" id="card-log-summary">
+    <h2>&#x1F4C4; Log Summary</h2>
+    <div id="log-summary-journal-content"><em>Loading&hellip;</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4428,6 +4434,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchBlockDevices();
   fetchDnsConfig();
   fetchIpRules();
+  fetchLogSummaryJournal();
 });
 
 async function fetchJournal() {
@@ -4673,6 +4680,7 @@ async function refreshAll() {
   fetchBlockDevices();
   fetchDnsConfig();
   fetchIpRules();
+  fetchLogSummaryJournal();
 }
 
 async function init() {
@@ -8851,6 +8859,39 @@ async function fetchIpRules() {
     html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) { el.textContent = 'Error: ' + e; }
+}
+
+// ── Log Summary (journal) ─────────────────────────────────────────────────────
+async function fetchLogSummaryJournal() {
+  const el = document.getElementById('log-summary-journal-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/log-summary');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--danger);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+    const errColor = d.errors > 0 ? '#ef4444' : '#22c55e';
+    const warnColor = d.warnings > 0 ? '#f97316' : '#22c55e';
+    let html = `<div style="display:flex;gap:20px;margin-bottom:10px;font-size:13px;flex-wrap:wrap;">`;
+    html += `<span>&#x1F4CB; Total: <strong>${d.total}</strong></span>`;
+    html += `<span>&#x1F534; Errors: <strong style="color:${errColor};">${d.errors}</strong></span>`;
+    html += `<span>&#x1F7E1; Warnings: <strong style="color:${warnColor};">${d.warnings}</strong></span>`;
+    html += '</div>';
+    if (d.recent_errors && d.recent_errors.length > 0) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Recent errors (last 100 entries):</div>`;
+      html += `<pre style="font-size:11px;line-height:1.5;background:var(--bg2);border-radius:4px;padding:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">`;
+      html += d.recent_errors.map(e => escHtml(e)).join('\n');
+      html += '</pre>';
+    } else {
+      html += `<div style="font-size:12px;color:#22c55e;">&#x2705; No errors in last 100 log entries.</div>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load log summary</span>';
+  }
 }
 
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
