@@ -1994,6 +1994,116 @@ def api_schedule_reboot_post():
     return jsonify({"ok": True})
 
 
+# ── Reboot schedule ───────────────────────────────────────────────────────────
+
+REBOOT_SCHEDULE_CONF = "/etc/travel-router/reboot-schedule.conf"
+REBOOT_CRON_FILE = "/etc/cron.d/travel-router-reboot"
+
+
+def _read_reboot_schedule() -> dict:
+    """Read reboot schedule config. Returns {enabled, hour, minute, next_reboot}."""
+    enabled = False
+    hour = 3
+    minute = 30
+    # Check if cron file exists and is not commented out
+    try:
+        text = Path(REBOOT_CRON_FILE).read_text()
+        for line in text.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        minute = int(parts[0])
+                        hour = int(parts[1])
+                        enabled = True
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+    # Also check conf file
+    try:
+        text = Path(REBOOT_SCHEDULE_CONF).read_text()
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("REBOOT_TIME="):
+                t = line.split("=", 1)[1].strip().strip('"').strip("'")
+                if ":" in t:
+                    try:
+                        h, m = t.split(":", 1)
+                        hour = int(h)
+                        minute = int(m)
+                    except ValueError:
+                        pass
+            elif line.startswith("ENABLE_SCHEDULED_REBOOT="):
+                val = line.split("=", 1)[1].strip().strip('"').strip("'").lower()
+                enabled = val in ("1", "true", "yes")
+    except OSError:
+        pass
+    # Calculate next reboot time
+    import datetime as _dt
+    now = _dt.datetime.now()
+    next_reboot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if next_reboot <= now:
+        next_reboot += _dt.timedelta(days=1)
+    return {
+        "enabled": enabled,
+        "hour": hour,
+        "minute": minute,
+        "time_str": f"{hour:02d}:{minute:02d}",
+        "next_reboot": next_reboot.isoformat(),
+    }
+
+
+@app.route("/api/system/reboot-schedule", methods=["GET"])
+@require_auth
+def api_reboot_schedule_get():
+    return jsonify(_read_reboot_schedule())
+
+
+@app.route("/api/system/reboot-schedule", methods=["POST"])
+@require_auth_always
+def api_reboot_schedule_post():
+    """Update reboot schedule."""
+    body = request.get_json(silent=True) or {}
+    enabled = bool(body.get("enabled", True))
+    try:
+        hour = int(body.get("hour", 3))
+        minute = int(body.get("minute", 30))
+    except (ValueError, TypeError):
+        return jsonify({"error": "invalid hour or minute"}), 400
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return jsonify({"error": "hour must be 0-23, minute 0-59"}), 400
+    # Run schedule-reboot.sh if it exists, else write cron directly
+    try:
+        result = _run(
+            ["bash", "/usr/local/sbin/schedule-reboot.sh",
+             f"{hour:02d}:{minute:02d}", "1" if enabled else "0"],
+            timeout=10,
+        )
+    except Exception:
+        result = None
+    if result is None or not result[0]:
+        # Fallback: write cron file directly
+        try:
+            cron_content = f"{minute} {hour} * * * root /sbin/reboot\n" if enabled else \
+                           f"# {minute} {hour} * * * root /sbin/reboot  (disabled)\n"
+            d = str(Path(REBOOT_CRON_FILE).parent)
+            fd, tmp = tempfile.mkstemp(dir=d)
+            try:
+                with os.fdopen(fd, "w") as fh:
+                    fh.write(cron_content)
+                os.replace(tmp, REBOOT_CRON_FILE)
+            except Exception:
+                import contextlib
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp)
+                raise
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "enabled": enabled, "time": f"{hour:02d}:{minute:02d}"})
+
+
 # ── Uplink reconnect ──────────────────────────────────────────────────────────
 
 

@@ -890,6 +890,28 @@
     </div>
   </div>
 
+  <!-- Reboot Schedule -->
+  <div class="card" id="card-reboot-schedule" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x23F0; Reboot Schedule</span>
+      <button class="btn btn-sm" onclick="fetchRebootScheduleNew()">&#x21BB; Refresh</button>
+    </div>
+    <div id="reboot-schedule-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <label style="font-size:13px;display:flex;align-items:center;gap:4px;">
+        <input type="checkbox" id="reboot-enabled-cb"> Enabled
+      </label>
+      <label style="font-size:13px;">Time:</label>
+      <input id="reboot-hour" type="number" min="0" max="23" style="width:56px;font-size:13px;padding:4px 6px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+      <span style="font-size:13px;">:</span>
+      <input id="reboot-minute" type="number" min="0" max="59" style="width:56px;font-size:13px;padding:4px 6px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+      <button class="btn btn-primary" onclick="saveRebootScheduleNew()" style="font-size:13px;">Save</button>
+      <span id="reboot-schedule-msg" style="font-size:12px;"></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- WireGuard peers list -->
@@ -2274,6 +2296,59 @@ async function saveRebootSchedule() {
   }
 }
 
+// ── Reboot Schedule (new /api/system/reboot-schedule) ─────────────────────────
+async function fetchRebootScheduleNew() {
+  const el = document.getElementById('reboot-schedule-content');
+  try {
+    const r = await apiFetch('/api/system/reboot-schedule');
+    const d = await r.json();
+    const next = d.next_reboot ? new Date(d.next_reboot).toLocaleString() : '—';
+    let html = '<div style="font-size:13px;">';
+    html += '<span style="color:' + (d.enabled ? 'var(--success,#4c4)' : 'var(--text-dim)') + ';">'
+          + (d.enabled ? '● Enabled' : '○ Disabled') + '</span>';
+    if (d.enabled) html += ' — daily at <strong>' + d.time_str + '</strong>';
+    if (d.enabled) html += '<br><span style="font-size:12px;color:var(--text-dim);">Next: ' + next + '</span>';
+    html += '</div>';
+    el.innerHTML = html;
+    // Populate form
+    const cb = document.getElementById('reboot-enabled-cb');
+    const hourEl = document.getElementById('reboot-hour');
+    const minEl = document.getElementById('reboot-minute');
+    if (cb) cb.checked = d.enabled;
+    if (hourEl) hourEl.value = d.hour;
+    if (minEl) minEl.value = d.minute;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function saveRebootScheduleNew() {
+  const cb = document.getElementById('reboot-enabled-cb');
+  const hourEl = document.getElementById('reboot-hour');
+  const minEl = document.getElementById('reboot-minute');
+  const msg = document.getElementById('reboot-schedule-msg');
+  const enabled = cb ? cb.checked : true;
+  const hour = parseInt(hourEl ? hourEl.value : '3');
+  const minute = parseInt(minEl ? minEl.value : '30');
+  if (isNaN(hour) || isNaN(minute)) { msg.textContent = 'Invalid time'; return; }
+  msg.textContent = 'Saving…';
+  try {
+    const r = await apiFetch('/api/system/reboot-schedule', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({enabled, hour, minute}) });
+    const d = await r.json();
+    if (r.ok) {
+      msg.textContent = '✓ Saved';
+      msg.style.color = 'var(--success,#4c4)';
+      setTimeout(() => { msg.textContent = ''; fetchRebootScheduleNew(); }, 2000);
+    } else {
+      msg.textContent = d.error || 'Failed';
+      msg.style.color = 'var(--error,#e55)';
+    }
+  } catch (e) {
+    msg.textContent = 'Error: ' + e;
+    msg.style.color = 'var(--error,#e55)';
+  }
+}
+
 // ── WireGuard peer ─────────────────────────────────────────────────────────────
 async function addWgPeer() {
   const payload = {
@@ -3595,6 +3670,7 @@ async function refreshAll() {
   fetchCaptiveStatus();
   fetchSignal();
   fetchRebootSchedule();
+  fetchRebootScheduleNew();
   fetchStorage();
   fetchWolTargets();
   fetchPortForwardRules();
