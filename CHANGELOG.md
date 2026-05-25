@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.79.0] - 2026-05-25
+
+### Added
+- `GET /api/system/cpufreq` — per-core CPU frequency from `/sys/devices/system/cpu/cpu*/cpufreq/`; governor and available governors; Pi-specific `arm_freq` from `vcgencmd`; dashboard card CPU Frequency (⚡) with per-core bars color-coded by load and governor badge (performance/powersave/ondemand/schedutil)
+- `GET /api/system/journal-errors` — last 50 errors + 30 warnings from `journalctl --output=json`; priority-level mapping (emerg/crit/err/warning); error/warning counts; dashboard card Journal Errors (📜) with severity-colored rows and clean/error badge
+
 ## [2.78.0] - 2026-05-25
 
 ### Added
