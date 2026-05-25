@@ -1750,11 +1750,16 @@
           <div id="mdns-content"><em>Loading…</em></div>
         </div>
 
-        <!-- Failed Services -->
-        <div class="card" id="card-failed-services">
-          <h2>💥 Failed Services</h2>
-          <div id="failed-services-content"><em>Loading…</em></div>
-        </div>
+<!-- Failed Services -->
+<div class="card" id="failed-services-card">
+  <div class="card-header">
+    <span>❌ Failed Services</span>
+    <span class="card-badge" id="failed-services-count">—</span>
+  </div>
+  <div class="card-body" id="failed-services-content">
+    <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+  </div>
+</div>
 
         <!-- IP Geolocation -->
         <div class="card" id="card-ip-geo">
@@ -10330,24 +10335,43 @@ async function fetchMemoryBreakdown() {
         el.innerHTML = `<p style="margin:0 0 6px">${d.count} service(s)</p><table class="info-table"><thead><tr><th>Name</th><th>Type</th><th>Host</th><th>Address</th><th>Port</th></tr></thead><tbody>${rows}</tbody></table>`;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
-    async function fetchFailedServices() {
-      const el = document.getElementById('failed-services-content');
-      try {
-        const r = await fetch('/api/system/failed-services');
-        const d = await r.json();
-        if (!d.units || !d.units.length) {
-          el.innerHTML = '<span style="color:#4caf50">✓ No failed services</span>';
-          return;
-        }
-        let html = `<p style="margin:0 0 4px;color:#f44336">${d.count} failed unit(s)</p>`;
-        for (const u of d.units) {
-          const journal = u.journal_tail && u.journal_tail.length
-            ? `<pre style="font-size:0.78em;color:#888;margin:2px 0 0;white-space:pre-wrap;word-break:break-all">${u.journal_tail.slice(-3).join('\n')}</pre>` : '';
-          html += `<div style="margin-bottom:8px"><strong style="color:#f44336">${u.unit}</strong> <span style="color:#888;font-size:0.85em">${u.description}</span>${journal}</div>`;
-        }
-        el.innerHTML = html;
-      } catch (e) { el.textContent = 'Error: ' + e; }
+// ── Failed Services ───────────────────────────────────────────────────────────
+async function fetchFailedServices() {
+  const el = document.getElementById('failed-services-content');
+  const badge = document.getElementById('failed-services-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/failed-services');
+    const d = await r.json();
+    const count = d.count || 0;
+    if (badge) {
+      badge.textContent = count > 0 ? `${count} failed` : 'All OK';
+      badge.style.background = count > 0 ? '#dc2626' : '#16a34a';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
     }
+    let html = '';
+    const services = d.services || [];
+    if (services.length === 0) {
+      html = '<p class="muted" style="color:var(--success,#16a34a);">✓ No failed services.</p>';
+    } else {
+      for (const s of services) {
+        html += `<div style="background:rgba(220,38,38,0.08);border-radius:6px;padding:8px 10px;margin-bottom:8px;border-left:3px solid #dc2626;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-family:monospace;font-weight:600;font-size:12px;color:#ef4444">${s.unit}</span>
+            <span style="font-size:10px;color:var(--text-dim)">${s.sub || s.active || ''}</span>
+          </div>
+          ${s.description ? `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">${s.description}</div>` : ''}
+          ${s.recent_log?.length > 0 ? `<pre style="font-size:9px;background:var(--bg);padding:4px;border-radius:3px;overflow-x:auto;margin:0;max-height:80px;overflow-y:auto;">${s.recent_log.join('\n')}</pre>` : ''}
+        </div>`;
+      }
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
 
     async function fetchIpGeo() {
       const el = document.getElementById('ip-geo-content');
