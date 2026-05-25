@@ -9726,6 +9726,29 @@ def api_network_wifi_clients():
     return jsonify({"clients": [], "interface": None})
 
 
+@app.route("/api/system/package-updates")
+@require_auth
+def api_system_package_updates():
+    out, _rc = _run(["apt", "list", "--upgradable"])
+    packages = []
+    for line in out.splitlines():
+        if "/" not in line or line.strip() == "Listing...":
+            continue
+        try:
+            parts = line.split()
+            pkg_suite = parts[0]
+            pkg = pkg_suite.split("/")[0]
+            available = parts[1] if len(parts) > 1 else "?"
+            arch = parts[2] if len(parts) > 2 else "?"
+            current = "?"
+            if "upgradable from:" in line:
+                current = line.split("upgradable from:")[-1].strip().rstrip("]")
+            packages.append({"package": pkg, "available": available, "current": current, "arch": arch})
+        except (IndexError, ValueError):
+            continue
+    return jsonify({"packages": packages, "count": len(packages)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
