@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.42.0] - 2026-05-25
+
+### Added
+
+- **Kernel log (dmesg) card** (`web/app.py`, `web/static/index.html`): `GET /api/system/dmesg` runs `dmesg --time-format iso -l warn,err,crit,alert,emerg` with fallback to `dmesg -T | tail -N`. Parses ISO and bracketed timestamps via regex, classifies messages as err/warn/info. `?lines=N` param (default 30, max 100). Dashboard card with per-message level badges (red=err/crit, orange=warn), dimmed timestamps, green "No kernel warnings" when clean. Auto-refreshes on poll.
+- **Disk partitions card** (`web/app.py`, `web/static/index.html`): `GET /api/system/disk-partitions` runs `df -P -k`, cross-references `/proc/mounts` for filesystem type, skips tmpfs/devtmpfs/overlay/squashfs, merges `lsblk -J` device model info. Dashboard card with device/mountpoint/fstype/size table, inline usage bars (green <60%, orange 60-80%, red ≥80%), optional model subtitle. Auto-refreshes on poll.
+- **Top processes by memory card** (`web/app.py`, `web/static/index.html`): `GET /api/system/proc-mem` reads `/proc/<pid>/status` for all live PIDs, extracts Name/VmRSS/VmSize/State with race-safe skip on OSError. Returns top 20 by RSS (configurable via `?limit=N`, max 50) with total RSS across all processes. Dashboard card with PID/Name/RSS/VSZ/State table, total RSS summary, refresh button. Auto-refreshes on poll.
+
 ## [2.41.0] - 2026-05-25
 
 ### Added
