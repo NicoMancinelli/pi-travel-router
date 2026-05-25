@@ -6748,6 +6748,88 @@ def _fmt_bytes(n):
         return f"{n / 1024 / 1024 / 1024:.2f} GB"
 
 
+# ── Data Cap Tracker ──────────────────────────────────────────────────────────
+
+@app.route("/api/network/datacap", methods=["GET"])
+@require_auth
+def api_network_datacap():
+    """Return current month's data usage from vnstat, plus configured cap."""
+    import json
+    import datetime
+
+    # Read configured cap from /etc/default/travel-router (MONTHLY_CAP_GB=50)
+    cap_gb = None
+    try:
+        with open("/etc/default/travel-router") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("MONTHLY_CAP_GB="):
+                    val = line.split("=", 1)[1].strip().strip('"\'')
+                    try:
+                        cap_gb = float(val)
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+
+    # Get month totals from vnstat
+    out, rc = _run(["vnstat", "--json", "m"])
+    if rc != 0:
+        return jsonify({"error": "vnstat not available", "cap_gb": cap_gb})
+
+    try:
+        data = json.loads(out)
+    except (ValueError, KeyError):
+        return jsonify({"error": "Failed to parse vnstat output", "cap_gb": cap_gb})
+
+    interfaces = data.get("interfaces", [])
+    if not interfaces:
+        return jsonify({"error": "No vnstat interfaces", "cap_gb": cap_gb})
+
+    # Pick the primary interface (most total traffic)
+    best = max(interfaces, key=lambda i: sum(
+        e.get("rx", 0) + e.get("tx", 0)
+        for e in i.get("traffic", {}).get("month", [])
+    ))
+
+    iface_name = best.get("name", "unknown")
+    months = best.get("traffic", {}).get("month", [])
+
+    # Current month
+    now = datetime.datetime.now()
+    current = None
+    for m in months:
+        d = m.get("date", {})
+        if d.get("year") == now.year and d.get("month") == now.month:
+            current = m
+            break
+
+    if not current:
+        # Fall back to most recent
+        if months:
+            current = months[-1]
+
+    rx_bytes = current.get("rx", 0) if current else 0
+    tx_bytes = current.get("tx", 0) if current else 0
+    total_bytes = rx_bytes + tx_bytes
+    total_gb = total_bytes / 1024 / 1024 / 1024
+
+    result = {
+        "interface": iface_name,
+        "rx_bytes": rx_bytes,
+        "tx_bytes": tx_bytes,
+        "total_bytes": total_bytes,
+        "total_gb": round(total_gb, 3),
+        "rx_gb": round(rx_bytes / 1024 / 1024 / 1024, 3),
+        "tx_gb": round(tx_bytes / 1024 / 1024 / 1024, 3),
+        "cap_gb": cap_gb,
+        "percent_used": round((total_gb / cap_gb * 100), 1) if cap_gb else None,
+        "remaining_gb": round(cap_gb - total_gb, 3) if cap_gb else None,
+        "month": f"{now.year}-{now.month:02d}",
+    }
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
