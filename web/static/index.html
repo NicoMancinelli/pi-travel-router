@@ -1070,6 +1070,12 @@
     <div id="ipv6-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- IP Route Table -->
+  <div class="card" id="routes-card">
+    <h2>🗺️ Route Table</h2>
+    <div id="routes-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4666,6 +4672,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchProcessTop();
   fetchMounts();
   fetchIPv6Addresses();
+  fetchRoutes();
 });
 
 async function fetchJournal() {
@@ -4941,6 +4948,7 @@ async function refreshAll() {
   fetchArpTable();
   fetchMounts();
   fetchIPv6Addresses();
+  fetchRoutes();
 }
 
 async function init() {
@@ -7365,6 +7373,25 @@ async function fetchIPv6Addresses() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('ipv6-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── IP Route Table ────────────────────────────────────────────────────────────
+async function fetchRoutes() {
+  try {
+    const r = await fetch('/api/network/routes');
+    const d = await r.json();
+    const el = document.getElementById('routes-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    let html = '';
+    if (d.default_gw) html += `<p class="muted" style="margin-bottom:6px">Default gateway: <strong><code>${d.default_gw}</code></strong></p>`;
+    html += '<table class="table"><thead><tr><th>Destination</th><th>Gateway</th><th>Interface</th><th>Protocol</th><th>Metric</th></tr></thead><tbody>';
+    for (const rt of (d.routes || [])) {
+      const isDef = rt.dst === 'default';
+      html += `<tr${isDef ? ' style="font-weight:600"' : ''}><td><code>${rt.dst}</code></td><td><code>${rt.gateway || '-'}</code></td><td>${rt.dev}</td><td>${rt.protocol}</td><td>${rt.metric}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('routes-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Kernel Modules ────────────────────────────────────────────────────────────

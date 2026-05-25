@@ -3972,8 +3972,8 @@ def api_system_ssh_keys():
 
 @app.route("/api/network/routes", methods=["GET"])
 @require_auth
-def api_network_routes():
-    """Return IPv4 and IPv6 routing table."""
+def api_network_routes_v1():
+    """Return IPv4 and IPv6 routing table (legacy text parser)."""
     routes = []
 
     # IPv4 routes
@@ -7577,41 +7577,40 @@ def api_network_arp():
 @app.route("/api/network/routes", methods=["GET"])
 @require_auth
 def api_network_routes():
-    """Return the kernel IP routing table by running `ip route show`."""
-    out, rc = _run(["ip", "route", "show"])
-    if rc != 0:
-        return jsonify({"routes": [], "count": 0, "error": out.strip() or "ip route show failed"})
-    routes = []
-    for line in out.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        tokens = line.split()
-        route = {
-            "dest": tokens[0] if tokens else "",
-            "via": None,
-            "dev": None,
-            "metric": 0,
-            "proto": None,
-            "scope": None,
-            "src": None,
-        }
-        i = 1
-        while i < len(tokens):
-            key = tokens[i]
-            if key in ("via", "dev", "proto", "scope", "src") and i + 1 < len(tokens):
-                route[key] = tokens[i + 1]
-                i += 2
-            elif key == "metric" and i + 1 < len(tokens):
-                try:
-                    route["metric"] = int(tokens[i + 1])
-                except ValueError:
-                    route["metric"] = 0
-                i += 2
-            else:
-                i += 1
-        routes.append(route)
-    return jsonify({"routes": routes, "count": len(routes)})
+    """Return the main IPv4 routing table parsed from `ip -j route show`."""
+    try:
+        out, rc = _run(["ip", "-j", "route", "show"])
+        if rc != 0:
+            return jsonify({"error": out.strip() or "ip route show failed", "routes": [], "count": 0, "default_gw": None})
+        data = json.loads(out)
+        routes = []
+        default_gw = None
+        for item in data:
+            dst = item.get("dst", "")
+            gateway = item.get("gateway") or None
+            dev = item.get("dev", "")
+            protocol = item.get("protocol", "")
+            scope = item.get("scope", "")
+            metric = item.get("metric", 0)
+            try:
+                metric = int(metric)
+            except (TypeError, ValueError):
+                metric = 0
+            prefsrc = item.get("prefsrc") or None
+            routes.append({
+                "dst": dst,
+                "gateway": gateway,
+                "dev": dev,
+                "protocol": protocol,
+                "scope": scope,
+                "metric": metric,
+                "prefsrc": prefsrc,
+            })
+            if dst == "default" and gateway:
+                default_gw = gateway
+        return jsonify({"routes": routes, "count": len(routes), "default_gw": default_gw, "source": "ip-route"})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "routes": [], "count": 0, "default_gw": None})
 
 
 # ── Journal Errors ────────────────────────────────────────────────────────────
