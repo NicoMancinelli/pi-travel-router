@@ -1037,6 +1037,15 @@
     <div id="link-status-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- User Accounts -->
+  <div class="card full-width" id="card-user-accounts">
+    <div class="card-title">
+      &#x1F465; User Accounts
+      <button class="btn btn-sm" onclick="fetchUserAccounts()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="user-accounts-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4636,6 +4645,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDhcpServerStats();
   fetchBootAnalysis();
   fetchLinkStatus();
+  fetchUserAccounts();
 });
 
 async function fetchJournal() {
@@ -4906,6 +4916,7 @@ async function refreshAll() {
   fetchDhcpServerStats();
   fetchBootAnalysis();
   fetchLinkStatus();
+  fetchUserAccounts();
 }
 
 async function init() {
@@ -9803,6 +9814,47 @@ async function fetchLinkStatus() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchLinkStatus error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load link status</span>';
+  }
+}
+
+// ── User Accounts ─────────────────────────────────────────────────────────────
+
+async function fetchUserAccounts() {
+  const el = document.getElementById('user-accounts-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/user-accounts');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>'; return; }
+    const users = d.users || [];
+    if (users.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);">No user accounts found</span>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">User</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">UID</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Shell</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Groups</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Status</th>';
+    html += '</tr></thead><tbody>';
+    users.forEach((u, i) => {
+      const bg = i % 2 === 0 ? 'var(--bg2)' : 'transparent';
+      const lockBadge = u.locked ? '<span style="color:var(--error,#e55);font-size:11px;margin-left:4px;">locked</span>' : '';
+      const sudoGroups = (u.groups || []).filter(g => ['sudo','wheel','adm'].includes(g));
+      const sudoBadge = sudoGroups.length > 0 ? '<span style="color:var(--warning,#fa0);font-size:11px;margin-left:4px;">sudo</span>' : '';
+      html += '<tr style="background:' + bg + ';">';
+      html += '<td style="padding:4px 8px;font-weight:600;">' + u.username + sudoBadge + lockBadge + '</td>';
+      html += '<td style="padding:4px 8px;color:var(--text-dim);">' + u.uid + '</td>';
+      html += '<td style="padding:4px 8px;color:var(--text-dim);font-size:11px;">' + (u.shell || '—').replace('/usr/bin/', '').replace('/bin/', '') + '</td>';
+      html += '<td style="padding:4px 8px;color:var(--text-dim);font-size:11px;">' + (u.groups || []).slice(0, 5).join(', ') + (u.groups && u.groups.length > 5 ? '…' : '') + '</td>';
+      html += '<td style="padding:4px 8px;color:var(--text-dim);font-size:11px;">' + (u.last_login ? u.last_login.substring(0, 30) : 'Never') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchUserAccounts error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load user accounts</span>';
   }
 }
 

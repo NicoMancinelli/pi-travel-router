@@ -11040,6 +11040,86 @@ def api_network_link_status():
 
     return jsonify({"links": links, "count": len(links)})
 
+# ── User Accounts ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/user-accounts", methods=["GET"])
+@require_auth
+def api_system_user_accounts():
+    """Return non-system local user accounts from /etc/passwd."""
+    users = []
+
+    try:
+        for line in Path("/etc/passwd").read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split(":")
+            if len(parts) < 7:
+                continue
+            username, _, uid, gid, gecos, home, shell = parts[:7]
+            uid = int(uid)
+            gid = int(gid)
+
+            # Skip system accounts (uid < 1000) except root
+            if uid != 0 and uid < 1000:
+                continue
+            # Skip nologin/false shell accounts (except root)
+            if uid != 0 and shell in ("/usr/sbin/nologin", "/bin/false", "/sbin/nologin"):
+                continue
+
+            # Get supplementary groups
+            groups = []
+            try:
+                for gline in Path("/etc/group").read_text().splitlines():
+                    if not gline or gline.startswith("#"):
+                        continue
+                    gparts = gline.split(":")
+                    if len(gparts) >= 4:
+                        gname = gparts[0]
+                        members = gparts[3].split(",") if gparts[3] else []
+                        if username in members:
+                            groups.append(gname)
+            except OSError:
+                pass
+
+            # Check if account is locked (via /etc/shadow)
+            locked = False
+            try:
+                for sline in Path("/etc/shadow").read_text().splitlines():
+                    if sline.startswith(username + ":"):
+                        sparts = sline.split(":")
+                        if len(sparts) >= 2:
+                            pw = sparts[1]
+                            locked = pw.startswith("!") or pw.startswith("*") or pw == ""
+                        break
+            except OSError:
+                pass  # shadow not readable — normal for non-root
+
+            # Last login via lastlog
+            last_login = None
+            last_out, last_rc = _run(["lastlog", "-u", username])
+            if last_rc == 0:
+                for ll in last_out.splitlines()[1:]:
+                    ll = ll.strip()
+                    if ll and "**Never logged in**" not in ll:
+                        last_login = ll
+                    break
+
+            users.append({
+                "username": username,
+                "uid": uid,
+                "gid": gid,
+                "gecos": gecos,
+                "home": home,
+                "shell": shell,
+                "groups": groups,
+                "locked": locked,
+                "last_login": last_login,
+            })
+    except OSError:
+        pass
+
+    return jsonify({"users": users, "count": len(users)})
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
