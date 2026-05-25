@@ -814,6 +814,15 @@
     <div id="dns-lookup-result" style="font-size:13px;color:var(--text-dim);">Enter a hostname and click Lookup.</div>
   </div>
 
+  <!-- Route Table -->
+  <div class="card full-width" id="card-routes" style="margin-top:16px;">
+    <div class="card-header">
+      <span>🗺️ Routing Table</span>
+      <button class="btn btn-sm" onclick="fetchRouteTable()">&#x21BB; Refresh</button>
+    </div>
+    <div id="route-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3934,6 +3943,7 @@ async function refreshAll() {
   fetchDnsHosts();
   fetchDhcpReservations();
   fetchDhcpLeases();
+  fetchRouteTable();
   fetchUpdateCheck();
   fetchJournal();
   fetchRouterConfig();
@@ -4717,6 +4727,39 @@ async function runDnsLookup() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--error,#e55);">Error: ' + e + '</span>';
+  }
+}
+
+// ── Route Table Viewer ─────────────────────────────────────────────────────────
+
+async function fetchRouteTable() {
+  const el = document.getElementById('route-table-content');
+  try {
+    const r = await apiFetch('/api/network/routes');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);">' + (d.error || 'Error') + '</span>'; return; }
+    const routes = d.routes || [];
+    if (routes.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No routes found</span>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Destination</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Via</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Dev</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Metric</th>';
+    html += '</tr></thead><tbody>';
+    for (const rt of routes) {
+      const isDefault = rt.dest === 'default';
+      html += '<tr' + (isDefault ? ' style="font-weight:600;"' : '') + '>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dest || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.via || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dev || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + (rt.metric || '—') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   }
 }
 
