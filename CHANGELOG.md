@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.33.0] - 2026-05-25
+
+### Added
+
+- **Login history** (`web/app.py`, `web/static/index.html`): `GET /api/system/logins` runs `last -n 30 -F` (with `-F`-less fallback), filters system pseudo-logins (reboot/shutdown/LOGIN), cross-checks `who` to mark currently active sessions, returns user, TTY, source host, date string, and active flag. Dashboard card with active-session count badge and green bullet for active users. Auto-refreshes on poll.
+- **Network interface statistics** (`web/app.py`, `web/static/index.html`): `GET /api/network/iface/stats` reads `/proc/net/dev`, parses all 16 fields per interface (RX/TX bytes, packets, errors, drops; TX collisions), skips loopback, sorts by total traffic. Uses existing `_fmt_bytes()` helper. Dashboard card with per-interface table, RX in blue, TX in green, error/drop counts in red when non-zero. Auto-refreshes on poll.
+- **System update checker** (`web/app.py`, `web/static/index.html`): `GET /api/system/updates` runs `apt list --upgradable`, parses package name, current version, new version, and suite, detects security updates via `"security" in suite`, reads `/var/cache/apt/pkgcache.bin` mtime for cache age. Dashboard card shows ✅ up-to-date or update count with red security badge; security packages highlighted in red. Auto-refreshes on poll.
+
 ## [2.32.0] - 2026-05-25
 
 ### Added
