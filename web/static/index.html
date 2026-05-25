@@ -1196,6 +1196,15 @@
     <div id="crontab-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Kernel Config -->
+  <div class="card full-width" id="card-kernel-config">
+    <div class="card-title">
+      &#x2699;&#xFE0F; Kernel Config (<span id="kernel-config-source" style="font-size:12px;font-weight:normal;color:var(--text-dim);">loading&hellip;</span>)
+      <button class="btn btn-sm" onclick="fetchKernelConfig()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="kernel-config-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4779,6 +4788,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchContainers();
   fetchOpenFds();
   fetchCrontab();
+  fetchKernelConfig();
 });
 
 async function fetchJournal() {
@@ -5042,6 +5052,7 @@ async function refreshAll() {
   fetchContainers();
   fetchOpenFds();
   fetchCrontab();
+  fetchKernelConfig();
 }
 
 async function init() {
@@ -7483,6 +7494,55 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Kernel Config ─────────────────────────────────────────────────────────────
+async function fetchKernelConfig() {
+  const el = document.getElementById('kernel-config-content');
+  const srcEl = document.getElementById('kernel-config-source');
+  try {
+    const r = await fetch('/api/system/kernel-config');
+    const d = await r.json();
+    if (d.error) {
+      el.innerHTML = `<p class="error">${d.error}</p>`;
+      if (srcEl) srcEl.textContent = 'unavailable';
+      return;
+    }
+    if (srcEl) srcEl.textContent = d.source ? d.source.split('/').pop() : 'unknown';
+
+    const SECURITY_KEYS = ['CONFIG_SECURITY','CONFIG_SECURITY_SELINUX','CONFIG_SECURITY_APPARMOR',
+      'CONFIG_SECCOMP','CONFIG_HARDENED_USERCOPY','CONFIG_RANDOMIZE_BASE','CONFIG_RANDOMIZE_MEMORY'];
+    const NETWORK_KEYS = ['CONFIG_NETFILTER','CONFIG_NF_CONNTRACK','CONFIG_BRIDGE',
+      'CONFIG_VLAN_8021Q','CONFIG_TUN','CONFIG_WIREGUARD','CONFIG_IPV6'];
+    const PI_KEYS = ['CONFIG_BCM2835','CONFIG_RASPBERRYPI_FIRMWARE','CONFIG_USB_DWCOTG'];
+
+    function badge(val) {
+      if (val === 'y') return '<span style="background:#28a745;color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;">built-in</span>';
+      if (val === 'm') return '<span style="background:#007bff;color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;">module</span>';
+      if (val === 'n') return '<span style="background:#6c757d;color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;">disabled</span>';
+      return '<span style="background:#6c757d;color:#fff;border-radius:3px;padding:1px 5px;font-size:11px;">n/a</span>';
+    }
+
+    function renderCol(title, keys) {
+      let rows = keys.map(k => {
+        const shortName = k.replace(/^CONFIG_/, '');
+        const val = d.keys[k];
+        return `<tr><td style="padding:2px 8px 2px 0;white-space:nowrap;">${shortName}</td><td>${badge(val)}</td></tr>`;
+      }).join('');
+      return `<div style="flex:1;min-width:180px;">
+        <div style="font-weight:600;margin-bottom:6px;font-size:12px;text-transform:uppercase;color:var(--text-dim);">${title}</div>
+        <table style="border-collapse:collapse;width:100%;">${rows}</table>
+      </div>`;
+    }
+
+    el.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:16px;">
+      ${renderCol('Security', SECURITY_KEYS)}
+      ${renderCol('Networking', NETWORK_KEYS)}
+      ${renderCol('Pi-specific', PI_KEYS)}
+    </div>`;
+  } catch(e) {
+    el.innerHTML = `<p class="error">${e}</p>`;
+  }
 }
 
 // ── Crontab ───────────────────────────────────────────────────────────────────
