@@ -491,14 +491,12 @@
   </div>
 
   <!-- Network Interface Stats -->
-  <div class="card full-width" id="card-iface-stats" style="margin-top:16px;">
-    <div class="card-title" style="justify-content:space-between;">
-      <span>&#x1F4CA; Interface Stats</span>
-      <button class="btn btn-sm" onclick="fetchIfaceStats()">&#x21BB; Refresh</button>
+  <div class="card full-width" id="card-iface-stats">
+    <div class="card-title">
+      &#x1F4F6; Interface Statistics
+      <button class="btn btn-sm" onclick="fetchIfaceStats()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
-    <div id="iface-stats-content">
-      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
-    </div>
+    <div id="iface-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <hr class="divider">
@@ -590,14 +588,12 @@
   <hr class="divider">
 
   <!-- Login History -->
-  <div class="card full-width" id="card-logins" style="margin-top:16px;">
-    <div class="card-title" style="justify-content:space-between;">
-      <span>&#x1F512; Login History</span>
-      <button class="btn btn-sm" onclick="fetchLoginHistory()">&#x21BB; Refresh</button>
+  <div class="card" id="card-login-history">
+    <div class="card-title">
+      &#x1F464; Login History
+      <button class="btn btn-sm" onclick="fetchLoginHistory()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
-    <div id="login-history-content">
-      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
-    </div>
+    <div id="login-history-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <hr class="divider">
@@ -798,12 +794,12 @@
   </div>
 
   <!-- Route Table -->
-  <div class="card full-width" id="card-routes" style="margin-top:16px;">
-    <div class="card-header">
-      <span>🗺️ Routing Table</span>
-      <button class="btn btn-sm" onclick="fetchRouteTable()">&#x21BB; Refresh</button>
+  <div class="card full-width" id="card-routes">
+    <div class="card-title">
+      &#x1F5FA; Route Table
+      <button class="btn btn-sm" onclick="fetchRouteTable()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
-    <div id="route-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
+    <div id="route-table-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <!-- ARP / Neighbor Table -->
@@ -813,15 +809,6 @@
       <button class="btn btn-sm" onclick="fetchArpTable()">&#x21BB; Refresh</button>
     </div>
     <div id="arp-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
-  </div>
-
-  <!-- System Updates -->
-  <div class="card full-width" id="card-updates" style="margin-top:16px;">
-    <div class="card-header">
-      <span>📦 System Updates</span>
-      <button class="btn btn-sm" id="check-updates-btn" onclick="fetchSystemUpdates()">Check</button>
-    </div>
-    <div id="updates-content"><span style="color:var(--text-dim);font-size:13px;">Click Check to scan for updates.</span></div>
   </div>
 
   <!-- Config Backup -->
@@ -978,6 +965,191 @@
       <button class="btn btn-sm" onclick="fetchFirewallRules()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
     <div id="firewall-rules-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- Reboot / Shutdown -->
+  <div class="card" id="card-power">
+    <div class="card-title">&#x23FB; Power Control</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <button class="btn" id="reboot-btn" onclick="confirmPowerAction('reboot')" style="background:#f97316;color:#fff;border:none;">&#x1F504; Reboot</button>
+      <button class="btn" id="shutdown-btn" onclick="confirmPowerAction('shutdown')" style="background:#ef4444;color:#fff;border:none;">&#x23FC; Shutdown</button>
+      <span id="power-status" style="font-size:13px;color:var(--text-dim);"></span>
+    </div>
+  </div>
+
+  <!-- Bandwidth History -->
+  <div class="card full-width" id="card-bandwidth">
+    <div class="card-title">
+      &#x1F4C8; Bandwidth History
+      <span style="margin-left:8px;">
+        <button class="btn btn-sm" id="bw-tab-hourly" onclick="bwTab('hourly')" style="background:var(--accent);color:#fff;">Hourly</button>
+        <button class="btn btn-sm" id="bw-tab-daily" onclick="bwTab('daily')">Daily</button>
+      </span>
+      <button class="btn btn-sm" onclick="fetchBandwidthHistory()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="bandwidth-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- DNS Resolvers -->
+  <div class="card full-width" id="card-dns-resolvers">
+    <div class="card-title">
+      &#x1F50D; DNS Resolvers
+      <button class="btn btn-sm" onclick="fetchDnsResolvers()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="dns-resolvers-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- SSH Authorized Keys -->
+  <div class="card full-width" id="card-ssh-keys">
+    <div class="card-title">
+      &#x1F511; SSH Authorized Keys
+      <button class="btn btn-sm" onclick="fetchSshKeys()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="ssh-keys-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- Log Summary & Export -->
+  <div class="card full-width" id="card-log-export">
+    <div class="card-title">
+      &#x1F4CB; Log Summary
+      <button class="btn btn-sm" onclick="fetchLogSummary()" style="margin-left:8px;">&#x27F3; Refresh</button>
+      <a id="log-export-btn" href="/api/logs/export" class="btn btn-sm" style="margin-left:8px;text-decoration:none;">&#x2B07; Export All Logs</a>
+    </div>
+    <div id="log-summary-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Connected Clients -->
+  <div class="card full-width" id="card-clients">
+    <div class="card-title">
+      &#x1F4BB; Connected Clients
+      <button class="btn btn-sm" onclick="fetchConnectedClients()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="clients-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- VPN Kill Switch -->
+  <div class="card" id="card-killswitch">
+    <div class="card-title">&#x1F6AB; VPN Kill Switch</div>
+    <div id="killswitch-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- WireGuard Peer Health -->
+  <div class="card full-width" id="card-wg-peers">
+    <div class="card-title">
+      &#x1F512; WireGuard Peers
+      <button class="btn btn-sm" onclick="fetchWgPeers()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="wg-peers-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- Data Cap Tracker -->
+  <div class="card" id="card-vnstat-datacap">
+    <div class="card-title">&#x1F4CA; Monthly Data Usage</div>
+    <div id="vnstat-datacap-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- System Updates -->
+  <div class="card" id="card-system-updates">
+    <div class="card-title">
+      &#x1F504; System Updates
+      <button class="btn btn-sm" onclick="fetchSystemUpdates()" style="margin-left:8px;">&#x27F3; Check</button>
+    </div>
+    <div id="system-updates-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- Cron Jobs -->
+  <div class="card full-width" id="card-cron-system">
+    <div class="card-title">
+      &#x23F0; Cron Jobs
+      <button class="btn btn-sm" onclick="fetchCronJobsSystem()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="cron-system-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- Tailscale Exit Node -->
+  <div class="card" id="card-ts-exitnode">
+    <div class="card-title">&#x1F5FA; Tailscale Exit Node</div>
+    <div id="ts-exitnode-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Active Connections -->
+  <div class="card full-width" id="card-connections">
+    <div class="card-title">
+      &#x1F310; Active Connections
+      <button class="btn btn-sm" onclick="fetchConnections()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="connections-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- Entropy Pool -->
+  <div class="card" id="card-entropy">
+    <div class="card-title">&#x1F3B2; Entropy Pool</div>
+    <div id="entropy-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- USB Devices -->
+  <div class="card full-width" id="card-usb-devices">
+    <div class="card-title">
+      &#x1F50C; USB Devices
+      <button class="btn btn-sm" onclick="fetchUsbDevices()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="usb-devices-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- Top Processes -->
+  <div class="card full-width" id="card-proctop">
+    <div class="card-title">
+      &#x1F4CA; Top Processes
+      <button class="btn btn-sm" onclick="fetchProcTop()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="proctop-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- System Temperatures -->
+  <div class="card full-width" id="card-system-temps">
+    <div class="card-title">
+      &#x1F321;&#xFE0F; Temperatures
+      <button class="btn btn-sm" onclick="fetchSystemTemps()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="system-temps-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- WireGuard Config QR -->
+  <div class="card" id="card-wg-config-qr" style="max-width:360px;">
+    <div class="card-title">
+      &#x1F4F1; WireGuard Config QR
+      <button class="btn btn-sm" onclick="fetchWgConfigQr()" style="margin-left:8px;">&#x21BB; Refresh</button>
+    </div>
+    <div id="wg-config-qr-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- Kernel Modules -->
+  <div class="card full-width" id="card-kernel-modules">
+    <div class="card-title">
+      &#x1F527; Kernel Modules
+      <button class="btn btn-sm" onclick="fetchKernelModules()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="kernel-modules-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <div class="card full-width" id="card-diskio">
+    <div class="card-title">&#x1F4BE; Disk I/O Stats</div>
+    <div id="diskio-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <div class="card full-width" id="card-meminfo">
+    <div class="card-title">&#x1F9E0; Memory Details</div>
+    <div id="meminfo-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <hr class="divider">
@@ -1189,13 +1361,13 @@
 
   <hr class="divider">
 
-  <!-- WireGuard peers list -->
+  <!-- WireGuard peers list (management: add/remove) -->
   <div class="card full-width">
     <div class="card-title">
       WireGuard Peers
-      <button class="btn btn-sm" onclick="fetchWgPeers()" style="margin-left:8px;">&#x21BB; Refresh</button>
+      <button class="btn btn-sm" onclick="fetchWgPeersMgmt()" style="margin-left:8px;">&#x21BB; Refresh</button>
     </div>
-    <div id="wg-peers-content"><span class="spinner"></span></div>
+    <div id="wg-peers-mgmt-content"><span class="spinner"></span></div>
   </div>
 
   <hr class="divider">
@@ -1213,7 +1385,7 @@
   <div class="card" id="card-ts-exit-node" style="margin-top:16px;">
     <div class="card-title" style="justify-content:space-between;">
       <span>&#x1F310; Exit Node</span>
-      <button class="btn btn-sm" onclick="fetchTsExitNode()">&#x21BB; Refresh</button>
+      <button class="btn btn-sm" onclick="fetchTsExitNodeLegacy()">&#x21BB; Refresh</button>
     </div>
     <div id="ts-exit-node-content">
       <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
@@ -2901,21 +3073,73 @@ async function setDohResolver() {
   }
 }
 
-// ── WireGuard peers ────────────────────────────────────────────────────────────
+// ── WireGuard Peer Health ─────────────────────────────────────────────────────
+
 async function fetchWgPeers() {
+  const el = document.getElementById('wg-peers-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const resp = await apiFetch('/api/status');
-    if (!resp.ok) { document.getElementById('wg-peers-content').innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const resp = await apiFetch('/api/vpn/wireguard/peers');
     const d = await resp.json();
-    const peers = (d.vpn && d.vpn.wireguard && d.vpn.wireguard.peers) || [];
-    renderWgPeers(peers);
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+    if (!d.peers || d.peers.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No WireGuard peers configured.</span>';
+      return;
+    }
+    const statusColors = { recent: '#22c55e', stale: '#f97316', idle: '#6b7280', never: '#6b7280' };
+    const statusLabels = { recent: '● Active', stale: '◑ Stale', idle: '○ Idle', never: '○ Never' };
+
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} peer${d.count !== 1 ? 's' : ''}</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Interface</th>';
+    html += '<th style="padding:5px 8px;">Peer</th>';
+    html += '<th style="padding:5px 8px;">Status</th>';
+    html += '<th style="padding:5px 8px;">Last Handshake</th>';
+    html += '<th style="padding:5px 8px;">Allowed IPs</th>';
+    html += '<th style="padding:5px 8px;">RX</th>';
+    html += '<th style="padding:5px 8px;">TX</th>';
+    html += '</tr></thead><tbody>';
+    for (const p of d.peers) {
+      const color = statusColors[p.status] || '#6b7280';
+      const label = statusLabels[p.status] || p.status;
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(p.interface)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;" title="${escHtml(p.pubkey)}">${escHtml(p.pubkey_short)}</td>`;
+      html += `<td style="padding:5px 8px;color:${color};font-size:12px;font-weight:600;">${label}</td>`;
+      html += `<td style="padding:5px 8px;font-size:12px;">${escHtml(p.last_handshake_age)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${p.allowed_ips_str ? escHtml(p.allowed_ips_str) : '—'}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${escHtml(p.rx_human)}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${escHtml(p.tx_human)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
   } catch (e) {
-    if (e.message !== 'Unauthorized') document.getElementById('wg-peers-content').innerHTML = '<span class="dim">Error loading peers</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load WireGuard peers</span>';
   }
 }
 
-function renderWgPeers(peers) {
-  const el = document.getElementById('wg-peers-content');
+// ── WireGuard peers management (add/remove/QR) ────────────────────────────────
+
+async function fetchWgPeersMgmt() {
+  try {
+    const resp = await apiFetch('/api/status');
+    if (!resp.ok) { document.getElementById('wg-peers-mgmt-content').innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const d = await resp.json();
+    const peers = (d.vpn && d.vpn.wireguard && d.vpn.wireguard.peers) || [];
+    renderWgPeersMgmt(peers);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') document.getElementById('wg-peers-mgmt-content').innerHTML = '<span class="dim">Error loading peers</span>';
+  }
+}
+
+function renderWgPeersMgmt(peers) {
+  const el = document.getElementById('wg-peers-mgmt-content');
   if (!peers.length) {
     el.innerHTML = '<table><thead><tr><th>Public Key</th><th>Allowed IPs</th><th>Last Handshake</th><th>RX</th><th>TX</th><th>Actions</th></tr></thead>' +
       '<tbody><tr class="empty-row"><td colspan="6">No peers configured</td></tr></tbody></table>';
@@ -2952,7 +3176,7 @@ async function removeWgPeer(pubkey) {
     const d = await resp.json();
     if (resp.ok) {
       toast('Peer removed', 'ok');
-      fetchWgPeers();
+      fetchWgPeersMgmt();
     } else {
       toast(d.error || 'Failed', 'err');
     }
@@ -3071,8 +3295,9 @@ function renderTailscalePeers(d) {
 
 // ── Tailscale exit node ────────────────────────────────────────────────────────
 
-async function fetchTsExitNode() {
+async function fetchTsExitNodeLegacy() {
   const el = document.getElementById('ts-exit-node-content');
+  if (!el) return;
   try {
     const r = await apiFetch('/api/tailscale/exit-node');
     const d = await r.json();
@@ -3123,7 +3348,7 @@ async function setTsExitNode() {
     if (r.ok) {
       msg.textContent = node ? '✓ Exit node set' : '✓ Cleared';
       msg.style.color = 'var(--success,#4c4)';
-      setTimeout(() => { msg.textContent = ''; fetchTsExitNode(); }, 2000);
+      setTimeout(() => { msg.textContent = ''; fetchTsExitNodeLegacy(); fetchTsExitNode(); }, 2000);
     } else {
       msg.textContent = d.error || 'Failed';
       msg.style.color = 'var(--error,#e55)';
@@ -3924,13 +4149,36 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchListeningPorts();
   fetchStorage();
   fetchWgPeerHealth();
+  fetchWgPeers();
+  fetchWgPeersMgmt();
   fetchDhcpLeases();
+  fetchSshKeys();
   fetchNetInterfaces();
   fetchAdguardStats();
   fetchSystemServices();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
+  fetchBandwidthHistory();
+  fetchDnsResolvers();
+  fetchConnectedClients();
+  fetchKillSwitchStatus();
+  fetchLogSummary();
+  fetchVnstatDataCap();
+  fetchLoginHistory();
+  fetchIfaceStats();
+  fetchSystemUpdates();
+  fetchConnections();
+  fetchTsExitNode();
+  fetchCronJobsSystem();
+  fetchEntropy();
+  fetchUsbDevices();
+  fetchProcTop();
+  fetchSystemTemps();
+  fetchWgConfigQr();
+  fetchKernelModules();
+  fetchDiskIO();
+  fetchMemInfo();
 });
 
 async function fetchJournal() {
@@ -4026,49 +4274,48 @@ async function deletePingHost(host) {
   } catch (e) { toast('Error: ' + e, 'err'); }
 }
 
+// ── Login History ─────────────────────────────────────────────────────────────
+
 async function fetchLoginHistory() {
   const el = document.getElementById('login-history-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/system/logins?limit=15');
-    const d = await r.json();
-    const logins = d.logins || [];
-    const failed = d.failed || [];
-    let html = '';
-    if (logins.length === 0) {
-      html = '<span style="color:var(--text-dim);font-size:13px;">No login history available</span>';
-    } else {
-      html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Recent logins</div>';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-      html += '<thead><tr>';
-      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">User</th>';
-      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">From</th>';
-      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">When</th>';
-      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Status</th>';
-      html += '</tr></thead><tbody>';
-      for (const l of logins) {
-        const statusColor = l.still_on ? 'var(--success,#4c4)' : l.crashed ? 'var(--error,#e55)' : 'var(--text-dim)';
-        const status = l.still_on ? '● active' : l.crashed ? '✖ crash' : '—';
-        html += '<tr>';
-        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + l.user + '</td>';
-        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (l.host || l.tty || '—') + '</td>';
-        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + l.date + '</td>';
-        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:' + statusColor + ';">' + status + '</td>';
-        html += '</tr>';
-      }
-      html += '</tbody></table>';
+    const resp = await apiFetch('/api/system/logins');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
     }
-    if (failed.length > 0) {
-      html += '<div style="font-size:12px;color:var(--error,#e55);margin-top:10px;margin-bottom:4px;">&#x26A0; Failed login attempts (' + failed.length + ')</div>';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-      html += '<thead><tr><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">User</th><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">From</th><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">When</th></tr></thead><tbody>';
-      for (const f of failed) {
-        html += '<tr><td style="padding:3px 8px;border-bottom:1px solid var(--border);font-family:monospace;color:var(--error,#e55);">' + f.user + '</td><td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (f.host || f.tty || '—') + '</td><td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + f.date + '</td></tr>';
-      }
-      html += '</tbody></table>';
+    if (!d.entries || d.entries.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No login history available.</span>';
+      return;
     }
+    if (d.active_users && d.active_users.length > 0) {
+      // small header showing active sessions
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} recent login${d.count !== 1 ? 's' : ''}`;
+    if (d.active_users && d.active_users.length > 0) {
+      html += ` · <span style="color:#22c55e;">&#x25CF; ${d.active_users.length} active session${d.active_users.length !== 1 ? 's' : ''}</span>`;
+    }
+    html += '</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:4px 8px;">User</th><th style="padding:4px 8px;">TTY</th><th style="padding:4px 8px;">From</th><th style="padding:4px 8px;">When</th>';
+    html += '</tr></thead><tbody>';
+    for (const e of d.entries) {
+      const activeStyle = e.active ? 'color:#22c55e;font-weight:600;' : '';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:4px 8px;${activeStyle}">${escHtml(e.user)}${e.active ? ' ●' : ''}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(e.tty)}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${e.host ? escHtml(e.host) : '—'}</td>`;
+      html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${escHtml(e.date_raw)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load login history</span>';
   }
 }
 
@@ -4085,6 +4332,7 @@ async function refreshAll() {
   fetchDohResolver();
   fetchDohResolverNew();
   fetchWgPeers();
+  fetchWgPeersMgmt();
   fetchGuestNetwork();
   fetchWifiQr();
   fetchSpeedTestCached();
@@ -4119,9 +4367,22 @@ async function refreshAll() {
   fetchIfaceStats();
   fetchNtfyConfig();
   fetchLoginHistory();
+  fetchConnectedClients();
   fetchArpTable();
   fetchWifiClients();
   fetchWanUplinks();
+  fetchSystemResources();
+  fetchBandwidthHistory();
+  fetchKillSwitchStatus();
+  fetchVnstatDataCap();
+  fetchSystemUpdates();
+  fetchConnections();
+  fetchCronJobsSystem();
+  fetchEntropy();
+  fetchProcTop();
+  fetchSystemTemps();
+  fetchDiskIO();
+  fetchMemInfo();
 }
 
 async function init() {
@@ -4249,41 +4510,52 @@ async function fetchThrottle() {
   }
 }
 
+// ── Network Interface Stats ───────────────────────────────────────────────────
+
 async function fetchIfaceStats() {
   const el = document.getElementById('iface-stats-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/network/interfaces');
-    const d = await r.json();
-    const ifaces = d.interfaces || [];
-    if (ifaces.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No interfaces found</span>';
+    const resp = await apiFetch('/api/network/iface/stats');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+    if (!d.interfaces || d.interfaces.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No network interfaces found.</span>';
       return;
     }
     let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead><tr>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Interface</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">State</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">RX</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">TX</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">RX Err</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">TX Err</th>';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Interface</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">RX</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">TX</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">RX Pkts</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">TX Pkts</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">RX Err/Drop</th>';
+    html += '<th style="padding:5px 8px;text-align:right;">TX Err/Drop/Coll</th>';
     html += '</tr></thead><tbody>';
-    for (const iface of ifaces) {
-      const stateColor = iface.operstate === 'up' ? 'var(--success,#4c4)' : 'var(--text-dim)';
-      const dot = iface.operstate === 'up' ? '●' : '○';
-      html += '<tr>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + iface.interface + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:' + stateColor + ';">' + dot + ' ' + iface.operstate + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + _fmtBytes(iface.rx_bytes) + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + _fmtBytes(iface.tx_bytes) + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + (iface.rx_errors > 0 ? 'var(--error,#e55)' : 'var(--text-dim)') + ';">' + iface.rx_errors + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + (iface.tx_errors > 0 ? 'var(--error,#e55)' : 'var(--text-dim)') + ';">' + iface.tx_errors + '</td>';
+    for (const iface of d.interfaces) {
+      const errColor = iface.has_errors ? '#ef4444' : 'var(--text-dim)';
+      const rxErr = `${iface.rx_errors}/${iface.rx_drop}`;
+      const txErr = `${iface.tx_errors}/${iface.tx_drop}/${iface.tx_colls}`;
+      const active = (iface.rx_bytes + iface.tx_bytes) > 0;
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:${active ? '600' : '400'};">${escHtml(iface.name)}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;color:#60a5fa;">${escHtml(iface.rx_human)}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;color:#34d399;">${escHtml(iface.tx_human)}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;color:var(--text-dim);font-size:11px;">${iface.rx_packets.toLocaleString()}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;color:var(--text-dim);font-size:11px;">${iface.tx_packets.toLocaleString()}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;font-size:11px;color:${errColor};">${rxErr}</td>`;
+      html += `<td style="padding:5px 8px;text-align:right;font-size:11px;color:${errColor};">${txErr}</td>`;
       html += '</tr>';
     }
     html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load interface stats</span>';
   }
 }
 
@@ -4918,36 +5190,52 @@ async function runDnsLookup() {
   }
 }
 
-// ── Route Table Viewer ─────────────────────────────────────────────────────────
+// ── Route Table ───────────────────────────────────────────────────────────────
 
 async function fetchRouteTable() {
   const el = document.getElementById('route-table-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/network/routes');
-    const d = await r.json();
-    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);">' + (d.error || 'Error') + '</span>'; return; }
-    const routes = d.routes || [];
-    if (routes.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No routes found</span>'; return; }
-    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Destination</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Via</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Dev</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Metric</th>';
-    html += '</tr></thead><tbody>';
-    for (const rt of routes) {
-      const isDefault = rt.dest === 'default';
-      html += '<tr' + (isDefault ? ' style="font-weight:600;"' : '') + '>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dest || '—') + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.via || '—') + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dev || '—') + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + (rt.metric || '—') + '</td>';
-      html += '</tr>';
+    const resp = await apiFetch('/api/network/routes');
+    const d = await resp.json();
+    if (!d.routes || d.routes.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No routes found.</span>';
+      return;
     }
-    html += '</tbody></table>';
+    // Group by family
+    const v4 = d.routes.filter(r => r.family === '4');
+    const v6 = d.routes.filter(r => r.family === '6');
+
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} route${d.count !== 1 ? 's' : ''} (${v4.length} IPv4, ${v6.length} IPv6)</div>`;
+
+    const renderTable = (rows, label) => {
+      if (rows.length === 0) return '';
+      let t = `<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin:8px 0 4px;">${label}</div>`;
+      t += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      t += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      t += '<th style="padding:4px 8px;">Destination</th><th style="padding:4px 8px;">Gateway</th><th style="padding:4px 8px;">Interface</th><th style="padding:4px 8px;">Proto</th><th style="padding:4px 8px;">Metric</th>';
+      t += '</tr></thead><tbody>';
+      for (const r of rows) {
+        const isDefault = r.dest === 'default' || r.dest === '0.0.0.0/0' || r.dest === '::/0';
+        const destStyle = isDefault ? 'font-weight:700;color:var(--accent,#4af);' : '';
+        t += `<tr style="border-bottom:1px solid var(--border);">`;
+        t += `<td style="padding:4px 8px;font-family:monospace;${destStyle}">${escHtml(r.dest)}</td>`;
+        t += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${r.gateway ? escHtml(r.gateway) : '—'}</td>`;
+        t += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${r.dev ? escHtml(r.dev) : '—'}</td>`;
+        t += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${r.proto ? escHtml(r.proto) : '—'}</td>`;
+        t += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${r.metric || '—'}</td>`;
+        t += '</tr>';
+      }
+      t += '</tbody></table>';
+      return t;
+    };
+
+    html += renderTable(v4, 'IPv4');
+    html += renderTable(v6, 'IPv6');
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load route table</span>';
   }
 }
 
@@ -4988,38 +5276,49 @@ async function fetchArpTable() {
 // ── System Update Checker ─────────────────────────────────────────────────────
 
 async function fetchSystemUpdates() {
-  const el = document.getElementById('updates-content');
-  const btn = document.getElementById('check-updates-btn');
-  if (btn) { btn.disabled = true; btn.textContent = '⏳ Checking…'; }
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Checking for updates…</span>';
+  const el = document.getElementById('system-updates-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Checking&hellip;</span>';
   try {
-    const r = await apiFetch('/api/system/updates');
-    const d = await r.json();
-    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);">' + (d.error || 'Error') + '</span>'; return; }
-    if (d.count === 0) {
-      el.innerHTML = '<span style="color:var(--ok,#4c4);font-size:13px;">✓ System is up to date</span>';
+    const resp = await apiFetch('/api/system/updates');
+    const d = await resp.json();
+
+    if (d.error && !d.packages) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
       return;
     }
-    let html = '<div style="font-size:12px;color:var(--warn,#e93);margin-bottom:8px;font-weight:600;">' + d.count + ' update(s) available</div>';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Package</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">New Version</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Current</th>';
-    html += '</tr></thead><tbody>';
-    for (const p of d.packages) {
-      html += '<tr>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + p.package + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--ok,#4c4);font-family:monospace;font-size:12px;">' + (p.new_version || '—') + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);font-family:monospace;font-size:12px;">' + (p.old_version || '—') + '</td>';
-      html += '</tr>';
+
+    let html = '';
+
+    if (d.count === 0) {
+      html += `<div style="color:#22c55e;font-size:13px;font-weight:600;">&#x2705; System is up to date</div>`;
+    } else {
+      const secBadge = d.security_count > 0
+        ? `<span style="background:#ef4444;color:#fff;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:700;margin-left:8px;">&#x26A0; ${d.security_count} security</span>`
+        : '';
+      html += `<div style="font-size:13px;font-weight:600;margin-bottom:8px;">${d.count} update${d.count !== 1 ? 's' : ''} available${secBadge}</div>`;
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      html += '<th style="padding:4px 8px;">Package</th><th style="padding:4px 8px;">Current</th><th style="padding:4px 8px;">Available</th>';
+      html += '</tr></thead><tbody>';
+      for (const pkg of d.packages) {
+        const secStyle = pkg.security ? 'color:#ef4444;' : '';
+        html += `<tr style="border-bottom:1px solid var(--border);">`;
+        html += `<td style="padding:4px 8px;font-family:monospace;font-weight:600;${secStyle}">${escHtml(pkg.name)}${pkg.security ? ' &#x26A0;' : ''}</td>`;
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${pkg.old_version ? escHtml(pkg.old_version) : '—'}</td>`;
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:#22c55e;">${escHtml(pkg.new_version)}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
     }
-    html += '</tbody></table>';
+
+    if (d.last_cache_update) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-top:8px;">apt cache updated ${escHtml(d.last_cache_update)}</div>`;
+    }
+
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'Check'; }
+    el.innerHTML = '<span style="color:var(--danger)">Failed to check updates</span>';
   }
 }
 
@@ -5188,13 +5487,19 @@ async function fetchSystemResources() {
       return;
     }
 
+    // Top-level fields: uptime_human, load_1/5/15, mem_total_mb, mem_used_mb, mem_pct
+    // current snapshot: { cpu_pct, mem_pct, disk_pct, temp_c }
+    const cur = d.current || {};
+    const cpuPct = typeof cur.cpu_pct === 'number' ? cur.cpu_pct : null;
+    const tempC  = typeof cur.temp_c  === 'number' ? cur.temp_c  : null;
+    const memPct = d.mem_pct != null ? d.mem_pct : (typeof cur.mem_pct === 'number' ? cur.mem_pct : null);
+
     function pct(val) { return val != null ? val.toFixed(1) + '%' : '—'; }
-    function num(val, unit) { return val != null ? val + unit : '—'; }
     function bar(val, color) {
-      const pct = val != null ? Math.min(100, Math.max(0, val)) : 0;
-      const bg = val == null ? 'var(--border)' : (pct > 85 ? '#e55' : pct > 65 ? '#e90' : color);
+      const p = val != null ? Math.min(100, Math.max(0, val)) : 0;
+      const bg = val == null ? 'var(--border)' : (p > 85 ? '#e55' : p > 65 ? '#e90' : color);
       return '<div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;margin:4px 0;">'
-        + '<div style="height:100%;width:' + pct + '%;background:' + bg + ';transition:width 0.3s;"></div>'
+        + '<div style="height:100%;width:' + p + '%;background:' + bg + ';transition:width 0.3s;"></div>'
         + '</div>';
     }
 
@@ -5205,14 +5510,14 @@ async function fetchSystemResources() {
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">';
     html += '<span style="font-weight:600;">CPU</span>';
     html += '<span style="display:flex;gap:6px;align-items:center;">';
-    if (d.cpu_temp_c != null) {
-      const tempColor = d.cpu_temp_c > 75 ? '#e55' : d.cpu_temp_c > 60 ? '#e90' : '#4c4';
-      html += '<span style="font-size:11px;padding:1px 6px;border-radius:10px;background:' + tempColor + '20;color:' + tempColor + ';border:1px solid ' + tempColor + '40;">'
-        + d.cpu_temp_c.toFixed(1) + '°C</span>';
+    if (tempC != null) {
+      const tc = tempC > 75 ? '#e55' : tempC > 60 ? '#e90' : '#4c4';
+      html += '<span style="font-size:11px;padding:1px 6px;border-radius:10px;background:' + tc + '20;color:' + tc + ';border:1px solid ' + tc + '40;">'
+        + tempC.toFixed(1) + '°C</span>';
     }
-    html += '<span style="color:var(--text-dim);">' + pct(d.cpu_percent) + '</span>';
+    html += '<span style="color:var(--text-dim);">' + pct(cpuPct) + '</span>';
     html += '</span></div>';
-    html += bar(d.cpu_percent, '#4a9eff');
+    html += bar(cpuPct, '#4a9eff');
     html += '</div>';
 
     // Memory
@@ -5225,9 +5530,9 @@ async function fetchSystemResources() {
     } else {
       html += '—';
     }
-    html += ' (' + pct(d.mem_percent) + ')</span>';
+    html += ' (' + pct(memPct) + ')</span>';
     html += '</div>';
-    html += bar(d.mem_percent, '#a78bfa');
+    html += bar(memPct, '#a78bfa');
     html += '</div>';
 
     // Uptime + load grid
@@ -5416,7 +5721,8 @@ async function fetchWgPeerHealth() {
       return;
     }
     function statusBadge(status) {
-      const colors = { active: '#22c55e', idle: '#f97316', stale: '#6b7280', inactive: '#6b7280' };
+      const colors = { recent: '#22c55e', stale: '#f97316', idle: '#6b7280', never: '#6b7280',
+                       active: '#22c55e', inactive: '#6b7280' };
       const c = colors[status] || '#6b7280';
       return `<span style="display:inline-block;background:${c};color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">${status}</span>`;
     }
@@ -5823,6 +6129,914 @@ async function fetchTempHistory() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load temperature history</span>';
+  }
+}
+
+// ── Reboot / Shutdown ─────────────────────────────────────────────────────────
+
+function confirmPowerAction(action) {
+  const label = action === 'reboot' ? 'reboot' : 'shut down';
+  if (!confirm(`Are you sure you want to ${label} the router? You will lose connectivity briefly.`)) return;
+  executePowerAction(action);
+}
+
+async function executePowerAction(action) {
+  const statusEl = document.getElementById('power-status');
+  const rebootBtn = document.getElementById('reboot-btn');
+  const shutdownBtn = document.getElementById('shutdown-btn');
+
+  if (rebootBtn) rebootBtn.disabled = true;
+  if (shutdownBtn) shutdownBtn.disabled = true;
+  if (statusEl) statusEl.textContent = `Sending ${action} command…`;
+
+  try {
+    const resp = await apiFetch(`/api/system/${action}`, { method: 'POST' });
+    const d = await resp.json();
+    if (!d.scheduled) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">Failed to schedule ${action}.</span>`;
+      if (rebootBtn) rebootBtn.disabled = false;
+      if (shutdownBtn) shutdownBtn.disabled = false;
+      return;
+    }
+
+    // Countdown
+    let remaining = d.in_seconds || 10;
+    const actionLabel = action === 'reboot' ? 'Rebooting' : 'Shutting down';
+    const tick = () => {
+      if (statusEl) statusEl.innerHTML = `<span style="color:#f97316;">${actionLabel} in ${remaining}s…</span>`;
+      if (remaining <= 0) return;
+      remaining--;
+      setTimeout(tick, 1000);
+    };
+    tick();
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">Error: ${escHtml(String(e))}</span>`;
+    if (rebootBtn) rebootBtn.disabled = false;
+    if (shutdownBtn) shutdownBtn.disabled = false;
+  }
+}
+
+// ── Bandwidth History ─────────────────────────────────────────────────────────
+
+let _bwData = null;
+let _bwActiveTab = 'hourly';
+
+async function fetchBandwidthHistory() {
+  const el = document.getElementById('bandwidth-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/bandwidth');
+    _bwData = await resp.json();
+    if (!_bwData.available) {
+      el.innerHTML = `<span style="color:var(--text-dim)">${escHtml(_bwData.error || 'No bandwidth data available.')}</span>`;
+      return;
+    }
+    renderBwTab(_bwActiveTab);
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load bandwidth history</span>';
+  }
+}
+
+function bwTab(tab) {
+  _bwActiveTab = tab;
+  const btnH = document.getElementById('bw-tab-hourly');
+  const btnD = document.getElementById('bw-tab-daily');
+  if (btnH) { btnH.style.background = tab === 'hourly' ? 'var(--accent)' : ''; btnH.style.color = tab === 'hourly' ? '#fff' : ''; }
+  if (btnD) { btnD.style.background = tab === 'daily' ? 'var(--accent)' : ''; btnD.style.color = tab === 'daily' ? '#fff' : ''; }
+  if (_bwData) renderBwTab(tab);
+}
+
+function renderBwTab(tab) {
+  const el = document.getElementById('bandwidth-content');
+  if (!el || !_bwData) return;
+  const entries = tab === 'hourly' ? _bwData.hourly : _bwData.daily;
+  const rxKey = tab === 'hourly' ? 'rx_mb' : 'rx_gb';
+  const txKey = tab === 'hourly' ? 'tx_mb' : 'tx_gb';
+  const unit = tab === 'hourly' ? 'MB' : 'GB';
+  if (!entries || entries.length === 0) {
+    el.innerHTML = `<span style="color:var(--text-dim)">No ${tab} data yet.</span>`;
+    return;
+  }
+  const maxVal = Math.max(...entries.map(e => Math.max(e[rxKey] || 0, e[txKey] || 0)), 0.001);
+  const W = 600, H = 80, PAD = 4, GAP = 1;
+  const n = entries.length;
+  const barW = Math.max(1, (W - PAD * 2 - (n - 1) * GAP) / n);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block;" preserveAspectRatio="none">`;
+  entries.forEach((e, i) => {
+    const x = PAD + i * (barW + GAP);
+    const rxH = ((e[rxKey] || 0) / maxVal) * (H - PAD * 2);
+    const txH = ((e[txKey] || 0) / maxVal) * (H - PAD * 2);
+    svg += `<rect x="${x.toFixed(1)}" y="${(H - PAD - rxH).toFixed(1)}" width="${(barW * 0.5).toFixed(1)}" height="${rxH.toFixed(1)}" fill="#6366f1" opacity="0.8"/>`;
+    svg += `<rect x="${(x + barW * 0.5).toFixed(1)}" y="${(H - PAD - txH).toFixed(1)}" width="${(barW * 0.5).toFixed(1)}" height="${txH.toFixed(1)}" fill="#22c55e" opacity="0.8"/>`;
+  });
+  svg += '</svg>';
+  const totalRx = entries.reduce((s, e) => s + (e[rxKey] || 0), 0);
+  const totalTx = entries.reduce((s, e) => s + (e[txKey] || 0), 0);
+  const fmt = v => v >= 1000 ? (v / 1024).toFixed(2) + (unit === 'MB' ? ' GB' : ' TB') : v.toFixed(2) + ' ' + unit;
+  let html = `<div style="display:flex;gap:20px;margin-bottom:8px;font-size:13px;">`;
+  html += `<span>&#x2B07; RX: <strong style="color:#6366f1;">${fmt(totalRx)}</strong></span>`;
+  html += `<span>&#x2B06; TX: <strong style="color:#22c55e;">${fmt(totalTx)}</strong></span>`;
+  html += `<span style="color:var(--text-dim);font-size:11px;">${escHtml(_bwData.interface || '?')} &mdash; ${n} ${tab === 'hourly' ? 'hours' : 'days'}</span>`;
+  html += '</div>' + svg;
+  html += `<div style="font-size:10px;color:var(--text-dim);margin-top:2px;">&#x1F7E6; RX &nbsp; &#x1F7E9; TX</div>`;
+  el.innerHTML = html;
+}
+
+// ── DNS Resolvers ─────────────────────────────────────────────────────────────
+
+async function fetchDnsResolvers() {
+  const el = document.getElementById('dns-resolvers-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Testing resolvers&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/dns/resolvers');
+    const d = await resp.json();
+    if (!d.nameservers || d.nameservers.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No nameservers configured in /etc/resolv.conf.</span>';
+      return;
+    }
+    let html = '';
+    if (d.doh_active) {
+      const prov = d.doh_provider || 'Unknown';
+      html += `<div style="margin-bottom:10px;"><span style="background:#6366f1;color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">&#x1F512; DoH active${prov !== 'Unknown' ? ' (' + escHtml(prov) + ')' : ''}</span></div>`;
+    }
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Nameserver</th><th style="padding:5px 8px;">Status</th><th style="padding:5px 8px;">Latency</th><th style="padding:5px 8px;">Sample Response</th>';
+    html += '</tr></thead><tbody>';
+    for (const ns of d.nameservers) {
+      const badge = ns.reachable
+        ? '<span style="background:#22c55e;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">OK</span>'
+        : '<span style="background:#ef4444;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">FAIL</span>';
+      const lat = ns.latency_ms != null
+        ? `<span style="color:${ns.latency_ms < 50 ? '#22c55e' : ns.latency_ms < 200 ? '#f97316' : '#ef4444'};font-weight:600;">${ns.latency_ms} ms</span>`
+        : '<span style="color:var(--text-dim)">—</span>';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:600;">${escHtml(ns.address)}</td>`;
+      html += `<td style="padding:5px 8px;">${badge}</td>`;
+      html += `<td style="padding:5px 8px;">${lat}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${ns.response ? escHtml(ns.response) : '—'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (d.search_domains && d.search_domains.length > 0) {
+      html += `<div style="font-size:11px;color:var(--text-dim);">Search domains: <code>${d.search_domains.map(escHtml).join(', ')}</code></div>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load DNS resolvers</span>';
+  }
+}
+
+// ── SSH Authorized Keys ───────────────────────────────────────────────────────
+
+async function fetchSshKeys() {
+  const el = document.getElementById('ssh-keys-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/ssh/keys');
+    const d = await resp.json();
+    if (!d.keys || d.keys.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No authorized keys found.</span>';
+      return;
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} key${d.count !== 1 ? 's' : ''}</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">User</th><th style="padding:5px 8px;">Type</th><th style="padding:5px 8px;">Comment</th><th style="padding:5px 8px;font-family:monospace;">Fingerprint (tail)</th><th style="padding:5px 8px;">Options</th>';
+    html += '</tr></thead><tbody>';
+    for (const k of d.keys) {
+      const tc = k.type === 'ssh-ed25519' || k.type.includes('ed25519') ? '#22c55e' : k.type === 'ssh-rsa' ? '#f97316' : '#6366f1';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(k.user)}</td>`;
+      html += `<td style="padding:5px 8px;"><span style="color:${tc};font-weight:600;font-size:11px;">${escHtml(k.type)}</span></td>`;
+      html += `<td style="padding:5px 8px;color:var(--text-dim);">${k.comment ? escHtml(k.comment) : '<em>no comment</em>'}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(k.fingerprint)}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${k.options ? escHtml(k.options) : '—'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load SSH keys</span>';
+  }
+}
+
+// ── Connected Clients ─────────────────────────────────────────────────────────
+
+async function fetchConnectedClients() {
+  const el = document.getElementById('clients-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/clients');
+    const d = await resp.json();
+    if (!d.clients || d.clients.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No ARP entries found (no clients connected, or table empty).</span>';
+      return;
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} client${d.count !== 1 ? 's' : ''} in ARP table</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">IP</th><th style="padding:5px 8px;">MAC</th><th style="padding:5px 8px;">Hostname</th><th style="padding:5px 8px;">Vendor</th><th style="padding:5px 8px;">Interface</th>';
+    html += '</tr></thead><tbody>';
+    for (const c of d.clients) {
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:600;">${escHtml(c.ip)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(c.mac)}</td>`;
+      html += `<td style="padding:5px 8px;">${c.hostname ? escHtml(c.hostname) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${c.vendor ? escHtml(c.vendor) : '—'}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(c.interface)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load connected clients</span>';
+  }
+}
+
+// ── VPN Kill Switch ───────────────────────────────────────────────────────────
+
+async function fetchKillSwitchStatus() {
+  const el = document.getElementById('killswitch-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/vpn/killswitch');
+    const d = await resp.json();
+
+    const statusColor = d.enabled ? '#22c55e' : '#6b7280';
+    const statusLabel = d.enabled ? 'ENABLED' : 'DISABLED';
+    const statusIcon = d.enabled ? '&#x2705;' : '&#x274C;';
+
+    let html = `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">`;
+    html += `<span style="background:${statusColor};color:#fff;border-radius:4px;padding:3px 10px;font-size:13px;font-weight:700;">${statusIcon} ${statusLabel}</span>`;
+    if (d.method) {
+      html += `<span style="font-size:12px;color:var(--text-dim);">via ${escHtml(d.method)}</span>`;
+    }
+    html += '</div>';
+
+    if (d.vpn_interfaces && d.vpn_interfaces.length > 0) {
+      html += `<div style="font-size:12px;margin-bottom:6px;">VPN interfaces: <code style="font-size:12px;">${d.vpn_interfaces.map(escHtml).join(', ')}</code></div>`;
+    }
+
+    if (d.details && d.details.length > 0) {
+      html += `<ul style="margin:0;padding-left:16px;font-size:12px;color:var(--text-dim);">`;
+      for (const detail of d.details) {
+        html += `<li>${escHtml(detail)}</li>`;
+      }
+      html += '</ul>';
+    } else if (!d.enabled) {
+      html += `<div style="font-size:12px;color:var(--text-dim);">No kill switch firewall rules detected. Traffic may leak if VPN drops.</div>`;
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load kill switch status</span>';
+  }
+}
+
+// ── Log Summary & Export ──────────────────────────────────────────────────────
+
+async function fetchLogSummary() {
+  const el = document.getElementById('log-summary-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/logs/summary');
+    const d = await resp.json();
+
+    const errColor = d.error_count > 0 ? '#ef4444' : '#22c55e';
+    const warnColor = d.warn_count > 0 ? '#f97316' : '#22c55e';
+
+    let html = `<div style="display:flex;gap:20px;margin-bottom:10px;font-size:13px;">`;
+    html += `<span>&#x1F534; Errors: <strong style="color:${errColor};">${d.error_count}</strong></span>`;
+    html += `<span>&#x1F7E1; Warnings: <strong style="color:${warnColor};">${d.warn_count}</strong></span>`;
+    if (d.services_with_errors && d.services_with_errors.length > 0) {
+      html += `<span style="color:#ef4444;">Failed services: <strong>${d.services_with_errors.length}</strong></span>`;
+    }
+    html += '</div>';
+
+    if (d.services_with_errors && d.services_with_errors.length > 0) {
+      html += `<div style="margin-bottom:8px;font-size:12px;">Failed: ${d.services_with_errors.map(s => `<code>${escHtml(s)}</code>`).join(', ')}</div>`;
+    }
+
+    if (d.recent_errors && d.recent_errors.length > 0) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Recent errors:</div>`;
+      html += `<div style="font-family:monospace;font-size:11px;background:var(--bg2);border-radius:4px;padding:8px;overflow-x:auto;white-space:pre;">`;
+      html += d.recent_errors.map(e => escHtml(e)).join('\n');
+      html += '</div>';
+    } else {
+      html += `<div style="font-size:12px;color:#22c55e;">&#x2705; No recent errors in last 1000 log lines.</div>`;
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load log summary</span>';
+  }
+}
+
+// ── Data Cap Tracker ──────────────────────────────────────────────────────────
+
+async function fetchVnstatDataCap() {
+  const el = document.getElementById('vnstat-datacap-content');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/network/datacap');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+
+    const totalGb = d.total_gb.toFixed(2);
+    const rxGb = d.rx_gb.toFixed(2);
+    const txGb = d.tx_gb.toFixed(2);
+
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${escHtml(d.month)} · ${escHtml(d.interface)}</div>`;
+
+    if (d.cap_gb && d.percent_used !== null) {
+      const pct = Math.min(d.percent_used, 100);
+      const barColor = pct >= 90 ? '#ef4444' : pct >= 70 ? '#f97316' : '#22c55e';
+      const remaining = d.remaining_gb !== null ? (d.remaining_gb > 0 ? d.remaining_gb.toFixed(2) + ' GB left' : 'OVER CAP') : '';
+      html += `<div style="margin-bottom:10px;">`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">`;
+      html += `<span style="font-weight:600;">${totalGb} GB used</span>`;
+      html += `<span style="color:var(--text-dim);">of ${d.cap_gb} GB cap (${d.percent_used}%)</span>`;
+      html += `</div>`;
+      html += `<div style="background:var(--bg2);border-radius:4px;height:12px;overflow:hidden;">`;
+      html += `<div style="background:${barColor};width:${pct}%;height:100%;border-radius:4px;transition:width 0.3s;"></div>`;
+      html += `</div>`;
+      if (remaining) {
+        html += `<div style="font-size:11px;color:${barColor};margin-top:4px;font-weight:600;">${remaining}</div>`;
+      }
+      html += `</div>`;
+    } else {
+      html += `<div style="font-size:18px;font-weight:700;margin-bottom:8px;">${totalGb} <span style="font-size:13px;font-weight:400;color:var(--text-dim);">GB total</span></div>`;
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Set MONTHLY_CAP_GB in /etc/default/travel-router for usage bar</div>`;
+    }
+
+    html += `<div style="display:flex;gap:24px;font-size:12px;color:var(--text-dim);">`;
+    html += `<span>&#x2193; RX: <strong style="color:var(--fg);">${rxGb} GB</strong></span>`;
+    html += `<span>&#x2191; TX: <strong style="color:var(--fg);">${txGb} GB</strong></span>`;
+    html += `</div>`;
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load data usage</span>';
+  }
+}
+
+// ── Cron Jobs Viewer ──────────────────────────────────────────────────────────
+
+async function fetchCronJobsSystem() {
+  const el = document.getElementById('cron-system-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/cron');
+    const d = await resp.json();
+    if (!d.jobs || d.jobs.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No cron jobs found.</span>';
+      return;
+    }
+    // Group by source
+    const bySource = {};
+    for (const job of d.jobs) {
+      if (!bySource[job.source]) bySource[job.source] = [];
+      bySource[job.source].push(job);
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} job${d.count !== 1 ? 's' : ''}</div>`;
+    for (const [source, sourceJobs] of Object.entries(bySource)) {
+      html += `<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin:8px 0 4px;font-family:monospace;">${escHtml(source)}</div>`;
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;">';
+      html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      html += '<th style="padding:4px 8px;">Schedule</th>';
+      if (sourceJobs.some(j => j.user)) html += '<th style="padding:4px 8px;">User</th>';
+      html += '<th style="padding:4px 8px;">Command</th>';
+      html += '</tr></thead><tbody>';
+      for (const job of sourceJobs) {
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;white-space:nowrap;color:#60a5fa;">${escHtml(job.schedule)}</td>`;
+        if (sourceJobs.some(j => j.user)) {
+          html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${job.user ? escHtml(job.user) : '&mdash;'}</td>`;
+        }
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;overflow:hidden;text-overflow:ellipsis;max-width:400px;">${escHtml(job.command)}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load cron jobs</span>';
+  }
+}
+
+// ── Active Connections ────────────────────────────────────────────────────────
+
+async function fetchConnections() {
+  const el = document.getElementById('connections-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/connections');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+    if (!d.connections || d.connections.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No active connections.</span>';
+      return;
+    }
+    const stateColors = {
+      'ESTABLISHED': '#22c55e',
+      'LISTEN': '#60a5fa',
+      'SYN-SENT': '#f97316',
+      'SYN-RECV': '#f97316',
+      'UNCONN': '#6b7280',
+      '—': '#6b7280',
+    };
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} connection${d.count !== 1 ? 's' : ''}</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:4px 8px;">Proto</th>';
+    html += '<th style="padding:4px 8px;">State</th>';
+    html += '<th style="padding:4px 8px;">Local</th>';
+    html += '<th style="padding:4px 8px;">Peer</th>';
+    html += '<th style="padding:4px 8px;">Process</th>';
+    html += '</tr></thead><tbody>';
+    for (const c of d.connections) {
+      const color = stateColors[c.state] || '#6b7280';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;text-transform:uppercase;">${escHtml(c.proto)}</td>`;
+      html += `<td style="padding:4px 8px;font-size:11px;font-weight:600;color:${color};">${escHtml(c.state)}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${escHtml(c.local)}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${c.peer !== '*' ? escHtml(c.peer) : '—'}</td>`;
+      html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${c.process ? escHtml(c.process) : '—'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load connections</span>';
+  }
+}
+
+// ── Tailscale Exit Node ───────────────────────────────────────────────────────
+
+async function fetchTsExitNode() {
+  const el = document.getElementById('ts-exitnode-content');
+  if (!el) return;
+  try {
+    const resp = await apiFetch('/api/vpn/tailscale/exitnode');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+
+    let html = '';
+
+    // Current exit node status
+    if (d.current) {
+      const onlineColor = d.current.online ? '#22c55e' : '#ef4444';
+      html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;padding:8px;background:var(--bg2);border-radius:6px;">`;
+      html += `<span style="font-size:18px;">&#x1F30D;</span>`;
+      html += `<div>`;
+      html += `<div style="font-weight:600;font-size:13px;">${escHtml(d.current.hostname || d.current.dns_name || d.current.tailscale_ip || 'Unknown')}</div>`;
+      html += `<div style="font-size:11px;color:var(--text-dim);">Exit node active · <span style="color:${onlineColor};">${d.current.online ? 'online' : 'offline'}</span></div>`;
+      html += `</div></div>`;
+    } else {
+      html += `<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;">No exit node active — traffic routing directly</div>`;
+    }
+
+    if (d.self_is_exit_node) {
+      html += `<div style="font-size:12px;color:#60a5fa;margin-bottom:8px;">&#x2139; This device is advertising as an exit node</div>`;
+    }
+
+    // Available exit nodes
+    if (d.available && d.available.length > 0) {
+      html += `<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px;">Available exit nodes (${d.available.length})</div>`;
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      html += '<th style="padding:4px 8px;">Node</th><th style="padding:4px 8px;">IP</th><th style="padding:4px 8px;">OS</th><th style="padding:4px 8px;">Status</th>';
+      html += '</tr></thead><tbody>';
+      for (const node of d.available) {
+        const onlineColor = node.online ? '#22c55e' : '#6b7280';
+        const currentBadge = node.current ? '<span style="background:#22c55e;color:#fff;border-radius:3px;padding:0 5px;font-size:10px;margin-left:4px;">ACTIVE</span>' : '';
+        html += `<tr style="border-bottom:1px solid var(--border);">`;
+        html += `<td style="padding:4px 8px;font-weight:${node.current ? '700' : '400'};">${escHtml(node.hostname || node.dns_name || '—')}${currentBadge}</td>`;
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${node.tailscale_ip ? escHtml(node.tailscale_ip) : '—'}</td>`;
+        html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${node.os ? escHtml(node.os) : '—'}</td>`;
+        html += `<td style="padding:4px 8px;font-size:11px;color:${onlineColor};">${node.online ? '● online' : '○ offline'}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    } else {
+      html += `<div style="font-size:12px;color:var(--text-dim);">No exit nodes available in tailnet</div>`;
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load exit node status</span>';
+  }
+}
+
+// ── Top Processes ─────────────────────────────────────────────────────────────
+
+async function fetchProcTop() {
+  const el = document.getElementById('proctop-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/proctop');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error loading processes') + '</span>';
+      return;
+    }
+
+    function renderProcTable(rows, highlightCol) {
+      if (!rows || rows.length === 0) return '<span style="color:var(--text-dim);">No data</span>';
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border);">';
+      html += '<th style="text-align:left;padding:3px 6px;">Name</th>';
+      html += '<th style="text-align:left;padding:3px 6px;">User</th>';
+      html += '<th style="text-align:right;padding:3px 6px;">CPU%</th>';
+      html += '<th style="text-align:right;padding:3px 6px;">MEM%</th>';
+      html += '<th style="text-align:center;padding:3px 6px;">State</th>';
+      html += '</tr></thead><tbody>';
+      rows.forEach(p => {
+        let cpuStyle = '';
+        if (p.cpu_pct > 50) cpuStyle = 'color:#e55;font-weight:600;';
+        else if (p.cpu_pct > 10) cpuStyle = 'color:#f90;font-weight:600;';
+        let memStyle = '';
+        if (p.mem_pct > 10) memStyle = 'color:#f90;font-weight:600;';
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += '<td style="padding:3px 6px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + p.name + '">' + p.name + '</td>';
+        html += '<td style="padding:3px 6px;color:var(--text-dim);">' + p.user + '</td>';
+        html += '<td style="text-align:right;padding:3px 6px;' + cpuStyle + '">' + p.cpu_pct.toFixed(1) + '</td>';
+        html += '<td style="text-align:right;padding:3px 6px;' + memStyle + '">' + p.mem_pct.toFixed(1) + '</td>';
+        html += '<td style="text-align:center;padding:3px 6px;color:var(--text-dim);">' + p.state + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      return html;
+    }
+
+    const total = d.total_processes || 0;
+    el.innerHTML = '<div style="margin-bottom:8px;color:var(--text-dim);font-size:12px;">Total processes: ' + total + '</div>'
+      + '<div style="display:flex;gap:16px;flex-wrap:wrap;">'
+      + '<div style="flex:1;min-width:280px;"><div style="font-weight:600;margin-bottom:6px;font-size:12px;">By CPU</div>' + renderProcTable(d.by_cpu, 'cpu') + '</div>'
+      + '<div style="flex:1;min-width:280px;"><div style="font-weight:600;margin-bottom:6px;font-size:12px;">By Memory</div>' + renderProcTable(d.by_mem, 'mem') + '</div>'
+      + '</div>';
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed to load process data</span>';
+  }
+}
+
+// ── Entropy Pool ─────────────────────────────────────────────────────────────
+
+async function fetchEntropy() {
+  const el = document.getElementById('entropy-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/entropy');
+    const d = await r.json();
+    if (d.error && d.available_bits === undefined) {
+      el.innerHTML = '<span style="color:var(--danger)">Error: ' + d.error + '</span>';
+      return;
+    }
+    const bits = d.available_bits ?? '—';
+    const pool = d.pool_size ?? '—';
+    const pct  = d.percent != null ? d.percent : null;
+    const source = d.source || 'unknown';
+    const getrandomOk = d.getrandom_ok;
+
+    // Progress bar colour
+    let barColor = 'var(--danger)';
+    if (pct !== null) {
+      if (pct >= 75) barColor = 'var(--success,#4caf50)';
+      else if (pct >= 40) barColor = 'var(--warning,#ff9800)';
+    }
+
+    // Source badge colour
+    const badgeBg = source === 'hardware_rng' ? 'var(--info,#2196f3)' : '#888';
+
+    // getrandom status
+    const grStatus = getrandomOk === true
+      ? '<span style="color:var(--success,#4caf50);">&#x2714; getrandom OK</span>'
+      : getrandomOk === false
+        ? '<span style="color:var(--danger);">&#x2718; getrandom blocked</span>'
+        : '<span style="color:var(--text-dim);">getrandom unknown</span>';
+
+    let html = '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">';
+    html += '<div style="font-size:2em;font-weight:700;line-height:1;">' + bits + '</div>';
+    html += '<div style="flex:1;min-width:120px;">';
+    if (pct !== null) {
+      html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:3px;">' + pct + '% full (' + bits + ' / ' + pool + ' bits)</div>';
+      html += '<div style="background:var(--border);border-radius:4px;height:10px;overflow:hidden;">';
+      html += '<div style="width:' + Math.min(pct, 100) + '%;background:' + barColor + ';height:100%;border-radius:4px;transition:width .4s;"></div>';
+      html += '</div>';
+    } else {
+      html += '<span style="color:var(--text-dim);">pool size unavailable</span>';
+    }
+    html += '</div>';
+    html += '<span style="background:' + badgeBg + ';color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;white-space:nowrap;">' + source + '</span>';
+    html += grStatus;
+    html += '</div>';
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load entropy data</span>';
+  }
+}
+
+// ── USB Device Inventory ──────────────────────────────────────────────────────
+
+async function fetchUsbDevices() {
+  const el = document.getElementById('usb-devices-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/usb');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error fetching USB devices') + '</span>';
+      return;
+    }
+    if (!d.devices || d.devices.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No USB devices found.</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:4px 8px;">Bus</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Device</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">ID</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Description</th>';
+    html += '</tr></thead><tbody>';
+    for (const dev of d.devices) {
+      const desc = dev.description || '';
+      let rowStyle = '';
+      if (/ethernet|rndis|ecm/i.test(desc)) {
+        rowStyle = 'color:#4caf50;';
+      } else if (/modem|lte|sierra|huawei|zte/i.test(desc)) {
+        rowStyle = 'color:#2196f3;';
+      }
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += '<td style="padding:4px 8px;' + rowStyle + '">' + dev.bus + '</td>';
+      html += '<td style="padding:4px 8px;' + rowStyle + '">' + dev.device + '</td>';
+      html += '<td style="padding:4px 8px;font-family:monospace;' + rowStyle + '">' + dev.vendor_id + ':' + dev.product_id + '</td>';
+      html += '<td style="padding:4px 8px;' + rowStyle + '">' + desc + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    html += '<div style="margin-top:6px;font-size:12px;color:var(--text-dim);">' + d.count + ' device' + (d.count !== 1 ? 's' : '') + '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load USB devices</span>';
+  }
+}
+
+// ── System Temperature Details ────────────────────────────────────────────────
+
+async function fetchSystemTemps() {
+  const el = document.getElementById('system-temps-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/temps');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error') + '</span>';
+      return;
+    }
+
+    let html = '';
+
+    // Throttling warning banner
+    if (d.throttled) {
+      html += '<div style="background:var(--danger,#f85149);color:#fff;padding:6px 10px;border-radius:6px;margin-bottom:10px;font-weight:600;">&#x26A0;&#xFE0F; CPU Throttled — flags: ' + d.throttle_flags + '</div>';
+    }
+
+    if (!d.sensors || d.sensors.length === 0) {
+      html += '<span style="color:var(--text-dim)">No thermal sensors found</span>';
+    } else {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="color:var(--text-dim);font-size:11px;text-transform:uppercase;">';
+      html += '<th style="text-align:left;padding:4px 8px;">Sensor</th>';
+      html += '<th style="text-align:right;padding:4px 8px;">Temp</th>';
+      html += '<th style="text-align:right;padding:4px 8px;">Critical</th>';
+      html += '<th style="text-align:left;padding:4px 8px;">Status</th>';
+      html += '</tr></thead><tbody>';
+
+      for (const s of d.sensors) {
+        const statusColor = s.status === 'ok' ? '#3fb950' : (s.status === 'warm' ? '#d29922' : '#f85149');
+        const critStr = s.critical !== null ? s.critical + '°C' : '—';
+        html += '<tr style="border-top:1px solid var(--border,#30363d);">';
+        html += '<td style="padding:5px 8px;">' + s.label + '</td>';
+        html += '<td style="text-align:right;padding:5px 8px;color:' + statusColor + ';font-weight:600;">' + s.temp_c + '°C</td>';
+        html += '<td style="text-align:right;padding:5px 8px;color:var(--text-dim);">' + critStr + '</td>';
+        html += '<td style="padding:5px 8px;"><span style="color:' + statusColor + ';">' + s.status + '</span></td>';
+        html += '</tr>';
+      }
+
+      html += '</tbody></table>';
+
+      if (d.max_temp_c !== null) {
+        html += '<div style="margin-top:8px;font-size:12px;color:var(--text-dim);">Max: <strong style="color:var(--text);">' + d.max_temp_c + '°C</strong> &nbsp;|&nbsp; Throttle flags: <code>' + d.throttle_flags + '</code></div>';
+      }
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load temperatures</span>';
+  }
+}
+
+// ── WireGuard Config QR ───────────────────────────────────────────────────────
+
+async function fetchWgConfigQr() {
+  const el = document.getElementById('wg-config-qr-content');
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Generating QR&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/vpn/wireguard/config/qr');
+    if (!resp.ok) {
+      const d = await resp.json().catch(() => ({}));
+      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Failed to generate QR') + '</span>';
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    let html = '<div style="text-align:center;margin-bottom:8px;">';
+    html += '<img src="' + url + '" alt="WireGuard Config QR" style="max-width:220px;border-radius:8px;background:#fff;padding:8px;">';
+    html += '</div>';
+    html += '<div style="text-align:center;">';
+    html += '<button class="btn btn-sm" onclick="fetchWgConfigText()" id="wg-config-text-btn">Show Config</button>';
+    html += '</div>';
+    html += '<div id="wg-config-text-content" style="display:none;margin-top:8px;"></div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function fetchWgConfigText() {
+  const textEl = document.getElementById('wg-config-text-content');
+  const btn = document.getElementById('wg-config-text-btn');
+  if (!textEl) return;
+  if (textEl.style.display !== 'none') {
+    textEl.style.display = 'none';
+    if (btn) btn.textContent = 'Show Config';
+    return;
+  }
+  textEl.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  textEl.style.display = 'block';
+  if (btn) btn.textContent = 'Hide Config';
+  try {
+    const r = await apiFetch('/api/vpn/wireguard/config/text');
+    const d = await r.json();
+    if (!r.ok) {
+      textEl.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error') + '</span>';
+      return;
+    }
+    const escaped = d.config.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    textEl.innerHTML = '<pre style="font-size:11px;line-height:1.5;overflow-x:auto;max-height:300px;overflow-y:auto;background:var(--bg2);padding:10px;border-radius:6px;margin:0;white-space:pre-wrap;word-break:break-all;">' + escaped + '</pre>';
+  } catch (e) {
+    textEl.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+// ── Kernel Modules ────────────────────────────────────────────────────────────
+
+const NET_MODULE_KEYWORDS = ['wg', 'wireguard', 'cfg80211', 'mac80211', 'ath', 'brcm', 'rtl'];
+
+function filterModules() {
+  const q = (document.getElementById('modules-filter').value || '').toLowerCase();
+  const rows = document.querySelectorAll('#kernel-modules-table tbody tr');
+  rows.forEach(row => {
+    const name = row.dataset.name || '';
+    row.style.display = (!q || name.includes(q)) ? '' : 'none';
+  });
+}
+
+async function fetchKernelModules() {
+  const el = document.getElementById('kernel-modules-content');
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/modules');
+    let html = '<div style="margin-bottom:8px;font-size:13px;">'
+      + '<span style="background:var(--accent);color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;">' + d.count + ' modules</span>'
+      + '&nbsp;&nbsp;<input type="text" id="modules-filter" placeholder="Filter modules..." '
+      + 'style="padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:12px;width:200px;" '
+      + 'oninput="filterModules()">'
+      + '</div>';
+    html += '<table id="kernel-modules-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr>'
+      + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Name</th>'
+      + '<th style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);">Size (KB)</th>'
+      + '<th style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);">Used By</th>'
+      + '</tr></thead><tbody>';
+    d.modules.forEach(m => {
+      const isNet = NET_MODULE_KEYWORDS.some(k => m.name.includes(k));
+      const color = isNet ? 'color:#4a9eff;font-weight:600;' : '';
+      html += '<tr data-name="' + m.name + '">'
+        + '<td style="padding:3px 8px;' + color + '">' + m.name + '</td>'
+        + '<td style="padding:3px 8px;text-align:right;">' + Math.round(m.size / 1024) + '</td>'
+        + '<td style="padding:3px 8px;text-align:right;">' + m.used_by + '</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('Kernel modules error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load kernel modules</span>';
+  }
+}
+
+async function fetchDiskIO() {
+  const el = document.getElementById('diskio-content');
+  try {
+    const r = await fetch('/api/system/diskio');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    if (!d.devices || d.devices.length === 0) {
+      el.textContent = 'No block devices found';
+      return;
+    }
+    const fmtBytes = b => b >= 1073741824
+      ? (b / 1073741824).toFixed(2) + ' GB'
+      : b >= 1048576
+        ? (b / 1048576).toFixed(1) + ' MB'
+        : b >= 1024
+          ? (b / 1024).toFixed(0) + ' kB'
+          : b + ' B';
+    let html = '<table style="width:100%;border-collapse:collapse;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 8px;">Device</th>
+      <th style="text-align:right;padding:3px 8px;">Reads</th>
+      <th style="text-align:right;padding:3px 8px;">Read</th>
+      <th style="text-align:right;padding:3px 8px;">Writes</th>
+      <th style="text-align:right;padding:3px 8px;">Written</th>
+      <th style="text-align:right;padding:3px 8px;">I/O ms</th>
+    </tr></thead><tbody>`;
+    for (const dev of d.devices) {
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 8px;font-family:monospace;">${dev.device}</td>
+        <td style="padding:3px 8px;text-align:right;">${dev.reads_completed.toLocaleString()}</td>
+        <td style="padding:3px 8px;text-align:right;">${fmtBytes(dev.bytes_read)}</td>
+        <td style="padding:3px 8px;text-align:right;">${dev.writes_completed.toLocaleString()}</td>
+        <td style="padding:3px 8px;text-align:right;">${fmtBytes(dev.bytes_written)}</td>
+        <td style="padding:3px 8px;text-align:right;">${dev.io_ms.toLocaleString()}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+async function fetchMemInfo() {
+  const el = document.getElementById('meminfo-content');
+  try {
+    const r = await fetch('/api/system/meminfo');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    const fmt = kb => kb >= 1024 * 1024
+      ? (kb / 1024 / 1024).toFixed(1) + ' GB'
+      : kb >= 1024
+        ? (kb / 1024).toFixed(0) + ' MB'
+        : kb + ' kB';
+    const pct = d.total_kb > 0 ? Math.round(d.used_kb / d.total_kb * 100) : 0;
+    const swapPct = d.swap_total_kb > 0
+      ? Math.round((d.swap_total_kb - d.swap_free_kb) / d.swap_total_kb * 100) : 0;
+    el.innerHTML = `
+      <div style="margin-bottom:6px;">
+        <strong>RAM:</strong> ${fmt(d.used_kb)} used / ${fmt(d.total_kb)} total
+        <div style="background:var(--border);border-radius:4px;height:8px;margin-top:4px;">
+          <div style="background:var(--accent);width:${pct}%;height:8px;border-radius:4px;"></div>
+        </div>
+        <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${pct}% used &mdash; available ${fmt(d.available_kb)}, buffers ${fmt(d.buffers_kb)}, cached ${fmt(d.cached_kb)}</div>
+      </div>
+      ${d.swap_total_kb > 0 ? `
+      <div>
+        <strong>Swap:</strong> ${fmt(d.swap_total_kb - d.swap_free_kb)} used / ${fmt(d.swap_total_kb)} total
+        <div style="background:var(--border);border-radius:4px;height:6px;margin-top:4px;">
+          <div style="background:#e67e22;width:${swapPct}%;height:6px;border-radius:4px;"></div>
+        </div>
+        <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${swapPct}% used</div>
+      </div>` : '<div style="color:var(--text-dim);">No swap configured</div>'}
+    `;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
   }
 }
 

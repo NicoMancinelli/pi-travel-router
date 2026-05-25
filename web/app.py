@@ -1125,19 +1125,29 @@ def api_services_status():
 
 
 @app.route("/api/system/reboot", methods=["POST"])
-@require_auth_always
+@require_auth
 def api_system_reboot():
-    delay = 30
-
+    """Schedule a system reboot in 10 seconds (gives client time to show countdown)."""
+    import threading as _t
+    import time as _time
     def _do_reboot():
-        import time as _t
-        _t.sleep(delay)
-        subprocess.run(["systemctl", "reboot"], timeout=10)
+        _time.sleep(10)
+        _run(["systemctl", "reboot"])
+    _t.Thread(target=_do_reboot, daemon=True).start()
+    return jsonify({"scheduled": True, "action": "reboot", "in_seconds": 10})
 
-    _push_event("reboot_scheduled", {"in_seconds": delay})
-    threading.Thread(target=_do_reboot, daemon=True).start()
-    return jsonify({"rebooting": True, "in_seconds": delay,
-                    "message": f"Reboot scheduled in {delay} seconds"})
+
+@app.route("/api/system/shutdown", methods=["POST"])
+@require_auth
+def api_system_shutdown():
+    """Schedule a system shutdown in 10 seconds."""
+    import threading as _t
+    import time as _time
+    def _do_shutdown():
+        _time.sleep(10)
+        _run(["systemctl", "poweroff"])
+    _t.Thread(target=_do_shutdown, daemon=True).start()
+    return jsonify({"scheduled": True, "action": "shutdown", "in_seconds": 10})
 
 
 @app.route("/api/vpn/wireguard/peer", methods=["POST"])
@@ -3288,14 +3298,68 @@ def api_latency_history():
 # ── System resource history endpoint ─────────────────────────────────────────
 
 
-@app.route("/api/system/resources")
+@app.route("/api/system/resources", methods=["GET"])
 @require_auth
 def api_system_resources():
-    """Return last 60 resource samples and the most recent snapshot as 'current'."""
+    """Return last 60 resource samples, the most recent snapshot, plus uptime/load/mem details."""
     with _RESOURCE_LOCK:
         history = list(_RESOURCE_HISTORY[-60:])
     current = history[-1] if history else None
-    return jsonify({"current": current, "history": history})
+
+    # Enrich with fields not stored in the background sampler
+    # Memory details (MB)
+    mem_total_mb = mem_used_mb = mem_avail_mb = mem_pct_detail = None
+    try:
+        meminfo: dict = {}
+        for _line in Path("/proc/meminfo").read_text().splitlines():
+            _k, _, _v = _line.partition(":")
+            meminfo[_k.strip()] = int(_v.split()[0])
+        _mt = meminfo.get("MemTotal", 0)
+        _ma = meminfo.get("MemAvailable", meminfo.get("MemFree", 0))
+        if _mt > 0:
+            mem_total_mb = round(_mt / 1024, 1)
+            mem_avail_mb = round(_ma / 1024, 1)
+            mem_used_mb = round(mem_total_mb - mem_avail_mb, 1)
+            mem_pct_detail = round(100.0 * mem_used_mb / mem_total_mb, 1)
+    except Exception:
+        pass
+
+    # Uptime
+    uptime_seconds = None
+    uptime_human = None
+    try:
+        _secs = float(Path("/proc/uptime").read_text().split()[0])
+        uptime_seconds = int(_secs)
+        _d = uptime_seconds // 86400
+        _h = (uptime_seconds % 86400) // 3600
+        _m = (uptime_seconds % 3600) // 60
+        uptime_human = f"{_d}d {_h}h {_m}m" if _d > 0 else f"{_h}h {_m}m"
+    except Exception:
+        pass
+
+    # Load averages
+    load_1 = load_5 = load_15 = None
+    try:
+        _parts = Path("/proc/loadavg").read_text().split()
+        load_1 = float(_parts[0])
+        load_5 = float(_parts[1])
+        load_15 = float(_parts[2])
+    except Exception:
+        pass
+
+    return jsonify({
+        "current": current,
+        "history": history,
+        "mem_total_mb": mem_total_mb,
+        "mem_used_mb": mem_used_mb,
+        "mem_avail_mb": mem_avail_mb,
+        "mem_pct": mem_pct_detail,
+        "uptime_seconds": uptime_seconds,
+        "uptime_human": uptime_human,
+        "load_1": load_1,
+        "load_5": load_5,
+        "load_15": load_15,
+    })
 
 
 # ── Pi throttling monitor ─────────────────────────────────────────────────────
@@ -3718,7 +3782,301 @@ def api_network_firewall():
     return jsonify(result)
 
 
-# ── Entrypoint ────────────────────────────────────────────────────────────────
+# ── Bandwidth History ─────────────────────────────────────────────────────────
+
+@app.route("/api/network/bandwidth", methods=["GET"])
+@require_auth
+def api_network_bandwidth():
+    """Return bandwidth history from vnstat for the last 24 hours (hourly) and 30 days (daily)."""
+    import json as _json
+
+    result = {"hourly": [], "daily": [], "interface": None, "available": False}
+
+    out, rc = _run(["vnstat", "--json"])
+    if rc != 0:
+        result["error"] = "vnstat not available or no data yet"
+        return jsonify(result)
+
+    try:
+        data = _json.loads(out)
+    except ValueError:
+        result["error"] = "Could not parse vnstat output"
+        return jsonify(result)
+
+    interfaces = data.get("interfaces", [])
+    if not interfaces:
+        result["error"] = "No interfaces tracked by vnstat"
+        return jsonify(result)
+
+    iface = None
+    for i in interfaces:
+        if i.get("name") not in ("lo",):
+            iface = i
+            break
+    if not iface:
+        iface = interfaces[0]
+
+    result["interface"] = iface.get("name")
+    result["available"] = True
+
+    hourly = iface.get("traffic", {}).get("hour", [])
+    hourly_out = []
+    for h in hourly[-24:]:
+        ts = h.get("date", {})
+        t = h.get("time", {})
+        label = f"{ts.get('year',0)}-{str(ts.get('month',0)).zfill(2)}-{str(ts.get('day',0)).zfill(2)} {str(t.get('hour',0)).zfill(2)}:00"
+        hourly_out.append({
+            "label": label,
+            "rx_mb": round(h.get("rx", 0) / 1024 / 1024, 2),
+            "tx_mb": round(h.get("tx", 0) / 1024 / 1024, 2),
+        })
+    result["hourly"] = hourly_out
+
+    daily = iface.get("traffic", {}).get("day", [])
+    daily_out = []
+    for d in daily[-30:]:
+        ts = d.get("date", {})
+        label = f"{ts.get('year',0)}-{str(ts.get('month',0)).zfill(2)}-{str(ts.get('day',0)).zfill(2)}"
+        daily_out.append({
+            "label": label,
+            "rx_gb": round(d.get("rx", 0) / 1024 / 1024 / 1024, 3),
+            "tx_gb": round(d.get("tx", 0) / 1024 / 1024 / 1024, 3),
+        })
+    result["daily"] = daily_out
+
+    return jsonify(result)
+
+
+# ── DNS Resolver Config ───────────────────────────────────────────────────────
+
+@app.route("/api/dns/resolvers", methods=["GET"])
+@require_auth
+def api_dns_resolvers():
+    """Return current DNS resolver configuration and test resolution latency."""
+    import time as _time
+
+    nameservers = []
+    search_domains = []
+    options = []
+    try:
+        with open("/etc/resolv.conf") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("nameserver"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        nameservers.append(parts[1])
+                elif line.startswith("search"):
+                    search_domains = line.split()[1:]
+                elif line.startswith("options"):
+                    options = line.split()[1:]
+    except OSError:
+        pass
+
+    resolver_results = []
+    for ns in nameservers[:4]:
+        start = _time.monotonic()
+        out, rc = _run(["dig", "+short", "+time=2", "+tries=1", f"@{ns}", "google.com", "A"])
+        elapsed_ms = round((_time.monotonic() - start) * 1000)
+        resolved = rc == 0 and out.strip() != ""
+        resolver_results.append({
+            "address": ns,
+            "reachable": resolved,
+            "latency_ms": elapsed_ms if resolved else None,
+            "response": out.strip().splitlines()[0] if resolved and out.strip() else None,
+        })
+
+    doh_active = False
+    doh_provider = None
+    out2, rc2 = _run(["grep", "-r", "cloudflare-dns\\|dns.google\\|quad9", "/etc/dnsmasq.d/"])
+    if rc2 == 0 and out2.strip():
+        doh_active = True
+        if "cloudflare" in out2.lower():
+            doh_provider = "Cloudflare"
+        elif "google" in out2.lower():
+            doh_provider = "Google"
+        elif "quad9" in out2.lower():
+            doh_provider = "Quad9"
+
+    return jsonify({
+        "nameservers": resolver_results,
+        "search_domains": search_domains,
+        "options": options,
+        "doh_active": doh_active,
+        "doh_provider": doh_provider,
+        "count": len(resolver_results),
+    })
+
+
+# ── SSH Authorized Keys ───────────────────────────────────────────────────────
+
+@app.route("/api/system/ssh/keys", methods=["GET"])
+@require_auth
+def api_system_ssh_keys():
+    """Return parsed SSH authorized_keys entries for root and pi/travel-router users."""
+    import re
+    import os
+
+    users_to_check = ["root", "pi", "travel-router"]
+    all_keys = []
+
+    for user in users_to_check:
+        path = "/root/.ssh/authorized_keys" if user == "root" else f"/home/{user}/.ssh/authorized_keys"
+        try:
+            with open(path) as f:
+                content = f.read()
+        except OSError:
+            continue
+        key_types = {
+            "ssh-rsa", "ssh-ed25519", "ssh-dss", "ecdsa-sha2-nistp256",
+            "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521", "sk-ssh-ed25519@openssh.com",
+        }
+        for lineno, line in enumerate(content.splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            options = ""
+            keytype = ""
+            pubkey = ""
+            comment = ""
+            if parts[0] in key_types:
+                keytype, pubkey = parts[0], parts[1]
+                comment = " ".join(parts[2:]) if len(parts) > 2 else ""
+            else:
+                options = parts[0]
+                if len(parts) >= 3 and parts[1] in key_types:
+                    keytype, pubkey = parts[1], parts[2]
+                    comment = " ".join(parts[3:]) if len(parts) > 3 else ""
+                else:
+                    keytype = parts[1] if len(parts) > 1 else ""
+                    pubkey = parts[2] if len(parts) > 2 else ""
+                    comment = " ".join(parts[3:]) if len(parts) > 3 else ""
+            fingerprint = pubkey[-16:] if len(pubkey) > 16 else pubkey
+            all_keys.append({
+                "user": user,
+                "file": path,
+                "line": lineno,
+                "type": keytype,
+                "comment": comment,
+                "fingerprint": f"…{fingerprint}",
+                "options": options,
+            })
+
+    return jsonify({"keys": all_keys, "count": len(all_keys)})
+
+
+# ── Route Table ───────────────────────────────────────────────────────────────
+
+@app.route("/api/network/routes", methods=["GET"])
+@require_auth
+def api_network_routes():
+    """Return IPv4 and IPv6 routing table."""
+    routes = []
+
+    # IPv4 routes
+    out4, rc4 = _run(["ip", "-4", "route", "show"])
+    if rc4 == 0:
+        for line in out4.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            route = {"family": "4", "dest": parts[0], "gateway": None, "dev": None, "metric": None, "proto": None, "raw": line}
+            for i, p in enumerate(parts):
+                if p == "via" and i + 1 < len(parts):
+                    route["gateway"] = parts[i + 1]
+                elif p == "dev" and i + 1 < len(parts):
+                    route["dev"] = parts[i + 1]
+                elif p == "metric" and i + 1 < len(parts):
+                    route["metric"] = parts[i + 1]
+                elif p == "proto" and i + 1 < len(parts):
+                    route["proto"] = parts[i + 1]
+            routes.append(route)
+
+    # IPv6 routes (skip link-local and loopback)
+    out6, rc6 = _run(["ip", "-6", "route", "show"])
+    if rc6 == 0:
+        for line in out6.splitlines():
+            line = line.strip()
+            if not line or line.startswith("fe80") or line.startswith("::1"):
+                continue
+            parts = line.split()
+            route = {"family": "6", "dest": parts[0], "gateway": None, "dev": None, "metric": None, "proto": None, "raw": line}
+            for i, p in enumerate(parts):
+                if p == "via" and i + 1 < len(parts):
+                    route["gateway"] = parts[i + 1]
+                elif p == "dev" and i + 1 < len(parts):
+                    route["dev"] = parts[i + 1]
+                elif p == "metric" and i + 1 < len(parts):
+                    route["metric"] = parts[i + 1]
+                elif p == "proto" and i + 1 < len(parts):
+                    route["proto"] = parts[i + 1]
+            routes.append(route)
+
+    return jsonify({"routes": routes, "count": len(routes)})
+
+
+# ── Active Connections ────────────────────────────────────────────────────────
+
+@app.route("/api/network/connections", methods=["GET"])
+@require_auth
+def api_network_connections():
+    """Return active TCP/UDP connections from ss."""
+    import re
+
+    connections = []
+
+    # ss -tunatp: TCP+UDP, numeric, all states, with process info
+    out, rc = _run(["ss", "-tunatp"])
+    if rc != 0:
+        return jsonify({"error": "ss not available", "connections": []})
+
+    for line in out.splitlines()[1:]:  # skip header
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 5:
+            continue
+
+        proto = parts[0]
+        state = parts[1] if proto == "tcp" or proto.startswith("tcp") else "—"
+        local = parts[4] if len(parts) > 4 else ""
+        peer = parts[5] if len(parts) > 5 else ""
+        process = parts[6] if len(parts) > 6 else ""
+
+        # Skip LISTEN on loopback and TIME-WAIT/CLOSE-WAIT clutter
+        if state in ("TIME-WAIT", "CLOSE-WAIT"):
+            continue
+
+        # Extract process name from ss output like users:(("sshd",pid=1234,fd=3))
+        proc_name = None
+        m = re.search(r'users:\(\("([^"]+)"', process)
+        if m:
+            proc_name = m.group(1)
+
+        # Skip pure loopback connections (both sides 127.x or ::1)
+        if (local.startswith("127.") or local.startswith("[::1]")) and \
+           (peer.startswith("127.") or peer.startswith("[::1]") or peer == "*"):
+            continue
+
+        connections.append({
+            "proto": proto,
+            "state": state,
+            "local": local,
+            "peer": peer,
+            "process": proc_name,
+        })
+
+    # Sort: ESTABLISHED first, then by proto
+    state_order = {"ESTABLISHED": 0, "LISTEN": 1, "SYN-SENT": 2, "SYN-RECV": 3}
+    connections.sort(key=lambda c: (state_order.get(c["state"], 9), c["proto"], c["local"]))
+
+    return jsonify({"connections": connections, "count": len(connections)})
+
 
 @app.route("/api/privacy/profile", methods=["GET"])
 @require_auth
@@ -4979,62 +5337,65 @@ def api_doh_resolver_post():
     })
 
 
-# ── Login history ─────────────────────────────────────────────────────────────
+# ── Login History ─────────────────────────────────────────────────────────────
 
 @app.route("/api/system/logins", methods=["GET"])
 @require_auth
 def api_system_logins():
-    """Return recent login history from `last`."""
-    limit = min(int(request.args.get("limit", 20)), 100)
-    logins = []
-    try:
-        out, _ = _run(["last", "-n", str(limit), "-w"], timeout=5)
-        for line in (out or "").splitlines():
-            line = line.strip()
-            if not line or line.startswith("wtmp") or line.startswith("btmp"):
-                continue
-            parts = line.split()
-            if len(parts) < 3:
-                continue
-            user = parts[0]
-            tty = parts[1] if len(parts) > 1 else ""
-            host = parts[2] if len(parts) > 2 else ""
-            # Skip "reboot" and "shutdown" entries if desired, keep them for completeness
-            # Date/time is parts[3:7] approximately
-            date_str = " ".join(parts[3:8]) if len(parts) > 7 else " ".join(parts[3:])
-            # Duration/status is often at the end
-            still_on = "still logged in" in line
-            crashed = "crash" in line.lower()
-            logins.append({
-                "user": user,
-                "tty": tty,
-                "host": host if host not in ("", "-") else "",
-                "date": date_str,
-                "still_on": still_on,
-                "crashed": crashed,
-            })
-    except Exception:
-        pass
-    # Also check failed logins from btmp if available
-    failed = []
-    try:
-        out, _ = _run(["lastb", "-n", "10", "-w"], timeout=5)
-        for line in (out or "").splitlines():
-            line = line.strip()
-            if not line or line.startswith("btmp"):
-                continue
-            parts = line.split()
-            if len(parts) < 3:
-                continue
-            failed.append({
-                "user": parts[0],
-                "tty": parts[1] if len(parts) > 1 else "",
-                "host": parts[2] if len(parts) > 2 else "",
-                "date": " ".join(parts[3:8]) if len(parts) > 7 else " ".join(parts[3:]),
-            })
-    except Exception:
-        pass
-    return jsonify({"logins": logins[:limit], "failed": failed[:10]})
+    """Return recent login history from `last` command."""
+    import re
+
+    entries = []
+
+    out, rc = _run(["last", "-n", "30", "-F"])
+    if rc != 0:
+        # Try without -F (some systems don't support it)
+        out, rc = _run(["last", "-n", "30"])
+    if rc != 0:
+        return jsonify({"error": "last command not available", "entries": []})
+
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line.startswith("wtmp") or line.startswith("btmp") or line.startswith("reboot"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        user = parts[0]
+        tty = parts[1]
+        host = parts[2] if len(parts) > 2 else ""
+        # Don't include system pseudo-logins
+        if user in ("reboot", "shutdown", "runlevel", "LOGIN"):
+            continue
+        # Rest of line is date info
+        date_str = " ".join(parts[3:])
+        # Check for 'still logged in' or 'logged in' vs duration
+        still_logged_in = "still logged in" in line or "logged in" in line
+        entries.append({
+            "user": user,
+            "tty": tty,
+            "host": host if host and not host.startswith("Mon") and not host.startswith("Tue") and not host.startswith("Wed") and not host.startswith("Thu") and not host.startswith("Fri") and not host.startswith("Sat") and not host.startswith("Sun") else "",
+            "date_raw": date_str[:40],
+            "active": still_logged_in,
+        })
+        if len(entries) >= 20:
+            break
+
+    # Also check currently logged in users via `who`
+    who_out, who_rc = _run(["who"])
+    active_users = set()
+    if who_rc == 0:
+        for wline in who_out.splitlines():
+            wparts = wline.split()
+            if wparts:
+                active_users.add(wparts[0])
+
+    # Mark active
+    for e in entries:
+        if e["user"] in active_users:
+            e["active"] = True
+
+    return jsonify({"entries": entries, "count": len(entries), "active_users": list(active_users)})
 
 
 # ── DNS lookup tool ───────────────────────────────────────────────────────────
@@ -5061,38 +5422,6 @@ def api_dns_lookup():
         return jsonify({"host": host, "type": record_type, "records": records, "rc": rc})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
-
-
-# ── Route table viewer ────────────────────────────────────────────────────────
-
-@app.route("/api/network/routes", methods=["GET"])
-@require_auth
-def api_network_routes():
-    """Return the current IP routing table."""
-    routes = []
-    try:
-        out, _ = _run(["ip", "route", "show"], timeout=5)
-        for line in (out or "").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            dest = parts[0] if parts else ""
-            route = {"dest": dest, "raw": line}
-            # Extract common fields
-            for i, p in enumerate(parts):
-                if p == "via" and i + 1 < len(parts):
-                    route["via"] = parts[i + 1]
-                elif p == "dev" and i + 1 < len(parts):
-                    route["dev"] = parts[i + 1]
-                elif p == "metric" and i + 1 < len(parts):
-                    route["metric"] = parts[i + 1]
-                elif p == "src" and i + 1 < len(parts):
-                    route["src"] = parts[i + 1]
-            routes.append(route)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-    return jsonify({"routes": routes, "count": len(routes)})
 
 
 # ── ARP / neighbour table ─────────────────────────────────────────────────────
@@ -5126,38 +5455,72 @@ def api_network_arp():
     return jsonify({"neighbors": neighbors, "count": len(neighbors)})
 
 
-# ── System update checker ─────────────────────────────────────────────────────
+# ── System Update Checker ─────────────────────────────────────────────────────
 
 @app.route("/api/system/updates", methods=["GET"])
 @require_auth
 def api_system_updates():
-    """Check for available apt package updates."""
+    """Return list of available package updates from apt."""
+    import re
+
     packages = []
-    try:
-        # Run apt list --upgradable (non-interactive, no color)
-        out, rc = _run(
-            ["apt", "list", "--upgradable"],
-            timeout=30,
-        )
-        for line in (out or "").splitlines():
-            line = line.strip()
-            # Lines look like: package/suite version arch [upgradable from: old_version]
-            if not line or line.startswith("Listing") or line.startswith("WARNING"):
+    error = None
+
+    # Run apt list --upgradable (fast, no network — uses cached apt metadata)
+    out, rc = _run(["apt", "list", "--upgradable"])
+    if rc != 0:
+        error = "apt not available"
+    else:
+        for line in out.splitlines():
+            # Format: package/suite version arch [upgradable from: old_version]
+            if line.startswith("Listing") or not line.strip():
                 continue
-            parts = line.split("/", 1)
-            pkg = parts[0]
-            rest = parts[1] if len(parts) > 1 else ""
-            # Extract new version (first word after /)
-            tokens = rest.split()
-            new_ver = tokens[1] if len(tokens) > 1 else ""
-            # Extract old version
-            old_ver = ""
-            if "upgradable from:" in line:
-                old_ver = line.split("upgradable from:")[-1].strip().rstrip("]")
-            packages.append({"package": pkg, "new_version": new_ver, "old_version": old_ver})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-    return jsonify({"count": len(packages), "packages": packages})
+            m = re.match(r'^(\S+)/(\S+)\s+(\S+)\s+(\S+)(?:\s+\[upgradable from: (\S+)\])?', line)
+            if m:
+                pkg_full = m.group(1)
+                pkg_name = pkg_full.split(":")[0]  # strip arch suffix
+                suite = m.group(2)
+                new_ver = m.group(3)
+                arch = m.group(4)
+                old_ver = m.group(5) or ""
+                # Flag security updates
+                is_security = "security" in suite
+                packages.append({
+                    "name": pkg_name,
+                    "new_version": new_ver,
+                    "old_version": old_ver,
+                    "suite": suite,
+                    "arch": arch,
+                    "security": is_security,
+                })
+
+    # Check when apt cache was last updated
+    last_update = None
+    try:
+        import os
+        stamp = "/var/cache/apt/pkgcache.bin"
+        if os.path.exists(stamp):
+            mtime = os.path.getmtime(stamp)
+            import time
+            age_sec = int(time.time() - mtime)
+            if age_sec < 3600:
+                last_update = f"{age_sec // 60}m ago"
+            elif age_sec < 86400:
+                last_update = f"{age_sec // 3600}h ago"
+            else:
+                last_update = f"{age_sec // 86400}d ago"
+    except OSError:
+        pass
+
+    security_count = sum(1 for p in packages if p["security"])
+
+    return jsonify({
+        "packages": packages,
+        "count": len(packages),
+        "security_count": security_count,
+        "last_cache_update": last_update,
+        "error": error,
+    })
 
 
 # ── Config backup ─────────────────────────────────────────────────────────────
@@ -5280,107 +5643,6 @@ def api_wifi_clients():
             iface = "wlan1"
 
     return jsonify({"interface": iface, "clients": clients, "count": len(clients)})
-
-
-# ── System Resources ──────────────────────────────────────────────────────────
-
-@app.route("/api/system/resources", methods=["GET"])
-@require_auth
-def api_system_resources():
-    """Return CPU, memory, uptime, and load average stats."""
-    import time as _time
-
-    # CPU percent — two samples 0.5s apart
-    def _read_cpu_stat():
-        try:
-            line = Path("/proc/stat").read_text().splitlines()[0]
-            parts = line.split()
-            user, nice, system, idle, iowait, irq, softirq = (
-                int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]),
-                int(parts[5]), int(parts[6]), int(parts[7]),
-            )
-            total = user + nice + system + idle + iowait + irq + softirq
-            return total, idle
-        except Exception:
-            return None, None
-
-    total1, idle1 = _read_cpu_stat()
-    _time.sleep(0.5)
-    total2, idle2 = _read_cpu_stat()
-    if total1 is not None and total2 is not None and (total2 - total1) > 0:
-        cpu_percent = round(100.0 * (1.0 - (idle2 - idle1) / (total2 - total1)), 1)
-    else:
-        cpu_percent = None
-
-    # CPU temperature
-    cpu_temp = None
-    out, rc = _run(["vcgencmd", "measure_temp"])
-    if rc == 0 and out.strip():
-        try:
-            cpu_temp = float(out.strip().replace("temp=", "").replace("'C", ""))
-        except ValueError:
-            cpu_temp = None
-    if cpu_temp is None:
-        try:
-            raw = Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()
-            cpu_temp = round(int(raw) / 1000.0, 1)
-        except Exception:
-            cpu_temp = None
-
-    # Memory from /proc/meminfo
-    mem_total_mb = mem_free_mb = mem_available_mb = None
-    try:
-        meminfo = {}
-        for line in Path("/proc/meminfo").read_text().splitlines():
-            key, _, val = line.partition(":")
-            meminfo[key.strip()] = int(val.split()[0])
-        mem_total_mb = round(meminfo.get("MemTotal", 0) / 1024, 1)
-        mem_free_mb = round(meminfo.get("MemFree", 0) / 1024, 1)
-        mem_available_mb = round(meminfo.get("MemAvailable", meminfo.get("MemFree", 0)) / 1024, 1)
-        mem_used_mb = round(mem_total_mb - mem_available_mb, 1)
-        mem_percent = round(100.0 * mem_used_mb / mem_total_mb, 1) if mem_total_mb else None
-    except Exception:
-        mem_used_mb = mem_percent = None
-
-    # Uptime from /proc/uptime
-    uptime_seconds = None
-    uptime_human = None
-    try:
-        raw_uptime = float(Path("/proc/uptime").read_text().split()[0])
-        uptime_seconds = int(raw_uptime)
-        days = uptime_seconds // 86400
-        hours = (uptime_seconds % 86400) // 3600
-        minutes = (uptime_seconds % 3600) // 60
-        if days > 0:
-            uptime_human = f"{days}d {hours}h {minutes}m"
-        else:
-            uptime_human = f"{hours}h {minutes}m"
-    except Exception:
-        pass
-
-    # Load averages from /proc/loadavg
-    load_1 = load_5 = load_15 = None
-    try:
-        parts = Path("/proc/loadavg").read_text().split()
-        load_1 = float(parts[0])
-        load_5 = float(parts[1])
-        load_15 = float(parts[2])
-    except Exception:
-        pass
-
-    return jsonify({
-        "cpu_percent": cpu_percent,
-        "cpu_temp_c": cpu_temp,
-        "mem_total_mb": mem_total_mb,
-        "mem_used_mb": mem_used_mb,
-        "mem_free_mb": mem_free_mb,
-        "mem_percent": mem_percent,
-        "uptime_seconds": uptime_seconds,
-        "uptime_human": uptime_human,
-        "load_1": load_1,
-        "load_5": load_5,
-        "load_15": load_15,
-    })
 
 
 # ── Listening Ports ───────────────────────────────────────────────────────────
@@ -5624,80 +5886,86 @@ def api_network_ping():
 @require_auth
 def api_vpn_wireguard_peers():
     """Return WireGuard peer list with health stats from wg show."""
-    import re
     out, rc = _run(["wg", "show", "all", "dump"])
+    if rc != 0:
+        return jsonify({"peers": [], "count": 0, "wg_available": False,
+                        "error": "wg not available or no interfaces"})
     peers = []
-    if rc == 0:
-        for line in out.strip().splitlines():
-            parts = line.split("\t")
-            # wg show all dump: iface pubkey preshared endpoint allowed_ips latest_handshake rx_bytes tx_bytes persistent_keepalive
-            # First line per interface is the interface itself (has private key), skip those
-            if len(parts) < 9:
-                continue
-            # Interface lines have 5 fields, peer lines have 9
-            iface = parts[0]
-            pubkey = parts[1]
-            # Skip interface summary lines (pubkey == private key placeholder)
-            if parts[2] == "(none)" or len(parts) == 5:
-                continue
-            try:
-                endpoint = parts[3] if parts[3] != "(none)" else None
-                allowed_ips = parts[4].split(",") if parts[4] else []
-                latest_handshake = int(parts[5])
-                rx_bytes = int(parts[6])
-                tx_bytes = int(parts[7])
-            except (ValueError, IndexError):
-                continue
+    now = int(time.time())
+    for line in out.strip().splitlines():
+        parts = line.split("\t")
+        # wg show all dump: iface pubkey preshared endpoint allowed_ips latest_handshake rx_bytes tx_bytes persistent_keepalive
+        # Interface lines have 5 fields, peer lines have 9
+        if len(parts) < 9:
+            continue
+        iface = parts[0]
+        pubkey = parts[1]
+        # Skip interface summary lines (preshared == "(none)" distinguishes peer lines, but
+        # interface lines have exactly 5 fields — already filtered above by len < 9)
+        if parts[2] == "(none)" or len(parts) == 5:
+            continue
+        try:
+            endpoint = parts[3] if parts[3] != "(none)" else None
+            allowed_ips_list = parts[4].split(",") if parts[4] else []
+            allowed_ips_str = parts[4] if parts[4] != "(none)" else None
+            latest_handshake = int(parts[5])
+            rx_bytes = int(parts[6])
+            tx_bytes = int(parts[7])
+        except (ValueError, IndexError):
+            continue
 
-            import time
-            now = int(time.time())
-            if latest_handshake == 0:
-                handshake_age = None
-                handshake_label = "Never"
-                status = "inactive"
+        if latest_handshake == 0:
+            handshake_age = None
+            handshake_label = "Never"
+            age_sec = None
+            age_human = "never"
+            status = "inactive"
+            health_status = "never"
+        else:
+            age = now - latest_handshake
+            handshake_age = age
+            age_sec = age
+            age_human = _format_duration(age)
+            if age < 180:
+                status = "active"
+                health_status = "recent"
+            elif age < 600:
+                status = "idle"
+                health_status = "stale"
             else:
-                age = now - latest_handshake
-                handshake_age = age
-                if age < 180:
-                    status = "active"
-                elif age < 600:
-                    status = "idle"
-                else:
-                    status = "stale"
-                # Human-readable age
-                if age < 60:
-                    handshake_label = f"{age}s ago"
-                elif age < 3600:
-                    handshake_label = f"{age // 60}m ago"
-                else:
-                    handshake_label = f"{age // 3600}h {(age % 3600) // 60}m ago"
+                status = "stale"
+                health_status = "idle"
+            # Human-readable age for legacy consumers
+            if age < 60:
+                handshake_label = f"{age}s ago"
+            elif age < 3600:
+                handshake_label = f"{age // 60}m ago"
+            else:
+                handshake_label = f"{age // 3600}h {(age % 3600) // 60}m ago"
 
-            def fmt_bytes(b):
-                if b < 1024:
-                    return f"{b} B"
-                elif b < 1024 * 1024:
-                    return f"{b / 1024:.1f} KB"
-                elif b < 1024 * 1024 * 1024:
-                    return f"{b / (1024*1024):.1f} MB"
-                else:
-                    return f"{b / (1024*1024*1024):.2f} GB"
-
-            peers.append({
-                "interface": iface,
-                "pubkey": pubkey,
-                "pubkey_short": pubkey[:8] + "…",
-                "endpoint": endpoint,
-                "allowed_ips": allowed_ips,
-                "latest_handshake": latest_handshake,
-                "handshake_age": handshake_age,
-                "handshake_label": handshake_label,
-                "status": status,
-                "rx_bytes": rx_bytes,
-                "rx_label": fmt_bytes(rx_bytes),
-                "tx_bytes": tx_bytes,
-                "tx_label": fmt_bytes(tx_bytes),
-            })
-    return jsonify({"peers": peers, "count": len(peers), "wg_available": rc == 0})
+        peers.append({
+            "interface": iface,
+            "pubkey": pubkey,
+            "pubkey_short": pubkey[:8] + "…",
+            "endpoint": endpoint,
+            # Array form (legacy fetchWgPeerHealth) and string form (new health card)
+            "allowed_ips": allowed_ips_list,
+            "allowed_ips_str": allowed_ips_str,
+            "latest_handshake": latest_handshake,
+            "handshake_age": handshake_age,
+            "handshake_label": handshake_label,
+            # New health fields (for fetchWgPeers card)
+            "last_handshake_age_sec": age_sec,
+            "last_handshake_age": age_human,
+            "status": health_status,
+            "rx_bytes": rx_bytes,
+            "rx_label": _fmt_bytes(rx_bytes),
+            "rx_human": _fmt_bytes(rx_bytes),
+            "tx_bytes": tx_bytes,
+            "tx_label": _fmt_bytes(tx_bytes),
+            "tx_human": _fmt_bytes(tx_bytes),
+        })
+    return jsonify({"peers": peers, "count": len(peers), "wg_available": True})
 
 
 # ── Network Interfaces Overview ───────────────────────────────────────────────
@@ -6236,6 +6504,987 @@ def api_system_temp_history():
         "avg": round(sum(temps) / len(temps), 1),
         "count": len(samples),
     })
+
+
+# ── Log Export ────────────────────────────────────────────────────────────────
+
+@app.route("/api/logs/export", methods=["GET"])
+@require_auth
+def api_logs_export():
+    """Export combined system logs as a downloadable text file."""
+    import io
+    from flask import Response
+
+    lines = []
+
+    # journald: last 500 lines across all units
+    out, rc = _run(["journalctl", "-n", "500", "--no-pager", "--output=short-iso"])
+    if rc == 0 and out.strip():
+        lines.append("=== journald (last 500 lines) ===")
+        lines.append(out.rstrip())
+        lines.append("")
+
+    # Travel router specific service logs
+    for service in ["travel-router-web", "wan-watchdog", "wg-quick@wg0", "tailscaled", "hostapd", "dnsmasq"]:
+        svc_out, svc_rc = _run(["journalctl", "-u", service, "-n", "100", "--no-pager", "--output=short-iso"])
+        if svc_rc == 0 and svc_out.strip():
+            lines.append(f"=== {service} (last 100 lines) ===")
+            lines.append(svc_out.rstrip())
+            lines.append("")
+
+    # Syslog if available
+    for syslog_path in ["/var/log/syslog", "/var/log/messages"]:
+        try:
+            with open(syslog_path) as f:
+                content = f.readlines()[-200:]
+            lines.append(f"=== {syslog_path} (last 200 lines) ===")
+            lines.append("".join(content).rstrip())
+            lines.append("")
+            break
+        except OSError:
+            continue
+
+    content = "\n".join(lines) if lines else "No logs available.\n"
+
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"travel-router-logs-{ts}.txt"
+
+    return Response(
+        content,
+        mimetype="text/plain",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route("/api/logs/summary", methods=["GET"])
+@require_auth
+def api_logs_summary():
+    """Return a brief log summary: error/warning counts and recent errors."""
+    import re
+
+    summary = {"error_count": 0, "warn_count": 0, "recent_errors": [], "services_with_errors": []}
+
+    out, rc = _run(["journalctl", "-n", "1000", "--no-pager", "--output=short-iso",
+                    "-p", "0..4"])  # emerg..warning
+    if rc == 0 and out.strip():
+        for line in out.splitlines():
+            lower = line.lower()
+            if any(x in lower for x in [" err ", " error ", "failed", "crit", "alert", "emerg"]):
+                summary["error_count"] += 1
+                if len(summary["recent_errors"]) < 5:
+                    summary["recent_errors"].append(line[:200])
+            elif "warn" in lower:
+                summary["warn_count"] += 1
+
+    # Services with failures
+    svc_out, svc_rc = _run(["systemctl", "list-units", "--state=failed", "--no-pager", "--plain"])
+    if svc_rc == 0:
+        for line in svc_out.splitlines():
+            m = re.match(r'^\s*(\S+\.service)', line)
+            if m:
+                summary["services_with_errors"].append(m.group(1))
+
+    return jsonify(summary)
+
+
+# ── VPN Kill Switch ───────────────────────────────────────────────────────────
+
+@app.route("/api/vpn/killswitch", methods=["GET"])
+@require_auth
+def api_vpn_killswitch():
+    """Return kill switch status: whether traffic is blocked if VPN drops."""
+    import re
+
+    result = {
+        "enabled": False,
+        "method": None,
+        "details": [],
+        "vpn_interfaces": [],
+    }
+
+    # Detect WireGuard interfaces
+    wg_out, wg_rc = _run(["wg", "show", "interfaces"])
+    wg_ifaces = wg_out.strip().split() if wg_rc == 0 and wg_out.strip() else []
+    result["vpn_interfaces"] = wg_ifaces
+
+    # Check nftables for kill switch rules
+    nft_out, nft_rc = _run(["nft", "list", "ruleset"])
+    if nft_rc == 0:
+        rules = nft_out
+        # Kill switch typically: default drop policy + accept on wg/tun iface
+        has_drop_forward = "drop" in rules and ("forward" in rules.lower() or "output" in rules.lower())
+        has_wg_accept = any(iface in rules for iface in wg_ifaces) if wg_ifaces else False
+        if has_drop_forward:
+            result["enabled"] = True
+            result["method"] = "nftables"
+            result["details"].append("nftables: default drop policy detected")
+            if has_wg_accept:
+                result["details"].append(f"WireGuard interface(s) explicitly allowed: {', '.join(wg_ifaces)}")
+
+    # Check iptables if nft not conclusive
+    if not result["enabled"]:
+        ipt_out, ipt_rc = _run(["iptables", "-L", "FORWARD", "-n"])
+        if ipt_rc == 0:
+            # Kill switch: FORWARD chain policy DROP
+            if "policy DROP" in ipt_out or "Chain FORWARD (policy DROP)" in ipt_out:
+                result["enabled"] = True
+                result["method"] = "iptables"
+                result["details"].append("iptables: FORWARD chain policy is DROP")
+        ipt_out2, ipt_rc2 = _run(["iptables", "-L", "OUTPUT", "-n"])
+        if ipt_rc2 == 0 and "policy DROP" in ipt_out2:
+            result["enabled"] = True
+            result["method"] = result["method"] or "iptables"
+            result["details"].append("iptables: OUTPUT chain policy is DROP")
+
+    # Check for common kill switch systemd service or config marker
+    out3, rc3 = _run(["systemctl", "is-active", "travel-router-killswitch"])
+    if rc3 == 0 and out3.strip() == "active":
+        result["enabled"] = True
+        result["method"] = result["method"] or "systemd"
+        result["details"].append("systemd: travel-router-killswitch.service is active")
+
+    # Check /etc/default/travel-router for KILL_SWITCH setting
+    try:
+        with open("/etc/default/travel-router") as f:
+            for line in f:
+                m = re.match(r'^KILL_SWITCH\s*=\s*["\']?(\w+)["\']?', line.strip())
+                if m:
+                    val = m.group(1).lower()
+                    result["config_value"] = val
+                    if val in ("1", "true", "yes", "on"):
+                        result["details"].append(f"/etc/default/travel-router: KILL_SWITCH={val}")
+    except OSError:
+        pass
+
+    return jsonify(result)
+
+
+# ── Connected Clients ─────────────────────────────────────────────────────────
+
+@app.route("/api/network/clients", methods=["GET"])
+@require_auth
+def api_network_clients():
+    """Return connected LAN clients from ARP table and optionally nmap."""
+    import re
+
+    clients = []
+
+    # Parse /proc/net/arp
+    try:
+        with open("/proc/net/arp") as f:
+            lines = f.readlines()[1:]  # skip header
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 6:
+                continue
+            ip = parts[0]
+            flags = parts[2]
+            mac = parts[3]
+            iface = parts[5].strip()
+            # Skip incomplete entries (flags=0x0) and loopback
+            if flags == "0x0" or mac == "00:00:00:00:00:00" or iface == "lo":
+                continue
+            # Try reverse DNS
+            hostname = None
+            out, rc = _run(["getent", "hosts", ip])
+            if rc == 0 and out.strip():
+                hostname = out.split()[1] if len(out.split()) > 1 else None
+            clients.append({
+                "ip": ip,
+                "mac": mac,
+                "hostname": hostname,
+                "interface": iface,
+                "vendor": _mac_vendor(mac),
+            })
+    except OSError:
+        pass
+
+    # Also check dnsmasq leases for hostnames we might have missed
+    lease_names = {}
+    lease_paths = ["/var/lib/misc/dnsmasq.leases", "/tmp/dnsmasq.leases", "/var/lib/dnsmasq/dnsmasq.leases"]
+    for path in lease_paths:
+        try:
+            with open(path) as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        lease_mac = parts[1].lower()
+                        lease_ip = parts[2]
+                        lease_host = parts[3] if parts[3] != "*" else None
+                        lease_names[lease_ip] = (lease_mac, lease_host)
+            break
+        except OSError:
+            continue
+
+    for c in clients:
+        if c["hostname"] is None and c["ip"] in lease_names:
+            c["hostname"] = lease_names[c["ip"]][1]
+
+    # Sort by last octet of IP
+    try:
+        clients.sort(key=lambda c: int(c["ip"].split(".")[-1]))
+    except (ValueError, IndexError):
+        pass
+
+    return jsonify({"clients": clients, "count": len(clients)})
+
+
+def _mac_vendor(mac):
+    """Return a short vendor hint from the MAC OUI (first 3 bytes)."""
+    oui_map = {
+        "b8:27:eb": "Raspberry Pi",
+        "dc:a6:32": "Raspberry Pi",
+        "e4:5f:01": "Raspberry Pi",
+        "d8:3a:dd": "Raspberry Pi",
+        "00:50:56": "VMware",
+        "00:0c:29": "VMware",
+        "08:00:27": "VirtualBox",
+        "00:1a:11": "Google",
+        "ac:37:43": "HTC",
+        "f4:f5:d8": "Google",
+        "04:d3:b0": "Apple",
+        "a4:c3:f0": "Apple",
+        "98:01:a7": "Apple",
+        "3c:22:fb": "Apple",
+        "00:1b:21": "Intel",
+        "00:1e:65": "Intel",
+        "18:66:da": "Intel",
+    }
+    prefix = mac.lower()[:8]
+    return oui_map.get(prefix, None)
+
+
+# ── WireGuard Peer Health ─────────────────────────────────────────────────────
+
+def _format_duration(seconds):
+    """Return a human-readable duration string from seconds."""
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60}s"
+    elif seconds < 86400:
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        return f"{h}h {m}m"
+    else:
+        d = seconds // 86400
+        h = (seconds % 86400) // 3600
+        return f"{d}d {h}h"
+
+
+def _fmt_bytes(n):
+    """Return human-readable byte count."""
+    if n < 1024:
+        return f"{n} B"
+    elif n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    elif n < 1024 * 1024 * 1024:
+        return f"{n / 1024 / 1024:.1f} MB"
+    else:
+        return f"{n / 1024 / 1024 / 1024:.2f} GB"
+
+
+# ── Data Cap Tracker ──────────────────────────────────────────────────────────
+
+@app.route("/api/network/datacap", methods=["GET"])
+@require_auth
+def api_network_datacap():
+    """Return current month's data usage from vnstat, plus configured cap."""
+    import json
+    import datetime
+
+    # Read configured cap from /etc/default/travel-router (MONTHLY_CAP_GB=50)
+    cap_gb = None
+    try:
+        with open("/etc/default/travel-router") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("MONTHLY_CAP_GB="):
+                    val = line.split("=", 1)[1].strip().strip('"\'')
+                    try:
+                        cap_gb = float(val)
+                    except ValueError:
+                        pass
+    except OSError:
+        pass
+
+    # Get month totals from vnstat
+    out, rc = _run(["vnstat", "--json", "m"])
+    if rc != 0:
+        return jsonify({"error": "vnstat not available", "cap_gb": cap_gb})
+
+    try:
+        data = json.loads(out)
+    except (ValueError, KeyError):
+        return jsonify({"error": "Failed to parse vnstat output", "cap_gb": cap_gb})
+
+    interfaces = data.get("interfaces", [])
+    if not interfaces:
+        return jsonify({"error": "No vnstat interfaces", "cap_gb": cap_gb})
+
+    # Pick the primary interface (most total traffic)
+    best = max(interfaces, key=lambda i: sum(
+        e.get("rx", 0) + e.get("tx", 0)
+        for e in i.get("traffic", {}).get("month", [])
+    ))
+
+    iface_name = best.get("name", "unknown")
+    months = best.get("traffic", {}).get("month", [])
+
+    # Current month
+    now = datetime.datetime.now()
+    current = None
+    for m in months:
+        d = m.get("date", {})
+        if d.get("year") == now.year and d.get("month") == now.month:
+            current = m
+            break
+
+    if not current:
+        # Fall back to most recent
+        if months:
+            current = months[-1]
+
+    rx_bytes = current.get("rx", 0) if current else 0
+    tx_bytes = current.get("tx", 0) if current else 0
+    total_bytes = rx_bytes + tx_bytes
+    total_gb = total_bytes / 1024 / 1024 / 1024
+
+    result = {
+        "interface": iface_name,
+        "rx_bytes": rx_bytes,
+        "tx_bytes": tx_bytes,
+        "total_bytes": total_bytes,
+        "total_gb": round(total_gb, 3),
+        "rx_gb": round(rx_bytes / 1024 / 1024 / 1024, 3),
+        "tx_gb": round(tx_bytes / 1024 / 1024 / 1024, 3),
+        "cap_gb": cap_gb,
+        "percent_used": round((total_gb / cap_gb * 100), 1) if cap_gb else None,
+        "remaining_gb": round(cap_gb - total_gb, 3) if cap_gb else None,
+        "month": f"{now.year}-{now.month:02d}",
+    }
+    return jsonify(result)
+
+
+# ── Network Interface Stats ───────────────────────────────────────────────────
+
+@app.route("/api/network/iface/stats", methods=["GET"])
+@require_auth
+def api_network_iface_stats():
+    """Return per-interface RX/TX stats including errors and drops from /proc/net/dev."""
+    interfaces = []
+
+    try:
+        with open("/proc/net/dev") as f:
+            lines = f.readlines()
+    except OSError:
+        return jsonify({"error": "Cannot read /proc/net/dev", "interfaces": []})
+
+    # Skip first two header lines
+    for line in lines[2:]:
+        line = line.strip()
+        if not line:
+            continue
+        colon = line.index(":")
+        name = line[:colon].strip()
+        fields = line[colon + 1:].split()
+        if len(fields) < 16:
+            continue
+        # /proc/net/dev columns:
+        # RX: bytes packets errs drop fifo frame compressed multicast
+        # TX: bytes packets errs drop fifo colls carrier compressed
+        rx_bytes = int(fields[0])
+        rx_packets = int(fields[1])
+        rx_errors = int(fields[2])
+        rx_drop = int(fields[3])
+        tx_bytes = int(fields[8])
+        tx_packets = int(fields[9])
+        tx_errors = int(fields[10])
+        tx_drop = int(fields[11])
+        tx_colls = int(fields[13])
+
+        # Skip loopback and zero-traffic virtual interfaces (but keep wg, tun, eth, wlan, usb)
+        if name == "lo":
+            continue
+
+        interfaces.append({
+            "name": name,
+            "rx_bytes": rx_bytes,
+            "rx_packets": rx_packets,
+            "rx_errors": rx_errors,
+            "rx_drop": rx_drop,
+            "tx_bytes": tx_bytes,
+            "tx_packets": tx_packets,
+            "tx_errors": tx_errors,
+            "tx_drop": tx_drop,
+            "tx_colls": tx_colls,
+            "rx_human": _fmt_bytes(rx_bytes),
+            "tx_human": _fmt_bytes(tx_bytes),
+            "has_errors": (rx_errors + tx_errors + rx_drop + tx_drop + tx_colls) > 0,
+        })
+
+    # Sort: active interfaces first (most traffic), then by name
+    interfaces.sort(key=lambda i: -(i["rx_bytes"] + i["tx_bytes"]))
+
+    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
+
+
+# ── Cron Jobs Viewer ──────────────────────────────────────────────────────────
+
+@app.route("/api/system/cron", methods=["GET"])
+@require_auth
+def api_system_cron():
+    """Return cron jobs from system crontabs and /etc/cron.d/."""
+    import os
+    import re
+
+    jobs = []
+
+    def parse_crontab(content, source):
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Skip environment variable lines (KEY=value)
+            if re.match(r'^[A-Z_]+=', line):
+                continue
+            parts = line.split(None, 5)
+            # Standard crontab: min hour dom month dow command
+            # /etc/cron.d also has a user field: min hour dom month dow user command
+            if len(parts) >= 6:
+                schedule = " ".join(parts[:5])
+                # Detect if this is a /etc/cron.d entry (has user field)
+                if source.startswith("/etc/cron.d/"):
+                    user = parts[5] if len(parts) > 6 else ""
+                    command = parts[6] if len(parts) > 6 else parts[5]
+                else:
+                    user = ""
+                    command = parts[5]
+                jobs.append({
+                    "schedule": schedule,
+                    "user": user,
+                    "command": command[:120],  # truncate long commands
+                    "source": source,
+                })
+
+    # System crontab
+    try:
+        with open("/etc/crontab") as f:
+            parse_crontab(f.read(), "/etc/crontab")
+    except OSError:
+        pass
+
+    # /etc/cron.d/
+    try:
+        cron_d = "/etc/cron.d"
+        for fname in sorted(os.listdir(cron_d)):
+            fpath = os.path.join(cron_d, fname)
+            if os.path.isfile(fpath):
+                try:
+                    with open(fpath) as f:
+                        parse_crontab(f.read(), fpath)
+                except OSError:
+                    pass
+    except OSError:
+        pass
+
+    # Root user crontab (crontab -l -u root)
+    out, rc = _run(["crontab", "-l", "-u", "root"])
+    if rc == 0 and out.strip() and "no crontab for" not in out:
+        parse_crontab(out, "root crontab")
+
+    # travel-router user crontab if it exists
+    out2, rc2 = _run(["crontab", "-l", "-u", "travel-router"])
+    if rc2 == 0 and out2.strip() and "no crontab for" not in out2:
+        parse_crontab(out2, "travel-router crontab")
+
+    return jsonify({"jobs": jobs, "count": len(jobs)})
+
+
+# ── Tailscale Exit Node ───────────────────────────────────────────────────────
+
+@app.route("/api/vpn/tailscale/exitnode", methods=["GET"])
+@require_auth
+def api_tailscale_exitnode():
+    """Return current Tailscale exit node and list of available exit nodes."""
+    import json
+
+    out, rc = _run(["tailscale", "status", "--json"])
+    if rc != 0:
+        return jsonify({"error": "tailscale not available or not running", "current": None, "available": []})
+
+    try:
+        data = json.loads(out)
+    except (ValueError, KeyError):
+        return jsonify({"error": "Failed to parse tailscale status", "current": None, "available": []})
+
+    # Find current exit node (ExitNodeStatus in Self)
+    self_node = data.get("Self", {})
+    current_exit = None
+
+    # ExitNodeStatus is set when an exit node is in use
+    exit_node_status = data.get("ExitNodeStatus")
+    if exit_node_status:
+        current_exit = {
+            "tailscale_ip": exit_node_status.get("TailscaleIPs", [None])[0],
+            "hostname": exit_node_status.get("HostName", ""),
+            "dns_name": exit_node_status.get("DNSName", ""),
+            "online": exit_node_status.get("Online", False),
+        }
+
+    # Collect all peers that advertise as exit nodes
+    peers = data.get("Peer", {})
+    available = []
+    for node_id, peer in peers.items():
+        # ExitNodeOption=True means it can be used as exit node
+        if peer.get("ExitNodeOption", False):
+            is_current = peer.get("ExitNode", False)
+            available.append({
+                "id": node_id,
+                "hostname": peer.get("HostName", ""),
+                "dns_name": peer.get("DNSName", ""),
+                "tailscale_ip": peer.get("TailscaleIPs", [None])[0],
+                "online": peer.get("Online", False),
+                "current": is_current,
+                "os": peer.get("OS", ""),
+            })
+
+    # Sort: current first, then online, then offline
+    available.sort(key=lambda p: (not p["current"], not p["online"], p["hostname"]))
+
+    # Is this device itself acting as an exit node?
+    self_is_exit = self_node.get("ExitNodeOption", False)
+
+    return jsonify({
+        "current": current_exit,
+        "available": available,
+        "self_is_exit_node": self_is_exit,
+        "self_hostname": self_node.get("HostName", ""),
+    })
+
+
+# ── Top Processes ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/proctop", methods=["GET"])
+@require_auth
+def api_proctop():
+    """Return top 10 processes by CPU% and top 10 by MEM%."""
+    out, rc = _run(["ps", "aux", "--no-header"])
+    if rc != 0:
+        return jsonify({"error": "ps command failed", "by_cpu": [], "by_mem": [], "total_processes": 0})
+
+    processes = []
+    for line in out.splitlines():
+        cols = line.split(None, 10)
+        if len(cols) < 11:
+            continue
+        try:
+            name = os.path.basename(cols[10].split()[0]) if cols[10].split() else ""
+        except (IndexError, AttributeError):
+            name = ""
+        if not name or name == "-":
+            continue
+        try:
+            proc = {
+                "pid": int(cols[1]),
+                "name": name,
+                "cpu_pct": float(cols[2]),
+                "mem_pct": float(cols[3]),
+                "state": cols[7],
+                "user": cols[0],
+            }
+        except (ValueError, IndexError):
+            continue
+        processes.append(proc)
+
+    by_cpu = sorted(processes, key=lambda p: p["cpu_pct"], reverse=True)[:10]
+    by_mem = sorted(processes, key=lambda p: p["mem_pct"], reverse=True)[:10]
+
+    return jsonify({
+        "by_cpu": by_cpu,
+        "by_mem": by_mem,
+        "total_processes": len(processes),
+    })
+
+
+# ── System Entropy ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/entropy", methods=["GET"])
+@require_auth
+def api_system_entropy():
+    """Return kernel entropy pool health metrics."""
+    import os
+
+    result = {}
+
+    # Read available entropy bits
+    try:
+        with open("/proc/sys/kernel/random/entropy_avail") as f:
+            available_bits = int(f.read().strip())
+        result["available_bits"] = available_bits
+        result["urandom_entropy_avail"] = available_bits
+    except OSError as exc:
+        result["error"] = f"entropy_avail: {exc}"
+        available_bits = None
+
+    # Read pool size
+    try:
+        with open("/proc/sys/kernel/random/poolsize") as f:
+            pool_size = int(f.read().strip())
+        result["pool_size"] = pool_size
+    except OSError as exc:
+        result.setdefault("error", f"poolsize: {exc}")
+        pool_size = None
+
+    # Compute percent
+    if available_bits is not None and pool_size and pool_size > 0:
+        result["percent"] = round(available_bits / pool_size * 100, 1)
+    else:
+        result["percent"] = None
+
+    # Detect entropy source
+    if os.path.isdir("/sys/bus/platform/drivers/bcm2835-rng"):
+        source = "hardware_rng"
+    elif os.path.exists("/dev/hwrng"):
+        source = "hwrng"
+    else:
+        source = "software"
+    result["source"] = source
+
+    # Test getrandom syscall (non-blocking)
+    try:
+        os.getrandom(32, os.GRND_NONBLOCK)
+        result["getrandom_ok"] = True
+    except BlockingIOError:
+        result["getrandom_ok"] = False
+    except OSError:
+        result["getrandom_ok"] = False
+
+    return jsonify(result)
+
+
+# ── USB Device Inventory ──────────────────────────────────────────────────────
+
+@app.route("/api/system/usb", methods=["GET"])
+@require_auth
+def api_system_usb():
+    """Return a list of connected USB devices, filtering out root hubs."""
+    import re
+
+    out, rc = _run(["lsusb"])
+    devices = []
+    if rc == 0:
+        for line in out.splitlines():
+            m = re.match(
+                r"Bus (\d+) Device (\d+): ID ([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)",
+                line,
+            )
+            if m:
+                desc = m.group(5)
+                if "root hub" in desc.lower() or "Linux Foundation" in desc:
+                    continue
+                devices.append(
+                    {
+                        "bus": m.group(1),
+                        "device": m.group(2),
+                        "vendor_id": m.group(3),
+                        "product_id": m.group(4),
+                        "description": desc,
+                    }
+                )
+
+    return jsonify({"devices": devices, "count": len(devices)})
+
+
+# ── System Temperature Details ────────────────────────────────────────────────
+
+@app.route("/api/system/temps", methods=["GET"])
+@require_auth
+def api_system_temps():
+    """Return thermal zone temperatures, vcgencmd data, and throttle flags."""
+    import glob as _glob
+
+    sensors = []
+
+    # Read all thermal zones from sysfs
+    zone_temps = sorted(_glob.glob("/sys/class/thermal/thermal_zone*/temp"))
+    for temp_path in zone_temps:
+        zone_dir = temp_path.rsplit("/temp", 1)[0]
+        # Read temperature (millidegrees → degrees)
+        try:
+            temp_c = int(Path(temp_path).read_text().strip()) / 1000.0
+        except (OSError, ValueError):
+            continue
+
+        # Read zone type (friendly name)
+        try:
+            zone_type = Path(zone_dir + "/type").read_text().strip()
+        except OSError:
+            zone_type = zone_dir.split("/")[-1]
+
+        # Try to read critical trip point (trip_point_0_temp)
+        critical_c = None
+        try:
+            crit_raw = int(Path(zone_dir + "/trip_point_0_temp").read_text().strip())
+            critical_c = crit_raw / 1000.0
+        except (OSError, ValueError):
+            pass
+
+        # Classify status
+        if temp_c < 70.0:
+            status = "ok"
+        elif temp_c <= 80.0:
+            status = "warm"
+        else:
+            status = "hot"
+
+        sensors.append({
+            "name": zone_type,
+            "label": zone_type.replace("_", " ").replace("-", " ").title(),
+            "temp_c": round(temp_c, 1),
+            "critical": round(critical_c, 1) if critical_c is not None else None,
+            "status": status,
+        })
+
+    # vcgencmd measure_temp (Pi-specific)
+    vcg_temp = None
+    out, rc = _run(["vcgencmd", "measure_temp"])
+    if rc == 0:
+        import re as _re
+        m = _re.search(r"temp=([\d.]+)", out)
+        if m:
+            vcg_temp = float(m.group(1))
+            # Add as a sensor if not already represented
+            if not any(s["name"] == "gpu_thermal" for s in sensors):
+                t = vcg_temp
+                status = "ok" if t < 70.0 else ("warm" if t <= 80.0 else "hot")
+                sensors.append({
+                    "name": "gpu_thermal",
+                    "label": "GPU",
+                    "temp_c": round(t, 1),
+                    "critical": None,
+                    "status": status,
+                })
+
+    # vcgencmd get_throttled
+    throttled = False
+    throttle_flags = "0x0"
+    out2, rc2 = _run(["vcgencmd", "get_throttled"])
+    if rc2 == 0:
+        import re as _re2
+        m2 = _re2.search(r"throttled=(0x[0-9a-fA-F]+)", out2)
+        if m2:
+            throttle_flags = m2.group(1)
+            throttled = int(throttle_flags, 16) != 0
+
+    max_temp = None
+    if sensors:
+        max_temp = max(s["temp_c"] for s in sensors)
+
+    return jsonify({
+        "sensors": sensors,
+        "max_temp_c": max_temp,
+        "throttled": throttled,
+        "throttle_flags": throttle_flags,
+    })
+
+
+# ── WireGuard Config Export ────────────────────────────────────────────────────
+
+
+@app.route("/api/vpn/wireguard/config/qr", methods=["GET"])
+@require_auth
+def api_wireguard_config_qr():
+    """Generate a QR code of the WireGuard client config for mobile import."""
+    import subprocess
+    import tempfile
+    import os
+
+    conf_path = "/etc/wireguard/wg0.conf"
+    try:
+        with open(conf_path) as f:
+            conf_text = f.read()
+    except OSError as e:
+        return jsonify({"error": f"Cannot read {conf_path}: {e}"}), 500
+
+    qr_out, qr_rc = _run(["which", "qrencode"])
+    if qr_rc != 0:
+        return jsonify({"error": "qrencode not installed"}), 500
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        result = subprocess.run(
+            ["qrencode", "-o", tmp_path, "-t", "PNG", "--dpi", "150"],
+            input=conf_text.encode(),
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return jsonify({"error": "qrencode failed"}), 500
+
+        with open(tmp_path, "rb") as f:
+            png_data = f.read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    from flask import Response
+    return Response(
+        png_data,
+        mimetype="image/png",
+        headers={
+            "Content-Disposition": "inline; filename=wg0-qr.png",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.route("/api/vpn/wireguard/config/text", methods=["GET"])
+@require_auth
+def api_wireguard_config_text():
+    """Return the WireGuard config file text (sanitized — private key redacted)."""
+    conf_path = "/etc/wireguard/wg0.conf"
+    try:
+        with open(conf_path) as f:
+            lines = f.readlines()
+    except OSError as e:
+        return jsonify({"error": f"Cannot read {conf_path}: {e}"}), 500
+
+    sanitized = []
+    for line in lines:
+        if line.strip().lower().startswith("privatekey"):
+            sanitized.append("PrivateKey = <redacted>\n")
+        else:
+            sanitized.append(line)
+
+    return jsonify({"config": "".join(sanitized), "path": conf_path})
+
+
+# ── Kernel Modules ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/modules", methods=["GET"])
+@require_auth
+def api_system_modules():
+    modules = []
+    try:
+        with open("/proc/modules", "r") as fh:
+            for line in fh:
+                cols = line.split()
+                if len(cols) < 4:
+                    continue
+                name = cols[0]
+                try:
+                    size = int(cols[1])
+                except ValueError:
+                    size = 0
+                try:
+                    used_by = int(cols[2])
+                except ValueError:
+                    used_by = 0
+                raw_deps = cols[3].strip(",")
+                deps = raw_deps.split(",") if raw_deps != "-" else []
+                modules.append({
+                    "name": name,
+                    "size": size,
+                    "used_by": used_by,
+                    "deps": deps,
+                })
+    except OSError as exc:
+        return jsonify({"error": str(exc)}), 503
+    modules.sort(key=lambda m: m["name"])
+    return jsonify({"modules": modules, "count": len(modules)})
+
+
+# ── Disk I/O Stats ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/diskio", methods=["GET"])
+@require_auth
+def api_system_diskio():
+    """Parse /proc/diskstats for block devices (exclude loop/ram devices)."""
+    devices = []
+    try:
+        with open("/proc/diskstats", "r") as fh:
+            for line in fh:
+                cols = line.split()
+                if len(cols) < 14:
+                    continue
+                dev = cols[2]
+                # Skip loop, ram, and partition entries (sdXN, mmcblk0pN)
+                if dev.startswith(("loop", "ram")):
+                    continue
+                # Skip partitions (have a digit at end after a letter)
+                if re.search(r"[a-z]\d+$", dev):
+                    continue
+                try:
+                    reads_completed   = int(cols[3])
+                    reads_merged      = int(cols[4])
+                    sectors_read      = int(cols[5])
+                    read_ms           = int(cols[6])
+                    writes_completed  = int(cols[7])
+                    writes_merged     = int(cols[8])
+                    sectors_written   = int(cols[9])
+                    write_ms          = int(cols[10])
+                    io_in_progress    = int(cols[11])
+                    io_ms             = int(cols[12])
+                except (ValueError, IndexError):
+                    continue
+                devices.append({
+                    "device":           dev,
+                    "reads_completed":  reads_completed,
+                    "reads_merged":     reads_merged,
+                    "sectors_read":     sectors_read,
+                    "bytes_read":       sectors_read * 512,
+                    "read_ms":          read_ms,
+                    "writes_completed": writes_completed,
+                    "writes_merged":    writes_merged,
+                    "sectors_written":  sectors_written,
+                    "bytes_written":    sectors_written * 512,
+                    "write_ms":         write_ms,
+                    "io_in_progress":   io_in_progress,
+                    "io_ms":            io_ms,
+                })
+    except OSError as exc:
+        return jsonify({"error": str(exc)}), 503
+    return jsonify({"devices": devices})
+
+
+# ── Memory Info ───────────────────────────────────────────────────────────────
+
+@app.route("/api/system/meminfo", methods=["GET"])
+@require_auth
+def api_system_meminfo():
+    info = {}
+    try:
+        with open("/proc/meminfo", "r") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) >= 2:
+                    key = parts[0].rstrip(":")
+                    try:
+                        val = int(parts[1])
+                    except ValueError:
+                        val = 0
+                    info[key] = val
+    except OSError as exc:
+        return jsonify({"error": str(exc)}), 503
+    kb = 1024
+    result = {
+        "total_kb":     info.get("MemTotal", 0),
+        "free_kb":      info.get("MemFree", 0),
+        "available_kb": info.get("MemAvailable", 0),
+        "buffers_kb":   info.get("Buffers", 0),
+        "cached_kb":    info.get("Cached", 0),
+        "swap_total_kb":info.get("SwapTotal", 0),
+        "swap_free_kb": info.get("SwapFree", 0),
+        "used_kb":      info.get("MemTotal", 0) - info.get("MemAvailable", 0),
+    }
+    _ = kb  # suppress unused warning
+    return jsonify(result)
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

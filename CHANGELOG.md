@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.36.0] - 2026-05-25
+
+### Added
+
+- **Kernel modules viewer** (`web/app.py`, `web/static/index.html`): `GET /api/system/modules` reads `/proc/modules`, parses name/size/used-by/deps, returns sorted list. Dashboard card with count badge, live filter input, and table with networking modules (wireguard, cfg80211, mac80211, ath, brcm, rtl) highlighted blue. On-demand Refresh button, loaded on page init.
+- **WireGuard config QR export** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/wireguard/config/qr` reads `/etc/wireguard/wg0.conf`, generates QR PNG via `qrencode` in a temp file, returns `image/png` with `Cache-Control: no-store`. `GET /api/vpn/wireguard/config/text` returns sanitized config with `PrivateKey` redacted. Dashboard card loads QR as blob URL (auth-gated), toggleable config text view in `<pre>` block. On-demand only.
+- **System temperatures** (`web/app.py`, `web/static/index.html`): `GET /api/system/temps` globs all `/sys/class/thermal/thermal_zone*` sysfs entries, reads temp (÷1000 for °C), type, and trip_point_0_temp for critical threshold. Also calls `vcgencmd measure_temp` and `vcgencmd get_throttled` (Pi-specific). Classifies each sensor as `ok` (<70°C), `warm` (70-80°C), `hot` (>80°C). Dashboard card with colour-coded per-sensor rows and red throttling warning banner. Auto-refreshes on poll.
+
+## [2.35.0] - 2026-05-25
+
+### Added
+
+- **USB device inventory** (`web/app.py`, `web/static/index.html`): `GET /api/system/usb` runs `lsusb`, parses bus/device/vendor-ID/product-ID/description via regex, filters root hubs and Linux Foundation entries. Dashboard card with Bus/Device/ID/Description table; Ethernet/RNDIS/ECM adapters highlighted green, modem/LTE/Sierra/Huawei/ZTE devices highlighted blue. On-demand Refresh button, loaded on page init.
+- **System entropy pool** (`web/app.py`, `web/static/index.html`): `GET /api/system/entropy` reads `/proc/sys/kernel/random/entropy_avail` and `poolsize`, computes percent full, detects RNG source (`hardware_rng` via `/sys/bus/platform/drivers/bcm2835-rng`, `hwrng` via `/dev/hwrng`, else `software`), tests `os.getrandom(32, GRND_NONBLOCK)` for pool health. Dashboard card with large bit-count, colour-coded progress bar (green ≥75%, orange ≥40%, red <40%), source badge (blue=hardware, grey=software), getrandom tick/cross. Auto-refreshes on poll.
+- **Top processes** (`web/app.py`, `web/static/index.html`): `GET /api/system/proctop` parses `ps aux --no-header`, extracts user/pid/cpu%/mem%/state/command-basename, returns top 10 by CPU% and top 10 by MEM% plus total process count. Dashboard card with side-by-side flex tables (By CPU / By Memory); CPU >10% highlighted orange, >50% red; MEM >10% highlighted orange. Auto-refreshes on poll.
+
+## [2.34.0] - 2026-05-25
+
+### Added
+
+- **Active connections viewer** (`web/app.py`, `web/static/index.html`): `GET /api/network/connections` runs `ss -tunatp`, filters loopback and TIME-WAIT entries, extracts process names from the `users:` field. Returns proto, state, local address, peer address, and process. Dashboard card with colour-coded state badges (green=ESTABLISHED, blue=LISTEN, orange=SYN states). Auto-refreshes on poll.
+- **Tailscale exit node status** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/tailscale/exitnode` parses `tailscale status --json`, reads `ExitNodeStatus` from Self for the active exit node, and iterates Peer map for all peers with `ExitNodeOption=true`. Returns current exit node (hostname, IP, online status) and available peer list sorted by active→online→offline. Dashboard card highlights active node with globe icon; lists available peers with ACTIVE badge and online/offline colour. Auto-refreshes on poll.
+- **Cron jobs viewer** (`web/app.py`, `web/static/index.html`): `GET /api/system/cron` reads `/etc/crontab`, all files in `/etc/cron.d/`, and runs `crontab -l` for `root` and `travel-router` users. Parses schedule, optional user field (cron.d entries), and command (truncated at 120 chars), groups results by source file. Dashboard card shows per-source tables with schedule in monospace blue, command column, user column when present. Refresh button for on-demand reload.
+
+## [2.33.0] - 2026-05-25
+
+### Added
+
+- **Login history** (`web/app.py`, `web/static/index.html`): `GET /api/system/logins` runs `last -n 30 -F` (with `-F`-less fallback), filters system pseudo-logins (reboot/shutdown/LOGIN), cross-checks `who` to mark currently active sessions, returns user, TTY, source host, date string, and active flag. Dashboard card with active-session count badge and green bullet for active users. Auto-refreshes on poll.
+- **Network interface statistics** (`web/app.py`, `web/static/index.html`): `GET /api/network/iface/stats` reads `/proc/net/dev`, parses all 16 fields per interface (RX/TX bytes, packets, errors, drops; TX collisions), skips loopback, sorts by total traffic. Uses existing `_fmt_bytes()` helper. Dashboard card with per-interface table, RX in blue, TX in green, error/drop counts in red when non-zero. Auto-refreshes on poll.
+- **System update checker** (`web/app.py`, `web/static/index.html`): `GET /api/system/updates` runs `apt list --upgradable`, parses package name, current version, new version, and suite, detects security updates via `"security" in suite`, reads `/var/cache/apt/pkgcache.bin` mtime for cache age. Dashboard card shows ✅ up-to-date or update count with red security badge; security packages highlighted in red. Auto-refreshes on poll.
+
+## [2.32.0] - 2026-05-25
+
+### Added
+
+- **Route table viewer** (`web/app.py`, `web/static/index.html`): `GET /api/network/routes` runs `ip -4 route show` and `ip -6 route show`, parses each line into destination, gateway, interface, proto, and metric fields, filters IPv6 link-local and loopback routes. Dashboard card with grouped IPv4/IPv6 sub-tables; default routes highlighted in accent colour. Auto-refreshes on poll.
+- **WireGuard peer health** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/wireguard/peers` reads `wg show all dump` (tab-separated 9-column format), computes last-handshake age in seconds, classifies each peer as `recent` (<3 min), `stale` (<10 min), or `idle`/`never`. Returns pubkey short form, endpoint, allowed IPs, RX/TX in human-readable form. Added `_format_duration()` and `_fmt_bytes()` module-level helpers. Dashboard card with colour-coded status badges. Auto-refreshes on poll.
+- **Monthly data cap tracker** (`web/app.py`, `web/static/index.html`): `GET /api/network/datacap` reads `MONTHLY_CAP_GB` from `/etc/default/travel-router`, queries `vnstat --json m` for current month RX/TX on the busiest interface, computes percent used and GB remaining. Dashboard card with colour-coded progress bar (green/orange/red at 70%/90%) when cap is set, plain GB totals otherwise. Auto-refreshes on poll.
+
+## [2.31.0] - 2026-05-25
+
+### Added
+
+- **Connected clients ARP table** (`web/app.py`, `web/static/index.html`): `GET /api/network/clients` parses `/proc/net/arp`, resolves hostnames via `getent hosts`, enriches with dnsmasq lease file (tries three common paths), and adds OUI vendor hints for known MAC prefixes (Raspberry Pi, Apple, Intel, Google, VMware, VirtualBox). Dashboard card with IP/MAC/Hostname/Vendor/Interface table. Auto-refreshes on poll.
+- **VPN kill switch status** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/killswitch` detects active kill switch via nftables default-drop policy, iptables FORWARD/OUTPUT chain policy, `travel-router-killswitch` systemd service, and `/etc/default/travel-router` KILL_SWITCH config key. Returns enabled status, detection method, and detail list. Dashboard card with ENABLED/DISABLED badge and detail list. Auto-refreshes on poll.
+- **Log summary and export** (`web/app.py`, `web/static/index.html`): `GET /api/logs/summary` queries journald for last 1000 lines at warning level and above, counts errors/warnings, extracts up to 5 recent error lines, and lists failed systemd units. `GET /api/logs/export` streams a downloadable text bundle of journald (500 lines), per-service logs (100 lines each for 6 services), and syslog (200 lines). Dashboard card shows error/warning/failed-service counts with recent errors panel and Export button. Loaded on page init.
+
+## [2.30.0] - 2026-05-25
+
+### Added
+
+- **SSH authorized keys viewer** (`web/app.py`, `web/static/index.html`): `GET /api/system/ssh/keys` reads `authorized_keys` for `root`, `pi`, and `travel-router` users, parses key type, comment, and fingerprint tail (last 16 chars of base64). Dashboard card shows table with color-coded type badges (green=ed25519, orange=rsa, purple=ecdsa). Loaded on page init.
+- **DNS resolver config and latency** (`web/app.py`, `web/static/index.html`): `GET /api/dns/resolvers` parses `/etc/resolv.conf` nameservers, probes each with `dig +time=2 +tries=1`, and detects DoH provider from `/etc/dnsmasq.d/`. Dashboard card with OK/FAIL badges, latency color-coding (green <50ms, orange <200ms, red ≥200ms), sample response IP, and purple DoH badge when active. Loaded on page init.
+- **Bandwidth history chart** (`web/app.py`, `web/static/index.html`): `GET /api/network/bandwidth` reads `vnstat --json` and returns hourly (last 24h, MB) and daily (last 30d, GB) RX/TX per primary non-loopback interface. Dashboard card with Hourly/Daily tab switcher and SVG bar chart (blue=RX, green=TX split per bar) with total summary. Auto-refreshes on poll.
+
+## [2.29.0] - 2026-05-25
+
+### Added
+
+- **System resource usage** (`web/app.py`, `web/static/index.html`): `GET /api/system/resources` reads CPU% (sampled from `/proc/stat` with 200ms interval), memory used/total/available MB and percent (from `/proc/meminfo`), load averages 1/5/15min (`/proc/loadavg`), and uptime (`/proc/uptime`). Dashboard card with proportional usage bars (green→orange→red at 70%/90%), load average color-coding, and human-readable uptime. Auto-refreshes on poll.
+- **Firewall rules viewer** (`web/app.py`, `web/static/index.html`): `GET /api/network/firewall` tries nft JSON (`nft -j list ruleset`) → nft plain text → iptables -L fallback. Returns rules grouped by table/chain with rule count and tool label. Dashboard card displays grouped monospace rule blocks. Loaded on page init.
+- **Power control** (`web/app.py`, `web/static/index.html`): `POST /api/system/reboot` and `POST /api/system/shutdown` schedule the action 10 seconds out via a background daemon thread, returning `{"scheduled": true, "in_seconds": 10}`. Dashboard card with Reboot (orange) and Shutdown (red) buttons, browser confirm() guard, and live countdown display.
+
 ## [2.28.0] - 2026-05-25
 
 ### Added
