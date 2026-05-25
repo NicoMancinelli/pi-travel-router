@@ -1187,6 +1187,15 @@
     <div id="open-fds-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Crontab -->
+  <div class="card full-width" id="card-crontab">
+    <div class="card-title">
+      &#x23F0; Crontab (<span id="crontab-total">0</span> jobs)
+      <button class="btn btn-sm" onclick="fetchCrontab()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="crontab-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4765,6 +4774,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchMemoryDetail();
   fetchContainers();
   fetchOpenFds();
+  fetchCrontab();
 });
 
 async function fetchJournal() {
@@ -5027,6 +5037,7 @@ async function refreshAll() {
   fetchMemoryDetail();
   fetchContainers();
   fetchOpenFds();
+  fetchCrontab();
 }
 
 async function init() {
@@ -7468,6 +7479,31 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Crontab ───────────────────────────────────────────────────────────────────
+async function fetchCrontab() {
+  const el = document.getElementById('crontab-content');
+  const totalEl = document.getElementById('crontab-total');
+  try {
+    const r = await fetch('/api/system/crontab');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (totalEl) totalEl.textContent = d.total || 0;
+    if (!d.entries || d.entries.length === 0) {
+      el.innerHTML = '<p class="muted">No scheduled jobs found.</p>';
+      return;
+    }
+    let html = '<div style="max-height:300px;overflow-y:auto"><table class="table"><thead><tr><th>Schedule</th><th>User</th><th>Command</th><th>Source</th></tr></thead><tbody>';
+    for (const e of d.entries) {
+      const cmd = e.command || '';
+      const displayCmd = cmd.length > 40 ? cmd.slice(0, 40) + '…' : cmd;
+      const titleAttr = cmd.length > 40 ? ` title="${cmd.replace(/"/g, '&quot;')}"` : '';
+      html += `<tr><td style="font-family:monospace;white-space:nowrap">${e.schedule || ''}</td><td>${e.user || '-'}</td><td${titleAttr} style="font-family:monospace">${displayCmd}</td><td style="font-size:0.85em;color:var(--text-dim)">${e.source || ''}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('crontab-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Open File Descriptors ─────────────────────────────────────────────────────
