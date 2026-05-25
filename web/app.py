@@ -9321,6 +9321,138 @@ def api_network_mdns():
         })
 
     return jsonify({"services": services, "count": len(services)})
+
+@app.route("/api/system/failed-services")
+@require_auth
+def api_system_failed_services():
+    """Return systemd units in failed state with recent journal snippet."""
+    out, rc = _run(["systemctl", "list-units", "--state=failed", "--no-pager",
+                    "--no-legend", "--output=json"])
+    units = []
+    if rc == 0 and out.strip():
+        try:
+            import json as _json
+            data = _json.loads(out)
+            for u in data:
+                unit = {
+                    "unit": u.get("unit", ""),
+                    "load": u.get("load", ""),
+                    "active": u.get("active", ""),
+                    "sub": u.get("sub", ""),
+                    "description": u.get("description", ""),
+                }
+                # grab last 5 journal lines for this unit
+                jout, jrc = _run(["journalctl", "-u", unit["unit"], "-n", "5",
+                                   "--no-pager", "--output=short"])
+                if jrc == 0:
+                    unit["journal_tail"] = jout.strip().splitlines()
+                units.append(unit)
+        except (ValueError, KeyError):
+            pass
+    if not units:
+        # fallback: plain text output
+        out2, rc2 = _run(["systemctl", "list-units", "--state=failed",
+                           "--no-pager", "--no-legend"])
+        if rc2 == 0:
+            for line in out2.strip().splitlines():
+                parts = line.split(None, 4)
+                if len(parts) >= 5:
+                    units.append({
+                        "unit": parts[0],
+                        "load": parts[1],
+                        "active": parts[2],
+                        "sub": parts[3],
+                        "description": parts[4],
+                    })
+    return jsonify({"units": units, "count": len(units)})
+
+
+@app.route("/api/network/ip-geo")
+@require_auth
+def api_network_ip_geo():
+    """Return public IP and geolocation from ip-api.com (no key required)."""
+    import urllib.request as _urlreq
+    import json as _json
+    try:
+        req = _urlreq.Request(
+            "http://ip-api.com/json/?fields=status,message,country,regionName,city,isp,org,as,query",
+            headers={"User-Agent": "pi-travel-router/2.x"},
+        )
+        with _urlreq.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read().decode())
+        if data.get("status") != "success":
+            return jsonify({"error": data.get("message", "lookup failed"), "ip": None})
+        return jsonify({
+            "ip": data.get("query"),
+            "country": data.get("country"),
+            "region": data.get("regionName"),
+            "city": data.get("city"),
+            "isp": data.get("isp"),
+            "org": data.get("org"),
+            "asn": data.get("as"),
+        })
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc), "ip": None})
+
+
+@app.route("/api/system/ntp-peers")
+@require_auth
+def api_system_ntp_peers():
+    """Return NTP peer status from chronyc or ntpq."""
+    # Try chronyc first
+    out, rc = _run(["chronyc", "sources", "-v"])
+    if rc == 0:
+        peers = []
+        for line in out.splitlines():
+            line = line.strip()
+            # lines starting with * + - ? are peer entries
+            if not line or line[0] not in ("*", "+", "-", "?", "x", "~"):
+                continue
+            parts = line.split()
+            if len(parts) < 7:
+                continue
+            peers.append({
+                "state": line[0],
+                "source": parts[1],
+                "stratum": parts[2],
+                "poll": parts[3],
+                "reach": parts[4],
+                "last_rx": parts[5],
+                "offset_ms": parts[6],
+            })
+        tracking = {}
+        out_t, rc_t = _run(["chronyc", "tracking"])
+        if rc_t == 0:
+            for line in out_t.splitlines():
+                if ":" in line:
+                    k, _, v = line.partition(":")
+                    tracking[k.strip()] = v.strip()
+        return jsonify({"backend": "chrony", "peers": peers, "tracking": tracking})
+
+    # Fallback: ntpq
+    out, rc = _run(["ntpq", "-p", "-n"])
+    if rc == 0:
+        peers = []
+        for line in out.splitlines():
+            if line.startswith("     ") or line.startswith("=") or not line.strip():
+                continue
+            state = line[0] if line[0] in ("*", "+", "-", "o", "x", "#", ".") else " "
+            parts = line[1:].split()
+            if len(parts) < 8:
+                continue
+            peers.append({
+                "state": state,
+                "source": parts[0],
+                "stratum": parts[2],
+                "poll": parts[4],
+                "reach": parts[5],
+                "offset_ms": parts[7],
+            })
+        return jsonify({"backend": "ntpq", "peers": peers})
+
+    return jsonify({"backend": None, "peers": [], "error": "neither chrony nor ntpq available"})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
