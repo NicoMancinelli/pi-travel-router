@@ -9262,8 +9262,6 @@ def api_system_cpu_governors():
         pass
 
     return jsonify({"cores": cores, "available_governors": avail})
-
-
 @app.route("/api/system/timers")
 @require_auth
 def api_system_timers():
@@ -9323,8 +9321,6 @@ def api_network_mdns():
         })
 
     return jsonify({"services": services, "count": len(services)})
-
-
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
