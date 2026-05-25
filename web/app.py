@@ -12130,6 +12130,68 @@ def api_system_crontab():
     })
 
 
+# ── Network Bonding ───────────────────────────────────────────────────────────
+
+@app.route("/api/network/bonding", methods=["GET"])
+@require_auth
+def api_network_bonding():
+    """Return bonding interface status from /sys/class/net."""
+    bonds = []
+    net_base = Path("/sys/class/net")
+    if net_base.is_dir():
+        for iface_dir in sorted(net_base.iterdir()):
+            bond_dir = iface_dir / "bonding"
+            if not bond_dir.is_dir():
+                continue
+            name = iface_dir.name
+
+            def _sysread(rel):
+                try:
+                    return (iface_dir / rel).read_text().strip()
+                except OSError:
+                    return ""
+
+            mode = _sysread("bonding/mode")
+            slaves_raw = _sysread("bonding/slaves")
+            active_slave = _sysread("bonding/active_slave")
+            miimon_raw = _sysread("bonding/miimon")
+            operstate = _sysread("operstate")
+
+            try:
+                miimon = int(miimon_raw)
+            except (ValueError, TypeError):
+                miimon = 0
+
+            slave_list = []
+            for slave_name in slaves_raw.split() if slaves_raw else []:
+                slave_dir = net_base / slave_name
+                slave_operstate = ""
+                slave_bond_state = ""
+                try:
+                    slave_operstate = (slave_dir / "operstate").read_text().strip()
+                except OSError:
+                    pass
+                try:
+                    slave_bond_state = (slave_dir / "bonding_slave" / "state").read_text().strip()
+                except OSError:
+                    pass
+                slave_list.append({
+                    "name": slave_name,
+                    "state": slave_bond_state or slave_operstate,
+                })
+
+            bonds.append({
+                "name": name,
+                "mode": mode,
+                "state": operstate,
+                "active_slave": active_slave,
+                "miimon": miimon,
+                "slaves": slave_list,
+            })
+
+    return jsonify({"bonds": bonds, "count": len(bonds)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

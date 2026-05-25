@@ -1196,6 +1196,15 @@
     <div id="crontab-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Network Bonding -->
+  <div class="card full-width" id="card-network-bonding">
+    <div class="card-title">
+      &#x1F517; Network Bonding (<span id="bonding-count">0</span> interfaces)
+      <button class="btn btn-sm" onclick="fetchBonding()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="bonding-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4779,6 +4788,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchContainers();
   fetchOpenFds();
   fetchCrontab();
+  fetchBonding();
 });
 
 async function fetchJournal() {
@@ -5042,6 +5052,7 @@ async function refreshAll() {
   fetchContainers();
   fetchOpenFds();
   fetchCrontab();
+  fetchBonding();
 }
 
 async function init() {
@@ -7483,6 +7494,40 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Network Bonding ───────────────────────────────────────────────────────────
+async function fetchBonding() {
+  const el = document.getElementById('bonding-content');
+  const countEl = document.getElementById('bonding-count');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/network/bonding');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (countEl) countEl.textContent = d.count || 0;
+    if (!d.bonds || d.bonds.length === 0) {
+      el.innerHTML = '<p class="muted">No bonding interfaces configured.</p>';
+      return;
+    }
+    let html = '';
+    for (const b of d.bonds) {
+      const stateColor = b.state === 'up' ? 'var(--green)' : 'var(--red)';
+      html += `<div style="margin-bottom:12px;padding:8px;background:var(--bg2);border-radius:6px">`;
+      html += `<div style="font-weight:600;margin-bottom:4px">${b.name} <span style="color:${stateColor};font-size:0.85em">${b.state || 'unknown'}</span></div>`;
+      html += `<div style="color:var(--text-dim);font-size:0.85em;margin-bottom:4px">Mode: ${b.mode || '-'} &nbsp;|&nbsp; MII: ${b.miimon}ms${b.active_slave ? ' &nbsp;|&nbsp; Active: ' + b.active_slave : ''}</div>`;
+      if (b.slaves && b.slaves.length > 0) {
+        html += `<div style="font-size:0.85em">Slaves: `;
+        for (const s of b.slaves) {
+          const sc = s.state === 'active' || s.state === 'up' ? 'var(--green)' : 'var(--amber)';
+          html += `<span style="margin-right:8px">${s.name} <span style="color:${sc}">${s.state || '?'}</span></span>`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Crontab ───────────────────────────────────────────────────────────────────
