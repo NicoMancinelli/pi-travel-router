@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.23.0] - 2026-05-24
+
+### Added
+
+- **Apt update checker** (`web/app.py`, `web/static/index.html`): `GET /api/system/updates` runs `apt-get -s upgrade` dry-run and parses upgradable packages into name/old-version/new-version objects. Dashboard card with on-demand "Check Updates" button and package count.
+- **Config backup downloader** (`web/app.py`, `web/static/index.html`): `GET /api/config/backup` streams a timestamped `.tar.gz` of `/etc/wireguard/`, `/etc/dnsmasq.conf`, `/etc/dnsmasq.d/`, `/etc/hostapd/`, `/etc/default/travel-router`, and `/var/lib/travel-router/`. Dashboard card with one-click download button.
+- **Traceroute tool** (`web/app.py`, `web/static/index.html`): `GET /api/network/traceroute?host=X` runs `traceroute -n -m 20 -w 2` with automatic fallback to `tracepath -n`. Input validated against `[a-zA-Z0-9.\-:_]+`. Dashboard card with hostname input and hop-by-hop results.
+
 ## [2.22.0] - 2026-05-24
 
 ### Added
