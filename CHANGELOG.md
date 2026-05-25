@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.62.0] - 2026-05-25
+
+### Added
+- `GET /api/system/boot-analysis` — systemd boot timing via `systemd-analyze time` and `systemd-analyze blame`; returns firmware, loader, kernel, initrd, userspace, and total times plus the top 15 slowest units; dashboard card shows progress bar and ranked unit table
+- `GET /api/network/link-status` — network interface link state via `ip -j link show` enriched with `ethtool` speed/duplex where available; returns operstate, MAC, MTU, flags, speed, duplex, and auto-negotiation; dashboard card color-codes UP (green) / UNKNOWN (amber) / DOWN (red)
+- `GET /api/system/user-accounts` — local user accounts from `/etc/passwd` enriched with group membership (`/etc/group`), password status (`/etc/shadow`), and last login (`lastlog`); filters service accounts (UID < 1000 except root); dashboard card shows uid, shell, groups, password status, and last-login date
+- Dashboard cards: Boot Time Analysis (🚀), Network Link Status (🔗), User Accounts (👤)
+
 ## [2.61.0] - 2026-05-25
 
 ### Added
