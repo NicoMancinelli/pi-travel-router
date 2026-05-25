@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.26.0] - 2026-05-25
+
+### Added
+
+- **WireGuard peer health** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/wireguard/peers` runs `wg show all dump` and parses per-peer status (active/idle/stale/inactive based on 180s/600s handshake thresholds), human-readable handshake age, endpoint, allowed IPs, and formatted rx/tx bytes. Dashboard card with color-coded status badges (green=active, orange=idle, grey=stale).
+- **DHCP leases viewer** (`web/app.py`, `web/static/index.html`): `GET /api/network/dhcp/leases` probes standard dnsmasq lease file paths and parses hostname, MAC, IP, and TTL with human-readable expiry labels (static/expired/Xs/Xm/Xh). Dashboard card with sortable table and lease source path footer.
+- **Network interfaces overview** (`web/app.py`, `web/static/index.html`): `GET /api/network/interfaces` uses `ip -j addr` for address/MAC data and `ip -j -s link` for RX/TX stats. Returns all interfaces sorted by state (up first) with IPv4/IPv6 addresses and formatted byte counts. Dashboard card with state badges (green=up, red=down, grey=unknown).
+
 ## [2.25.0] - 2026-05-24
 
 ### Added
