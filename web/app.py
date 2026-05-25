@@ -4926,6 +4926,38 @@ def api_system_logins():
     return jsonify({"logins": logins[:limit], "failed": failed[:10]})
 
 
+# ── Route table viewer ────────────────────────────────────────────────────────
+
+@app.route("/api/network/routes", methods=["GET"])
+@require_auth
+def api_network_routes():
+    """Return the current IP routing table."""
+    routes = []
+    try:
+        out, _ = _run(["ip", "route", "show"], timeout=5)
+        for line in (out or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            dest = parts[0] if parts else ""
+            route = {"dest": dest, "raw": line}
+            # Extract common fields
+            for i, p in enumerate(parts):
+                if p == "via" and i + 1 < len(parts):
+                    route["via"] = parts[i + 1]
+                elif p == "dev" and i + 1 < len(parts):
+                    route["dev"] = parts[i + 1]
+                elif p == "metric" and i + 1 < len(parts):
+                    route["metric"] = parts[i + 1]
+                elif p == "src" and i + 1 < len(parts):
+                    route["src"] = parts[i + 1]
+            routes.append(route)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"routes": routes, "count": len(routes)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
