@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.82.0] - 2026-05-25
+
+### Added
+- `GET /api/system/timers` — all systemd timers via `systemctl list-timers --all`; next/left/last/passed fields; overdue detection; dashboard card systemd Timers (⏱️) with countdown table sorted overdue-first
+- `GET /api/network/tcp-states` — TCP connection state counts from `/proc/net/tcp` and `/proc/net/tcp6`; all 11 states (ESTABLISHED/LISTEN/TIME_WAIT/etc.); listening port list; dashboard card TCP Connections (🔗) with per-state bar chart and listening ports
+- `GET /api/system/failed-services` — failed systemd units via `systemctl list-units --state=failed`; per-unit recent journal excerpt (last 5 lines); dashboard card Failed Services (❌) with per-unit log blocks and all-OK indicator
+- Dashboard cards: systemd Timers (⏱️), TCP Connections (🔗), Failed Services (❌)
+
 ## [2.81.0] - 2026-05-25
 
 ### Added
