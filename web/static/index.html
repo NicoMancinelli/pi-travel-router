@@ -7302,50 +7302,21 @@ async function fetchWgConfigText() {
 }
 
 // ── Kernel Modules ────────────────────────────────────────────────────────────
-
-const NET_MODULE_KEYWORDS = ['wg', 'wireguard', 'cfg80211', 'mac80211', 'ath', 'brcm', 'rtl'];
-
-function filterModules() {
-  const q = (document.getElementById('modules-filter').value || '').toLowerCase();
-  const rows = document.querySelectorAll('#kernel-modules-table tbody tr');
-  rows.forEach(row => {
-    const name = row.dataset.name || '';
-    row.style.display = (!q || name.includes(q)) ? '' : 'none';
-  });
-}
-
 async function fetchKernelModules() {
-  const el = document.getElementById('kernel-modules-content');
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/modules');
-    let html = '<div style="margin-bottom:8px;font-size:13px;">'
-      + '<span style="background:var(--accent);color:#fff;padding:2px 8px;border-radius:10px;font-size:12px;">' + d.count + ' modules</span>'
-      + '&nbsp;&nbsp;<input type="text" id="modules-filter" placeholder="Filter modules..." '
-      + 'style="padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:12px;width:200px;" '
-      + 'oninput="filterModules()">'
-      + '</div>';
-    html += '<table id="kernel-modules-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead><tr>'
-      + '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Name</th>'
-      + '<th style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);">Size (KB)</th>'
-      + '<th style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);">Used By</th>'
-      + '</tr></thead><tbody>';
-    d.modules.forEach(m => {
-      const isNet = NET_MODULE_KEYWORDS.some(k => m.name.includes(k));
-      const color = isNet ? 'color:#4a9eff;font-weight:600;' : '';
-      html += '<tr data-name="' + m.name + '">'
-        + '<td style="padding:3px 8px;' + color + '">' + m.name + '</td>'
-        + '<td style="padding:3px 8px;text-align:right;">' + Math.round(m.size / 1024) + '</td>'
-        + '<td style="padding:3px 8px;text-align:right;">' + m.used_by + '</td>'
-        + '</tr>';
-    });
-    html += '</tbody></table>';
+    const r = await fetch('/api/system/kernel-modules');
+    const d = await r.json();
+    const el = document.getElementById('kernel-modules-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    let html = `<p class="muted" style="margin-bottom:6px">Loaded modules: <strong>${d.count}</strong></p>`;
+    html += '<div style="max-height:200px;overflow-y:auto"><table class="table"><thead><tr><th>Module</th><th>Size</th><th>Used By</th></tr></thead><tbody>';
+    for (const m of (d.modules || [])) {
+      const dep = m.dependents.length ? m.dependents.join(', ') : '-';
+      html += `<tr><td><code>${m.name}</code></td><td>${m.size.toLocaleString()}</td><td>${dep}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
     el.innerHTML = html;
-  } catch (e) {
-    if (e.message !== 'Unauthorized') console.error('Kernel modules error', e);
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load kernel modules</span>';
-  }
+  } catch(e) { document.getElementById('kernel-modules-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 async function fetchDiskIO() {

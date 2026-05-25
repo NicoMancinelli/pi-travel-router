@@ -11161,6 +11161,63 @@ def api_system_process_top():
         return jsonify({"error": str(exc), "by_cpu": [], "by_mem": []})
 
 
+@app.route("/api/network/arp-table", methods=["GET"])
+@require_auth
+def api_network_arp_table():
+    """Return ARP/NDP neighbor table from `ip -j neigh show`, filtered to non-FAILED entries."""
+    def _parse_ip_neigh_json(raw):
+        entries = []
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+        for item in data:
+            state = item.get("state", ["UNKNOWN"])
+            if isinstance(state, list):
+                state = state[0] if state else "UNKNOWN"
+            state = state.upper()
+            if state == "FAILED":
+                continue
+            entries.append({
+                "ip": item.get("dst", ""),
+                "mac": item.get("lladdr", ""),
+                "interface": item.get("dev", ""),
+                "state": state,
+            })
+        return entries
+
+    def _parse_arp_text(raw):
+        entries = []
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or line.startswith("Address") or line.startswith("?"):
+                continue
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            ip = parts[0]
+            mac = parts[2] if parts[2] != "<incomplete>" else ""
+            iface = parts[4]
+            state = "REACHABLE" if mac else "INCOMPLETE"
+            entries.append({"ip": ip, "mac": mac, "interface": iface, "state": state})
+        return entries
+
+    try:
+        out, rc = _run(["ip", "-j", "neigh", "show"], timeout=5)
+        if rc == 0:
+            entries = _parse_ip_neigh_json(out)
+            if entries is not None:
+                return jsonify({"entries": entries, "count": len(entries), "source": "ip-neigh"})
+        # Fallback to arp -n
+        out2, rc2 = _run(["arp", "-n"], timeout=5)
+        if rc2 == 0:
+            entries = _parse_arp_text(out2)
+            return jsonify({"entries": entries, "count": len(entries), "source": "arp-n"})
+        return jsonify({"error": "arp table unavailable", "entries": [], "count": 0})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "entries": [], "count": 0})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
