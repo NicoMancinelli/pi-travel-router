@@ -841,6 +841,17 @@
     <div id="uplink-wifi-list"></div>
   </div>
 
+  <!-- Uplink History -->
+  <div class="card full-width" id="card-uplink-history" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4F6; Uplink History</span>
+      <button class="btn btn-sm" onclick="fetchUplinkHistory()">&#x21BB; Refresh</button>
+    </div>
+    <div id="uplink-history-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <!-- AP Info & Channel -->
   <div class="card" id="card-ap-config" style="margin-top:16px;">
     <div class="card-title" style="justify-content:space-between;">
@@ -2210,6 +2221,43 @@ async function connectWifi(ssid, isOpen, idx) {
 function _esc(str) {
   if (typeof str !== 'string') return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Uplink History ────────────────────────────────────────────────────────────
+async function fetchUplinkHistory() {
+  const el = document.getElementById('uplink-history-content');
+  try {
+    const r = await apiFetch('/api/uplink/history?limit=20');
+    const d = await r.json();
+    const history = d.history || [];
+    if (history.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No uplink transitions recorded yet (sampler runs every 60s)</span>';
+      return;
+    }
+    const typeColors = { 'wifi': '#4a9', 'usb-tether': '#49a', 'ethernet': '#48b', 'wireguard': '#8a4', 'vpn': '#8a4', 'bluetooth': '#94a', 'unknown': 'var(--text-dim)' };
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Time</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Interface</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Type</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Metric</th>';
+    html += '</tr></thead><tbody>';
+    for (const h of history) {
+      const ts = h.timestamp ? new Date(h.timestamp).toLocaleString() : '—';
+      const color = typeColors[h.type] || 'var(--text-dim)';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:12px;">' + ts + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (h.interface || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:' + color + ';">' + (h.type || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (h.metric || '—') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (d.total > 20) html += '<div style="font-size:12px;color:var(--text-dim);margin-top:6px;">' + d.total + ' total transitions (showing last 20)</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
 }
 
 // ── AP Info & Channel Selector ────────────────────────────────────────────────
@@ -3689,6 +3737,7 @@ async function refreshAll() {
   fetchLatencyHistory();
   fetchResourceStats();
   fetchUplinkScan();
+  fetchUplinkHistory();
   fetchApConfig();
   fetchFirewallRules();
   fetchTailscalePeers();

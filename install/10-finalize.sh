@@ -119,6 +119,11 @@ run_finalize() {
     touch /var/lib/travel-router/speedtest-history.json 2>/dev/null || true
     ok "Speedtest history store initialised"
 
+    # ── Uplink history store ───────────────────────────────────────────────────────
+    section "Uplink history store"
+    touch /var/lib/travel-router/uplink-history.json 2>/dev/null || true
+    ok "Uplink history store initialised"
+
     # ── Version stamp ────────────────────────────────────────────────────────────
     section "Version stamp"
     local _INSTALLED_VERSION
