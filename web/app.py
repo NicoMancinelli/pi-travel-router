@@ -12130,6 +12130,78 @@ def api_system_crontab():
     })
 
 
+@app.route("/api/system/kernel-config")
+@require_auth
+def api_system_kernel_config():
+    """Return selected kernel config keys from /boot/config-<uname-r> or /proc/config.gz."""
+    KEYS = [
+        # Security
+        "CONFIG_SECURITY",
+        "CONFIG_SECURITY_SELINUX",
+        "CONFIG_SECURITY_APPARMOR",
+        "CONFIG_SECCOMP",
+        "CONFIG_HARDENED_USERCOPY",
+        "CONFIG_RANDOMIZE_BASE",
+        "CONFIG_RANDOMIZE_MEMORY",
+        # Networking
+        "CONFIG_NETFILTER",
+        "CONFIG_NF_CONNTRACK",
+        "CONFIG_BRIDGE",
+        "CONFIG_VLAN_8021Q",
+        "CONFIG_TUN",
+        "CONFIG_WIREGUARD",
+        "CONFIG_IPV6",
+        # Pi-specific
+        "CONFIG_BCM2835",
+        "CONFIG_RASPBERRYPI_FIRMWARE",
+        "CONFIG_USB_DWCOTG",
+    ]
+
+    config_text = None
+    source = None
+
+    # Try /boot/config-$(uname -r)
+    uname_out, uname_rc = _run("uname -r")
+    if uname_rc == 0:
+        kernel_ver = uname_out.strip()
+        boot_path = f"/boot/config-{kernel_ver}"
+        try:
+            config_text = Path(boot_path).read_text()
+            source = boot_path
+        except OSError:
+            pass
+
+    # Fallback: /proc/config.gz
+    if config_text is None:
+        gz_text, gz_rc = _run("zcat /proc/config.gz 2>/dev/null")
+        if gz_rc == 0 and gz_text.strip():
+            config_text = gz_text
+            source = "/proc/config.gz"
+
+    if config_text is None:
+        return jsonify({"keys": {}, "source": None, "error": "kernel config not found"})
+
+    # Parse key=value lines
+    key_map: dict = {}
+    pattern = re.compile(r"^(CONFIG_\w+)=(\S+)")
+    not_set_pattern = re.compile(r"^# (CONFIG_\w+) is not set")
+    for line in config_text.splitlines():
+        m = pattern.match(line)
+        if m:
+            key_map[m.group(1)] = m.group(2).strip('"')
+            continue
+        m2 = not_set_pattern.match(line)
+        if m2:
+            key_map[m2.group(1)] = "n"
+
+    result = {k: key_map.get(k) for k in KEYS}
+    return jsonify({
+        "keys": result,
+        "source": source,
+        "total_keys": sum(1 for v in result.values() if v is not None),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
