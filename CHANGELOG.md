@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.48.0] - 2026-05-25
+
+### Added
+- `GET /api/system/top-processes` — top 15 processes by CPU and by memory (ps aux), with PID, user, percentages, and command
+- `GET /api/network/wifi-info` — per-interface WiFi details via `iw dev/link/station dump`: SSID, signal, band, TX/RX bitrate, connected client stations
+- `GET /api/system/entropy` — kernel entropy pool stats (`entropy_avail`, `pool_size`, `read_wakeup_threshold`), hardware RNG devices, and RNG daemon detection
+- Dashboard cards: Top Processes (🔝), WiFi Details (📶), Entropy / RNG (🎲)
+
 ## [2.47.0] - 2026-05-25
 
 ### Added
