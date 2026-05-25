@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.57.0] - 2026-05-25
+
+### Added
+- `GET /api/network/interfaces` — all network interfaces with IP/MAC addresses, operstate, MTU, and Rx/Tx traffic totals via `ip -j addr` + `ip -j -s link`; falls back to text parsing when JSON unsupported
+- `GET /api/system/services` — status of key travel-router systemd services (`wg-quick@wg0`, `hostapd`, `dnsmasq`, `fail2ban`, etc.) via `systemctl is-active/is-enabled`
+- Dashboard cards: Network Interfaces (🖧) with UP/DOWN badge + address list, System Services (⚙️) with running/enabled state per service
+
+### Fixed
+- Removed duplicate `POST /api/network/interfaces` route (proc/net/dev stub) that caused Flask startup failure
+
 ## [2.56.0] - 2026-05-25
 
 ### Added
