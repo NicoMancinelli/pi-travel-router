@@ -11736,6 +11736,196 @@ def api_thermal_zones():
         return jsonify({"error": str(exc), "zones": [], "count": 0})
 
 
+# ── Detailed Memory Info ──────────────────────────────────────────────────────
+
+@app.route("/api/system/memory-detail", methods=["GET"])
+@require_auth
+def api_system_memory_detail():
+    """Return detailed memory breakdown from /proc/meminfo."""
+    try:
+        fields = {
+            "MemTotal": "total_kb",
+            "MemFree": "free_kb",
+            "MemAvailable": "available_kb",
+            "Buffers": "buffers_kb",
+            "Cached": "cached_kb",
+            "SwapCached": "swap_cached_kb",
+            "Active": "active_kb",
+            "Inactive": "inactive_kb",
+            "Shmem": "shmem_kb",
+            "Slab": "slab_kb",
+            "SReclaimable": "slab_reclaimable_kb",
+            "SUnreclaim": "s_unreclaim_kb",
+            "KernelStack": "kernel_stack_kb",
+            "PageTables": "page_tables_kb",
+            "Dirty": "dirty_kb",
+            "Writeback": "writeback_kb",
+            "AnonPages": "anon_pages_kb",
+            "Mapped": "mapped_kb",
+            "VmallocTotal": "vmalloc_total_kb",
+            "VmallocUsed": "vmalloc_used_kb",
+            "HugePages_Total": "hugepages_total",
+        }
+        parsed: dict = {}
+        with open("/proc/meminfo", "r") as fh:
+            for line in fh:
+                key, _, rest = line.partition(":")
+                key = key.strip()
+                if key in fields:
+                    parsed[key] = int(rest.split()[0]) if rest.split() else 0
+
+        total_kb = parsed.get("MemTotal", 0)
+        available_kb = parsed.get("MemAvailable", parsed.get("MemFree", 0))
+        used_kb = total_kb - available_kb
+        use_pct = (used_kb / total_kb * 100) if total_kb else 0.0
+
+        result: dict = {
+            "total_kb": total_kb,
+            "free_kb": parsed.get("MemFree", 0),
+            "available_kb": available_kb,
+            "used_kb": used_kb,
+            "use_pct": round(use_pct, 2),
+            "buffers_kb": parsed.get("Buffers", 0),
+            "cached_kb": parsed.get("Cached", 0),
+            "active_kb": parsed.get("Active", 0),
+            "inactive_kb": parsed.get("Inactive", 0),
+            "slab_kb": parsed.get("Slab", 0),
+            "slab_reclaimable_kb": parsed.get("SReclaimable", 0),
+            "kernel_stack_kb": parsed.get("KernelStack", 0),
+            "page_tables_kb": parsed.get("PageTables", 0),
+            "dirty_kb": parsed.get("Dirty", 0),
+            "anon_pages_kb": parsed.get("AnonPages", 0),
+            "vmalloc_used_kb": parsed.get("VmallocUsed", 0),
+            "hugepages_total": parsed.get("HugePages_Total", 0),
+            "source": "proc-meminfo",
+        }
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "total_kb": 0, "use_pct": 0})
+
+
+@app.route("/api/system/containers")
+@require_auth
+def api_system_containers():
+    """Return running containers from Docker and/or Podman."""
+    try:
+        containers = []
+        docker_available = False
+        podman_available = False
+
+        def _parse_containers(output, runtime):
+            results = []
+            for line in output.strip().splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    import json as _json
+                    c = _json.loads(line)
+                    results.append({
+                        "id": c.get("ID", "")[:12],
+                        "image": c.get("Image", ""),
+                        "command": (c.get("Command", "") or "")[:40],
+                        "status": c.get("Status", ""),
+                        "name": c.get("Names", ""),
+                        "ports": c.get("Ports", ""),
+                        "runtime": runtime,
+                    })
+                except Exception:
+                    continue
+            return results
+
+        docker_out, docker_rc = _run('docker ps --format "{{json .}}" 2>/dev/null')
+        if docker_rc == 0:
+            docker_available = True
+            containers.extend(_parse_containers(docker_out or "", "docker"))
+
+        podman_out, podman_rc = _run('podman ps --format "{{json .}}" 2>/dev/null')
+        if podman_rc == 0:
+            podman_available = True
+            containers.extend(_parse_containers(podman_out or "", "podman"))
+
+        if not docker_available and not podman_available:
+            return jsonify({
+                "containers": [],
+                "count": 0,
+                "docker_available": False,
+                "podman_available": False,
+                "note": "no container runtime found",
+            })
+
+        return jsonify({
+            "containers": containers,
+            "count": len(containers),
+            "docker_available": docker_available,
+            "podman_available": podman_available,
+            "source": "docker+podman",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "containers": [], "count": 0})
+
+
+@app.route("/api/system/login-history", methods=["GET"])
+@require_auth
+def api_system_login_history():
+    """Return last 20 login events from the `last` command."""
+    entries = []
+    out, rc = _run(["last", "-n", "20", "--time-format", "iso"])
+    if rc != 0:
+        return jsonify({"error": "last command not available or --time-format iso not supported", "entries": [], "count": 0})
+    for line in out.splitlines():
+        line = line.rstrip()
+        if not line or line.startswith("wtmp begins"):
+            continue
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        user = parts[0]
+        tty = parts[1]
+        # Determine 'from' field: if parts[2] looks like a date (starts with digit), there is no from field
+        idx = 2
+        from_host = ""
+        if not (parts[2][0].isdigit() or parts[2].startswith("-")):
+            from_host = parts[2]
+            idx = 3
+        # Login time
+        login_time = parts[idx] if idx < len(parts) else ""
+        # Logout time / duration
+        still_logged_in = False
+        logout_time = ""
+        duration = ""
+        rest = " ".join(parts[idx + 1:]) if idx + 1 < len(parts) else ""
+        if "still logged in" in rest:
+            still_logged_in = True
+            logout_time = "still logged in"
+        elif "logged in" in rest:
+            still_logged_in = True
+            logout_time = "still logged in"
+        else:
+            # Format: - logout_time  (duration)
+            dash_pos = rest.find(" - ")
+            if dash_pos != -1:
+                after_dash = rest[dash_pos + 3:].strip()
+                # Split on whitespace: first token is logout time, rest may have duration in parens
+                after_parts = after_dash.split()
+                logout_time = after_parts[0] if after_parts else ""
+                # Duration in parentheses
+                paren_start = rest.find("(")
+                paren_end = rest.find(")")
+                if paren_start != -1 and paren_end != -1:
+                    duration = rest[paren_start + 1:paren_end]
+        entries.append({
+            "user": user,
+            "tty": tty,
+            "from": from_host,
+            "login_time": login_time,
+            "logout_time": logout_time,
+            "duration": duration,
+            "still_logged_in": still_logged_in,
+        })
+    return jsonify({"entries": entries, "count": len(entries), "source": "last"})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

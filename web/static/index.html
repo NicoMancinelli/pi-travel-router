@@ -1160,6 +1160,24 @@
     <div id="thermal-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- Memory Detail -->
+  <div class="card" id="memory-detail-card">
+    <h2>🧠 Memory Detail</h2>
+    <div id="memory-detail-content"><p class="muted">Loading…</p></div>
+  </div>
+
+  <!-- Containers -->
+  <div class="card" id="containers-card">
+    <h2>🐳 Containers</h2>
+    <div id="containers-content"><p class="muted">Loading…</p></div>
+  </div>
+
+  <!-- Login History -->
+  <div class="card" id="login-history-card">
+    <h2>📋 Login History</h2>
+    <div id="login-history-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4735,6 +4753,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchI2cDevices();
   fetchInotifyStats();
   fetchThermalZones();
+  fetchMemoryDetail();
+  fetchContainers();
 });
 
 async function fetchJournal() {
@@ -5019,6 +5039,8 @@ async function refreshAll() {
   fetchI2cDevices();
   fetchInotifyStats();
   fetchThermalZones();
+  fetchMemoryDetail();
+  fetchContainers();
 }
 
 async function init() {
@@ -7460,6 +7482,63 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Memory Detail ─────────────────────────────────────────────────────────────
+async function fetchMemoryDetail() {
+  try {
+    const r = await fetch('/api/system/memory-detail');
+    const d = await r.json();
+    const el = document.getElementById('memory-detail-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    const pct = (d.use_pct || 0).toFixed(1);
+    const barColor = d.use_pct >= 85 ? 'var(--red)' : d.use_pct >= 65 ? 'var(--amber)' : 'var(--green)';
+    const mb = kb => (kb / 1024).toFixed(0) + ' MB';
+    let html = `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span>Used</span><span style="color:${barColor};font-weight:600">${mb(d.used_kb)} / ${mb(d.total_kb)} (${pct}%)</span>
+      </div>
+      <div style="background:var(--bg2);border-radius:4px;height:8px">
+        <div style="width:${Math.min(100,d.use_pct)}%;background:${barColor};height:8px;border-radius:4px"></div>
+      </div>
+    </div>`;
+    html += `<div class="metric-grid">
+      <div class="metric"><span class="metric-label">Available</span><span class="metric-value">${mb(d.available_kb)}</span></div>
+      <div class="metric"><span class="metric-label">Buffers</span><span class="metric-value">${mb(d.buffers_kb)}</span></div>
+      <div class="metric"><span class="metric-label">Cached</span><span class="metric-value">${mb(d.cached_kb)}</span></div>
+      <div class="metric"><span class="metric-label">Active</span><span class="metric-value">${mb(d.active_kb)}</span></div>
+      <div class="metric"><span class="metric-label">Inactive</span><span class="metric-value">${mb(d.inactive_kb)}</span></div>
+      <div class="metric"><span class="metric-label">Slab</span><span class="metric-value">${mb(d.slab_kb)}</span></div>
+      <div class="metric"><span class="metric-label">Dirty</span><span class="metric-value" style="${d.dirty_kb > 51200 ? 'color:var(--amber)' : ''}">${mb(d.dirty_kb)}</span></div>
+      <div class="metric"><span class="metric-label">KernelStack</span><span class="metric-value">${mb(d.kernel_stack_kb)}</span></div>
+    </div>`;
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('memory-detail-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Containers ────────────────────────────────────────────────────────────────
+async function fetchContainers() {
+  try {
+    const r = await fetch('/api/system/containers');
+    const d = await r.json();
+    const el = document.getElementById('containers-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (!d.docker_available && !d.podman_available) {
+      el.innerHTML = `<p class="muted">${d.note || 'No container runtime available.'}</p>`;
+      return;
+    }
+    if (d.count === 0) {
+      el.innerHTML = '<p class="muted">No running containers.</p>';
+      return;
+    }
+    let html = `<p class="muted" style="margin-bottom:6px">Running: <strong>${d.count}</strong></p>`;
+    html += '<table class="table"><thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Runtime</th><th>Ports</th></tr></thead><tbody>';
+    for (const c of d.containers) {
+      html += `<tr><td><code>${c.name}</code></td><td style="font-size:0.8em">${c.image}</td><td>${c.status}</td><td>${c.runtime}</td><td style="font-size:0.75em">${c.ports || '-'}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('containers-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Thermal Zones ─────────────────────────────────────────────────────────────
