@@ -992,6 +992,15 @@
     <div id="dns-cache-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- TCP Connection States -->
+  <div class="card full-width" id="card-tcp-state-counts">
+    <div class="card-title">
+      &#x1F4F6; TCP Connection States
+      <button class="btn btn-sm" onclick="fetchTcpStateCounts()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="tcp-state-counts-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4586,6 +4595,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTrafficShaping();
   fetchLoggedInSessions();
   fetchDnsCache();
+  fetchTcpStateCounts();
 });
 
 async function fetchJournal() {
@@ -4851,6 +4861,7 @@ async function refreshAll() {
   fetchTrafficShaping();
   fetchLoggedInSessions();
   fetchDnsCache();
+  fetchTcpStateCounts();
 }
 
 async function init() {
@@ -9657,6 +9668,44 @@ async function fetchLoggedInSessions() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchLoggedInSessions error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load sessions</span>';
+  }
+}
+
+// ── TCP Connection State Counts ───────────────────────────────────────────────
+
+async function fetchTcpStateCounts() {
+  const el = document.getElementById('tcp-state-counts-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/tcp-state-counts');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error') + '</span>'; return; }
+    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:12px;">';
+    const metrics = [
+      { label: 'ESTABLISHED', value: d.established, color: 'var(--ok,#4c4)' },
+      { label: 'LISTEN', value: d.listen, color: 'var(--info,#49f)' },
+      { label: 'TIME-WAIT', value: d.time_wait, color: d.time_wait > 50 ? 'var(--warning,#fa0)' : 'inherit' },
+      { label: 'CLOSE-WAIT', value: d.close_wait, color: d.close_wait > 10 ? 'var(--warning,#fa0)' : 'inherit' },
+      { label: 'Total TCP', value: d.total_tcp },
+      { label: 'UDP sockets', value: d.udp_count },
+    ];
+    metrics.forEach(m => {
+      html += '<div style="background:var(--bg2);border-radius:6px;padding:8px 12px;">';
+      html += '<div style="font-size:11px;color:var(--text-dim);">' + m.label + '</div>';
+      html += '<div style="font-size:16px;font-weight:600;color:' + (m.color || 'inherit') + ';">' + (m.value != null ? m.value : '—') + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    // Show all states as a supplemental table if there are unusual ones
+    const unusual = Object.entries(d.states || {}).filter(([s]) => !['ESTAB','LISTEN','TIME-WAIT','CLOSE-WAIT'].includes(s));
+    if (unusual.length > 0) {
+      html += '<div style="color:var(--text-dim);font-size:12px;">Other states: ' + unusual.map(([s,c]) => s + ': ' + c).join(', ') + '</div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchTcpStateCounts error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load TCP state counts</span>';
   }
 }
 
