@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.38.0] - 2026-05-25
+
+### Added
+
+- **NTP / time sync status card** (`web/app.py`, `web/static/index.html`): `GET /api/system/ntp` runs `timedatectl show` and falls back to `chronyc tracking` / `ntpq -p` to return synced flag, timezone, NTP service, upstream server, stratum, and offset in ms. Dashboard card shows sync state with colour-coded badge, stratum, offset, and timezone. Auto-refreshes on poll.
+- **Open file descriptors card** (`web/app.py`, `web/static/index.html`): `GET /api/system/openfiles` reads `/proc/sys/fs/file-nr` for kernel FD totals and scans `/proc/*/fd` symlinks to build a top-10 process list by open-FD count. Returns allocated/free/max/pct_used and per-process breakdown. Dashboard card with usage bar and process table. Auto-refreshes on poll.
+- **CPU frequency card** (`web/app.py`, `web/static/index.html`): `GET /api/system/cpufreq` reads `/sys/devices/system/cpu/cpuN/cpufreq/` sysfs entries per core, returns cur_khz/min_khz/max_khz/governor/driver/available_governors. Dashboard card shows current/min/max MHz per core and active governor. Auto-refreshes on poll.
+
 ## [2.37.0] - 2026-05-25
 
 ### Added
