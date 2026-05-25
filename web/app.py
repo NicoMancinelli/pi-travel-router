@@ -3607,6 +3607,78 @@ def api_clients_history():
     return jsonify({"events": list(reversed(history[-limit:]))})
 
 
+# ── DHCP Leases ───────────────────────────────────────────────────────────────
+
+@app.route("/api/network/dhcp/leases", methods=["GET"])
+@require_auth
+def api_network_dhcp_leases():
+    """Return current DHCP leases from dnsmasq leases file."""
+    import time
+    leases_paths = [
+        "/var/lib/misc/dnsmasq.leases",
+        "/var/lib/dnsmasq/dnsmasq.leases",
+        "/tmp/dnsmasq.leases",
+    ]
+    leases = []
+    leases_file = None
+    for path in leases_paths:
+        if os.path.exists(path):
+            leases_file = path
+            break
+
+    if leases_file:
+        try:
+            with open(leases_file) as f:
+                now = int(time.time())
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split()
+                    if len(parts) < 4:
+                        continue
+                    try:
+                        expire_ts = int(parts[0])
+                    except ValueError:
+                        continue
+                    mac = parts[1]
+                    ip = parts[2]
+                    hostname = parts[3] if parts[3] != "*" else None
+                    client_id = parts[4] if len(parts) > 4 and parts[4] != "*" else None
+                    if expire_ts == 0:
+                        ttl_label = "static"
+                        expires_in = None
+                    else:
+                        ttl = expire_ts - now
+                        expires_in = ttl
+                        if ttl <= 0:
+                            ttl_label = "expired"
+                        elif ttl < 60:
+                            ttl_label = f"{ttl}s"
+                        elif ttl < 3600:
+                            ttl_label = f"{ttl // 60}m"
+                        else:
+                            ttl_label = f"{ttl // 3600}h {(ttl % 3600) // 60}m"
+                    leases.append({
+                        "mac": mac,
+                        "ip": ip,
+                        "hostname": hostname,
+                        "client_id": client_id,
+                        "expire_ts": expire_ts,
+                        "expires_in": expires_in,
+                        "ttl_label": ttl_label,
+                    })
+        except OSError as e:
+            return jsonify({"error": str(e), "leases": [], "count": 0, "leases_file": leases_file})
+
+    leases.sort(key=lambda x: x["ip"])
+    return jsonify({
+        "leases": leases,
+        "count": len(leases),
+        "leases_file": leases_file,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])
@@ -5644,6 +5716,97 @@ def api_vpn_wireguard_peers():
                 "tx_label": fmt_bytes(tx_bytes),
             })
     return jsonify({"peers": peers, "count": len(peers), "wg_available": rc == 0})
+
+
+# ── Network Interfaces Overview ───────────────────────────────────────────────
+
+@app.route("/api/network/interfaces", methods=["GET"])
+@require_auth
+def api_network_interfaces():
+    """Return all network interfaces with addresses and traffic stats via ip."""
+    import json as _json
+
+    interfaces = []
+
+    # Get address info (JSON output)
+    addr_out, addr_rc = _run(["ip", "-j", "addr"])
+    if addr_rc == 0:
+        try:
+            addr_data = _json.loads(addr_out)
+        except ValueError:
+            addr_data = []
+    else:
+        addr_data = []
+
+    # Get stats info (JSON output)
+    stats_out, stats_rc = _run(["ip", "-j", "-s", "link"])
+    stats_map = {}
+    if stats_rc == 0:
+        try:
+            stats_data = _json.loads(stats_out)
+            for iface in stats_data:
+                name = iface.get("ifname", "")
+                stats = iface.get("stats64") or iface.get("stats") or {}
+                rx = stats.get("rx", {})
+                tx = stats.get("tx", {})
+                stats_map[name] = {
+                    "rx_bytes": rx.get("bytes", 0),
+                    "tx_bytes": tx.get("bytes", 0),
+                    "rx_errors": rx.get("errors", 0),
+                    "tx_errors": tx.get("errors", 0),
+                }
+        except ValueError:
+            pass
+
+    def fmt_bytes(b):
+        b = int(b)
+        if b < 1024:
+            return f"{b} B"
+        elif b < 1024 * 1024:
+            return f"{b / 1024:.1f} KB"
+        elif b < 1024 * 1024 * 1024:
+            return f"{b / (1024*1024):.1f} MB"
+        else:
+            return f"{b / (1024*1024*1024):.2f} GB"
+
+    for iface in addr_data:
+        name = iface.get("ifname", "")
+        flags = iface.get("flags", [])
+        operstate = iface.get("operstate", "UNKNOWN").lower()
+        link_type = iface.get("link_type", "")
+        mac = iface.get("address", "")
+
+        # Collect IP addresses
+        addrs = []
+        for addr_info in iface.get("addr_info", []):
+            family = addr_info.get("family", "")
+            local = addr_info.get("local", "")
+            prefixlen = addr_info.get("prefixlen", "")
+            if local:
+                addrs.append({"family": family, "address": f"{local}/{prefixlen}"})
+
+        # Traffic stats
+        stats = stats_map.get(name, {})
+        rx_bytes = stats.get("rx_bytes", 0)
+        tx_bytes = stats.get("tx_bytes", 0)
+
+        interfaces.append({
+            "name": name,
+            "operstate": operstate,
+            "flags": flags,
+            "link_type": link_type,
+            "mac": mac,
+            "addresses": addrs,
+            "rx_bytes": rx_bytes,
+            "rx_label": fmt_bytes(rx_bytes),
+            "tx_bytes": tx_bytes,
+            "tx_label": fmt_bytes(tx_bytes),
+        })
+
+    # Sort: up interfaces first, then by name
+    interfaces.sort(key=lambda x: (0 if x["operstate"] == "up" else 1, x["name"]))
+
+    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
