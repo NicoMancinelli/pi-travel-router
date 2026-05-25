@@ -751,6 +751,7 @@
     <div class="card-title">
       Logs
       <span id="log-spinner" style="display:none"><span class="spinner"></span></span>
+      <button class="btn btn-sm" onclick="exportLogs()" style="margin-left:4px;">&#x2B07; Export</button>
     </div>
     <div class="log-filters">
       <!-- Level filter -->
@@ -1902,6 +1903,11 @@ function clearLogFilters() {
   document.getElementById('log-search').value = '';
   document.getElementById('log-lines').value = '200';
   fetchLogs();
+}
+
+function exportLogs() {
+  const lines = 5000;
+  window.open('/api/logs/export?lines=' + lines, '_blank');
 }
 
 function clearLogSearch() {

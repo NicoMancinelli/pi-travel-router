@@ -925,6 +925,48 @@ def api_logs():
     return jsonify({"lines": all_lines[-limit:], "total": len(all_lines), "filtered": filtered})
 
 
+@app.route("/api/logs/export", methods=["GET"])
+@require_auth
+def api_logs_export():
+    """Return combined travel router logs as a downloadable text file."""
+    import io as _io
+    fmt = request.args.get("format", "txt")
+    lines_limit = min(int(request.args.get("lines", 5000)), 20000)
+    # Collect from known log sources (same as /api/logs)
+    log_lines = []
+    log_files = [
+        "/var/log/travel-router/wan-watchdog.log",
+        "/var/log/travel-router/travel-router-web.log",
+        "/var/log/syslog",
+        "/var/log/messages",
+    ]
+    for log_file in log_files:
+        try:
+            text = Path(log_file).read_text()
+            # Get last N lines from each file
+            file_lines = text.splitlines()[-1000:]
+            log_lines.extend(f"=== {log_file} ===\n" + l for l in file_lines)
+            log_lines.append("")
+        except OSError:
+            continue
+    # Trim to limit
+    combined = "\n".join(log_lines[-lines_limit:])
+    if not combined:
+        # Try journalctl as fallback
+        try:
+            out, _ = _run(["journalctl", "-n", str(min(lines_limit, 5000)), "--no-pager", "-u", "travel-router-web", "--output=short-iso"], timeout=10)
+            combined = out or "(no logs available)"
+        except Exception:
+            combined = "(no logs available)"
+    buf = _io.BytesIO(combined.encode("utf-8", errors="replace"))
+    buf.seek(0)
+    import datetime as _dt
+    ts = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    filename = f"travel-router-logs-{ts}.txt"
+    from flask import send_file as _send_file
+    return _send_file(buf, as_attachment=True, download_name=filename, mimetype="text/plain")
+
+
 @app.route("/api/clients")
 @require_auth
 def api_clients():
