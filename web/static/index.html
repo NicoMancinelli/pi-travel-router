@@ -991,6 +991,19 @@
     </div>
   </div>
 
+  <!-- Bandwidth History -->
+  <div class="card full-width" id="card-bandwidth">
+    <div class="card-title">
+      &#x1F4C8; Bandwidth History
+      <span style="margin-left:8px;">
+        <button class="btn btn-sm" id="bw-tab-hourly" onclick="bwTab('hourly')" style="background:var(--accent);color:#fff;">Hourly</button>
+        <button class="btn btn-sm" id="bw-tab-daily" onclick="bwTab('daily')">Daily</button>
+      </span>
+      <button class="btn btn-sm" onclick="fetchBandwidthHistory()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="bandwidth-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3942,6 +3955,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
+  fetchBandwidthHistory();
 });
 
 async function fetchJournal() {
@@ -4134,6 +4148,7 @@ async function refreshAll() {
   fetchWifiClients();
   fetchWanUplinks();
   fetchSystemResources();
+  fetchBandwidthHistory();
 }
 
 async function init() {
@@ -5888,6 +5903,73 @@ async function executePowerAction(action) {
     if (rebootBtn) rebootBtn.disabled = false;
     if (shutdownBtn) shutdownBtn.disabled = false;
   }
+}
+
+// ── Bandwidth History ─────────────────────────────────────────────────────────
+
+let _bwData = null;
+let _bwActiveTab = 'hourly';
+
+async function fetchBandwidthHistory() {
+  const el = document.getElementById('bandwidth-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/bandwidth');
+    _bwData = await resp.json();
+    if (!_bwData.available) {
+      el.innerHTML = `<span style="color:var(--text-dim)">${escHtml(_bwData.error || 'No bandwidth data available.')}</span>`;
+      return;
+    }
+    renderBwTab(_bwActiveTab);
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load bandwidth history</span>';
+  }
+}
+
+function bwTab(tab) {
+  _bwActiveTab = tab;
+  const btnH = document.getElementById('bw-tab-hourly');
+  const btnD = document.getElementById('bw-tab-daily');
+  if (btnH) { btnH.style.background = tab === 'hourly' ? 'var(--accent)' : ''; btnH.style.color = tab === 'hourly' ? '#fff' : ''; }
+  if (btnD) { btnD.style.background = tab === 'daily' ? 'var(--accent)' : ''; btnD.style.color = tab === 'daily' ? '#fff' : ''; }
+  if (_bwData) renderBwTab(tab);
+}
+
+function renderBwTab(tab) {
+  const el = document.getElementById('bandwidth-content');
+  if (!el || !_bwData) return;
+  const entries = tab === 'hourly' ? _bwData.hourly : _bwData.daily;
+  const rxKey = tab === 'hourly' ? 'rx_mb' : 'rx_gb';
+  const txKey = tab === 'hourly' ? 'tx_mb' : 'tx_gb';
+  const unit = tab === 'hourly' ? 'MB' : 'GB';
+  if (!entries || entries.length === 0) {
+    el.innerHTML = `<span style="color:var(--text-dim)">No ${tab} data yet.</span>`;
+    return;
+  }
+  const maxVal = Math.max(...entries.map(e => Math.max(e[rxKey] || 0, e[txKey] || 0)), 0.001);
+  const W = 600, H = 80, PAD = 4, GAP = 1;
+  const n = entries.length;
+  const barW = Math.max(1, (W - PAD * 2 - (n - 1) * GAP) / n);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;display:block;" preserveAspectRatio="none">`;
+  entries.forEach((e, i) => {
+    const x = PAD + i * (barW + GAP);
+    const rxH = ((e[rxKey] || 0) / maxVal) * (H - PAD * 2);
+    const txH = ((e[txKey] || 0) / maxVal) * (H - PAD * 2);
+    svg += `<rect x="${x.toFixed(1)}" y="${(H - PAD - rxH).toFixed(1)}" width="${(barW * 0.5).toFixed(1)}" height="${rxH.toFixed(1)}" fill="#6366f1" opacity="0.8"/>`;
+    svg += `<rect x="${(x + barW * 0.5).toFixed(1)}" y="${(H - PAD - txH).toFixed(1)}" width="${(barW * 0.5).toFixed(1)}" height="${txH.toFixed(1)}" fill="#22c55e" opacity="0.8"/>`;
+  });
+  svg += '</svg>';
+  const totalRx = entries.reduce((s, e) => s + (e[rxKey] || 0), 0);
+  const totalTx = entries.reduce((s, e) => s + (e[txKey] || 0), 0);
+  const fmt = v => v >= 1000 ? (v / 1024).toFixed(2) + (unit === 'MB' ? ' GB' : ' TB') : v.toFixed(2) + ' ' + unit;
+  let html = `<div style="display:flex;gap:20px;margin-bottom:8px;font-size:13px;">`;
+  html += `<span>&#x2B07; RX: <strong style="color:#6366f1;">${fmt(totalRx)}</strong></span>`;
+  html += `<span>&#x2B06; TX: <strong style="color:#22c55e;">${fmt(totalTx)}</strong></span>`;
+  html += `<span style="color:var(--text-dim);font-size:11px;">${escHtml(_bwData.interface || '?')} &mdash; ${n} ${tab === 'hourly' ? 'hours' : 'days'}</span>`;
+  html += '</div>' + svg;
+  html += `<div style="font-size:10px;color:var(--text-dim);margin-top:2px;">&#x1F7E6; RX &nbsp; &#x1F7E9; TX</div>`;
+  el.innerHTML = html;
 }
 
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
