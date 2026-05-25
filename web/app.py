@@ -8995,6 +8995,46 @@ def api_system_memory_breakdown():
         return jsonify({"error": str(exc)})
 
 
+@app.route("/api/network/ping")
+@require_auth
+def api_network_ping():
+    """Ping multiple hosts and return latency/loss stats."""
+    hosts = [
+        {"name": "Gateway", "host": "192.168.4.1"},
+        {"name": "Cloudflare DNS", "host": "1.1.1.1"},
+        {"name": "Google DNS", "host": "8.8.8.8"},
+        {"name": "Tailscale relay", "host": "100.100.100.100"},
+    ]
+    results = []
+    for entry in hosts:
+        out, rc = _run(["ping", "-c", "3", "-W", "2", "-q", entry["host"]])
+        record = {"name": entry["name"], "host": entry["host"], "reachable": rc == 0}
+        if rc == 0:
+            # parse summary line: 3 packets transmitted, 3 received, 0% packet loss
+            for line in out.splitlines():
+                if "packet loss" in line:
+                    parts = line.split(",")
+                    for p in parts:
+                        p = p.strip()
+                        if "transmitted" in p:
+                            record["transmitted"] = int(p.split()[0])
+                        elif "received" in p:
+                            record["received"] = int(p.split()[0])
+                        elif "packet loss" in p:
+                            record["loss_pct"] = p.split()[0]
+                # parse rtt line: rtt min/avg/max/mdev = 1.234/2.345/3.456/0.567 ms
+                if "rtt" in line or "round-trip" in line:
+                    try:
+                        stats = line.split("=")[1].strip().split("/")
+                        record["rtt_min"] = stats[0].strip()
+                        record["rtt_avg"] = stats[1].strip()
+                        record["rtt_max"] = stats[2].strip()
+                    except (IndexError, ValueError):
+                        pass
+        results.append(record)
+    return jsonify({"hosts": results})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

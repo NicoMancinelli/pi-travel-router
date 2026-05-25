@@ -1247,6 +1247,12 @@
     <div id="memory-breakdown-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Network Ping -->
+  <div class="card" id="card-network-ping">
+    <h2>🏓 Network Ping</h2>
+    <div id="network-ping-content"><em>Loading…</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4274,6 +4280,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKernelModules();
   fetchDiskIO();
   fetchDiskIo();
+  fetchNetworkPing();
   fetchMemInfo();
   fetchNtpStatus();
   fetchOpenFiles();
@@ -4502,6 +4509,7 @@ async function refreshAll() {
   fetchSystemTemps();
   fetchDiskIO();
   fetchDiskIo();
+  fetchNetworkPing();
   fetchMemInfo();
   fetchNtpStatus();
   fetchOpenFiles();
@@ -8333,6 +8341,21 @@ async function fetchMemoryBreakdown() {
     el.textContent = 'Failed: ' + e;
   }
 }
+    async function fetchNetworkPing() {
+      const el = document.getElementById('network-ping-content');
+      try {
+        const r = await fetch('/api/network/ping');
+        const d = await r.json();
+        if (!d.hosts || !d.hosts.length) { el.textContent = 'No data'; return; }
+        let rows = d.hosts.map(h => {
+          const status = h.reachable
+            ? `<span style="color:#4caf50">✓</span> avg ${h.rtt_avg || '?'} ms (loss ${h.loss_pct || '0%'})`
+            : `<span style="color:#f44336">✗ unreachable</span>`;
+          return `<tr><td>${h.name}</td><td style="font-family:monospace">${h.host}</td><td>${status}</td></tr>`;
+        }).join('');
+        el.innerHTML = `<table class="info-table"><thead><tr><th>Host</th><th>Address</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
 
 async function runLanScan() {
