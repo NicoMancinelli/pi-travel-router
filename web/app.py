@@ -13280,6 +13280,81 @@ def api_network_connected_clients():
     return jsonify(result)
 
 
+# ── TCP Connection States (/proc/net/tcp) ────────────────────────────────────
+
+@app.route("/api/network/tcp-states", methods=["GET"])
+@require_auth
+def api_network_tcp_states():
+    """Return TCP connection state counts parsed from /proc/net/tcp and /proc/net/tcp6."""
+    state_map = {
+        "01": "ESTABLISHED",
+        "02": "SYN_SENT",
+        "03": "SYN_RECV",
+        "04": "FIN_WAIT1",
+        "05": "FIN_WAIT2",
+        "06": "TIME_WAIT",
+        "07": "CLOSE",
+        "08": "CLOSE_WAIT",
+        "09": "LAST_ACK",
+        "0A": "LISTEN",
+        "0B": "CLOSING",
+    }
+    states = {}
+    listen_ports = set()
+    total = 0
+    ipv6_total = 0
+
+    for path, is_v6 in [("/proc/net/tcp", False), ("/proc/net/tcp6", True)]:
+        try:
+            with open(path, "r") as fh:
+                lines = fh.readlines()
+        except OSError:
+            continue
+        for line in lines[1:]:  # skip header
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            local_raw = parts[1]
+            state_hex = parts[3].upper()
+            state_name = state_map.get(state_hex, state_hex)
+            states[state_name] = states.get(state_name, 0) + 1
+            total += 1
+            if is_v6:
+                ipv6_total += 1
+            if state_name == "LISTEN":
+                try:
+                    port = int(local_raw.split(":")[1], 16)
+                    listen_ports.add(port)
+                except (IndexError, ValueError):
+                    pass
+
+    # Supplementary: ss for listening ports info
+    try:
+        import subprocess  # pylint: disable=import-outside-toplevel
+        out = subprocess.run(
+            ["ss", "-tuna"],
+            capture_output=True, text=True, timeout=3
+        ).stdout
+        for line in out.splitlines()[1:50]:
+            parts = line.split()
+            if len(parts) >= 5 and parts[0] in ("LISTEN", "UNCONN"):
+                addr = parts[4]
+                try:
+                    port = int(addr.rsplit(":", 1)[-1])
+                    listen_ports.add(port)
+                except ValueError:
+                    pass
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    return jsonify({
+        "states": states,
+        "total": total,
+        "listen_ports": sorted(listen_ports),
+        "ipv6_total": ipv6_total,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
