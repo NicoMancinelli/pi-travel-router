@@ -8888,6 +8888,42 @@ def api_system_disk_io():
     return jsonify({"devices": devices})
 
 
+@app.route("/api/system/sysctl", methods=["GET"])
+@require_auth
+def api_system_sysctl():
+    """Read key sysctl values directly from /proc/sys/ paths."""
+    _SYSCTL_MAP = [
+        ("net.ipv4.ip_forward",          "/proc/sys/net/ipv4/ip_forward"),
+        ("net.ipv6.conf.all.forwarding",  "/proc/sys/net/ipv6/conf/all/forwarding"),
+        ("net.ipv4.tcp_syncookies",       "/proc/sys/net/ipv4/tcp_syncookies"),
+        ("net.ipv4.conf.all.rp_filter",   "/proc/sys/net/ipv4/conf/all/rp_filter"),
+        ("net.core.rmem_max",             "/proc/sys/net/core/rmem_max"),
+        ("net.core.wmem_max",             "/proc/sys/net/core/wmem_max"),
+        ("vm.swappiness",                 "/proc/sys/vm/swappiness"),
+        ("vm.dirty_ratio",                "/proc/sys/vm/dirty_ratio"),
+        ("kernel.hostname",               "/proc/sys/kernel/hostname"),
+        ("kernel.randomize_va_space",     "/proc/sys/kernel/randomize_va_space"),
+    ]
+    params = []
+    try:
+        for key, path in _SYSCTL_MAP:
+            p = Path(path)
+            if not p.exists():
+                continue
+            try:
+                raw = p.read_text().strip()
+            except OSError:
+                continue
+            try:
+                value = int(raw)
+            except ValueError:
+                value = raw
+            params.append({"key": key, "value": value, "path": path})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"params": [], "error": str(exc)})
+    return jsonify({"params": params})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
