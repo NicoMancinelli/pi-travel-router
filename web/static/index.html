@@ -1161,6 +1161,10 @@
     <div id="journal-errors-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-netdev">
+    <div id="netdev-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4194,6 +4198,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchArpTable();
   fetchRouteTable();
   fetchJournalErrors();
+  fetchNetdev();
 });
 
 async function fetchJournal() {
@@ -4401,6 +4406,7 @@ async function refreshAll() {
   fetchCpuFreq();
   fetchRouteTable();
   fetchJournalErrors();
+  fetchNetdev();
 }
 
 async function init() {
@@ -7194,6 +7200,57 @@ async function fetchJournalErrors() {
       html += '</div>';
     }
 
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── Network Interface Counters ────────────────────────────────────────────────
+async function fetchNetdev() {
+  const el = document.getElementById('netdev-content');
+  if (!el) return;
+  function fmtBytes(b) {
+    if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+    if (b >= 1048576)    return (b / 1048576).toFixed(2) + ' MB';
+    if (b >= 1024)       return (b / 1024).toFixed(1) + ' KB';
+    return b + ' B';
+  }
+  try {
+    const r = await apiFetch('/api/network/netdev');
+    const d = await r.json();
+    const ifaces = d.interfaces || [];
+
+    let html = '<div class="card-title">&#x1F4CA; Interface Counters</div>';
+    if (d.error && ifaces.length === 0) {
+      html += `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+    } else if (ifaces.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No interfaces found.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">' +
+        '<th style="text-align:left;padding:4px 6px;">Interface</th>' +
+        '<th style="text-align:right;padding:4px 6px;">RX bytes</th>' +
+        '<th style="text-align:right;padding:4px 6px;">RX pkts</th>' +
+        '<th style="text-align:right;padding:4px 6px;">TX bytes</th>' +
+        '<th style="text-align:right;padding:4px 6px;">TX pkts</th>' +
+        '<th style="text-align:right;padding:4px 6px;">Errors</th>' +
+        '</tr></thead><tbody>';
+      for (const iface of ifaces) {
+        const totalErrors = (iface.rx_errors || 0) + (iface.tx_errors || 0) +
+                            (iface.rx_dropped || 0) + (iface.tx_dropped || 0);
+        const rowStyle = totalErrors > 0 ? 'color:#fd7e14;' : '';
+        html += `<tr style="${rowStyle}border-bottom:1px solid var(--border-color,#222);">` +
+          `<td style="padding:3px 6px;font-weight:bold;">${iface.iface}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${fmtBytes(iface.rx_bytes)}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${iface.rx_packets.toLocaleString()}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${fmtBytes(iface.tx_bytes)}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${iface.tx_packets.toLocaleString()}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${totalErrors > 0 ? totalErrors : '—'}</td>` +
+          '</tr>';
+      }
+      html += '</tbody></table></div>';
+    }
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
