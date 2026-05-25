@@ -3729,6 +3729,37 @@ def api_dns_hosts_delete(hostname):
     _write_dns_hosts(new_entries)
     return jsonify({"ok": True})
 
+
+# ── Journal log viewer ────────────────────────────────────────────────────────
+
+_JOURNAL_ALLOWED_UNITS = {
+    "hostapd", "dnsmasq", "wg-quick@wg0", "tailscaled",
+    "travel-router-web", "systemd-networkd", "dhcpcd",
+    "failover-watchdog", "wan-watchdog", "tailscale-watchdog",
+    "wg-key-rotate", "wg-peer-expire", "aide-check",
+}
+
+@app.route("/api/system/journal", methods=["GET"])
+@require_auth
+def api_system_journal():
+    """Return journalctl output for a specific service unit."""
+    unit = request.args.get("unit", "travel-router-web").strip()
+    if unit not in _JOURNAL_ALLOWED_UNITS:
+        return jsonify({"error": f"unit not allowed: {unit}", "allowed": sorted(_JOURNAL_ALLOWED_UNITS)}), 400
+    lines = min(int(request.args.get("lines", 100)), 500)
+    out, rc = _run(
+        ["journalctl", "-u", unit, "-n", str(lines), "--no-pager", "--output=short-iso"],
+        timeout=10,
+    )
+    log_text = out.strip() if out and out.strip() else "(no journal entries found)"
+    return jsonify({
+        "unit": unit,
+        "lines": lines,
+        "output": log_text,
+        "allowed_units": sorted(_JOURNAL_ALLOWED_UNITS),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
