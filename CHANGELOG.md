@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.81.0] - 2026-05-25
+
+### Added
+- `GET /api/network/mdns` — mDNS/Bonjour service discovery via `avahi-browse -a -t -r`; parses resolved service name, type, hostname, address, port, and TXT records; dashboard card mDNS Services (📻) groups services by type with port badges
+- `GET /api/system/entropy` — kernel entropy pool status from `/proc/sys/kernel/random/`; pool fill percentage, read/write thresholds, hardware RNG source from `/sys/class/misc/hw_random/`, UUID read health check; dashboard card System Entropy (🎲) with color-coded fill bar and stat pills
+- `GET /api/system/package-updates` — pending APT upgrades via `apt-get -s upgrade` dry-run; security package detection; dist-upgrade count; last `apt-get update` timestamp from `/var/lib/apt/lists/` mtime; dashboard card Package Updates (📦) with SEC badges and up-to-date indicator
+- Dashboard cards: mDNS Services (📻), System Entropy (🎲), Package Updates (📦)
+
 ## [2.80.0] - 2026-05-25
 
 ### Added
