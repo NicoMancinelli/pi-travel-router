@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.0] - 2026-05-24
+
+### Added
+
+- **Listening ports scanner** (`web/app.py`, `web/static/index.html`): `GET /api/network/ports` runs `ss -tlnup` (with `netstat -tlnup` fallback) and parses protocol, local address, port, program name, and PID into structured JSON. Dashboard card with color-coded port badges (blue=SSH, green=HTTP/S, purple=DNS, orange=web UI) and sortable table. Loaded on page init.
+- **Storage and USB device info** (`web/app.py`, `web/static/index.html`): `GET /api/system/storage` parses `df -h` output (skipping tmpfs/devtmpfs/overlay/squashfs) into disk partition objects with mount point, filesystem type, used/free/total in GB, and percent. Also parses `lsusb` for USB device list with vendor/product IDs and descriptions. Dashboard card with per-partition progress bars color-coded by usage (green/orange/red).
+- **Ping connectivity checker** (`web/app.py`, `web/static/index.html`): `GET /api/network/ping?host=X&count=N` runs `ping -c N -W 3` with input validation. Dashboard card with quick-access buttons for Google DNS, Cloudflare, and router gateway; displays packet loss, min/avg/max RTT, and per-ping results table.
+
 ## [2.24.0] - 2026-05-24
 
 ### Added
