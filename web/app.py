@@ -3745,40 +3745,76 @@ def api_network_dhcp_leases():
 
 # ── Firewall Rules ────────────────────────────────────────────────────────────
 
-@app.route("/api/network/firewall", methods=["GET"])
-@require_auth
+@app.route("/api/network/firewall")
 def api_network_firewall():
-    tables = ["filter", "nat", "mangle"]
-    result = {}
-    for table in tables:
-        out, rc = _run(["iptables", "-t", table, "-L", "-n", "--line-numbers"])
-        if rc != 0:
-            result[table] = {"error": out.strip()}
-            continue
-        chains = {}
-        current_chain = None
-        rule_count = 0
-        for line in out.splitlines():
-            if line.startswith("Chain "):
-                if current_chain is not None:
-                    chains[current_chain]["rules"] = rule_count
-                parts = line.split()
-                current_chain = parts[1]
-                policy = None
-                if "policy" in line:
-                    try:
-                        policy = parts[parts.index("policy") + 1].rstrip(")")
-                    except (ValueError, IndexError):
-                        pass
-                chains[current_chain] = {"policy": policy, "rules": 0}
-                rule_count = 0
-            elif line and not line.startswith("num") and not line.startswith("pkts") and current_chain:
-                # Count non-header lines as rules
-                if line[0].isdigit():
-                    rule_count += 1
-        if current_chain is not None:
-            chains[current_chain]["rules"] = rule_count
-        result[table] = chains
+    """Active firewall rules from iptables/nftables."""
+    result = {"backend": None, "chains": [], "summary": {}}
+    try:
+        # Try nftables first
+        nft_out, nft_rc = _run("nft list ruleset 2>/dev/null")
+        if nft_rc == 0 and nft_out.strip():
+            result["backend"] = "nftables"
+            # Count rules by parsing lines that don't start with table/chain/}
+            rule_lines = [l.strip() for l in nft_out.splitlines()
+                          if l.strip() and not l.strip().startswith(("#", "table", "chain", "}", "{", "type", "hook", "policy"))]
+            result["summary"]["total_rules"] = len(rule_lines)
+            # Extract chain names
+            chains = []
+            current_chain = None
+            for line in nft_out.splitlines():
+                line = line.strip()
+                m = re.match(r'^chain\s+(\S+)\s*\{', line)
+                if m:
+                    current_chain = {"name": m.group(1), "rules": [], "policy": None}
+                    chains.append(current_chain)
+                elif current_chain is not None:
+                    if line == "}":
+                        current_chain = None
+                    elif line.startswith("type "):
+                        # "type filter hook input priority 0; policy drop;"
+                        pol_m = re.search(r"policy\s+(\w+)", line)
+                        if pol_m:
+                            current_chain["policy"] = pol_m.group(1).upper()
+                    elif line and not line.startswith("{"):
+                        current_chain["rules"].append(line[:100])
+            result["chains"] = [{"name": c["name"], "policy": c["policy"], "rule_count": len(c["rules"]), "rules": c["rules"][:10]} for c in chains]
+            return jsonify(result)
+    except Exception:
+        pass
+
+    try:
+        # Fall back to iptables
+        ipt_out, ipt_rc = _run("iptables -L -n --line-numbers 2>/dev/null")
+        if ipt_rc == 0 and ipt_out.strip():
+            result["backend"] = "iptables"
+            chains = []
+            current_chain = None
+            total_rules = 0
+            for line in ipt_out.splitlines():
+                if line.startswith("Chain "):
+                    # "Chain INPUT (policy ACCEPT)" or "Chain FORWARD (policy DROP)"
+                    m = re.match(r"^Chain\s+(\S+)\s+\(policy\s+(\w+)", line)
+                    if m:
+                        current_chain = {"name": m.group(1), "policy": m.group(2), "rules": [], "rule_count": 0}
+                        chains.append(current_chain)
+                    else:
+                        m2 = re.match(r"^Chain\s+(\S+)", line)
+                        if m2:
+                            current_chain = {"name": m2.group(1), "policy": None, "rules": [], "rule_count": 0}
+                            chains.append(current_chain)
+                elif current_chain is not None and line.strip() and not line.startswith("num ") and not line.startswith("target "):
+                    # Skip header lines that start with "num " or "target "
+                    if re.match(r'^\d+\s+', line.strip()):
+                        current_chain["rules"].append(line.strip()[:100])
+                        current_chain["rule_count"] += 1
+                        total_rules += 1
+            result["chains"] = chains
+            result["summary"]["total_rules"] = total_rules
+            return jsonify(result)
+    except Exception as e:
+        result["error"] = str(e)
+
+    result["error"] = result.get("error", "No supported firewall backend found (nftables/iptables)")
     return jsonify(result)
 
 
@@ -7653,60 +7689,75 @@ def api_system_journal_errors():
 @app.route("/api/system/swap", methods=["GET"])
 @require_auth
 def api_system_swap():
-    """Return swap usage from /proc/meminfo and swapon --show."""
+    """Swap usage and virtual memory stats."""
+    result = {"swaps": [], "vmstat": {}, "zram": []}
     try:
-        total_kb = 0
-        free_kb = 0
-        cached_kb = 0
-        with open("/proc/meminfo", "r") as fh:
-            for line in fh:
+        # /proc/swaps
+        swaps_out, _ = _run("cat /proc/swaps")
+        lines = swaps_out.strip().splitlines()
+        if len(lines) > 1:  # skip header
+            for line in lines[1:]:
                 parts = line.split()
-                if len(parts) >= 2:
-                    key = parts[0].rstrip(":")
-                    try:
-                        val = int(parts[1])
-                    except ValueError:
-                        val = 0
-                    if key == "SwapTotal":
-                        total_kb = val
-                    elif key == "SwapFree":
-                        free_kb = val
-                    elif key == "SwapCached":
-                        cached_kb = val
-
-        used_kb = total_kb - free_kb
-        use_pct = round(used_kb / total_kb * 100, 1) if total_kb > 0 else 0
-
-        devices = []
-        out, rc = _run(["swapon", "--show", "--noheadings", "--bytes"])
-        if rc == 0:
-            for line in (out or "").splitlines():
-                parts = line.split()
-                if len(parts) < 5:
-                    continue
-                try:
-                    devices.append({
-                        "name": parts[0],
+                if len(parts) >= 5:
+                    total_kb = int(parts[2])
+                    used_kb = int(parts[3])
+                    result["swaps"].append({
+                        "filename": parts[0],
                         "type": parts[1],
-                        "size_bytes": int(parts[2]),
-                        "used_bytes": int(parts[3]),
+                        "total_kb": total_kb,
+                        "used_kb": used_kb,
+                        "free_kb": total_kb - used_kb,
+                        "pct_used": round(used_kb / total_kb * 100, 1) if total_kb > 0 else 0,
                         "priority": int(parts[4]),
                     })
-                except (ValueError, IndexError):
-                    continue
+    except Exception as e:
+        result["swaps_error"] = str(e)
 
-        return jsonify({
-            "total_kb": total_kb,
-            "free_kb": free_kb,
-            "used_kb": used_kb,
-            "cached_kb": cached_kb,
-            "use_pct": use_pct,
-            "devices": devices,
-            "enabled": total_kb > 0,
-            "source": "proc+swapon",
-        })
-    except Exception as exc:
-        return jsonify({"error": str(exc), "total_kb": 0, "enabled": False})
+    try:
+        # Key vmstat fields
+        vmstat_out, _ = _run("cat /proc/vmstat")
+        keys_wanted = {
+            "pgfault": "page_faults",
+            "pgmajfault": "major_faults",
+            "pswpin": "swap_in_pages",
+            "pswpout": "swap_out_pages",
+            "pgpgin": "pages_read_in",
+            "pgpgout": "pages_written_out",
+            "oom_kill": "oom_kills",
+        }
+        for line in vmstat_out.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[0] in keys_wanted:
+                result["vmstat"][keys_wanted[parts[0]]] = int(parts[1])
+    except Exception as e:
+        result["vmstat_error"] = str(e)
+
+    try:
+        # zram devices
+        zram_out, _ = _run("ls /sys/block/ 2>/dev/null")
+        for dev in zram_out.split():
+            if not dev.startswith("zram"):
+                continue
+            zr = {"device": dev}
+            for attr in ("orig_data_size", "compr_data_size", "mem_used_total", "disksize"):
+                val, rc = _run(f"cat /sys/block/{dev}/mm_stat 2>/dev/null || cat /sys/block/{dev}/{attr} 2>/dev/null")
+                if attr == "orig_data_size" and val.strip():
+                    # Try mm_stat: orig compr mem_used
+                    parts = val.strip().split()
+                    if len(parts) >= 3:
+                        zr["orig_bytes"] = int(parts[0])
+                        zr["compr_bytes"] = int(parts[1])
+                        zr["mem_used_bytes"] = int(parts[2])
+                        break
+            else:
+                ds, _ = _run(f"cat /sys/block/{dev}/disksize 2>/dev/null")
+                if ds.strip().isdigit():
+                    zr["disksize_bytes"] = int(ds.strip())
+            result["zram"].append(zr)
+    except Exception:
+        pass
+
+    return jsonify(result)
 
 
 # ── WiFi Network Scan ─────────────────────────────────────────────────────────
