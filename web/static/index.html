@@ -1448,6 +1448,17 @@
     </div>
   </div>
 
+  <!-- Clock Sync -->
+  <div class="card" id="card-clock">
+    <div class="card-header">
+      <span>&#x1F570;&#xFE0F; Clock Sync</span>
+      <span class="card-badge" id="clock-sync-badge">—</span>
+    </div>
+    <div class="card-body" id="clock-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5547,6 +5558,7 @@ async function refreshAll() {
   fetchTemperature();
   fetchLatency();
   fetchFirewall();
+  fetchClockSync();
 }
 
 async function init() {
@@ -7461,6 +7473,51 @@ async function fetchFirewall() {
     if (data.ipv6_available) {
       html += '<p style="margin:6px 0 0;font-size:11px;color:var(--text-dim);">IPv6 (ip6tables) available.</p>';
     }
+    body.innerHTML = html;
+  } catch(e) { body.innerHTML = `<p class="error">${escHtml(String(e))}</p>`; }
+}
+
+// ── Clock Sync ────────────────────────────────────────────────────────────────
+
+async function fetchClockSync() {
+  const badge = document.getElementById('clock-sync-badge');
+  const body = document.getElementById('clock-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/clock');
+    const d = await resp.json();
+    if (badge) {
+      if (d.synced) {
+        badge.textContent = '✓ Synced';
+        badge.style.background = 'var(--green, #22c55e)';
+        badge.style.color = '#fff';
+      } else {
+        badge.textContent = '✗ Unsynced';
+        badge.style.background = 'var(--red, #ef4444)';
+        badge.style.color = '#fff';
+      }
+    }
+    if (!d.synced && !d.source) {
+      body.innerHTML = '<span style="color:var(--text-dim)">NTP sync information unavailable.</span>';
+      return;
+    }
+    let html = '<table class="info-table">';
+    if (d.offset_ms !== null && d.offset_ms !== undefined)
+      html += `<tr><td>Offset</td><td>${d.offset_ms.toFixed(3)} ms</td></tr>`;
+    if (d.rms_offset_ms !== null && d.rms_offset_ms !== undefined)
+      html += `<tr><td>RMS Offset</td><td>${d.rms_offset_ms.toFixed(3)} ms</td></tr>`;
+    if (d.freq_error_ppm !== null && d.freq_error_ppm !== undefined)
+      html += `<tr><td>Freq Error</td><td>${d.freq_error_ppm.toFixed(3)} ppm</td></tr>`;
+    if (d.stratum !== null && d.stratum !== undefined)
+      html += `<tr><td>Stratum</td><td>${d.stratum}</td></tr>`;
+    if (d.ref_id)
+      html += `<tr><td>Reference</td><td>${escHtml(d.ref_id)}</td></tr>`;
+    if (d.leap_status)
+      html += `<tr><td>Leap Status</td><td>${escHtml(d.leap_status)}</td></tr>`;
+    if (d.local_time)
+      html += `<tr><td>Local Time</td><td>${escHtml(d.local_time)}</td></tr>`;
+    html += '</table>';
     body.innerHTML = html;
   } catch(e) { body.innerHTML = `<p class="error">${escHtml(String(e))}</p>`; }
 }

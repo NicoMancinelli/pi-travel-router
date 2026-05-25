@@ -13718,6 +13718,76 @@ def api_network_firewall():
     })
 
 
+@app.route("/api/system/clock", methods=["GET"])
+@require_auth
+def api_system_clock():
+    import re as _re
+    import datetime
+
+    # Try chronyc tracking first
+    out, rc = _run("chronyc tracking 2>/dev/null", timeout=5)
+    if rc == 0 and out.strip():
+        def _field(pattern, text, cast=str):
+            m = _re.search(pattern, text)
+            return cast(m.group(1)) if m else None
+
+        ref_id = _field(r"Reference ID\s+:\s+(\S+)", out)
+        # System time offset: e.g. "System time     :  0.000123456 seconds slow of NTP time"
+        offset_s = _field(r"System time\s+:\s+([\-\d.]+)\s+seconds", out, float)
+        rms_s = _field(r"RMS offset\s+:\s+([\-\d.]+)\s+seconds", out, float)
+        freq_ppm = _field(r"Frequency\s+:\s+([\-\d.]+)\s+ppm", out, float)
+        stratum = _field(r"Stratum\s+:\s+(\d+)", out, int)
+        leap = _field(r"Leap status\s+:\s+(.+)", out)
+        leap = leap.strip() if leap else None
+
+        return jsonify({
+            "synced": True,
+            "source": "chrony",
+            "stratum": stratum,
+            "offset_ms": round(offset_s * 1000, 6) if offset_s is not None else None,
+            "rms_offset_ms": round(rms_s * 1000, 6) if rms_s is not None else None,
+            "freq_error_ppm": freq_ppm,
+            "ref_id": ref_id,
+            "leap_status": leap,
+            "local_time": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+
+    # Fallback: timedatectl show
+    show_out, show_rc = _run("timedatectl show --no-pager 2>/dev/null", timeout=5)
+    td_out, _ = _run("timedatectl 2>/dev/null", timeout=5)
+
+    if show_rc == 0 and show_out.strip():
+        def _kv(key, text):
+            m = _re.search(r"^" + key + r"=(.+)$", text, _re.MULTILINE)
+            return m.group(1).strip() if m else None
+
+        ntp_sync = _kv("NTPSynchronized", show_out)
+        synced = ntp_sync == "yes"
+        # Parse NTPMessage for offset if available
+        ntp_msg = _kv("NTPMessage", show_out) or ""
+        offset_ms = None
+        m_off = _re.search(r"offset=([\-\d.]+)", ntp_msg)
+        if m_off:
+            try:
+                offset_ms = float(m_off.group(1)) * 1000
+            except ValueError:
+                pass
+
+        return jsonify({
+            "synced": synced,
+            "source": "timedatectl",
+            "stratum": None,
+            "offset_ms": offset_ms,
+            "rms_offset_ms": None,
+            "freq_error_ppm": None,
+            "ref_id": _kv("ServerName", show_out) or _kv("ServerAddress", show_out),
+            "leap_status": None,
+            "local_time": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+
+    return jsonify({"synced": False, "source": None})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
