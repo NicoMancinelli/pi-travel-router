@@ -761,6 +761,32 @@
     <div id="uplink-wifi-list"></div>
   </div>
 
+  <!-- AP Info & Channel -->
+  <div class="card" id="card-ap-config" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4E1; Access Point</span>
+      <button class="btn btn-sm" onclick="fetchApConfig()">&#x21BB; Refresh</button>
+    </div>
+    <div id="ap-config-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <label style="font-size:13px;">Channel:</label>
+      <select id="ap-channel-select" style="font-size:13px;padding:4px 8px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+        <option value="0">Auto</option>
+        <option value="1">1 (2.4GHz)</option>
+        <option value="6">6 (2.4GHz)</option>
+        <option value="11">11 (2.4GHz)</option>
+        <option value="36">36 (5GHz)</option>
+        <option value="40">40 (5GHz)</option>
+        <option value="44">44 (5GHz)</option>
+        <option value="48">48 (5GHz)</option>
+      </select>
+      <button class="btn btn-primary" onclick="setApChannel()" style="font-size:13px;">Apply</button>
+      <span id="ap-channel-msg" style="font-size:12px;"></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Service controls -->
@@ -1956,6 +1982,55 @@ function _esc(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
+// ── AP Info & Channel Selector ────────────────────────────────────────────────
+async function fetchApConfig() {
+  const el = document.getElementById('ap-config-content');
+  try {
+    const r = await apiFetch('/api/wifi/ap-config');
+    const d = await r.json();
+    let html = '<table style="font-size:13px;border-collapse:collapse;">';
+    if (d.ssid) html += '<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;">SSID</td><td style="font-family:monospace;">' + d.ssid + '</td></tr>';
+    if (d.channel) html += '<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;">Channel</td><td>' + d.channel + '</td></tr>';
+    if (d.hw_mode) html += '<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;">Mode</td><td>' + d.hw_mode + '</td></tr>';
+    if (d.country_code) html += '<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;">Country</td><td>' + d.country_code + '</td></tr>';
+    if (d.tx_power) html += '<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;">TX Power</td><td style="font-family:monospace;font-size:11px;">' + d.tx_power + '</td></tr>';
+    html += '</table>';
+    el.innerHTML = html;
+    // Set select to current channel
+    const sel = document.getElementById('ap-channel-select');
+    if (sel && d.channel) {
+      for (const opt of sel.options) {
+        if (opt.value === String(d.channel)) { opt.selected = true; break; }
+      }
+    }
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function setApChannel() {
+  const sel = document.getElementById('ap-channel-select');
+  const msg = document.getElementById('ap-channel-msg');
+  const channel = sel ? sel.value : '';
+  if (!channel) return;
+  msg.textContent = 'Applying…';
+  try {
+    const r = await apiFetch('/api/wifi/ap-config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({channel}) });
+    const d = await r.json();
+    if (r.ok) {
+      msg.textContent = '✓ Channel set to ' + d.channel;
+      msg.style.color = 'var(--success,#4c4)';
+      setTimeout(() => { msg.textContent = ''; fetchApConfig(); }, 2000);
+    } else {
+      msg.textContent = d.error || 'Failed';
+      msg.style.color = 'var(--error,#e55)';
+    }
+  } catch (e) {
+    msg.textContent = 'Error: ' + e;
+    msg.style.color = 'var(--error,#e55)';
+  }
+}
+
 // ── Scheduled Reboot ──────────────────────────────────────────────────────────
 async function fetchRebootSchedule() {
   try {
@@ -3132,6 +3207,7 @@ async function refreshAll() {
   fetchLatencyHistory();
   fetchResourceStats();
   fetchUplinkScan();
+  fetchApConfig();
   fetchFirewallRules();
   fetchTailscalePeers();
   fetchMdnsServices();
