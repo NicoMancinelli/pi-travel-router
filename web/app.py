@@ -3820,9 +3820,9 @@ def api_network_firewall():
 
 # ── Bandwidth History ─────────────────────────────────────────────────────────
 
-@app.route("/api/network/bandwidth", methods=["GET"])
+@app.route("/api/network/bandwidth/history", methods=["GET"])
 @require_auth
-def api_network_bandwidth():
+def api_network_bandwidth_history():
     """Return bandwidth history from vnstat for the last 24 hours (hourly) and 30 days (daily)."""
     import json as _json
 
@@ -10099,41 +10099,54 @@ def api_system_package_updates():
 @app.route("/api/network/bandwidth")
 @require_auth
 def api_network_bandwidth():
-    def read_net_dev():
-        stats = {}
-        try:
-            for line in Path("/proc/net/dev").read_text().splitlines()[2:]:
-                parts = line.split(":")
-                if len(parts) < 2:
-                    continue
-                iface = parts[0].strip()
-                fields = parts[1].split()
-                if len(fields) >= 9:
-                    stats[iface] = {"rx": int(fields[0]), "tx": int(fields[8])}
-        except (OSError, ValueError):
-            pass
-        return stats
-
-    s1 = read_net_dev()
-    time.sleep(1)
-    s2 = read_net_dev()
-
+    """Return per-interface RX/TX byte counters from /proc/net/dev (cumulative since boot)."""
     interfaces = []
-    for iface in s2:
-        if iface == "lo":
+    try:
+        with open("/proc/net/dev") as f:
+            lines = f.readlines()
+    except OSError:
+        return jsonify({"error": "Cannot read /proc/net/dev", "interfaces": [], "count": 0,
+                        "timestamp": time.time()})
+
+    # Skip first two header lines
+    for line in lines[2:]:
+        line = line.strip()
+        if not line:
             continue
-        if iface in s1:
-            rx_bps = max(0, s2[iface]["rx"] - s1[iface]["rx"])
-            tx_bps = max(0, s2[iface]["tx"] - s1[iface]["tx"])
-            interfaces.append({
-                "name": iface,
-                "rx_bps": rx_bps,
-                "tx_bps": tx_bps,
-                "rx_bytes_total": s2[iface]["rx"],
-                "tx_bytes_total": s2[iface]["tx"],
-            })
-    interfaces.sort(key=lambda x: x["name"])
-    return jsonify({"interfaces": interfaces})
+        colon = line.index(":")
+        name = line[:colon].strip()
+        if name == "lo":
+            continue
+        fields = line[colon + 1:].split()
+        if len(fields) < 16:
+            continue
+        # /proc/net/dev columns:
+        # RX: bytes packets errs drop fifo frame compressed multicast
+        # TX: bytes packets errs drop fifo colls carrier compressed
+        rx_bytes = int(fields[0])
+        rx_packets = int(fields[1])
+        rx_errors = int(fields[2])
+        rx_dropped = int(fields[3])
+        tx_bytes = int(fields[8])
+        tx_packets = int(fields[9])
+        tx_errors = int(fields[10])
+        tx_dropped = int(fields[11])
+        interfaces.append({
+            "name": name,
+            "rx_bytes": rx_bytes,
+            "rx_packets": rx_packets,
+            "rx_errors": rx_errors,
+            "rx_dropped": rx_dropped,
+            "tx_bytes": tx_bytes,
+            "tx_packets": tx_packets,
+            "tx_errors": tx_errors,
+            "tx_dropped": tx_dropped,
+            "rx_human": _fmt_bytes(rx_bytes),
+            "tx_human": _fmt_bytes(tx_bytes),
+        })
+
+    interfaces.sort(key=lambda i: -(i["rx_bytes"] + i["tx_bytes"]))
+    return jsonify({"interfaces": interfaces, "count": len(interfaces), "timestamp": time.time()})
 
 
 @app.route("/api/network/iptables")
