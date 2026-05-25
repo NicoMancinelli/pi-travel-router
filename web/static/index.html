@@ -4144,6 +4144,7 @@ async function refreshAll() {
   fetchArpTable();
   fetchWifiClients();
   fetchWanUplinks();
+  fetchSystemResources();
 }
 
 async function init() {
@@ -5255,13 +5256,19 @@ async function fetchSystemResources() {
       return;
     }
 
+    // Top-level fields: uptime_human, load_1/5/15, mem_total_mb, mem_used_mb, mem_pct
+    // current snapshot: { cpu_pct, mem_pct, disk_pct, temp_c }
+    const cur = d.current || {};
+    const cpuPct = typeof cur.cpu_pct === 'number' ? cur.cpu_pct : null;
+    const tempC  = typeof cur.temp_c  === 'number' ? cur.temp_c  : null;
+    const memPct = d.mem_pct != null ? d.mem_pct : (typeof cur.mem_pct === 'number' ? cur.mem_pct : null);
+
     function pct(val) { return val != null ? val.toFixed(1) + '%' : '—'; }
-    function num(val, unit) { return val != null ? val + unit : '—'; }
     function bar(val, color) {
-      const pct = val != null ? Math.min(100, Math.max(0, val)) : 0;
-      const bg = val == null ? 'var(--border)' : (pct > 85 ? '#e55' : pct > 65 ? '#e90' : color);
+      const p = val != null ? Math.min(100, Math.max(0, val)) : 0;
+      const bg = val == null ? 'var(--border)' : (p > 85 ? '#e55' : p > 65 ? '#e90' : color);
       return '<div style="height:8px;border-radius:4px;background:var(--border);overflow:hidden;margin:4px 0;">'
-        + '<div style="height:100%;width:' + pct + '%;background:' + bg + ';transition:width 0.3s;"></div>'
+        + '<div style="height:100%;width:' + p + '%;background:' + bg + ';transition:width 0.3s;"></div>'
         + '</div>';
     }
 
@@ -5272,14 +5279,14 @@ async function fetchSystemResources() {
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">';
     html += '<span style="font-weight:600;">CPU</span>';
     html += '<span style="display:flex;gap:6px;align-items:center;">';
-    if (d.cpu_temp_c != null) {
-      const tempColor = d.cpu_temp_c > 75 ? '#e55' : d.cpu_temp_c > 60 ? '#e90' : '#4c4';
-      html += '<span style="font-size:11px;padding:1px 6px;border-radius:10px;background:' + tempColor + '20;color:' + tempColor + ';border:1px solid ' + tempColor + '40;">'
-        + d.cpu_temp_c.toFixed(1) + '°C</span>';
+    if (tempC != null) {
+      const tc = tempC > 75 ? '#e55' : tempC > 60 ? '#e90' : '#4c4';
+      html += '<span style="font-size:11px;padding:1px 6px;border-radius:10px;background:' + tc + '20;color:' + tc + ';border:1px solid ' + tc + '40;">'
+        + tempC.toFixed(1) + '°C</span>';
     }
-    html += '<span style="color:var(--text-dim);">' + pct(d.cpu_percent) + '</span>';
+    html += '<span style="color:var(--text-dim);">' + pct(cpuPct) + '</span>';
     html += '</span></div>';
-    html += bar(d.cpu_percent, '#4a9eff');
+    html += bar(cpuPct, '#4a9eff');
     html += '</div>';
 
     // Memory
@@ -5292,9 +5299,9 @@ async function fetchSystemResources() {
     } else {
       html += '—';
     }
-    html += ' (' + pct(d.mem_percent) + ')</span>';
+    html += ' (' + pct(memPct) + ')</span>';
     html += '</div>';
-    html += bar(d.mem_percent, '#a78bfa');
+    html += bar(memPct, '#a78bfa');
     html += '</div>';
 
     // Uptime + load grid
