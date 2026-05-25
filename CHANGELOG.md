@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.69.0] - 2026-05-25
+
+### Added
+- `GET /api/system/journal-errors` — last 50 error-priority journal entries via `journalctl -p err -n 50 -o short-iso`; filters audit/NetworkManager noise; dashboard card shows green "no errors" or scrollable error table
+- `GET /api/network/dns-config` — DNS configuration from `/etc/resolv.conf` enriched with `resolvectl status` per-interface detail; includes hosts file entry count; dashboard card shows nameservers, search domains, and interface-level DNS table
+- `GET /api/system/thermal-zones` — all sysfs thermal zones with temperature in °C/°F and hot/warm/normal classification; supplements with `vcgencmd measure_temp` GPU reading; dashboard card shows peak temperature and per-zone table
+- Dashboard cards: Recent Errors (🚨), DNS Config (🔍), Thermal Zones (🌡️)
+
 ## [2.68.0] - 2026-05-25
 
 ### Added
