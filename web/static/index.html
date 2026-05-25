@@ -1270,12 +1270,42 @@
     </div>
   </div>
 
+  <!-- CPU Load History -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📊 CPU Load</span>
+    </div>
+    <div class="card-body" id="load-history-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Firewall Rules -->
   <div class="card">
     <div class="card-header">
       <span class="card-title">🛡️ Firewall Rules</span>
     </div>
     <div class="card-body" id="firewall-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
+  <!-- DHCP Leases -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">&#x1F4CB; DHCP Leases</span>
+    </div>
+    <div class="card-body" id="dhcp-leases-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
+  <!-- Services Status -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">⚙️ Services</span>
+    </div>
+    <div class="card-body" id="services-status-content">
       <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
     </div>
   </div>
@@ -4980,6 +5010,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSmart();
   fetchGpu();
   fetchWifiSurvey();
+  fetchDhcpLeases();
+  fetchLoadHistory();
 });
 
 async function fetchJournal() {
@@ -5252,6 +5284,8 @@ async function refreshAll() {
   fetchSmart();
   fetchGpu();
   fetchWifiSurvey();
+  fetchDhcpLeases();
+  fetchLoadHistory();
 }
 
 async function init() {
@@ -6675,6 +6709,72 @@ async function fetchSystemServices() {
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load services</span>';
   }
+}
+
+// ── CPU Load History ──────────────────────────────────────────────────────────
+async function fetchLoadHistory() {
+  const el = document.getElementById('load-history-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/load-history');
+    const d = await r.json();
+    const laColor = (val, cores) => {
+      const ratio = val / (cores || 1);
+      return ratio >= 1.5 ? '#dc2626' : ratio >= 0.75 ? '#f59e0b' : '#16a34a';
+    };
+    const cores = d.cpu_count || 1;
+    let html = '';
+
+    // Load average tiles
+    html += '<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">';
+    for (const [label, val] of [['1 min', d.load_1], ['5 min', d.load_5], ['15 min', d.load_15]]) {
+      if (val === undefined) continue;
+      const col = laColor(val, cores);
+      html += `<div style="background:var(--bg2);border-radius:6px;padding:10px 16px;text-align:center;min-width:90px;">
+        <div style="font-size:1.6em;font-weight:700;color:${col}">${val.toFixed(2)}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${label}</div>
+      </div>`;
+    }
+    if (d.running_procs !== undefined) {
+      html += `<div style="background:var(--bg2);border-radius:6px;padding:10px 16px;text-align:center;min-width:90px;">
+        <div style="font-size:1.6em;font-weight:700;">${d.running_procs}<span style="font-size:0.6em;color:var(--text-dim);">/${d.total_procs}</span></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Procs (run/total)</div>
+      </div>`;
+    }
+    html += '</div>';
+
+    // Per-CPU bars
+    const cpus = (d.cpus || []).filter(c => c.name !== 'cpu');
+    if (cpus.length > 0) {
+      html += '<div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Per-CPU Usage (instantaneous)</div>';
+      html += '<div style="display:flex;flex-direction:column;gap:4px;">';
+      for (const cpu of cpus) {
+        const busyPct = cpu.busy_pct || 0;
+        const sysW = cpu.system_pct || 0;
+        const userW = (cpu.user_pct || 0);
+        const ioW = cpu.iowait_pct || 0;
+        const label = cpu.name.replace('cpu', 'CPU ');
+        html += `<div style="display:flex;align-items:center;gap:8px;">
+          <div style="width:52px;font-size:11px;color:var(--text-dim);text-align:right;flex-shrink:0;">${label}</div>
+          <div style="flex:1;background:var(--border);border-radius:3px;height:14px;position:relative;overflow:hidden;">
+            <div style="position:absolute;left:0;top:0;height:14px;width:${userW}%;background:var(--accent,#4a9eff);"></div>
+            <div style="position:absolute;left:${userW}%;top:0;height:14px;width:${sysW}%;background:var(--amber,#f59e0b);"></div>
+            <div style="position:absolute;left:${userW + sysW}%;top:0;height:14px;width:${ioW}%;background:var(--red,#ef4444);"></div>
+          </div>
+          <div style="width:40px;font-size:11px;text-align:right;flex-shrink:0;">${busyPct.toFixed(0)}%</div>
+        </div>`;
+      }
+      html += '</div>';
+      html += '<div style="display:flex;gap:12px;font-size:11px;color:var(--text-dim);margin-top:6px;">';
+      html += '<span><span style="background:var(--accent,#4a9eff);display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:middle;"></span>User</span>';
+      html += '<span><span style="background:var(--amber,#f59e0b);display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:middle;"></span>System</span>';
+      html += '<span><span style="background:var(--red,#ef4444);display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:3px;vertical-align:middle;"></span>I/O Wait</span>';
+      html += '</div>';
+    }
+
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Tailscale Status ──────────────────────────────────────────────────────────
@@ -11057,6 +11157,47 @@ async function runLanScan() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '🔍 Scan'; }
   }
+}
+
+// ── DHCP Leases ───────────────────────────────────────────────────────────────
+async function fetchDhcpLeases() {
+  const el = document.getElementById('dhcp-leases-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/network/dhcp-leases');
+    const d = await r.json();
+    if (d.error && (!d.leases || d.leases.length === 0)) {
+      el.innerHTML = `<p class="muted">${d.error}</p>`;
+      return;
+    }
+    const leases = d.leases || [];
+    if (leases.length === 0) {
+      el.innerHTML = '<p class="muted">No active DHCP leases.</p>';
+      return;
+    }
+    const srcNote = d.source ? `<div style="color:var(--text-dim);font-size:11px;margin-bottom:8px;">Source: <code>${d.source}</code></div>` : '';
+    let html = srcNote;
+    html += `<div style="color:var(--text-dim);font-size:11px;margin-bottom:6px;">${leases.length} active lease${leases.length !== 1 ? 's' : ''}</div>`;
+    html += '<div style="max-height:260px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 8px;">IP</th>
+      <th style="text-align:left;padding:3px 8px;">Hostname</th>
+      <th style="text-align:left;padding:3px 8px;">MAC</th>
+      <th style="text-align:right;padding:3px 8px;">Expires</th>
+    </tr></thead><tbody>`;
+    for (const l of leases) {
+      const host = l.hostname || '<span style="color:var(--text-dim)">—</span>';
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 8px;font-family:monospace;font-weight:500">${l.ip}</td>
+        <td style="padding:3px 8px">${host}</td>
+        <td style="padding:3px 8px;font-family:monospace;font-size:11px;color:var(--text-dim)">${l.mac || '—'}</td>
+        <td style="padding:3px 8px;text-align:right;color:var(--text-dim)">${l.expires_human || '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 </script>
