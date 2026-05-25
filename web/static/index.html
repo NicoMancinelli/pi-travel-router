@@ -874,6 +874,20 @@
 
   <hr class="divider">
 
+  <!-- Firewall Rules -->
+  <div class="card full-width" id="card-firewall">
+    <div class="card-title">
+      Firewall Rules
+      <button class="btn btn-sm" id="firewall-refresh-btn" onclick="fetchFirewallRules()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button class="btn btn-sm" id="fw-tab-filter" onclick="firewallSelectTab('filter')" style="font-weight:600;">Filter</button>
+      <button class="btn btn-sm" id="fw-tab-nat" onclick="firewallSelectTab('nat')">NAT</button>
+    </div>
+    <div id="firewall-filter-table" style="overflow-x:auto;"></div>
+    <div id="firewall-nat-table" style="overflow-x:auto;display:none;"></div>
+  </div>
+
   <!-- Wi-Fi Clients -->
   <div class="card full-width">
     <div class="card-title">
@@ -3822,6 +3836,7 @@ async function fetchClientHistory(limitOverride) {
 document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('client-history-limit');
   if (sel) sel.addEventListener('change', () => fetchClientHistory());
+  fetchFirewallRules();
   fetchSystemResources();
 });
 
@@ -4951,6 +4966,88 @@ async function runTraceroute() {
     el.innerHTML = '<span style="color:var(--error,#e55);">Error: ' + e + '</span>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Trace'; }
+  }
+}
+
+// ── Firewall Rules ─────────────────────────────────────────────────────────────
+
+let _fwData = null;
+
+function firewallSelectTab(tab) {
+  const filterDiv = document.getElementById('firewall-filter-table');
+  const natDiv = document.getElementById('firewall-nat-table');
+  const filterBtn = document.getElementById('fw-tab-filter');
+  const natBtn = document.getElementById('fw-tab-nat');
+  if (!filterDiv || !natDiv) return;
+  if (tab === 'filter') {
+    filterDiv.style.display = '';
+    natDiv.style.display = 'none';
+    if (filterBtn) filterBtn.style.fontWeight = '600';
+    if (natBtn) natBtn.style.fontWeight = '';
+  } else {
+    filterDiv.style.display = 'none';
+    natDiv.style.display = '';
+    if (filterBtn) filterBtn.style.fontWeight = '';
+    if (natBtn) natBtn.style.fontWeight = '600';
+  }
+}
+
+function firewallTargetColor(target) {
+  if (!target) return 'var(--text-dim)';
+  const t = target.toUpperCase();
+  if (t === 'ACCEPT') return 'var(--success,#4c4)';
+  if (t === 'DROP' || t === 'REJECT') return 'var(--error,#e55)';
+  if (t === 'MASQUERADE' || t === 'SNAT' || t === 'DNAT') return 'var(--yellow,#fa0)';
+  return 'var(--text-dim)';
+}
+
+function firewallBuildTable(rules) {
+  if (!rules || rules.length === 0) {
+    return '<span style="color:var(--text-dim);font-size:13px;">No rules found.</span>';
+  }
+  let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;font-family:var(--mono);">';
+  html += '<thead><tr>';
+  for (const col of ['#', 'Chain', 'Target', 'Proto', 'Source', 'Destination', 'Options']) {
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);white-space:nowrap;">' + col + '</th>';
+  }
+  html += '</tr></thead><tbody>';
+  for (const r of rules) {
+    html += '<tr>';
+    html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (r.num || '') + '</td>';
+    html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);">' + (r.chain || '') + '</td>';
+    html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:' + firewallTargetColor(r.target) + ';font-weight:600;">' + (r.target || '') + '</td>';
+    html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);">' + (r.prot || '') + '</td>';
+    html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);">' + (r.source || '') + '</td>';
+    html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);">' + (r.destination || '') + '</td>';
+    html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (r.options || '') + '</td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  return html;
+}
+
+async function fetchFirewallRules() {
+  const filterDiv = document.getElementById('firewall-filter-table');
+  const natDiv = document.getElementById('firewall-nat-table');
+  const btn = document.getElementById('firewall-refresh-btn');
+  if (!filterDiv || !natDiv) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Loading…'; }
+  filterDiv.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading…</span>';
+  natDiv.innerHTML = '';
+  try {
+    const r = await apiFetch('/api/firewall/rules');
+    const d = await r.json();
+    if (!r.ok) {
+      filterDiv.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">' + (d.error || 'Error fetching firewall rules') + '</span>';
+      return;
+    }
+    _fwData = d;
+    filterDiv.innerHTML = firewallBuildTable(d.filter || []);
+    natDiv.innerHTML = firewallBuildTable(d.nat || []);
+  } catch (e) {
+    filterDiv.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
   }
 }
 

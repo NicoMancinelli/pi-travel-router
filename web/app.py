@@ -5116,6 +5116,63 @@ def api_network_traceroute():
     return jsonify({"target": target, "hops": hops, "count": len(hops)})
 
 
+# ── Firewall Rules ────────────────────────────────────────────────────────────
+
+
+def _parse_iptables(output: str) -> list:
+    """Parse iptables -L -n --line-numbers output into a list of rule dicts."""
+    rules = []
+    current_chain = ""
+    for line in output.splitlines():
+        line = line.rstrip()
+        if not line:
+            continue
+        if line.startswith("Chain "):
+            # e.g. "Chain INPUT (policy ACCEPT)"
+            current_chain = line.split()[1]
+            continue
+        # Skip column-header lines
+        if line.lstrip().startswith("num") or line.lstrip().startswith("target"):
+            continue
+        parts = line.split()
+        if len(parts) < 6:
+            continue
+        # parts: num target prot opt source destination [options...]
+        try:
+            int(parts[0])  # first token must be a line number
+        except ValueError:
+            continue
+        rules.append({
+            "chain": current_chain,
+            "num": parts[0],
+            "target": parts[1],
+            "prot": parts[2],
+            "source": parts[4],
+            "destination": parts[5],
+            "options": " ".join(parts[6:]) if len(parts) > 6 else "",
+        })
+    return rules
+
+
+@app.route("/api/firewall/rules", methods=["GET"])
+@require_auth
+def api_firewall_rules():
+    """Return parsed iptables filter and nat table rules."""
+    filter_out, filter_rc = _run(["iptables", "-L", "-n", "--line-numbers"])
+    if filter_rc != 0:
+        filter_rules = []
+    else:
+        filter_rules = _parse_iptables(filter_out)
+
+    nat_out, nat_rc = _run(["iptables", "-t", "nat", "-L", "-n", "--line-numbers"])
+    if nat_rc != 0:
+        nat_rules = []
+    else:
+        nat_rules = _parse_iptables(nat_out)
+
+    return jsonify({"filter": filter_rules, "nat": nat_rules})
+
+
 # ── Wi-Fi Clients ─────────────────────────────────────────────────────────────
 
 
