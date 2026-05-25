@@ -1217,6 +1217,11 @@
     <div id="cpu-temp-content">Loading&hellip;</div>
   </div>
 
+  <div class="card full-width" id="card-disk-io">
+    <div class="card-title">Disk I/O</div>
+    <div id="disk-io-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4243,6 +4248,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWgConfigQr();
   fetchKernelModules();
   fetchDiskIO();
+  fetchDiskIo();
   fetchMemInfo();
   fetchNtpStatus();
   fetchOpenFiles();
@@ -4466,6 +4472,7 @@ async function refreshAll() {
   fetchProcTop();
   fetchSystemTemps();
   fetchDiskIO();
+  fetchDiskIo();
   fetchMemInfo();
   fetchNtpStatus();
   fetchOpenFiles();
@@ -8040,6 +8047,49 @@ async function fetchCpuTemp() {
       <div>${zoneRows}</div>`;
   } catch (e) {
     if (el) el.innerHTML = `<div class="card-title">&#x1F321; CPU Temperature</div><span style="color:var(--danger)">Failed: ${e}</span>`;
+  }
+}
+
+async function fetchDiskIo() {
+  const el = document.getElementById('disk-io-content');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/disk-io');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    if (!d.devices || d.devices.length === 0) {
+      el.textContent = 'No block devices found';
+      return;
+    }
+    const fmtBytes = b => b >= 1073741824
+      ? (b / 1073741824).toFixed(2) + ' GB'
+      : b >= 1048576
+        ? (b / 1048576).toFixed(1) + ' MB'
+        : b >= 1024
+          ? (b / 1024).toFixed(0) + ' KB'
+          : b + ' B';
+    let html = '<table style="width:100%;border-collapse:collapse;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 8px;">Device</th>
+      <th style="text-align:right;padding:3px 8px;">Reads</th>
+      <th style="text-align:right;padding:3px 8px;">Read Bytes</th>
+      <th style="text-align:right;padding:3px 8px;">Writes</th>
+      <th style="text-align:right;padding:3px 8px;">Written Bytes</th>
+    </tr></thead><tbody>`;
+    for (const dev of d.devices) {
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 8px;font-family:monospace;"><strong>${dev.name}</strong></td>
+        <td style="padding:3px 8px;text-align:right;">${dev.reads_completed.toLocaleString()}</td>
+        <td style="padding:3px 8px;text-align:right;">${fmtBytes(dev.read_bytes)}</td>
+        <td style="padding:3px 8px;text-align:right;">${dev.writes_completed.toLocaleString()}</td>
+        <td style="padding:3px 8px;text-align:right;">${fmtBytes(dev.written_bytes)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (el) el.textContent = 'Failed: ' + e;
   }
 }
 
