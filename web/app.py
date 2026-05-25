@@ -6998,50 +6998,53 @@ def api_proctop():
 @app.route("/api/system/entropy")
 @require_auth
 def api_system_entropy():
-    """Return kernel entropy pool stats and hardware RNG availability."""
-    result = {}
-
-    # entropy_avail
+    """Return kernel entropy pool stats and quality indicator."""
     try:
-        result["entropy_avail"] = int(Path("/proc/sys/kernel/random/entropy_avail").read_text().strip())
-    except (OSError, ValueError):
-        result["entropy_avail"] = None
+        entropy_avail = int(Path("/proc/sys/kernel/random/entropy_avail").read_text().strip())
+        pool_size = int(Path("/proc/sys/kernel/random/poolsize").read_text().strip())
 
-    # pool size
-    try:
-        result["pool_size"] = int(Path("/proc/sys/kernel/random/poolsize").read_text().strip())
-    except (OSError, ValueError):
-        result["pool_size"] = None
+        try:
+            urandom_min_reseed = int(
+                Path("/proc/sys/kernel/random/urandom_min_reseed_secs").read_text().strip()
+            )
+        except (OSError, ValueError):
+            urandom_min_reseed = None
 
-    # read_wakeup_threshold
-    try:
-        result["read_wakeup_threshold"] = int(
-            Path("/proc/sys/kernel/random/read_wakeup_threshold").read_text().strip()
-        )
-    except (OSError, ValueError):
-        result["read_wakeup_threshold"] = None
+        # detect entropy daemon via pgrep
+        entropy_daemon = None
+        import subprocess as _sp
+        for daemon in ("haveged", "rngd"):
+            try:
+                rc = _sp.call(
+                    ["pgrep", "-x", daemon],
+                    stdout=_sp.DEVNULL,
+                    stderr=_sp.DEVNULL,
+                )
+                if rc == 0:
+                    entropy_daemon = daemon
+                    break
+            except OSError:
+                pass
 
-    # hardware RNG device presence
-    import glob as _glob
-    hwrng_devices = _glob.glob("/dev/hwrng*")
-    result["hwrng_devices"] = hwrng_devices
+        entropy_pct = round(entropy_avail / pool_size * 100, 1) if pool_size else 0.0
 
-    # rng-tools or haveged running
-    out_ps, rc_ps = _run(["ps", "aux"])
-    rng_daemons = []
-    if rc_ps == 0:
-        for line in out_ps.splitlines():
-            if any(d in line for d in ("rngd", "haveged", "jitterentropy")):
-                parts = line.split(None, 10)
-                if parts:
-                    rng_daemons.append(parts[-1] if len(parts) > 10 else line.strip())
-    result["rng_daemons"] = rng_daemons
+        if entropy_avail < 200:
+            quality = "critical"
+        elif entropy_avail < 1000:
+            quality = "low"
+        else:
+            quality = "good"
 
-    # pct filled
-    if result["entropy_avail"] is not None and result["pool_size"]:
-        result["fill_pct"] = round(result["entropy_avail"] / result["pool_size"] * 100, 1)
-
-    return jsonify(result)
+        return jsonify({
+            "entropy_avail": entropy_avail,
+            "pool_size": pool_size,
+            "entropy_pct": entropy_pct,
+            "entropy_daemon": entropy_daemon,
+            "quality": quality,
+            "source": "proc",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "entropy_avail": 0, "pool_size": 4096})
 
 
 # ── USB Device Inventory ──────────────────────────────────────────────────────
@@ -11216,6 +11219,84 @@ def api_network_arp_table():
         return jsonify({"error": "arp table unavailable", "entries": [], "count": 0})
     except Exception as exc:
         return jsonify({"error": str(exc), "entries": [], "count": 0})
+
+
+@app.route("/api/system/mounts")
+@require_auth
+def api_system_mounts():
+    PSEUDO_FS = {
+        "tmpfs", "devtmpfs", "squashfs", "overlay", "proc", "sysfs",
+        "devpts", "cgroup", "cgroup2", "pstore", "debugfs", "tracefs",
+        "hugetlbfs", "mqueue",
+    }
+    try:
+        out = _run(["df", "-h", "--output=source,fstype,size,used,avail,pcent,target"])
+        mounts = []
+        for line in out.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 7:
+                continue
+            source, fstype, size, used, avail, pcent = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+            target = " ".join(parts[6:])
+            if fstype in PSEUDO_FS:
+                continue
+            try:
+                use_pct = int(pcent.rstrip("%"))
+            except ValueError:
+                use_pct = 0
+            mounts.append({
+                "source": source,
+                "fstype": fstype,
+                "size": size,
+                "used": used,
+                "avail": avail,
+                "use_pct": use_pct,
+                "target": target,
+            })
+        return jsonify({"mounts": mounts, "count": len(mounts), "source": "df"})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "mounts": [], "count": 0})
+
+
+@app.route("/api/network/ipv6-addresses")
+@require_auth
+def api_ipv6_addresses():
+    try:
+        out, rc = _run(["ip", "-6", "-j", "addr", "show"], timeout=5)
+        if rc != 0:
+            return jsonify({"error": "ip command failed", "interfaces": [], "total_addresses": 0, "has_global": False})
+        data = json.loads(out)
+        interfaces = []
+        total_addresses = 0
+        has_global = False
+        for iface in data:
+            name = iface.get("ifname", "")
+            if name == "lo":
+                continue
+            addr_info = iface.get("addr_info", [])
+            addresses = []
+            for a in addr_info:
+                scope = a.get("scope", "")
+                if scope == "global":
+                    has_global = True
+                addresses.append({
+                    "address": a.get("local", ""),
+                    "prefixlen": a.get("prefixlen", 0),
+                    "scope": scope,
+                    "dynamic": bool(a.get("dynamic", False)),
+                    "deprecated": bool(a.get("deprecated", False)),
+                })
+            if addresses:
+                interfaces.append({"name": name, "addresses": addresses})
+                total_addresses += len(addresses)
+        return jsonify({
+            "interfaces": interfaces,
+            "total_addresses": total_addresses,
+            "has_global": has_global,
+            "source": "ip-addr",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "interfaces": [], "total_addresses": 0, "has_global": False})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

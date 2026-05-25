@@ -1058,6 +1058,18 @@
     <div id="kernel-modules-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- Mount Points -->
+  <div class="card" id="mounts-card">
+    <h2>💾 Mount Points</h2>
+    <div id="mounts-content"><p class="muted">Loading…</p></div>
+  </div>
+
+  <!-- IPv6 Addresses -->
+  <div class="card" id="ipv6-card">
+    <h2>🌐 IPv6 Addresses</h2>
+    <div id="ipv6-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1217,10 +1229,10 @@
     <div id="active-connections-content"><em>Loading…</em></div>
   </div>
 
-  <!-- Entropy / RNG -->
-  <div class="card" id="card-entropy">
-    <h2>🎲 Entropy / RNG</h2>
-    <div id="entropy-content"><em>Loading…</em></div>
+  <!-- System Entropy -->
+  <div class="card" id="entropy-card">
+    <h2>🎲 System Entropy</h2>
+    <div id="entropy-content"><p class="muted">Loading…</p></div>
   </div>
 
   <hr class="divider">
@@ -4652,6 +4664,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLinkStatus();
   fetchUserAccounts();
   fetchProcessTop();
+  fetchMounts();
+  fetchIPv6Addresses();
 });
 
 async function fetchJournal() {
@@ -4925,6 +4939,8 @@ async function refreshAll() {
   fetchUserAccounts();
   fetchProcessTop();
   fetchArpTable();
+  fetchMounts();
+  fetchIPv6Addresses();
 }
 
 async function init() {
@@ -7129,26 +7145,31 @@ async function fetchProcTop() {
   }
 }
 
-// ── Entropy Pool ─────────────────────────────────────────────────────────────
-
-    async function fetchEntropy() {
-      const el = document.getElementById('entropy-content');
-      try {
-        const r = await fetch('/api/system/entropy');
-        const d = await r.json();
-        const fillBar = d.fill_pct !== undefined
-          ? `<div style="background:#333;border-radius:4px;height:8px;margin:4px 0 8px"><div style="background:${d.fill_pct > 50 ? '#4caf50' : '#f44336'};width:${d.fill_pct}%;height:100%;border-radius:4px"></div></div>`
-          : '';
-        const rows = [
-          `<tr><td>Entropy available</td><td>${d.entropy_avail ?? '?'} bits ${d.fill_pct !== undefined ? `(${d.fill_pct}%)` : ''}</td></tr>`,
-          `<tr><td>Pool size</td><td>${d.pool_size ?? '?'} bits</td></tr>`,
-          d.read_wakeup_threshold !== undefined ? `<tr><td>Read wakeup threshold</td><td>${d.read_wakeup_threshold}</td></tr>` : '',
-          `<tr><td>HW RNG devices</td><td>${d.hwrng_devices && d.hwrng_devices.length ? d.hwrng_devices.join(', ') : 'none'}</td></tr>`,
-          `<tr><td>RNG daemons</td><td>${d.rng_daemons && d.rng_daemons.length ? d.rng_daemons.length + ' running' : 'none'}</td></tr>`,
-        ].filter(Boolean).join('');
-        el.innerHTML = fillBar + `<table class="info-table"><tbody>${rows}</tbody></table>`;
-      } catch (e) { el.textContent = 'Error: ' + e; }
-    }
+// ── System Entropy ────────────────────────────────────────────────────────────
+async function fetchEntropy() {
+  try {
+    const r = await fetch('/api/system/entropy');
+    const d = await r.json();
+    const el = document.getElementById('entropy-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    const qualColor = d.quality === 'good' ? 'var(--green)' : d.quality === 'low' ? 'var(--amber)' : 'var(--red)';
+    const barWidth = Math.min(100, d.entropy_pct || 0).toFixed(1);
+    let html = `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span>Entropy Available</span>
+        <span style="color:${qualColor};font-weight:600">${d.entropy_avail} / ${d.pool_size} bits (${barWidth}%)</span>
+      </div>
+      <div style="background:var(--bg2);border-radius:4px;height:8px">
+        <div style="width:${barWidth}%;background:${qualColor};height:8px;border-radius:4px"></div>
+      </div>
+    </div>`;
+    html += `<div class="metric-grid">
+      <div class="metric"><span class="metric-label">Quality</span><span class="metric-value" style="color:${qualColor}">${d.quality.toUpperCase()}</span></div>
+      <div class="metric"><span class="metric-label">Daemon</span><span class="metric-value">${d.entropy_daemon || 'none'}</span></div>
+    </div>`;
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('entropy-content').innerHTML = `<p class="error">${e}</p>`; }
+}
 
 // ── USB Device Inventory ──────────────────────────────────────────────────────
 
@@ -7299,6 +7320,51 @@ async function fetchWgConfigText() {
   } catch (e) {
     textEl.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   }
+}
+
+// ── Mount Points ──────────────────────────────────────────────────────────────
+async function fetchMounts() {
+  try {
+    const r = await fetch('/api/system/mounts');
+    const d = await r.json();
+    const el = document.getElementById('mounts-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    let html = '<table class="table"><thead><tr><th>Device</th><th>Mount</th><th>Type</th><th>Size</th><th>Used</th><th>Avail</th><th>Use%</th></tr></thead><tbody>';
+    for (const m of (d.mounts || [])) {
+      const pctColor = m.use_pct >= 90 ? 'color:var(--red)' : m.use_pct >= 75 ? 'color:var(--amber)' : 'color:var(--green)';
+      html += `<tr><td><code>${m.source}</code></td><td><code>${m.target}</code></td><td>${m.fstype}</td><td>${m.size}</td><td>${m.used}</td><td>${m.avail}</td><td style="${pctColor}">${m.use_pct}%</td></tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('mounts-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── IPv6 Addresses ────────────────────────────────────────────────────────────
+async function fetchIPv6Addresses() {
+  try {
+    const r = await fetch('/api/network/ipv6-addresses');
+    const d = await r.json();
+    const el = document.getElementById('ipv6-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (!d.interfaces || d.interfaces.length === 0 || d.total_addresses === 0) {
+      el.innerHTML = '<p class="muted">No IPv6 addresses configured.</p>'; return;
+    }
+    const globalBadge = d.has_global
+      ? '<span style="background:var(--green);color:#000;padding:2px 6px;border-radius:4px;font-size:0.75em;margin-left:6px">GLOBAL</span>'
+      : '<span style="background:var(--amber);color:#000;padding:2px 6px;border-radius:4px;font-size:0.75em;margin-left:6px">LINK-LOCAL ONLY</span>';
+    let html = `<p class="muted" style="margin-bottom:8px">Total addresses: <strong>${d.total_addresses}</strong>${globalBadge}</p>`;
+    for (const iface of d.interfaces) {
+      html += `<p style="font-weight:600;margin:6px 0 2px">${iface.name}</p>`;
+      html += '<table class="table"><thead><tr><th>Address</th><th>Prefix</th><th>Scope</th><th>Flags</th></tr></thead><tbody>';
+      for (const a of iface.addresses) {
+        const scopeColor = a.scope === 'global' ? 'color:var(--green)' : '';
+        const flags = [a.dynamic ? 'dynamic' : '', a.deprecated ? 'deprecated' : ''].filter(Boolean).join(', ') || '-';
+        html += `<tr><td><code style="font-size:0.8em">${a.address}</code></td><td>/${a.prefixlen}</td><td style="${scopeColor}">${a.scope}</td><td>${flags}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('ipv6-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Kernel Modules ────────────────────────────────────────────────────────────
