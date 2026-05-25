@@ -7128,32 +7128,96 @@ def api_tailscale_exitnode():
 @app.route("/api/system/usb", methods=["GET"])
 @require_auth
 def api_system_usb():
-    """Return a list of connected USB devices, filtering out root hubs."""
-    import re
+    """Return a list of connected USB devices with speed info, hubs last."""
+    import re as _re
+
+    devices = []
+    error = None
 
     out, rc = _run(["lsusb"])
-    devices = []
-    if rc == 0:
+    if rc == 0 and out:
         for line in out.splitlines():
-            m = re.match(
+            m = _re.match(
                 r"Bus (\d+) Device (\d+): ID ([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)",
                 line,
             )
             if m:
-                desc = m.group(5)
-                if "root hub" in desc.lower() or "Linux Foundation" in desc:
-                    continue
                 devices.append(
                     {
                         "bus": m.group(1),
                         "device": m.group(2),
                         "vendor_id": m.group(3),
                         "product_id": m.group(4),
-                        "description": desc,
+                        "description": m.group(5).strip(),
+                        "speed_mbps": None,
                     }
                 )
+    else:
+        # Fallback: parse /sys/kernel/debug/usb/devices
+        try:
+            with open("/sys/kernel/debug/usb/devices") as fh:
+                content = fh.read()
+            cur: dict = {}
+            for line in content.splitlines():
+                if line.startswith("T:"):
+                    if cur.get("vendor_id"):
+                        devices.append(cur)
+                    cur = {"bus": "", "device": "", "vendor_id": "0000",
+                           "product_id": "0000", "description": "", "speed_mbps": None}
+                    bm = _re.search(r"Bus=(\d+)", line)
+                    dm = _re.search(r"Dev#=\s*(\d+)", line)
+                    sm = _re.search(r"Spd=([\d.]+)", line)
+                    if bm:
+                        cur["bus"] = bm.group(1).zfill(3)
+                    if dm:
+                        cur["device"] = dm.group(1).zfill(3)
+                    if sm:
+                        cur["speed_mbps"] = sm.group(1)
+                elif line.startswith("P:"):
+                    pm = _re.search(r"Vendor=([0-9a-fA-F]{4})\s+ProdID=([0-9a-fA-F]{4})", line)
+                    if pm:
+                        cur["vendor_id"] = pm.group(1).lower()
+                        cur["product_id"] = pm.group(2).lower()
+                elif line.startswith("S:") and "Product=" in line:
+                    cur["description"] = line.split("Product=", 1)[1].strip()
+            if cur.get("vendor_id") and cur["vendor_id"] != "0000":
+                devices.append(cur)
+        except OSError:
+            error = "lsusb not found and /sys/kernel/debug/usb/devices unavailable"
 
-    return jsonify({"devices": devices, "count": len(devices)})
+    # Enrich with speed from /sys/bus/usb/devices/
+    sys_usb = Path("/sys/bus/usb/devices")
+    speed_map: dict = {}
+    if sys_usb.is_dir():
+        for entry in sys_usb.iterdir():
+            try:
+                busnum_file = entry / "busnum"
+                devnum_file = entry / "devnum"
+                speed_file = entry / "speed"
+                if busnum_file.exists() and devnum_file.exists() and speed_file.exists():
+                    bus = busnum_file.read_text().strip().zfill(3)
+                    dev = devnum_file.read_text().strip().zfill(3)
+                    speed = speed_file.read_text().strip()
+                    speed_map[(bus, dev)] = speed
+            except OSError:
+                continue
+
+    for dev in devices:
+        key = (dev["bus"].zfill(3), dev["device"].zfill(3))
+        if key in speed_map and dev["speed_mbps"] is None:
+            dev["speed_mbps"] = speed_map[key]
+
+    # Sort: hubs last, then by bus+device
+    devices.sort(key=lambda d: (
+        1 if "hub" in d["description"].lower() else 0,
+        d["bus"].zfill(3),
+        d["device"].zfill(3),
+    ))
+
+    result: dict = {"devices": devices, "count": len(devices)}
+    if error:
+        result["error"] = error
+    return jsonify(result)
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
