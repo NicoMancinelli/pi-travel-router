@@ -5116,6 +5116,61 @@ def api_network_traceroute():
     return jsonify({"target": target, "hops": hops, "count": len(hops)})
 
 
+# ── Wi-Fi Clients ─────────────────────────────────────────────────────────────
+
+
+@app.route("/api/wifi/clients")
+@require_auth
+def api_wifi_clients():
+    """Return connected Wi-Fi station info from iw station dump."""
+
+    def _parse_stations(output):
+        clients = []
+        current = {}
+        for raw_line in output.splitlines():
+            line = raw_line.strip()
+            if line.startswith("Station "):
+                if current.get("mac"):
+                    clients.append(current)
+                mac = line.split()[1]
+                current = {"mac": mac, "signal_dbm": None, "signal_quality": 0,
+                           "rx_bytes": 0, "tx_bytes": 0, "inactive_ms": 0}
+            elif line.startswith("signal:") and current:
+                # e.g. "signal:  -55 dBm"
+                m = re.search(r"(-?\d+)\s*dBm", line)
+                if m:
+                    dbm = int(m.group(1))
+                    current["signal_dbm"] = dbm
+                    current["signal_quality"] = max(0, min(100, 2 * (dbm + 100)))
+            elif line.startswith("rx bytes:") and current:
+                m = re.search(r"(\d+)", line)
+                if m:
+                    current["rx_bytes"] = int(m.group(1))
+            elif line.startswith("tx bytes:") and current:
+                m = re.search(r"(\d+)", line)
+                if m:
+                    current["tx_bytes"] = int(m.group(1))
+            elif line.startswith("inactive time:") and current:
+                m = re.search(r"(\d+)\s*ms", line)
+                if m:
+                    current["inactive_ms"] = int(m.group(1))
+        if current.get("mac"):
+            clients.append(current)
+        return clients
+
+    iface = "wlan0"
+    out, rc = _run(["iw", "dev", "wlan0", "station", "dump"])
+    clients = _parse_stations(out) if rc == 0 else []
+
+    if not clients:
+        out1, rc1 = _run(["iw", "dev", "wlan1", "station", "dump"])
+        if rc1 == 0 and out1.strip():
+            clients = _parse_stations(out1)
+            iface = "wlan1"
+
+    return jsonify({"interface": iface, "clients": clients, "count": len(clients)})
+
+
 # ── System Resources ──────────────────────────────────────────────────────────
 
 @app.route("/api/system/resources", methods=["GET"])
