@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.53.0] - 2026-05-25
+
+### Added
+- `GET /api/network/dns-config` — DNS resolver config from `/etc/resolv.conf` (nameservers, search, options), `resolvectl status` output, and AdGuard Home active status
+- `GET /api/system/usb-devices` — USB device listing via `lsusb` with tree view from `lsusb -t`; dashboard card shows bus, device ID, and description
+- `GET /api/network/ip-rules` — policy routing rules from `ip rule show`, parsed into priority/rule/table structure; useful for debugging multi-uplink failover
+- Dashboard cards: DNS Config (🌐), USB Devices (🔌), IP Rules (📋)
+
 ## [2.52.0] - 2026-05-25
 
 ### Added
