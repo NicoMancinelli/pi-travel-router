@@ -543,6 +543,28 @@
     <div id="doh-content"><span class="spinner"></span></div>
   </div>
 
+  <!-- DoH Resolver -->
+  <div class="card" id="card-doh-resolver" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F512; DNS Resolver</span>
+      <button class="btn btn-sm" onclick="fetchDohResolverNew()">&#x21BB; Refresh</button>
+    </div>
+    <div id="doh-resolver-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <select id="doh-resolver-select" style="flex:1;font-size:13px;padding:4px 8px;background:var(--bg2);color:var(--text);border:1px solid var(--border);border-radius:4px;">
+        <option value="cloudflare">Cloudflare (1.1.1.1)</option>
+        <option value="quad9">Quad9 (9.9.9.9)</option>
+        <option value="google">Google (8.8.8.8)</option>
+        <option value="nextdns">NextDNS</option>
+        <option value="adguard">AdGuard</option>
+      </select>
+      <button class="btn btn-primary" onclick="setDohResolver()" style="white-space:nowrap;">Apply</button>
+      <span id="doh-resolver-msg" style="font-size:12px;"></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Guest Network -->
@@ -2618,6 +2640,58 @@ async function saveDohResolver() {
   }
 }
 
+// ── DoH Resolver selector (new /api/dns/doh-resolver) ─────────────────────────
+async function fetchDohResolverNew() {
+  const el = document.getElementById('doh-resolver-content');
+  try {
+    const r = await apiFetch('/api/dns/doh-resolver');
+    const d = await r.json();
+    const current = d.current || 'unknown';
+    const resolvers = d.resolvers || [];
+    const currentInfo = resolvers.find(res => res.id === current) || {name: current, url: ''};
+    el.innerHTML = '<div style="font-size:13px;">Active: <strong>' + currentInfo.name + '</strong>'
+      + (currentInfo.url ? ' <span style="font-size:11px;color:var(--text-dim);font-family:monospace;">' + currentInfo.url + '</span>' : '')
+      + '</div>';
+    const sel = document.getElementById('doh-resolver-select');
+    if (sel) {
+      sel.innerHTML = '';
+      for (const res of resolvers) {
+        const opt = document.createElement('option');
+        opt.value = res.id;
+        opt.textContent = res.name + (res.url ? ' — ' + res.url.replace('https://', '') : '');
+        if (res.id === current) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+async function setDohResolver() {
+  const sel = document.getElementById('doh-resolver-select');
+  const msg = document.getElementById('doh-resolver-msg');
+  const resolver = sel ? sel.value : '';
+  if (!resolver) return;
+  msg.textContent = 'Applying…';
+  msg.style.color = 'var(--text-dim)';
+  try {
+    const r = await apiFetch('/api/dns/doh-resolver', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({resolver}) });
+    const d = await r.json();
+    if (r.ok) {
+      msg.textContent = '✓ Switched to ' + resolver;
+      msg.style.color = 'var(--success,#4c4)';
+      setTimeout(() => { msg.textContent = ''; fetchDohResolverNew(); }, 2000);
+    } else {
+      msg.textContent = d.error || 'Failed';
+      msg.style.color = 'var(--error,#e55)';
+    }
+  } catch (e) {
+    msg.textContent = 'Error: ' + e;
+    msg.style.color = 'var(--error,#e55)';
+  }
+}
+
 // ── WireGuard peers ────────────────────────────────────────────────────────────
 async function fetchWgPeers() {
   try {
@@ -3742,6 +3816,7 @@ async function refreshAll() {
   fetchConfig();
   fetchPrivacyProfile();
   fetchDohResolver();
+  fetchDohResolverNew();
   fetchWgPeers();
   fetchGuestNetwork();
   fetchWifiQr();
