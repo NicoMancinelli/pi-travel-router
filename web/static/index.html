@@ -1250,6 +1250,16 @@
     <div id="gpu-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- WiFi Survey -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📡 WiFi Survey</span>
+    </div>
+    <div class="card-body" id="wifi-survey-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -3122,6 +3132,61 @@ function _securityBadge(sec) {
   return '<span style="background:var(--text-dim);color:#000;border-radius:4px;padding:1px 5px;font-size:11px;font-weight:600;">Open</span>';
 }
 
+// ── WiFi Survey ───────────────────────────────────────────────────────────────
+async function fetchWifiSurvey() {
+  const el = document.getElementById('wifi-survey-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/network/wifi-survey');
+    const d = await r.json();
+    if (d.error && (!d.networks || d.networks.length === 0)) {
+      el.innerHTML = `<p class="muted">${d.error}</p>`;
+      return;
+    }
+    const nets = d.networks || [];
+    if (nets.length === 0) {
+      el.innerHTML = '<p class="muted">No networks found.</p>';
+      return;
+    }
+    const sigBar = (dbm) => {
+      if (dbm === null || dbm === undefined) return '';
+      // -30 = excellent, -90 = unusable
+      const pct = Math.max(0, Math.min(100, Math.round((dbm + 90) / 60 * 100)));
+      const col = pct >= 66 ? 'var(--green,#22c55e)' : pct >= 33 ? 'var(--amber,#f59e0b)' : 'var(--red,#ef4444)';
+      return `<div style="display:inline-block;width:50px;height:6px;background:var(--border);border-radius:3px;vertical-align:middle;margin-left:4px;"><div style="width:${pct}%;height:6px;background:${col};border-radius:3px;"></div></div>`;
+    };
+    const encBadge = (enc) => {
+      if (!enc || enc === 'Open') return '<span style="background:#dc2626;color:#fff;border-radius:3px;padding:0 5px;font-size:10px;">OPEN</span>';
+      if (enc.includes('WPA2')) return '<span style="background:#16a34a;color:#fff;border-radius:3px;padding:0 5px;font-size:10px;">WPA2</span>';
+      if (enc.includes('WPA')) return '<span style="background:#f59e0b;color:#fff;border-radius:3px;padding:0 5px;font-size:10px;">WPA</span>';
+      return `<span style="background:var(--border);color:var(--text);border-radius:3px;padding:0 5px;font-size:10px;">${enc}</span>`;
+    };
+    let html = `<div style="color:var(--text-dim);font-size:11px;margin-bottom:8px;">Interface: <code>${d.interface || '?'}</code> &mdash; ${nets.length} network${nets.length !== 1 ? 's' : ''} found</div>`;
+    html += '<div style="max-height:280px;overflow-y:auto">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 6px;">SSID</th>
+      <th style="text-align:left;padding:3px 6px;">BSSID</th>
+      <th style="text-align:right;padding:3px 6px;">Ch</th>
+      <th style="text-align:left;padding:3px 6px;">Signal</th>
+      <th style="text-align:left;padding:3px 6px;">Security</th>
+    </tr></thead><tbody>`;
+    for (const n of nets) {
+      const sig = n.signal_dbm !== null && n.signal_dbm !== undefined ? `${n.signal_dbm} dBm${sigBar(n.signal_dbm)}` : '—';
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 6px;font-weight:500;">${n.ssid || '<hidden>'}</td>
+        <td style="padding:3px 6px;font-family:monospace;font-size:11px;color:var(--text-dim)">${n.bssid || '—'}</td>
+        <td style="padding:3px 6px;text-align:right;color:var(--text-dim)">${n.channel || '—'}</td>
+        <td style="padding:3px 6px;white-space:nowrap">${sig}</td>
+        <td style="padding:3px 6px;">${encBadge(n.encryption)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
 async function fetchUplinkScan() {
   const listEl = document.getElementById('uplink-wifi-list');
   const curEl  = document.getElementById('uplink-wifi-current');
@@ -4839,6 +4904,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSockets();
   fetchSmart();
   fetchGpu();
+  fetchWifiSurvey();
 });
 
 async function fetchJournal() {
@@ -5108,6 +5174,7 @@ async function refreshAll() {
   fetchSockets();
   fetchSmart();
   fetchGpu();
+  fetchWifiSurvey();
 }
 
 async function init() {
