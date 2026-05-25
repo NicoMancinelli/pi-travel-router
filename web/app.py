@@ -5329,6 +5329,84 @@ def api_system_resources():
     })
 
 
+# ── Storage / Block Device Info ───────────────────────────────────────────────
+
+
+def _parse_size_to_gb(size_str: str) -> float:
+    """Parse a human-readable size string (e.g. '14G', '256M', '1.5T') to GB float."""
+    size_str = size_str.strip()
+    if not size_str or size_str == "-":
+        return 0.0
+    try:
+        unit = size_str[-1].upper()
+        value = float(size_str[:-1])
+        if unit == "T":
+            return round(value * 1024.0, 3)
+        if unit == "G":
+            return round(value, 3)
+        if unit == "M":
+            return round(value / 1024.0, 3)
+        if unit == "K":
+            return round(value / 1048576.0, 6)
+        # No unit — assume bytes
+        return round(float(size_str) / (1024 ** 3), 6)
+    except (ValueError, IndexError):
+        return 0.0
+
+
+@app.route("/api/system/storage", methods=["GET"])
+@require_auth
+def api_system_storage():
+    """Return disk partition usage and USB device list."""
+    disks = []
+    out, rc = _run("df -h --output=source,target,fstype,size,used,avail,pcent")
+    if rc == 0:
+        skip_fs = {"tmpfs", "devtmpfs", "udev", "none", "overlay", "squashfs"}
+        for line in out.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 7:
+                continue
+            device, mountpoint, fstype, size, used, avail, pcent = (
+                parts[0], parts[1], parts[2], parts[3], parts[4], parts[5], parts[6],
+            )
+            if fstype in skip_fs:
+                continue
+            try:
+                percent = float(pcent.rstrip("%"))
+            except ValueError:
+                percent = 0.0
+            disks.append({
+                "device": device,
+                "mountpoint": mountpoint,
+                "fstype": fstype,
+                "total_gb": _parse_size_to_gb(size),
+                "used_gb": _parse_size_to_gb(used),
+                "free_gb": _parse_size_to_gb(avail),
+                "percent": percent,
+            })
+
+    usb_devices = []
+    usb_out, usb_rc = _run("lsusb")
+    if usb_rc == 0:
+        import re as _re
+        for line in usb_out.splitlines():
+            # Format: Bus 001 Device 003: ID 0781:5583 SanDisk Ultra Fit
+            m = _re.match(
+                r"Bus\s+(\d+)\s+Device\s+(\d+):\s+ID\s+([0-9a-fA-F]{4}):([0-9a-fA-F]{4})\s*(.*)",
+                line,
+            )
+            if m:
+                usb_devices.append({
+                    "bus": m.group(1),
+                    "device": m.group(2),
+                    "vendor_id": m.group(3),
+                    "product_id": m.group(4),
+                    "description": m.group(5).strip(),
+                })
+
+    return jsonify({"disks": disks, "usb_devices": usb_devices})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
