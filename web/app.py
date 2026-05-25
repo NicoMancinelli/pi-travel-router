@@ -7734,6 +7734,49 @@ def api_system_journal_errors():
     return jsonify({"entries": entries, "count": len(entries), "priority_filter": priority})
 
 
+# ── Network Interface Counters (/proc/net/dev) ────────────────────────────────
+@app.route("/api/network/netdev", methods=["GET"])
+@require_auth
+def api_network_netdev():
+    proc_path = "/proc/net/dev"
+    try:
+        with open(proc_path, "r") as fh:
+            lines = fh.readlines()
+    except OSError as exc:
+        return jsonify({"interfaces": [], "count": 0, "error": str(exc)})
+
+    interfaces = []
+    # Skip the 2-line header
+    for line in lines[2:]:
+        line = line.strip()
+        if not line:
+            continue
+        iface, _, stats = line.partition(":")
+        iface = iface.strip()
+        if iface == "lo":
+            continue
+        fields = stats.split()
+        if len(fields) < 16:
+            continue
+        try:
+            interfaces.append({
+                "iface": iface,
+                "rx_bytes":   int(fields[0]),
+                "rx_packets": int(fields[1]),
+                "rx_errors":  int(fields[2]),
+                "rx_dropped": int(fields[3]),
+                "tx_bytes":   int(fields[8]),
+                "tx_packets": int(fields[9]),
+                "tx_errors":  int(fields[10]),
+                "tx_dropped": int(fields[11]),
+            })
+        except (ValueError, IndexError):
+            continue
+
+    interfaces.sort(key=lambda x: x["iface"])
+    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
