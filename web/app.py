@@ -3607,6 +3607,78 @@ def api_clients_history():
     return jsonify({"events": list(reversed(history[-limit:]))})
 
 
+# ── DHCP Leases ───────────────────────────────────────────────────────────────
+
+@app.route("/api/network/dhcp/leases", methods=["GET"])
+@require_auth
+def api_network_dhcp_leases():
+    """Return current DHCP leases from dnsmasq leases file."""
+    import time
+    leases_paths = [
+        "/var/lib/misc/dnsmasq.leases",
+        "/var/lib/dnsmasq/dnsmasq.leases",
+        "/tmp/dnsmasq.leases",
+    ]
+    leases = []
+    leases_file = None
+    for path in leases_paths:
+        if os.path.exists(path):
+            leases_file = path
+            break
+
+    if leases_file:
+        try:
+            with open(leases_file) as f:
+                now = int(time.time())
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split()
+                    if len(parts) < 4:
+                        continue
+                    try:
+                        expire_ts = int(parts[0])
+                    except ValueError:
+                        continue
+                    mac = parts[1]
+                    ip = parts[2]
+                    hostname = parts[3] if parts[3] != "*" else None
+                    client_id = parts[4] if len(parts) > 4 and parts[4] != "*" else None
+                    if expire_ts == 0:
+                        ttl_label = "static"
+                        expires_in = None
+                    else:
+                        ttl = expire_ts - now
+                        expires_in = ttl
+                        if ttl <= 0:
+                            ttl_label = "expired"
+                        elif ttl < 60:
+                            ttl_label = f"{ttl}s"
+                        elif ttl < 3600:
+                            ttl_label = f"{ttl // 60}m"
+                        else:
+                            ttl_label = f"{ttl // 3600}h {(ttl % 3600) // 60}m"
+                    leases.append({
+                        "mac": mac,
+                        "ip": ip,
+                        "hostname": hostname,
+                        "client_id": client_id,
+                        "expire_ts": expire_ts,
+                        "expires_in": expires_in,
+                        "ttl_label": ttl_label,
+                    })
+        except OSError as e:
+            return jsonify({"error": str(e), "leases": [], "count": 0, "leases_file": leases_file})
+
+    leases.sort(key=lambda x: x["ip"])
+    return jsonify({
+        "leases": leases,
+        "count": len(leases),
+        "leases_file": leases_file,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])
