@@ -1295,6 +1295,24 @@
           <div id="mdns-content"><em>Loading…</em></div>
         </div>
 
+        <!-- Failed Services -->
+        <div class="card" id="card-failed-services">
+          <h2>💥 Failed Services</h2>
+          <div id="failed-services-content"><em>Loading…</em></div>
+        </div>
+
+        <!-- IP Geolocation -->
+        <div class="card" id="card-ip-geo">
+          <h2>🌍 Public IP & Location</h2>
+          <div id="ip-geo-content"><em>Loading…</em></div>
+        </div>
+
+        <!-- NTP Peers -->
+        <div class="card" id="card-ntp-peers">
+          <h2>🕐 NTP Peers</h2>
+          <div id="ntp-peers-content"><em>Loading…</em></div>
+        </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4355,6 +4373,9 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCpuGovernors();
   fetchSystemTimers();
   fetchMdns();
+  fetchFailedServices();
+  fetchIpGeo();
+  fetchNtpPeers();
 });
 
 async function fetchJournal() {
@@ -4590,6 +4611,9 @@ async function refreshAll() {
   fetchCpuGovernors();
   fetchSystemTimers();
   fetchMdns();
+  fetchFailedServices();
+  fetchIpGeo();
+  fetchNtpPeers();
 }
 
 async function init() {
@@ -8493,6 +8517,61 @@ async function fetchMemoryBreakdown() {
           `<tr><td>${s.name}</td><td style="font-family:monospace;font-size:0.85em">${s.type}</td><td style="font-family:monospace">${s.hostname}</td><td>${s.address}</td><td style="text-align:right">${s.port}</td></tr>`
         ).join('');
         el.innerHTML = `<p style="margin:0 0 6px">${d.count} service(s)</p><table class="info-table"><thead><tr><th>Name</th><th>Type</th><th>Host</th><th>Address</th><th>Port</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+    async function fetchFailedServices() {
+      const el = document.getElementById('failed-services-content');
+      try {
+        const r = await fetch('/api/system/failed-services');
+        const d = await r.json();
+        if (!d.units || !d.units.length) {
+          el.innerHTML = '<span style="color:#4caf50">✓ No failed services</span>';
+          return;
+        }
+        let html = `<p style="margin:0 0 4px;color:#f44336">${d.count} failed unit(s)</p>`;
+        for (const u of d.units) {
+          const journal = u.journal_tail && u.journal_tail.length
+            ? `<pre style="font-size:0.78em;color:#888;margin:2px 0 0;white-space:pre-wrap;word-break:break-all">${u.journal_tail.slice(-3).join('\n')}</pre>` : '';
+          html += `<div style="margin-bottom:8px"><strong style="color:#f44336">${u.unit}</strong> <span style="color:#888;font-size:0.85em">${u.description}</span>${journal}</div>`;
+        }
+        el.innerHTML = html;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+
+    async function fetchIpGeo() {
+      const el = document.getElementById('ip-geo-content');
+      try {
+        const r = await fetch('/api/network/ip-geo');
+        const d = await r.json();
+        if (d.error) { el.textContent = 'Error: ' + d.error; return; }
+        const rows = [
+          d.ip ? `<tr><td>Public IP</td><td style="font-family:monospace;font-weight:600">${d.ip}</td></tr>` : '',
+          d.country ? `<tr><td>Country</td><td>${d.country}</td></tr>` : '',
+          d.region ? `<tr><td>Region</td><td>${d.region}</td></tr>` : '',
+          d.city ? `<tr><td>City</td><td>${d.city}</td></tr>` : '',
+          d.isp ? `<tr><td>ISP</td><td>${d.isp}</td></tr>` : '',
+          d.org ? `<tr><td>Org</td><td>${d.org}</td></tr>` : '',
+          d.asn ? `<tr><td>ASN</td><td style="font-family:monospace">${d.asn}</td></tr>` : '',
+        ].filter(Boolean).join('');
+        el.innerHTML = `<table class="info-table"><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+    async function fetchNtpPeers() {
+      const el = document.getElementById('ntp-peers-content');
+      try {
+        const r = await fetch('/api/system/ntp-peers');
+        const d = await r.json();
+        if (d.error) { el.textContent = d.error; return; }
+        if (!d.peers || !d.peers.length) { el.textContent = 'No NTP peers'; return; }
+        const stateLabel = s => ({'*': '✓ sync', '+': 'candidate', '-': 'outlier', '?': 'unknown'}[s] || s);
+        const rows = d.peers.map(p =>
+          `<tr><td>${stateLabel(p.state)}</td><td style="font-family:monospace">${p.source}</td><td>${p.stratum}</td><td>${p.offset_ms}</td></tr>`
+        ).join('');
+        let html = `<table class="info-table"><thead><tr><th>State</th><th>Source</th><th>Stratum</th><th>Offset</th></tr></thead><tbody>${rows}</tbody></table>`;
+        if (d.tracking && d.tracking['System time']) {
+          html = `<p style="margin:0 0 4px;font-size:0.85em;color:#888">Ref: ${d.tracking['Reference ID'] || '?'} — offset ${d.tracking['System time'] || '?'}</p>` + html;
+        }
+        el.innerHTML = html;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
