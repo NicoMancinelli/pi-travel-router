@@ -1125,19 +1125,29 @@ def api_services_status():
 
 
 @app.route("/api/system/reboot", methods=["POST"])
-@require_auth_always
+@require_auth
 def api_system_reboot():
-    delay = 30
-
+    """Schedule a system reboot in 10 seconds (gives client time to show countdown)."""
+    import threading as _t
+    import time as _time
     def _do_reboot():
-        import time as _t
-        _t.sleep(delay)
-        subprocess.run(["systemctl", "reboot"], timeout=10)
+        _time.sleep(10)
+        _run(["systemctl", "reboot"])
+    _t.Thread(target=_do_reboot, daemon=True).start()
+    return jsonify({"scheduled": True, "action": "reboot", "in_seconds": 10})
 
-    _push_event("reboot_scheduled", {"in_seconds": delay})
-    threading.Thread(target=_do_reboot, daemon=True).start()
-    return jsonify({"rebooting": True, "in_seconds": delay,
-                    "message": f"Reboot scheduled in {delay} seconds"})
+
+@app.route("/api/system/shutdown", methods=["POST"])
+@require_auth
+def api_system_shutdown():
+    """Schedule a system shutdown in 10 seconds."""
+    import threading as _t
+    import time as _time
+    def _do_shutdown():
+        _time.sleep(10)
+        _run(["systemctl", "poweroff"])
+    _t.Thread(target=_do_shutdown, daemon=True).start()
+    return jsonify({"scheduled": True, "action": "shutdown", "in_seconds": 10})
 
 
 @app.route("/api/vpn/wireguard/peer", methods=["POST"])

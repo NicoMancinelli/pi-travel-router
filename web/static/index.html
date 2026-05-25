@@ -981,6 +981,16 @@
     <div id="temp-history-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Reboot / Shutdown -->
+  <div class="card" id="card-power">
+    <div class="card-title">&#x23FB; Power Control</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <button class="btn" id="reboot-btn" onclick="confirmPowerAction('reboot')" style="background:#f97316;color:#fff;border:none;">&#x1F504; Reboot</button>
+      <button class="btn" id="shutdown-btn" onclick="confirmPowerAction('shutdown')" style="background:#ef4444;color:#fff;border:none;">&#x23FC; Shutdown</button>
+      <span id="power-status" style="font-size:13px;color:var(--text-dim);"></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -5833,6 +5843,50 @@ async function fetchTempHistory() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load temperature history</span>';
+  }
+}
+
+// ── Reboot / Shutdown ─────────────────────────────────────────────────────────
+
+function confirmPowerAction(action) {
+  const label = action === 'reboot' ? 'reboot' : 'shut down';
+  if (!confirm(`Are you sure you want to ${label} the router? You will lose connectivity briefly.`)) return;
+  executePowerAction(action);
+}
+
+async function executePowerAction(action) {
+  const statusEl = document.getElementById('power-status');
+  const rebootBtn = document.getElementById('reboot-btn');
+  const shutdownBtn = document.getElementById('shutdown-btn');
+
+  if (rebootBtn) rebootBtn.disabled = true;
+  if (shutdownBtn) shutdownBtn.disabled = true;
+  if (statusEl) statusEl.textContent = `Sending ${action} command…`;
+
+  try {
+    const resp = await apiFetch(`/api/system/${action}`, { method: 'POST' });
+    const d = await resp.json();
+    if (!d.scheduled) {
+      if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">Failed to schedule ${action}.</span>`;
+      if (rebootBtn) rebootBtn.disabled = false;
+      if (shutdownBtn) shutdownBtn.disabled = false;
+      return;
+    }
+
+    // Countdown
+    let remaining = d.in_seconds || 10;
+    const actionLabel = action === 'reboot' ? 'Rebooting' : 'Shutting down';
+    const tick = () => {
+      if (statusEl) statusEl.innerHTML = `<span style="color:#f97316;">${actionLabel} in ${remaining}s…</span>`;
+      if (remaining <= 0) return;
+      remaining--;
+      setTimeout(tick, 1000);
+    };
+    tick();
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">Error: ${escHtml(String(e))}</span>`;
+    if (rebootBtn) rebootBtn.disabled = false;
+    if (shutdownBtn) shutdownBtn.disabled = false;
   }
 }
 
