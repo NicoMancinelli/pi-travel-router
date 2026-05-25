@@ -7539,6 +7539,41 @@ def api_system_openfiles():
     return jsonify(result)
 
 
+# ── CPU Frequency ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/cpufreq", methods=["GET"])
+@require_auth
+def api_system_cpufreq():
+    """Return CPU frequency scaling info from sysfs for all online CPUs."""
+    import glob as _glob
+    cpus = []
+    cpu_dirs = sorted(_glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq"))
+    for cpu_dir in cpu_dirs:
+        cpu_id = cpu_dir.split("/")[-2]  # e.g. "cpu0"
+        info = {"cpu": cpu_id}
+        for key, filename in (
+            ("cur_khz",      "scaling_cur_freq"),
+            ("min_khz",      "scaling_min_freq"),
+            ("max_khz",      "scaling_max_freq"),
+            ("governor",     "scaling_governor"),
+            ("driver",       "scaling_driver"),
+            ("avail_govs",   "scaling_available_governors"),
+        ):
+            try:
+                val = open(f"{cpu_dir}/{filename}").read().strip()
+                if key.endswith("_khz"):
+                    try:
+                        val = int(val)
+                    except ValueError:
+                        pass
+                info[key] = val
+            except OSError:
+                info[key] = None
+        cpus.append(info)
+    if not cpus:
+        return jsonify({"error": "cpufreq sysfs not available", "cpus": []})
+    return jsonify({"cpus": cpus, "count": len(cpus)})
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -1157,6 +1157,11 @@
     <div id="open-files-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <div class="card full-width" id="card-cpufreq">
+    <div class="card-title">&#x26A1; CPU Frequency</div>
+    <div id="cpufreq-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4185,6 +4190,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDiskIO();
   fetchMemInfo();
   fetchOpenFiles();
+  fetchCpuFreq();
 });
 
 async function fetchJournal() {
@@ -4390,6 +4396,7 @@ async function refreshAll() {
   fetchDiskIO();
   fetchMemInfo();
   fetchOpenFiles();
+  fetchCpuFreq();
 }
 
 async function init() {
@@ -7083,6 +7090,45 @@ async function fetchOpenFiles() {
       }
       html += '</tbody></table>';
     }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+async function fetchCpuFreq() {
+  const el = document.getElementById('cpufreq-content');
+  try {
+    const r = await fetch('/api/system/cpufreq');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    if (!d.cpus || d.cpus.length === 0) { el.textContent = 'No CPUs found'; return; }
+    const fmtMhz = khz => khz ? (khz / 1000).toFixed(0) + ' MHz' : '—';
+    let html = '<table style="width:100%;border-collapse:collapse;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 8px;">CPU</th>
+      <th style="text-align:right;padding:3px 8px;">Current</th>
+      <th style="text-align:right;padding:3px 8px;">Min</th>
+      <th style="text-align:right;padding:3px 8px;">Max</th>
+      <th style="text-align:left;padding:3px 8px;">Governor</th>
+    </tr></thead><tbody>`;
+    for (const cpu of d.cpus) {
+      const pct = (cpu.cur_khz && cpu.max_khz)
+        ? Math.round(cpu.cur_khz / cpu.max_khz * 100) : null;
+      const barColor = pct >= 90 ? '#e74c3c' : pct >= 60 ? '#f39c12' : '#2ecc71';
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 8px;font-family:monospace;">${cpu.cpu}</td>
+        <td style="padding:3px 8px;text-align:right;">
+          ${fmtMhz(cpu.cur_khz)}
+          ${pct !== null ? `<div style="background:var(--border);border-radius:3px;height:4px;margin-top:2px;"><div style="background:${barColor};width:${pct}%;height:4px;border-radius:3px;"></div></div>` : ''}
+        </td>
+        <td style="padding:3px 8px;text-align:right;">${fmtMhz(cpu.min_khz)}</td>
+        <td style="padding:3px 8px;text-align:right;">${fmtMhz(cpu.max_khz)}</td>
+        <td style="padding:3px 8px;color:var(--text-dim);">${cpu.governor || '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
