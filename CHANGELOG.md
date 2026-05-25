@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.73.0] - 2026-05-25
+
+### Added
+- `GET /api/network/sockets` — network socket statistics from `ss -s` and `/proc/net/sockstat`; TCP state breakdown (ESTAB, LISTEN, TIME-WAIT, CLOSE-WAIT, etc.), top listeners by connection count, and sockstat page alloc counts; dashboard card shows metric tiles, TCP state chips, and top-listener table
+- `GET /api/system/smart` — SMART disk health via `smartctl`; per-disk health (PASSED/FAILED), temperature, reallocated sectors, and power-on hours; graceful fallback when `smartmontools` not installed; dashboard card shows health badge per device
+- `GET /api/system/gpu` — Raspberry Pi GPU/VideoCore stats via `vcgencmd`; ARM/GPU memory split bar, clock frequencies (ARM, core), core and SDRAM voltages, throttle flags (undervoltage, freq-capped, throttled); graceful "not a Pi" fallback
+- Dashboard cards: Network Sockets (🔌), Disk Health (🔴🟢), GPU/VideoCore (🎮)
+
 ## [2.72.0] - 2026-05-25
 
 ### Added
