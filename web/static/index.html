@@ -1217,10 +1217,10 @@
     <div id="active-connections-content"><em>Loading…</em></div>
   </div>
 
-  <!-- Entropy / RNG -->
-  <div class="card" id="card-entropy">
-    <h2>🎲 Entropy / RNG</h2>
-    <div id="entropy-content"><em>Loading…</em></div>
+  <!-- System Entropy -->
+  <div class="card" id="entropy-card">
+    <h2>🎲 System Entropy</h2>
+    <div id="entropy-content"><p class="muted">Loading…</p></div>
   </div>
 
   <hr class="divider">
@@ -7129,26 +7129,31 @@ async function fetchProcTop() {
   }
 }
 
-// ── Entropy Pool ─────────────────────────────────────────────────────────────
-
-    async function fetchEntropy() {
-      const el = document.getElementById('entropy-content');
-      try {
-        const r = await fetch('/api/system/entropy');
-        const d = await r.json();
-        const fillBar = d.fill_pct !== undefined
-          ? `<div style="background:#333;border-radius:4px;height:8px;margin:4px 0 8px"><div style="background:${d.fill_pct > 50 ? '#4caf50' : '#f44336'};width:${d.fill_pct}%;height:100%;border-radius:4px"></div></div>`
-          : '';
-        const rows = [
-          `<tr><td>Entropy available</td><td>${d.entropy_avail ?? '?'} bits ${d.fill_pct !== undefined ? `(${d.fill_pct}%)` : ''}</td></tr>`,
-          `<tr><td>Pool size</td><td>${d.pool_size ?? '?'} bits</td></tr>`,
-          d.read_wakeup_threshold !== undefined ? `<tr><td>Read wakeup threshold</td><td>${d.read_wakeup_threshold}</td></tr>` : '',
-          `<tr><td>HW RNG devices</td><td>${d.hwrng_devices && d.hwrng_devices.length ? d.hwrng_devices.join(', ') : 'none'}</td></tr>`,
-          `<tr><td>RNG daemons</td><td>${d.rng_daemons && d.rng_daemons.length ? d.rng_daemons.length + ' running' : 'none'}</td></tr>`,
-        ].filter(Boolean).join('');
-        el.innerHTML = fillBar + `<table class="info-table"><tbody>${rows}</tbody></table>`;
-      } catch (e) { el.textContent = 'Error: ' + e; }
-    }
+// ── System Entropy ────────────────────────────────────────────────────────────
+async function fetchEntropy() {
+  try {
+    const r = await fetch('/api/system/entropy');
+    const d = await r.json();
+    const el = document.getElementById('entropy-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    const qualColor = d.quality === 'good' ? 'var(--green)' : d.quality === 'low' ? 'var(--amber)' : 'var(--red)';
+    const barWidth = Math.min(100, d.entropy_pct || 0).toFixed(1);
+    let html = `<div style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span>Entropy Available</span>
+        <span style="color:${qualColor};font-weight:600">${d.entropy_avail} / ${d.pool_size} bits (${barWidth}%)</span>
+      </div>
+      <div style="background:var(--bg2);border-radius:4px;height:8px">
+        <div style="width:${barWidth}%;background:${qualColor};height:8px;border-radius:4px"></div>
+      </div>
+    </div>`;
+    html += `<div class="metric-grid">
+      <div class="metric"><span class="metric-label">Quality</span><span class="metric-value" style="color:${qualColor}">${d.quality.toUpperCase()}</span></div>
+      <div class="metric"><span class="metric-label">Daemon</span><span class="metric-value">${d.entropy_daemon || 'none'}</span></div>
+    </div>`;
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('entropy-content').innerHTML = `<p class="error">${e}</p>`; }
+}
 
 // ── USB Device Inventory ──────────────────────────────────────────────────────
 
