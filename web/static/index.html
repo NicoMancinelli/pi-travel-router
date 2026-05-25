@@ -1357,6 +1357,12 @@
     <div id="log-summary-journal-content"><em>Loading&hellip;</em></div>
   </div>
 
+  <!-- Package Updates -->
+  <div class="card" id="card-package-updates">
+    <h2>&#x1F4E6; Package Updates</h2>
+    <div id="package-updates-content"><em>Loading&hellip;</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4431,6 +4437,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLogSummaryJournal();
   fetchActiveConnections();
   fetchWifiClients();
+  fetchPackageUpdates();
 });
 
 async function fetchJournal() {
@@ -4678,6 +4685,7 @@ async function refreshAll() {
   fetchIpRules();
   fetchLogSummaryJournal();
   fetchActiveConnections();
+  fetchPackageUpdates();
 }
 
 async function init() {
@@ -8858,6 +8866,39 @@ async function fetchLogSummaryJournal() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load log summary</span>';
+  }
+}
+
+// ── Package Updates ───────────────────────────────────────────────────────────
+
+async function fetchPackageUpdates() {
+  const el = document.getElementById('package-updates-content');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/package-updates', { headers: authHeaders() });
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--danger)">Failed to load</span>'; return; }
+    const d = await r.json();
+    if (d.count === 0) {
+      el.innerHTML = '<span style="color:#22c55e;font-weight:600;">&#x2714; Up to date</span>';
+      return;
+    }
+    let html = `<div style="font-weight:600;margin-bottom:8px;">${d.count} update${d.count !== 1 ? 's' : ''} pending</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);text-align:left;">';
+    html += '<th style="padding:4px 8px;">Package</th><th style="padding:4px 8px;">Current</th><th style="padding:4px 8px;">Available</th><th style="padding:4px 8px;">Arch</th>';
+    html += '</tr></thead><tbody>';
+    for (const pkg of d.packages) {
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:4px 8px;">${pkg.package}</td>`;
+      html += `<td style="padding:4px 8px;color:var(--muted);">${pkg.current}</td>`;
+      html += `<td style="padding:4px 8px;color:#22c55e;">${pkg.available}</td>`;
+      html += `<td style="padding:4px 8px;">${pkg.arch}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load package updates</span>';
   }
 }
 
