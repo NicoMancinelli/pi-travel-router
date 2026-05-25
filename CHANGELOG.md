@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.36.0] - 2026-05-25
+
+### Added
+
+- **Kernel modules viewer** (`web/app.py`, `web/static/index.html`): `GET /api/system/modules` reads `/proc/modules`, parses name/size/used-by/deps, returns sorted list. Dashboard card with count badge, live filter input, and table with networking modules (wireguard, cfg80211, mac80211, ath, brcm, rtl) highlighted blue. On-demand Refresh button, loaded on page init.
+- **WireGuard config QR export** (`web/app.py`, `web/static/index.html`): `GET /api/vpn/wireguard/config/qr` reads `/etc/wireguard/wg0.conf`, generates QR PNG via `qrencode` in a temp file, returns `image/png` with `Cache-Control: no-store`. `GET /api/vpn/wireguard/config/text` returns sanitized config with `PrivateKey` redacted. Dashboard card loads QR as blob URL (auth-gated), toggleable config text view in `<pre>` block. On-demand only.
+- **System temperatures** (`web/app.py`, `web/static/index.html`): `GET /api/system/temps` globs all `/sys/class/thermal/thermal_zone*` sysfs entries, reads temp (÷1000 for °C), type, and trip_point_0_temp for critical threshold. Also calls `vcgencmd measure_temp` and `vcgencmd get_throttled` (Pi-specific). Classifies each sensor as `ok` (<70°C), `warm` (70-80°C), `hot` (>80°C). Dashboard card with colour-coded per-sensor rows and red throttling warning banner. Auto-refreshes on poll.
+
 ## [2.35.0] - 2026-05-25
 
 ### Added
