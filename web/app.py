@@ -5636,6 +5636,97 @@ def api_network_ping():
     return jsonify(result)
 
 
+# ── Network Interfaces Overview ───────────────────────────────────────────────
+
+@app.route("/api/network/interfaces", methods=["GET"])
+@require_auth
+def api_network_interfaces():
+    """Return all network interfaces with addresses and traffic stats via ip."""
+    import json as _json
+
+    interfaces = []
+
+    # Get address info (JSON output)
+    addr_out, addr_rc = _run(["ip", "-j", "addr"])
+    if addr_rc == 0:
+        try:
+            addr_data = _json.loads(addr_out)
+        except ValueError:
+            addr_data = []
+    else:
+        addr_data = []
+
+    # Get stats info (JSON output)
+    stats_out, stats_rc = _run(["ip", "-j", "-s", "link"])
+    stats_map = {}
+    if stats_rc == 0:
+        try:
+            stats_data = _json.loads(stats_out)
+            for iface in stats_data:
+                name = iface.get("ifname", "")
+                stats = iface.get("stats64") or iface.get("stats") or {}
+                rx = stats.get("rx", {})
+                tx = stats.get("tx", {})
+                stats_map[name] = {
+                    "rx_bytes": rx.get("bytes", 0),
+                    "tx_bytes": tx.get("bytes", 0),
+                    "rx_errors": rx.get("errors", 0),
+                    "tx_errors": tx.get("errors", 0),
+                }
+        except ValueError:
+            pass
+
+    def fmt_bytes(b):
+        b = int(b)
+        if b < 1024:
+            return f"{b} B"
+        elif b < 1024 * 1024:
+            return f"{b / 1024:.1f} KB"
+        elif b < 1024 * 1024 * 1024:
+            return f"{b / (1024*1024):.1f} MB"
+        else:
+            return f"{b / (1024*1024*1024):.2f} GB"
+
+    for iface in addr_data:
+        name = iface.get("ifname", "")
+        flags = iface.get("flags", [])
+        operstate = iface.get("operstate", "UNKNOWN").lower()
+        link_type = iface.get("link_type", "")
+        mac = iface.get("address", "")
+
+        # Collect IP addresses
+        addrs = []
+        for addr_info in iface.get("addr_info", []):
+            family = addr_info.get("family", "")
+            local = addr_info.get("local", "")
+            prefixlen = addr_info.get("prefixlen", "")
+            if local:
+                addrs.append({"family": family, "address": f"{local}/{prefixlen}"})
+
+        # Traffic stats
+        stats = stats_map.get(name, {})
+        rx_bytes = stats.get("rx_bytes", 0)
+        tx_bytes = stats.get("tx_bytes", 0)
+
+        interfaces.append({
+            "name": name,
+            "operstate": operstate,
+            "flags": flags,
+            "link_type": link_type,
+            "mac": mac,
+            "addresses": addrs,
+            "rx_bytes": rx_bytes,
+            "rx_label": fmt_bytes(rx_bytes),
+            "tx_bytes": tx_bytes,
+            "tx_label": fmt_bytes(tx_bytes),
+        })
+
+    # Sort: up interfaces first, then by name
+    interfaces.sort(key=lambda x: (0 if x["operstate"] == "up" else 1, x["name"]))
+
+    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
