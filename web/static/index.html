@@ -897,6 +897,22 @@
     <div id="wifi-clients-content" style="font-size:13px;color:var(--text-dim);">Loading…</div>
   </div>
 
+  <!-- Connectivity Check -->
+  <div class="card full-width" id="card-ping-checker" style="margin-top:16px;">
+    <div class="card-title">&#x1F4E1; Connectivity Check</div>
+    <div style="margin-bottom:10px;display:flex;flex-wrap:wrap;gap:6px;">
+      <button class="btn btn-sm" onclick="runPing('8.8.8.8')">8.8.8.8 (Google DNS)</button>
+      <button class="btn btn-sm" onclick="runPing('1.1.1.1')">1.1.1.1 (Cloudflare)</button>
+      <button class="btn btn-sm" onclick="runPing('google.com')">google.com</button>
+      <button class="btn btn-sm" onclick="runPing(window.location.hostname)">Gateway (this host)</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px;">
+      <input id="ping-host-input" type="text" class="form-control" placeholder="Custom host or IP" style="max-width:240px;font-size:13px;padding:4px 8px;">
+      <button class="btn btn-sm" onclick="runPing(document.getElementById('ping-host-input').value.trim())">&#x25B6; Ping</button>
+    </div>
+    <div id="ping-result" style="font-size:13px;color:var(--text-dim);">Select a target above to run a ping check.</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -5183,6 +5199,34 @@ async function fetchSystemResources() {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '⟳ Refresh'; }
+  }
+}
+
+// ── Ping Connectivity Checker ─────────────────────────────────────────────────
+
+async function runPing(host) {
+  if (!host) { return; }
+  const el = document.getElementById('ping-result');
+  el.innerHTML = '<span class="spinner"></span> Pinging <strong>' + host + '</strong>…';
+  try {
+    const r = await apiFetch('/api/network/ping?host=' + encodeURIComponent(host) + '&count=4');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--danger);">Error: ' + (d.error || r.status) + '</span>';
+      return;
+    }
+    const badge = d.alive
+      ? '<span style="background:var(--success,#22c55e);color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">ALIVE</span>'
+      : '<span style="background:var(--danger,#ef4444);color:#fff;padding:2px 8px;border-radius:4px;font-size:12px;">UNREACHABLE</span>';
+    const loss = d.loss_percent != null ? d.loss_percent.toFixed(1) + '% loss' : '—';
+    const rtt  = d.rtt_avg_ms  != null ? 'avg ' + d.rtt_avg_ms.toFixed(1) + ' ms' : 'no RTT';
+    el.innerHTML =
+      badge + '&nbsp;&nbsp;' +
+      '<strong>' + host + '</strong> — ' +
+      d.received + '/' + d.transmitted + ' received, ' +
+      loss + ', ' + rtt;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger);">Request failed: ' + e.message + '</span>';
   }
 }
 
