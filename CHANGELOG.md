@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.86.0] - 2026-05-25
+
+### Added
+- `GET /api/network/routes` — IPv4 routing table from `ip route show`; parsed dest/via/dev/metric/proto/scope; default gateway and interface extracted; dashboard card 🗺️ Route Table with default gateway banner and route list
+- `GET /api/system/clock` — NTP sync via `chronyc tracking` (primary) or `timedatectl show` (fallback); returns sync status, offset_ms, rms_offset_ms, freq_error_ppm, stratum, ref_id, leap_status; dashboard card 🕰️ Clock Sync with synced/unsynced badge and stats table
+- `GET /api/network/connections` — established TCP/UDP connections via `ss -tunp`; process name extracted from users field; top 20 by remote IP; dashboard card 🔌 Active Connections with proto/local/remote/process table
+- Dashboard cards: Route Table (🗺️), Clock Sync (🕰️), Active Connections (🔌)
+
 ## [2.85.0] - 2026-05-25
 
 ### Added
