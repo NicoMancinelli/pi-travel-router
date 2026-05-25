@@ -10892,6 +10892,95 @@ def api_network_dhcp_server_stats():
     return jsonify(stats)
 
 
+# ── Boot Time Analysis ────────────────────────────────────────────────────────
+
+@app.route("/api/system/boot-analysis", methods=["GET"])
+@require_auth
+def api_system_boot_analysis():
+    """Return systemd boot time analysis via systemd-analyze."""
+    result = {
+        "firmware_seconds": None,
+        "loader_seconds": None,
+        "kernel_seconds": None,
+        "initrd_seconds": None,
+        "userspace_seconds": None,
+        "total_seconds": None,
+        "graphical_target_seconds": None,
+        "blame": [],
+        "systemd_analyze_available": False,
+    }
+
+    # systemd-analyze time
+    out, rc = _run(["systemd-analyze", "time"])
+    if rc == 0:
+        result["systemd_analyze_available"] = True
+        for line in out.splitlines():
+            line = line.strip()
+            # "Startup finished in 1.234s (firmware) + 2.345s (loader) + ..."
+            def _parse_sec(pattern):
+                m = re.search(pattern, line)
+                if m:
+                    val = m.group(1)
+                    # Convert to float seconds: "1.234s", "1min 2.345s", "2ms"
+                    total = 0.0
+                    min_m = re.search(r'(\d+)min', val)
+                    if min_m:
+                        total += int(min_m.group(1)) * 60
+                    sec_m = re.search(r'([\d.]+)s', val)
+                    if sec_m:
+                        total += float(sec_m.group(1))
+                    ms_m = re.search(r'([\d.]+)ms', val)
+                    if ms_m:
+                        total += float(ms_m.group(1)) / 1000
+                    return round(total, 3)
+                return None
+
+            if "firmware" in line:
+                result["firmware_seconds"] = _parse_sec(r'([\d.]+(?:min [\d.]+)?s) \(firmware\)')
+            if "loader" in line:
+                result["loader_seconds"] = _parse_sec(r'([\d.]+(?:min [\d.]+)?s) \(loader\)')
+            if "kernel" in line:
+                result["kernel_seconds"] = _parse_sec(r'([\d.]+(?:min [\d.]+)?s) \(kernel\)')
+            if "initrd" in line:
+                result["initrd_seconds"] = _parse_sec(r'([\d.]+(?:min [\d.]+)?s) \(initrd\)')
+            if "userspace" in line:
+                result["userspace_seconds"] = _parse_sec(r'([\d.]+(?:min [\d.]+)?s) \(userspace\)')
+            if "graphical" in line.lower() or "reached" in line.lower():
+                result["graphical_target_seconds"] = _parse_sec(r'([\d.]+(?:min [\d.]+)?s)')
+            # Total from "= Xs" pattern
+            m_total = re.search(r'= ([\d.]+(?:min [\d.]+)?s)\s*$', line)
+            if m_total:
+                result["total_seconds"] = _parse_sec(r'= ([\d.]+(?:min [\d.]+)?[sm].*?)(?:\s|$)')
+
+    # systemd-analyze blame (top 15 slowest units)
+    blame_out, blame_rc = _run(["systemd-analyze", "blame"])
+    if blame_rc == 0:
+        blame = []
+        for line in blame_out.splitlines()[:15]:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                time_str = parts[0]
+                unit = parts[-1]
+                # Parse time to float seconds
+                total = 0.0
+                min_m = re.search(r'(\d+)min', time_str)
+                if min_m:
+                    total += int(min_m.group(1)) * 60
+                sec_m = re.search(r'([\d.]+)s', time_str)
+                if sec_m:
+                    total += float(sec_m.group(1))
+                ms_m = re.search(r'([\d.]+)ms', time_str)
+                if ms_m:
+                    total += float(ms_m.group(1)) / 1000
+                blame.append({"unit": unit, "seconds": round(total, 3), "time_str": time_str})
+        result["blame"] = blame
+
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
