@@ -1060,6 +1060,27 @@ def api_service_restart(name):
     return jsonify({"ok": True, "service": name})
 
 
+# ── Service control panel ─────────────────────────────────────────────────────
+
+_SERVICE_PANEL_UNITS = [
+    "hostapd", "dnsmasq", "wg-quick@wg0", "tailscaled",
+    "travel-router-web", "systemd-networkd", "dhcpcd",
+    "failover-watchdog", "wan-watchdog",
+]
+
+@app.route("/api/services/status", methods=["GET"])
+@require_auth
+def api_services_status():
+    """Return active/inactive/failed status for key router services."""
+    statuses = []
+    for unit in _SERVICE_PANEL_UNITS:
+        out, _ = _run(["systemctl", "is-active", unit], timeout=3)
+        state = (out or "").strip()
+        # systemctl is-active returns: active, inactive, failed, activating, deactivating, unknown
+        statuses.append({"unit": unit, "state": state})
+    return jsonify({"services": statuses})
+
+
 @app.route("/api/system/reboot", methods=["POST"])
 @require_auth_always
 def api_system_reboot():
