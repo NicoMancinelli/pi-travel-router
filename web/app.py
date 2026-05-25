@@ -11328,6 +11328,91 @@ def api_system_failed_units():
         return jsonify({"error": str(exc), "units": [], "count": 0, "healthy": True})
 
 
+# ── NTP / Time Sync Status (v2) ───────────────────────────────────────────────
+
+@app.route("/api/system/ntp-status", methods=["GET"])
+@require_auth
+def api_system_ntp_status():
+    """Return NTP/time sync status via timedatectl show and timedatectl timesync-status."""
+    def _parse_duration_ms(val: str):
+        """Parse strings like '123ms', '1.234s', '456us' into float milliseconds."""
+        val = val.strip()
+        try:
+            if val.endswith("ms"):
+                return float(val[:-2])
+            if val.endswith("us"):
+                return float(val[:-2]) / 1000.0
+            if val.endswith("s"):
+                return float(val[:-1]) * 1000.0
+            return float(val)
+        except (ValueError, AttributeError):
+            return None
+
+    try:
+        result = {
+            "ntp_enabled": False,
+            "ntp_synced": False,
+            "timezone": None,
+            "local_time": None,
+            "rtc_time": None,
+            "ntp_server": None,
+            "offset_ms": None,
+            "delay_ms": None,
+            "jitter_ms": None,
+            "source": "timedatectl",
+        }
+
+        out, rc = _run(["timedatectl", "show", "--no-pager"], timeout=5)
+        if rc == 0 and out:
+            for line in out.splitlines():
+                if "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k = k.strip()
+                v = v.strip()
+                if k == "NTP":
+                    result["ntp_enabled"] = v == "yes"
+                elif k == "NTPSynchronized":
+                    result["ntp_synced"] = v == "yes"
+                elif k == "Timezone":
+                    result["timezone"] = v
+                elif k == "TimeUSec":
+                    try:
+                        # TimeUSec is like "Mon 2024-01-01 12:00:00 UTC"
+                        result["local_time"] = v
+                    except Exception:
+                        pass
+                elif k == "RTCTimeUSec":
+                    result["rtc_time"] = v if v else None
+                elif k == "LocalRTC":
+                    pass  # informational only
+
+        if not result["local_time"]:
+            result["local_time"] = datetime.now().isoformat()
+
+        out2, rc2 = _run(["timedatectl", "timesync-status", "--no-pager"], timeout=5)
+        if rc2 == 0 and out2:
+            for line in out2.splitlines():
+                line = line.strip()
+                if ":" not in line:
+                    continue
+                k, _, v = line.partition(":")
+                k = k.strip().lower()
+                v = v.strip()
+                if k == "server" or k == "server address":
+                    result["ntp_server"] = v if v else None
+                elif k == "offset":
+                    result["offset_ms"] = _parse_duration_ms(v)
+                elif k == "delay":
+                    result["delay_ms"] = _parse_duration_ms(v)
+                elif k == "jitter":
+                    result["jitter_ms"] = _parse_duration_ms(v)
+
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc), "ntp_synced": False, "ntp_enabled": False})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
