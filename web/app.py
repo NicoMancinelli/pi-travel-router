@@ -8469,6 +8469,44 @@ def api_dmesg():
         return jsonify({"messages": [], "count": 0, "error": str(exc)})
 
 
+@app.route("/api/system/loadavg", methods=["GET"])
+@require_auth
+def api_system_loadavg():
+    """Return load average and process counts from /proc/loadavg and CPU count from /proc/cpuinfo."""
+    try:
+        with open("/proc/loadavg", "r") as fh:
+            raw = fh.read().strip()
+        parts = raw.split()
+        load_1 = float(parts[0])
+        load_5 = float(parts[1])
+        load_15 = float(parts[2])
+        procs = parts[3].split("/")
+        running_procs = int(procs[0])
+        total_procs = int(procs[1])
+
+        cpu_count = 0
+        with open("/proc/cpuinfo", "r") as fh:
+            for line in fh:
+                if line.startswith("processor"):
+                    cpu_count += 1
+        if cpu_count == 0:
+            cpu_count = 1
+
+        normalized_1 = round(load_1 / cpu_count, 3)
+
+        return jsonify({
+            "load_1": load_1,
+            "load_5": load_5,
+            "load_15": load_15,
+            "cpu_count": cpu_count,
+            "running_procs": running_procs,
+            "total_procs": total_procs,
+            "normalized_1": normalized_1,
+        })
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
