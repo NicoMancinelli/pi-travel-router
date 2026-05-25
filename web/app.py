@@ -8995,6 +8995,53 @@ def api_system_memory_breakdown():
         return jsonify({"error": str(exc)})
 
 
+@app.route("/api/system/cron-jobs")
+@require_auth
+def api_system_cron_jobs():
+    """Return scheduled cron jobs from system crontabs and user crontab."""
+    import glob
+    jobs = []
+
+    def _parse_crontab_lines(lines, source):
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("@"):
+                parts = line.split(None, 1)
+                jobs.append({"schedule": parts[0], "command": parts[1] if len(parts) > 1 else "", "source": source})
+            else:
+                parts = line.split(None, 5)
+                if len(parts) >= 6:
+                    schedule = " ".join(parts[:5])
+                    jobs.append({"schedule": schedule, "command": parts[5], "source": source})
+                elif len(parts) >= 5:
+                    schedule = " ".join(parts[:5])
+                    jobs.append({"schedule": schedule, "command": "", "source": source})
+
+    # /etc/crontab
+    try:
+        content = Path("/etc/crontab").read_text()
+        _parse_crontab_lines(content.splitlines(), "/etc/crontab")
+    except OSError:
+        pass
+
+    # /etc/cron.d/*
+    for path in sorted(glob.glob("/etc/cron.d/*")):
+        try:
+            content = Path(path).read_text()
+            _parse_crontab_lines(content.splitlines(), path)
+        except OSError:
+            pass
+
+    # root crontab
+    out, rc = _run(["crontab", "-l", "-u", "root"])
+    if rc == 0:
+        _parse_crontab_lines(out.splitlines(), "crontab(root)")
+
+    return jsonify({"jobs": jobs, "count": len(jobs)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

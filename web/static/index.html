@@ -1247,6 +1247,12 @@
     <div id="memory-breakdown-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+        <!-- Cron Jobs -->
+        <div class="card" id="card-cron-jobs">
+          <h2>⏰ Cron Jobs</h2>
+          <div id="cron-jobs-content"><em>Loading…</em></div>
+        </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4299,6 +4305,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCpuStats();
   fetchSysctl();
   fetchMemoryBreakdown();
+  fetchCronJobs();
 });
 
 async function fetchJournal() {
@@ -4526,6 +4533,7 @@ async function refreshAll() {
   fetchCpuStats();
   fetchSysctl();
   fetchMemoryBreakdown();
+  fetchCronJobs();
 }
 
 async function init() {
@@ -8333,6 +8341,20 @@ async function fetchMemoryBreakdown() {
     el.textContent = 'Failed: ' + e;
   }
 }
+
+    async function fetchCronJobs() {
+      const el = document.getElementById('cron-jobs-content');
+      try {
+        const r = await fetch('/api/system/cron-jobs');
+        const d = await r.json();
+        if (!d.jobs || !d.jobs.length) { el.textContent = 'No cron jobs found'; return; }
+        let rows = d.jobs.map(j =>
+          `<tr><td style="font-family:monospace;white-space:nowrap">${j.schedule}</td><td style="font-family:monospace;word-break:break-all">${j.command}</td><td style="color:#888;font-size:0.85em">${j.source}</td></tr>`
+        ).join('');
+        el.innerHTML = `<p style="margin:0 0 6px">${d.count} job(s)</p><table class="info-table"><thead><tr><th>Schedule</th><th>Command</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
 
 async function runLanScan() {
