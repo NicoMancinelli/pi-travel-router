@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.55.0] - 2026-05-25
+
+### Added
+- `GET /api/network/iptables` — iptables/ip6tables chain rules parsed into INPUT/FORWARD/OUTPUT dicts; dashboard card shows collapsible chain details with scrollable `<pre>` blocks
+- `GET /api/system/package-updates` — apt upgradable packages with current/available versions and architecture; dashboard card shows green checkmark when up-to-date or a table of pending updates
+- `GET /api/network/bandwidth` — live TX/RX rates via 1-second `/proc/net/dev` delta sampling per interface; dashboard card shows human-readable rates (B/s, KB/s, MB/s) and cumulative totals
+- Dashboard cards: Firewall Rules (🔥), Package Updates (📦), Live Bandwidth (📈)
+
 ## [2.54.0] - 2026-05-25
 
 ### Added
