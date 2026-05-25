@@ -1250,6 +1250,16 @@
     <div id="gpu-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- WiFi Survey -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📡 WiFi Survey</span>
+    </div>
+    <div class="card-body" id="wifi-survey-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -3122,6 +3132,61 @@ function _securityBadge(sec) {
   return '<span style="background:var(--text-dim);color:#000;border-radius:4px;padding:1px 5px;font-size:11px;font-weight:600;">Open</span>';
 }
 
+// ── WiFi Survey ───────────────────────────────────────────────────────────────
+async function fetchWifiSurvey() {
+  const el = document.getElementById('wifi-survey-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/network/wifi-survey');
+    const d = await r.json();
+    if (d.error && (!d.networks || d.networks.length === 0)) {
+      el.innerHTML = `<p class="muted">${d.error}</p>`;
+      return;
+    }
+    const nets = d.networks || [];
+    if (nets.length === 0) {
+      el.innerHTML = '<p class="muted">No networks found.</p>';
+      return;
+    }
+    const sigBar = (dbm) => {
+      if (dbm === null || dbm === undefined) return '';
+      // -30 = excellent, -90 = unusable
+      const pct = Math.max(0, Math.min(100, Math.round((dbm + 90) / 60 * 100)));
+      const col = pct >= 66 ? 'var(--green,#22c55e)' : pct >= 33 ? 'var(--amber,#f59e0b)' : 'var(--red,#ef4444)';
+      return `<div style="display:inline-block;width:50px;height:6px;background:var(--border);border-radius:3px;vertical-align:middle;margin-left:4px;"><div style="width:${pct}%;height:6px;background:${col};border-radius:3px;"></div></div>`;
+    };
+    const encBadge = (enc) => {
+      if (!enc || enc === 'Open') return '<span style="background:#dc2626;color:#fff;border-radius:3px;padding:0 5px;font-size:10px;">OPEN</span>';
+      if (enc.includes('WPA2')) return '<span style="background:#16a34a;color:#fff;border-radius:3px;padding:0 5px;font-size:10px;">WPA2</span>';
+      if (enc.includes('WPA')) return '<span style="background:#f59e0b;color:#fff;border-radius:3px;padding:0 5px;font-size:10px;">WPA</span>';
+      return `<span style="background:var(--border);color:var(--text);border-radius:3px;padding:0 5px;font-size:10px;">${enc}</span>`;
+    };
+    let html = `<div style="color:var(--text-dim);font-size:11px;margin-bottom:8px;">Interface: <code>${d.interface || '?'}</code> &mdash; ${nets.length} network${nets.length !== 1 ? 's' : ''} found</div>`;
+    html += '<div style="max-height:280px;overflow-y:auto">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 6px;">SSID</th>
+      <th style="text-align:left;padding:3px 6px;">BSSID</th>
+      <th style="text-align:right;padding:3px 6px;">Ch</th>
+      <th style="text-align:left;padding:3px 6px;">Signal</th>
+      <th style="text-align:left;padding:3px 6px;">Security</th>
+    </tr></thead><tbody>`;
+    for (const n of nets) {
+      const sig = n.signal_dbm !== null && n.signal_dbm !== undefined ? `${n.signal_dbm} dBm${sigBar(n.signal_dbm)}` : '—';
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 6px;font-weight:500;">${n.ssid || '<hidden>'}</td>
+        <td style="padding:3px 6px;font-family:monospace;font-size:11px;color:var(--text-dim)">${n.bssid || '—'}</td>
+        <td style="padding:3px 6px;text-align:right;color:var(--text-dim)">${n.channel || '—'}</td>
+        <td style="padding:3px 6px;white-space:nowrap">${sig}</td>
+        <td style="padding:3px 6px;">${encBadge(n.encryption)}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
 async function fetchUplinkScan() {
   const listEl = document.getElementById('uplink-wifi-list');
   const curEl  = document.getElementById('uplink-wifi-current');
@@ -4839,6 +4904,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSockets();
   fetchSmart();
   fetchGpu();
+  fetchWifiSurvey();
 });
 
 async function fetchJournal() {
@@ -5108,6 +5174,7 @@ async function refreshAll() {
   fetchSockets();
   fetchSmart();
   fetchGpu();
+  fetchWifiSurvey();
 }
 
 async function init() {
@@ -9585,36 +9652,48 @@ async function fetchMemoryBreakdown() {
         el.innerHTML = html;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
-    async function fetchHardwareInfo() {
-      const el = document.getElementById('hardware-info-content');
-      try {
-        const r = await fetch('/api/system/hardware');
-        const d = await r.json();
-        const fmtBytes = b => b >= 1073741824 ? (b/1073741824).toFixed(1)+' GiB' : (b/1048576).toFixed(0)+' MiB';
-        const throttleDesc = h => {
-          if (!h) return '—';
-          const v = parseInt(h.replace('throttled=',''), 16);
-          if (v === 0) return '✓ OK';
-          const flags = [];
-          if (v & 0x1) flags.push('under-voltage');
-          if (v & 0x2) flags.push('freq-capped');
-          if (v & 0x4) flags.push('throttled');
-          if (v & 0x10000) flags.push('uv-occurred');
-          if (v & 0x40000) flags.push('throttle-occurred');
-          return flags.length ? flags.join(', ') : h;
-        };
-        const rows = [
-          d.board_model ? `<tr><td>Board</td><td>${d.board_model}</td></tr>` : '',
-          d.hardware ? `<tr><td>Hardware</td><td>${d.hardware}</td></tr>` : '',
-          d.revision ? `<tr><td>Revision</td><td style="font-family:monospace">${d.revision}</td></tr>` : '',
-          d.serial ? `<tr><td>Serial</td><td style="font-family:monospace">${d.serial}</td></tr>` : '',
-          d.mem_total_kb ? `<tr><td>RAM</td><td>${fmtBytes(d.mem_total_kb * 1024)}</td></tr>` : '',
-          d.storage_bytes ? `<tr><td>Storage</td><td>${fmtBytes(d.storage_bytes)}${d.storage_device ? ' ('+d.storage_device+')' : ''}</td></tr>` : '',
-          d.throttle_hex ? `<tr><td>Throttle</td><td>${throttleDesc(d.throttle_hex)}</td></tr>` : '',
-        ].filter(Boolean).join('');
-        el.innerHTML = rows ? `<table class="info-table"><tbody>${rows}</tbody></table>` : 'No hardware data';
-      } catch (e) { el.textContent = 'Error: ' + e; }
+// ── Hardware Info ─────────────────────────────────────────────────────────────
+async function fetchHardwareInfo() {
+  const el = document.getElementById('hardware-info-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/hardware');
+    const d = await r.json();
+    if (d.cpuinfo_error && !d.model) {
+      el.innerHTML = `<p class="error">${d.cpuinfo_error}</p>`;
+      return;
     }
+    const row = (label, value) => value
+      ? `<tr><td style="padding:3px 10px;color:var(--text-dim);width:40%;font-size:12px;">${label}</td><td style="padding:3px 10px;font-size:13px;">${value}</td></tr>`
+      : '';
+    const tempColor = d.temp_c >= 80 ? '#dc2626' : d.temp_c >= 65 ? '#f59e0b' : '#16a34a';
+    const tempStr = d.temp_c !== undefined
+      ? `<span style="color:${tempColor};font-weight:600;">${d.temp_c} °C</span>`
+      : undefined;
+    const ramStr = d.ram_mb ? `${d.ram_mb >= 1024 ? (d.ram_mb/1024).toFixed(1) + ' GB' : d.ram_mb + ' MB'}` : undefined;
+    const cpuStr = d.cpu_model
+      ? (d.cpu_cores ? `${d.cpu_model} &times; ${d.cpu_cores}` : d.cpu_model)
+      : (d.cpu_cores ? `${d.cpu_cores} core${d.cpu_cores !== 1 ? 's' : ''}` : undefined);
+    let html = '<table style="width:100%;border-collapse:collapse;">';
+    if (d.model) html += row('Model', `<strong>${d.model}</strong>`);
+    if (d.hardware) html += row('Hardware', `<code>${d.hardware}</code>${d.revision ? ` <span style="color:var(--text-dim);font-size:11px;">(rev ${d.revision})</span>` : ''}`);
+    if (cpuStr) html += row('CPU', cpuStr);
+    if (ramStr) html += row('RAM', ramStr);
+    if (d.arch) html += row('Architecture', `<code>${d.arch}</code>`);
+    if (tempStr) html += row('Temperature', tempStr);
+    if (d.os) html += row('OS', d.os);
+    if (d.kernel) html += row('Kernel', `<code>${d.kernel}</code>`);
+    if (d.uptime_human) html += row('Uptime', d.uptime_human);
+    if (d.firmware) html += row('Firmware', `<code style="font-size:11px">${d.firmware}</code>`);
+    if (d.serial) html += row('Serial', `<code style="color:var(--text-dim)">${d.serial}</code>`);
+    html += '</table>';
+    if (!d.is_pi) {
+      html += '<div style="color:var(--text-dim);font-size:11px;margin-top:6px;">Note: Not a Raspberry Pi — some fields may be unavailable.</div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
 
     async function fetchVmstat() {
       const el = document.getElementById('vmstat-content');
