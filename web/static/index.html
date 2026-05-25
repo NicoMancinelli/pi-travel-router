@@ -931,6 +931,15 @@
     <div id="ping-result" style="font-size:13px;color:var(--text-dim);">Select a target above to run a ping check.</div>
   </div>
 
+  <!-- WireGuard Peers -->
+  <div class="card full-width" id="card-wg-peer-health">
+    <div class="card-title">
+      &#x1F512; WireGuard Peers (<span id="wg-peer-health-count">0</span>)
+      <button class="btn btn-sm" onclick="fetchWgPeerHealth()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="wg-peer-health-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3874,6 +3883,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSystemResources();
   fetchListeningPorts();
   fetchStorage();
+  fetchWgPeerHealth();
 });
 
 async function fetchJournal() {
@@ -5364,6 +5374,56 @@ async function runPing(host) {
       loss + ', ' + rtt;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger);">Request failed: ' + e.message + '</span>';
+  }
+}
+
+// ── WireGuard Peer Health ─────────────────────────────────────────────────────
+
+async function fetchWgPeerHealth() {
+  const el = document.getElementById('wg-peer-health-content');
+  const countEl = document.getElementById('wg-peer-health-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/vpn/wireguard/peers');
+    const data = await resp.json();
+    countEl.textContent = data.count || 0;
+    if (!data.wg_available) {
+      el.innerHTML = '<span style="color:var(--text-dim)">WireGuard not available (wg not installed or no interface).</span>';
+      return;
+    }
+    if (!data.peers || data.peers.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No WireGuard peers configured.</span>';
+      return;
+    }
+    function statusBadge(status) {
+      const colors = { active: '#22c55e', idle: '#f97316', stale: '#6b7280', inactive: '#6b7280' };
+      const c = colors[status] || '#6b7280';
+      return `<span style="display:inline-block;background:${c};color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">${status}</span>`;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Peer</th>';
+    html += '<th style="padding:5px 8px;">Status</th>';
+    html += '<th style="padding:5px 8px;">Handshake</th>';
+    html += '<th style="padding:5px 8px;">Endpoint</th>';
+    html += '<th style="padding:5px 8px;">RX / TX</th>';
+    html += '<th style="padding:5px 8px;">Allowed IPs</th>';
+    html += '</tr></thead><tbody>';
+    for (const p of data.peers) {
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(p.pubkey_short)}</td>`;
+      html += `<td style="padding:5px 8px;">${statusBadge(p.status)}</td>`;
+      html += `<td style="padding:5px 8px;">${escHtml(p.handshake_label)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${p.endpoint ? escHtml(p.endpoint) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(p.rx_label)} / ${escHtml(p.tx_label)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${p.allowed_ips.map(ip => escHtml(ip)).join('<br>')}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load WireGuard peers</span>';
   }
 }
 

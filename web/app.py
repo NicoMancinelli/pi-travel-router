@@ -5564,6 +5564,88 @@ def api_network_ping():
     return jsonify(result)
 
 
+# ── WireGuard Peer Health ─────────────────────────────────────────────────────
+
+@app.route("/api/vpn/wireguard/peers", methods=["GET"])
+@require_auth
+def api_vpn_wireguard_peers():
+    """Return WireGuard peer list with health stats from wg show."""
+    import re
+    out, rc = _run(["wg", "show", "all", "dump"])
+    peers = []
+    if rc == 0:
+        for line in out.strip().splitlines():
+            parts = line.split("\t")
+            # wg show all dump: iface pubkey preshared endpoint allowed_ips latest_handshake rx_bytes tx_bytes persistent_keepalive
+            # First line per interface is the interface itself (has private key), skip those
+            if len(parts) < 9:
+                continue
+            # Interface lines have 5 fields, peer lines have 9
+            iface = parts[0]
+            pubkey = parts[1]
+            # Skip interface summary lines (pubkey == private key placeholder)
+            if parts[2] == "(none)" or len(parts) == 5:
+                continue
+            try:
+                endpoint = parts[3] if parts[3] != "(none)" else None
+                allowed_ips = parts[4].split(",") if parts[4] else []
+                latest_handshake = int(parts[5])
+                rx_bytes = int(parts[6])
+                tx_bytes = int(parts[7])
+            except (ValueError, IndexError):
+                continue
+
+            import time
+            now = int(time.time())
+            if latest_handshake == 0:
+                handshake_age = None
+                handshake_label = "Never"
+                status = "inactive"
+            else:
+                age = now - latest_handshake
+                handshake_age = age
+                if age < 180:
+                    status = "active"
+                elif age < 600:
+                    status = "idle"
+                else:
+                    status = "stale"
+                # Human-readable age
+                if age < 60:
+                    handshake_label = f"{age}s ago"
+                elif age < 3600:
+                    handshake_label = f"{age // 60}m ago"
+                else:
+                    handshake_label = f"{age // 3600}h {(age % 3600) // 60}m ago"
+
+            def fmt_bytes(b):
+                if b < 1024:
+                    return f"{b} B"
+                elif b < 1024 * 1024:
+                    return f"{b / 1024:.1f} KB"
+                elif b < 1024 * 1024 * 1024:
+                    return f"{b / (1024*1024):.1f} MB"
+                else:
+                    return f"{b / (1024*1024*1024):.2f} GB"
+
+            peers.append({
+                "interface": iface,
+                "pubkey": pubkey,
+                "pubkey_short": pubkey[:8] + "…",
+                "endpoint": endpoint,
+                "allowed_ips": allowed_ips,
+                "latest_handshake": latest_handshake,
+                "handshake_age": handshake_age,
+                "handshake_label": handshake_label,
+                "status": status,
+                "rx_bytes": rx_bytes,
+                "rx_label": fmt_bytes(rx_bytes),
+                "tx_bytes": tx_bytes,
+                "tx_label": fmt_bytes(tx_bytes),
+            })
+    return jsonify({"peers": peers, "count": len(peers), "wg_available": rc == 0})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
