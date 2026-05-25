@@ -8617,6 +8617,29 @@ def api_system_loadavg():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/system/cpu-temp", methods=["GET"])
+@require_auth
+def api_system_cpu_temp():
+    """Return CPU thermal zone temperatures from /sys/class/thermal."""
+    try:
+        zones = []
+        thermal_base = Path("/sys/class/thermal")
+        for zone_path in sorted(thermal_base.glob("thermal_zone*")):
+            try:
+                zone_type = (zone_path / "type").read_text().strip()
+                temp_raw = (zone_path / "temp").read_text().strip()
+                temp_c = round(int(temp_raw) / 1000.0, 1)
+                if "acpi" in zone_type.lower() and temp_c == 0.0:
+                    continue
+                zones.append({"zone": zone_type, "temp_c": temp_c})
+            except (OSError, ValueError):
+                continue
+        max_temp = max((z["temp_c"] for z in zones), default=None)
+        return jsonify({"zones": zones, "max_temp_c": max_temp})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"zones": [], "max_temp_c": None, "error": str(exc)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
