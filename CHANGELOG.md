@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.35.0] - 2026-05-25
+
+### Added
+
+- **USB device inventory** (`web/app.py`, `web/static/index.html`): `GET /api/system/usb` runs `lsusb`, parses bus/device/vendor-ID/product-ID/description via regex, filters root hubs and Linux Foundation entries. Dashboard card with Bus/Device/ID/Description table; Ethernet/RNDIS/ECM adapters highlighted green, modem/LTE/Sierra/Huawei/ZTE devices highlighted blue. On-demand Refresh button, loaded on page init.
+- **System entropy pool** (`web/app.py`, `web/static/index.html`): `GET /api/system/entropy` reads `/proc/sys/kernel/random/entropy_avail` and `poolsize`, computes percent full, detects RNG source (`hardware_rng` via `/sys/bus/platform/drivers/bcm2835-rng`, `hwrng` via `/dev/hwrng`, else `software`), tests `os.getrandom(32, GRND_NONBLOCK)` for pool health. Dashboard card with large bit-count, colour-coded progress bar (green ≥75%, orange ≥40%, red <40%), source badge (blue=hardware, grey=software), getrandom tick/cross. Auto-refreshes on poll.
+- **Top processes** (`web/app.py`, `web/static/index.html`): `GET /api/system/proctop` parses `ps aux --no-header`, extracts user/pid/cpu%/mem%/state/command-basename, returns top 10 by CPU% and top 10 by MEM% plus total process count. Dashboard card with side-by-side flex tables (By CPU / By Memory); CPU >10% highlighted orange, >50% red; MEM >10% highlighted orange. Auto-refreshes on poll.
+
 ## [2.34.0] - 2026-05-25
 
 ### Added
