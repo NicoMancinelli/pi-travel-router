@@ -4725,6 +4725,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTimers();
   fetchPacketStats();
   fetchI2cDevices();
+  fetchInotifyStats();
 });
 
 async function fetchJournal() {
@@ -5007,6 +5008,7 @@ async function refreshAll() {
   fetchTimers();
   fetchPacketStats();
   fetchI2cDevices();
+  fetchInotifyStats();
 }
 
 async function init() {
