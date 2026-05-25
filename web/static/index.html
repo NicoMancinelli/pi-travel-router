@@ -4452,6 +4452,7 @@ async function refreshAll() {
   fetchConnections();
   fetchCronJobsSystem();
   fetchEntropy();
+  fetchUsbDevices();
   fetchProcTop();
   fetchSystemTemps();
   fetchDiskIO();
@@ -6769,40 +6770,39 @@ async function fetchUsbDevices() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/system/usb');
+    const r = await apiFetch('/api/system/usb-devices');
     const d = await r.json();
     if (!r.ok) {
       el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error fetching USB devices') + '</span>';
       return;
     }
     if (!d.devices || d.devices.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No USB devices found.</span>';
+      el.innerHTML = '<span style="color:var(--text-dim)">No USB devices detected.</span>';
       return;
     }
-    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    let html = '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">' + d.count + ' device' + (d.count !== 1 ? 's' : '') + ' connected</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += '<thead><tr style="border-bottom:1px solid var(--border);">';
     html += '<th style="text-align:left;padding:4px 8px;">Bus</th>';
-    html += '<th style="text-align:left;padding:4px 8px;">Device</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Dev</th>';
     html += '<th style="text-align:left;padding:4px 8px;">ID</th>';
     html += '<th style="text-align:left;padding:4px 8px;">Description</th>';
     html += '</tr></thead><tbody>';
     for (const dev of d.devices) {
       const desc = dev.description || '';
-      let rowStyle = '';
-      if (/ethernet|rndis|ecm/i.test(desc)) {
-        rowStyle = 'color:#4caf50;';
-      } else if (/modem|lte|sierra|huawei|zte/i.test(desc)) {
-        rowStyle = 'color:#2196f3;';
+      const isNet = /ethernet|wlan|wireless/i.test(desc);
+      let badge = '';
+      if (isNet) {
+        badge = ' <span style="font-size:11px;padding:1px 5px;border-radius:3px;background:rgba(33,150,243,0.15);color:#2196f3;border:1px solid rgba(33,150,243,0.3);">network</span>';
       }
       html += '<tr style="border-bottom:1px solid var(--border);">';
-      html += '<td style="padding:4px 8px;' + rowStyle + '">' + dev.bus + '</td>';
-      html += '<td style="padding:4px 8px;' + rowStyle + '">' + dev.device + '</td>';
-      html += '<td style="padding:4px 8px;font-family:monospace;' + rowStyle + '">' + dev.vendor_id + ':' + dev.product_id + '</td>';
-      html += '<td style="padding:4px 8px;' + rowStyle + '">' + desc + '</td>';
+      html += '<td style="padding:4px 8px;">' + dev.bus + '</td>';
+      html += '<td style="padding:4px 8px;">' + dev.device + '</td>';
+      html += '<td style="padding:4px 8px;font-family:monospace;">' + dev.vendor_id + ':' + dev.product_id + '</td>';
+      html += '<td style="padding:4px 8px;">' + desc + badge + '</td>';
       html += '</tr>';
     }
     html += '</tbody></table>';
-    html += '<div style="margin-top:6px;font-size:12px;color:var(--text-dim);">' + d.count + ' device' + (d.count !== 1 ? 's' : '') + '</div>';
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load USB devices</span>';
