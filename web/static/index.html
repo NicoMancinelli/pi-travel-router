@@ -841,6 +841,16 @@
     <div id="updates-content"><span style="color:var(--text-dim);font-size:13px;">Click Check to scan for updates.</span></div>
   </div>
 
+  <!-- Config Backup -->
+  <div class="card" id="card-config-backup" style="margin-top:16px;">
+    <div class="card-header">
+      <span>💾 Config Backup</span>
+    </div>
+    <div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">Download a snapshot of router config files: wireguard, dnsmasq, hostapd, and data store.</div>
+    <button class="btn" onclick="downloadConfigBackup()" style="width:100%;">⬇ Download Backup</button>
+    <div id="backup-status" style="margin-top:8px;font-size:12px;color:var(--text-dim);"></div>
+  </div>
+
   <!-- Traceroute Tool -->
   <div class="card full-width" id="card-traceroute" style="margin-top:16px;">
     <div class="card-header">
@@ -4864,6 +4874,31 @@ async function fetchSystemUpdates() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Check'; }
   }
+}
+
+// ── Config Backup ─────────────────────────────────────────────────────────────
+
+function downloadConfigBackup() {
+  const status = document.getElementById('backup-status');
+  status.textContent = 'Preparing backup…';
+  const token = window._authToken || '';
+  const url = '/api/config/backup';
+  fetch(url, { headers: token ? { 'Authorization': 'Bearer ' + token } : {} })
+    .then(r => {
+      if (!r.ok) { status.textContent = 'Error: ' + r.status; return; }
+      return r.blob().then(blob => {
+        const cd = r.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename="?([^"]+)"?/);
+        const filename = match ? match[1] : 'travel-router-backup.tar.gz';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+        status.textContent = '✓ Downloaded ' + filename;
+      });
+    })
+    .catch(e => { status.textContent = 'Failed: ' + e; });
 }
 
 // ── Traceroute Tool ────────────────────────────────────────────────────────────

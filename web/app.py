@@ -5049,6 +5049,44 @@ def api_system_updates():
     return jsonify({"count": len(packages), "packages": packages})
 
 
+# ── Config backup ─────────────────────────────────────────────────────────────
+
+@app.route("/api/config/backup", methods=["GET"])
+@require_auth_always
+def api_config_backup():
+    """Generate and download a tar.gz of key config files."""
+    import io
+    import tarfile
+    import datetime
+
+    backup_paths = [
+        "/etc/default/travel-router",
+        "/etc/wireguard/wg0.conf",
+        "/etc/dnsmasq.conf",
+        "/etc/dnsmasq.d/",
+        "/var/lib/travel-router/",
+        "/etc/hostapd/hostapd.conf",
+    ]
+    buf = io.BytesIO()
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    try:
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            for path in backup_paths:
+                p = Path(path)
+                if p.exists():
+                    tar.add(str(p), arcname=path.lstrip("/"))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    buf.seek(0)
+    from flask import send_file
+    return send_file(
+        buf,
+        mimetype="application/gzip",
+        as_attachment=True,
+        download_name=f"travel-router-backup-{ts}.tar.gz",
+    )
+
+
 # ── Traceroute tool ───────────────────────────────────────────────────────────
 
 @app.route("/api/network/traceroute", methods=["GET"])
