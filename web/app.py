@@ -7459,6 +7459,59 @@ def api_system_modules():
     return jsonify({"modules": modules, "count": len(modules)})
 
 
+# ── Disk I/O Stats ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/diskio", methods=["GET"])
+@require_auth
+def api_system_diskio():
+    """Parse /proc/diskstats for block devices (exclude loop/ram devices)."""
+    devices = []
+    try:
+        with open("/proc/diskstats", "r") as fh:
+            for line in fh:
+                cols = line.split()
+                if len(cols) < 14:
+                    continue
+                dev = cols[2]
+                # Skip loop, ram, and partition entries (sdXN, mmcblk0pN)
+                if dev.startswith(("loop", "ram")):
+                    continue
+                # Skip partitions (have a digit at end after a letter)
+                if re.search(r"[a-z]\d+$", dev):
+                    continue
+                try:
+                    reads_completed   = int(cols[3])
+                    reads_merged      = int(cols[4])
+                    sectors_read      = int(cols[5])
+                    read_ms           = int(cols[6])
+                    writes_completed  = int(cols[7])
+                    writes_merged     = int(cols[8])
+                    sectors_written   = int(cols[9])
+                    write_ms          = int(cols[10])
+                    io_in_progress    = int(cols[11])
+                    io_ms             = int(cols[12])
+                except (ValueError, IndexError):
+                    continue
+                devices.append({
+                    "device":           dev,
+                    "reads_completed":  reads_completed,
+                    "reads_merged":     reads_merged,
+                    "sectors_read":     sectors_read,
+                    "bytes_read":       sectors_read * 512,
+                    "read_ms":          read_ms,
+                    "writes_completed": writes_completed,
+                    "writes_merged":    writes_merged,
+                    "sectors_written":  sectors_written,
+                    "bytes_written":    sectors_written * 512,
+                    "write_ms":         write_ms,
+                    "io_in_progress":   io_in_progress,
+                    "io_ms":            io_ms,
+                })
+    except OSError as exc:
+        return jsonify({"error": str(exc)}), 503
+    return jsonify({"devices": devices})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

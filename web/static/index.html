@@ -1143,6 +1143,11 @@
     <div id="kernel-modules-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <div class="card full-width" id="card-diskio">
+    <div class="card-title">&#x1F4BE; Disk I/O Stats</div>
+    <div id="diskio-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4168,6 +4173,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSystemTemps();
   fetchWgConfigQr();
   fetchKernelModules();
+  fetchDiskIO();
 });
 
 async function fetchJournal() {
@@ -4370,6 +4376,7 @@ async function refreshAll() {
   fetchEntropy();
   fetchProcTop();
   fetchSystemTemps();
+  fetchDiskIO();
 }
 
 async function init() {
@@ -6945,6 +6952,50 @@ async function fetchKernelModules() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('Kernel modules error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load kernel modules</span>';
+  }
+}
+
+async function fetchDiskIO() {
+  const el = document.getElementById('diskio-content');
+  try {
+    const r = await fetch('/api/system/diskio');
+    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
+    const d = await r.json();
+    if (d.error) { el.textContent = d.error; return; }
+    if (!d.devices || d.devices.length === 0) {
+      el.textContent = 'No block devices found';
+      return;
+    }
+    const fmtBytes = b => b >= 1073741824
+      ? (b / 1073741824).toFixed(2) + ' GB'
+      : b >= 1048576
+        ? (b / 1048576).toFixed(1) + ' MB'
+        : b >= 1024
+          ? (b / 1024).toFixed(0) + ' kB'
+          : b + ' B';
+    let html = '<table style="width:100%;border-collapse:collapse;">';
+    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+      <th style="text-align:left;padding:3px 8px;">Device</th>
+      <th style="text-align:right;padding:3px 8px;">Reads</th>
+      <th style="text-align:right;padding:3px 8px;">Read</th>
+      <th style="text-align:right;padding:3px 8px;">Writes</th>
+      <th style="text-align:right;padding:3px 8px;">Written</th>
+      <th style="text-align:right;padding:3px 8px;">I/O ms</th>
+    </tr></thead><tbody>`;
+    for (const dev of d.devices) {
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 8px;font-family:monospace;">${dev.device}</td>
+        <td style="padding:3px 8px;text-align:right;">${dev.reads_completed.toLocaleString()}</td>
+        <td style="padding:3px 8px;text-align:right;">${fmtBytes(dev.bytes_read)}</td>
+        <td style="padding:3px 8px;text-align:right;">${dev.writes_completed.toLocaleString()}</td>
+        <td style="padding:3px 8px;text-align:right;">${fmtBytes(dev.bytes_written)}</td>
+        <td style="padding:3px 8px;text-align:right;">${dev.io_ms.toLocaleString()}</td>
+      </tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
   }
 }
 
