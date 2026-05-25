@@ -1534,8 +1534,13 @@
 
   <!-- System Entropy -->
   <div class="card" id="entropy-card">
-    <h2>🎲 System Entropy</h2>
-    <div id="entropy-content"><p class="muted">Loading…</p></div>
+    <div class="card-header">
+      <span>🎲 System Entropy</span>
+      <span class="card-badge" id="entropy-badge">—</span>
+    </div>
+    <div class="card-body" id="entropy-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <hr class="divider">
@@ -1801,9 +1806,14 @@
   </div>
 
   <!-- Package Updates -->
-  <div class="card" id="card-package-updates">
-    <h2>&#x1F4E6; Package Updates</h2>
-    <div id="package-updates-content"><em>Loading&hellip;</em></div>
+  <div class="card" id="package-updates-card">
+    <div class="card-header">
+      <span>&#x1F4E6; Package Updates</span>
+      <span class="card-badge" id="package-updates-count">&#x2014;</span>
+    </div>
+    <div class="card-body" id="package-updates-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
   </div>
 
   <!-- Network Bandwidth -->
@@ -7834,28 +7844,54 @@ async function fetchProcTop() {
 
 // ── System Entropy ────────────────────────────────────────────────────────────
 async function fetchEntropy() {
+  const el = document.getElementById('entropy-content');
+  const badge = document.getElementById('entropy-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
     const r = await fetch('/api/system/entropy');
     const d = await r.json();
-    const el = document.getElementById('entropy-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    const qualColor = d.quality === 'good' ? 'var(--green)' : d.quality === 'low' ? 'var(--amber)' : 'var(--red)';
-    const barWidth = Math.min(100, d.entropy_pct || 0).toFixed(1);
-    let html = `<div style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <span>Entropy Available</span>
-        <span style="color:${qualColor};font-weight:600">${d.entropy_avail} / ${d.pool_size} bits (${barWidth}%)</span>
+    const pct = d.pct ?? 0;
+    if (badge) {
+      badge.textContent = `${d.entropy_avail ?? '—'} bits`;
+      badge.style.background = pct >= 50 ? '#16a34a' : pct >= 20 ? '#f59e0b' : '#dc2626';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
+    }
+    let html = '';
+    const barColor = pct >= 50 ? '#16a34a' : pct >= 20 ? '#f59e0b' : '#dc2626';
+    html += `<div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+        <span>Entropy pool</span>
+        <span style="color:var(--text-dim)">${d.entropy_avail ?? 0} / ${d.pool_size ?? 4096} bits (${pct.toFixed(0)}%)</span>
       </div>
-      <div style="background:var(--bg2);border-radius:4px;height:8px">
-        <div style="width:${barWidth}%;background:${qualColor};height:8px;border-radius:4px"></div>
+      <div style="background:var(--border);border-radius:4px;height:10px;">
+        <div style="background:${barColor};width:${Math.min(pct,100)}%;height:10px;border-radius:4px;transition:width 0.3s;"></div>
       </div>
     </div>`;
-    html += `<div class="metric-grid">
-      <div class="metric"><span class="metric-label">Quality</span><span class="metric-value" style="color:${qualColor}">${d.quality.toUpperCase()}</span></div>
-      <div class="metric"><span class="metric-label">Daemon</span><span class="metric-value">${d.entropy_daemon || 'none'}</span></div>
-    </div>`;
+    const stats = [
+      d.read_threshold != null ? ['Read threshold', `${d.read_threshold} bits`] : null,
+      d.write_threshold != null ? ['Write threshold', `${d.write_threshold} bits`] : null,
+      d.hw_rng ? ['HW RNG', d.hw_rng] : null,
+      ['UUID read', d.uuid_ok ? '✓ OK' : '✗ Failed'],
+    ].filter(Boolean);
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">';
+    for (const [k, v] of stats) {
+      const isOk = v === '✓ OK';
+      const isFail = v === '✗ Failed';
+      html += `<div style="background:var(--bg2);border-radius:4px;padding:4px 10px;font-size:11px;">
+        <span style="color:var(--text-dim)">${k}: </span>
+        <strong style="${isOk ? 'color:#16a34a' : isFail ? 'color:#dc2626' : ''}">${v}</strong>
+      </div>`;
+    }
+    html += '</div>';
+    if (d.hw_rng_available?.length > 1) {
+      html += `<div style="font-size:11px;color:var(--text-dim);">Available RNGs: ${d.hw_rng_available.join(', ')}</div>`;
+    }
     el.innerHTML = html;
-  } catch(e) { document.getElementById('entropy-content').innerHTML = `<p class="error">${e}</p>`; }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── USB Devices ───────────────────────────────────────────────────────────────

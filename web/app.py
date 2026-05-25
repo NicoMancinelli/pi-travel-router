@@ -7044,50 +7044,62 @@ def api_proctop():
 @app.route("/api/system/entropy")
 @require_auth
 def api_system_entropy():
-    """Return kernel entropy pool stats and quality indicator."""
+    """Return kernel entropy pool stats and RNG health."""
     try:
         entropy_avail = int(Path("/proc/sys/kernel/random/entropy_avail").read_text().strip())
         pool_size = int(Path("/proc/sys/kernel/random/poolsize").read_text().strip())
 
         try:
-            urandom_min_reseed = int(
-                Path("/proc/sys/kernel/random/urandom_min_reseed_secs").read_text().strip()
+            read_threshold = int(
+                Path("/proc/sys/kernel/random/read_wakeup_threshold").read_text().strip()
             )
         except (OSError, ValueError):
-            urandom_min_reseed = None
+            read_threshold = None
 
-        # detect entropy daemon via pgrep
-        entropy_daemon = None
-        import subprocess as _sp
-        for daemon in ("haveged", "rngd"):
-            try:
-                rc = _sp.call(
-                    ["pgrep", "-x", daemon],
-                    stdout=_sp.DEVNULL,
-                    stderr=_sp.DEVNULL,
-                )
-                if rc == 0:
-                    entropy_daemon = daemon
-                    break
-            except OSError:
-                pass
+        try:
+            write_threshold = int(
+                Path("/proc/sys/kernel/random/write_wakeup_threshold").read_text().strip()
+            )
+        except (OSError, ValueError):
+            write_threshold = None
 
-        entropy_pct = round(entropy_avail / pool_size * 100, 1) if pool_size else 0.0
+        try:
+            hw_rng = Path("/sys/class/misc/hw_random/rng_current").read_text().strip()
+        except (OSError, ValueError):
+            hw_rng = None
 
-        if entropy_avail < 200:
-            quality = "critical"
-        elif entropy_avail < 1000:
-            quality = "low"
-        else:
-            quality = "good"
+        try:
+            hw_rng_available = (
+                Path("/sys/class/misc/hw_random/rng_available").read_text().strip().split()
+            )
+        except (OSError, ValueError):
+            hw_rng_available = []
+
+        try:
+            import subprocess as _sp
+            uuid_raw = _sp.check_output(
+                ["cat", "/proc/sys/kernel/random/uuid"],
+                stderr=_sp.DEVNULL,
+                timeout=2,
+            ).decode().strip()
+            uuid_ok = len(uuid_raw) == 36
+        except Exception:
+            uuid_ok = False
+
+        pct = round(
+            min(max(entropy_avail / pool_size * 100, 0), 100), 2
+        ) if pool_size else 0.0
 
         return jsonify({
             "entropy_avail": entropy_avail,
             "pool_size": pool_size,
-            "entropy_pct": entropy_pct,
-            "entropy_daemon": entropy_daemon,
-            "quality": quality,
-            "source": "proc",
+            "pct": pct,
+            "read_threshold": read_threshold,
+            "write_threshold": write_threshold,
+            "hw_rng": hw_rng,
+            "hw_rng_available": hw_rng_available,
+            "uuid_ok": uuid_ok,
+            "error": None,
         })
     except Exception as exc:
         return jsonify({"error": str(exc), "entropy_avail": 0, "pool_size": 4096})
@@ -10002,24 +10014,86 @@ def api_network_wifi_clients():
 @app.route("/api/system/package-updates")
 @require_auth
 def api_system_package_updates():
-    out, _rc = _run(["apt", "list", "--upgradable"])
+    """Return list of available package updates using apt-get dry-run."""
+    def _parse_inst_lines(text, security_set):
+        pkgs = []
+        for line in text.splitlines():
+            if not line.startswith("Inst "):
+                continue
+            # Inst PACKAGE [OLD] (NEW ...) or Inst PACKAGE (NEW ...)
+            m = re.match(
+                r"^Inst (\S+)"
+                r"(?: \[([^\]]+)\])?"
+                r"(?: \((\S+))?",
+                line,
+            )
+            if not m:
+                continue
+            name = m.group(1)
+            old_ver = m.group(2)
+            new_ver = m.group(3)
+            pkgs.append({
+                "name": name,
+                "old_version": old_ver,
+                "new_version": new_ver,
+                "is_security": name in security_set,
+            })
+        return pkgs
+
+    error = None
     packages = []
-    for line in out.splitlines():
-        if "/" not in line or line.strip() == "Listing...":
-            continue
-        try:
-            parts = line.split()
-            pkg_suite = parts[0]
-            pkg = pkg_suite.split("/")[0]
-            available = parts[1] if len(parts) > 1 else "?"
-            arch = parts[2] if len(parts) > 2 else "?"
-            current = "?"
-            if "upgradable from:" in line:
-                current = line.split("upgradable from:")[-1].strip().rstrip("]")
-            packages.append({"package": pkg, "available": available, "current": current, "arch": arch})
-        except (IndexError, ValueError):
-            continue
-    return jsonify({"packages": packages, "count": len(packages)})
+    security_count = 0
+    dist_upgrade_count = 0
+    last_update = None
+
+    try:
+        out_upg, rc1 = _run(
+            ["bash", "-c", "apt-get -s upgrade 2>/dev/null | grep '^Inst '"],
+            timeout=30,
+        )
+        out_sec, _rc2 = _run(
+            ["bash", "-c",
+             "apt-get -s upgrade 2>/dev/null | grep -i security | grep '^Inst '"],
+            timeout=30,
+        )
+        out_dist, _rc3 = _run(
+            ["bash", "-c", "apt-get -s dist-upgrade 2>/dev/null | grep '^Inst '"],
+            timeout=30,
+        )
+
+        security_names = {
+            line.split()[1]
+            for line in out_sec.splitlines()
+            if line.startswith("Inst ")
+        }
+
+        packages = _parse_inst_lines(out_upg, security_names)
+        security_count = sum(1 for p in packages if p["is_security"])
+
+        dist_pkgs = _parse_inst_lines(out_dist, security_names)
+        dist_upgrade_count = len(dist_pkgs)
+
+        if rc1 != 0 and not packages:
+            error = "apt-get not available or failed"
+    except Exception as exc:  # pylint: disable=broad-except
+        error = str(exc)
+
+    try:
+        apt_lists = Path("/var/lib/apt/lists/")
+        if apt_lists.exists():
+            mtime = apt_lists.stat().st_mtime
+            last_update = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+    except Exception:  # pylint: disable=broad-except
+        pass
+
+    return jsonify({
+        "upgradable": packages,
+        "count": len(packages),
+        "security_count": security_count,
+        "dist_upgrade_count": dist_upgrade_count,
+        "last_update": last_update,
+        "error": error,
+    })
 
 
 @app.route("/api/network/bandwidth")
