@@ -7734,6 +7734,158 @@ def api_system_journal_errors():
     return jsonify({"entries": entries, "count": len(entries), "priority_filter": priority})
 
 
+# ── WiFi Network Scan ─────────────────────────────────────────────────────────
+@app.route("/api/network/wifi-scan", methods=["GET"])
+@require_auth
+def api_network_wifi_scan():
+    """Return nearby WiFi networks via iw or iwlist scan."""
+    import re
+
+    iface = "wlan0"
+    networks = []
+
+    def parse_iw(output):
+        results = []
+        current = {}
+        for line in output.splitlines():
+            line = line.strip()
+            m = re.match(r"^BSS ([0-9a-f:]{17})", line, re.IGNORECASE)
+            if m:
+                if current:
+                    results.append(current)
+                current = {"bssid": m.group(1).lower(), "ssid": "", "channel": None,
+                           "frequency_mhz": None, "signal_dbm": None,
+                           "quality": None, "encryption": "Open"}
+                continue
+            if not current:
+                continue
+            m = re.match(r"SSID: (.+)", line)
+            if m:
+                current["ssid"] = m.group(1).strip()
+                continue
+            m = re.match(r"freq: (\d+)", line)
+            if m:
+                freq = int(m.group(1))
+                current["frequency_mhz"] = freq
+                # Derive channel from frequency
+                if 2412 <= freq <= 2484:
+                    current["channel"] = (freq - 2407) // 5 if freq != 2484 else 14
+                elif 5180 <= freq <= 5825:
+                    current["channel"] = (freq - 5000) // 5
+                continue
+            m = re.match(r"signal: ([-\d.]+) dBm", line)
+            if m:
+                try:
+                    current["signal_dbm"] = int(float(m.group(1)))
+                except ValueError:
+                    pass
+                continue
+            if re.search(r"capability:.*Privacy", line, re.IGNORECASE):
+                current["encryption"] = "Encrypted"
+                continue
+            if re.match(r"RSN:", line) or re.match(r"\* Version:", line):
+                if current.get("encryption") != "WPA2":
+                    current["encryption"] = "WPA2"
+                continue
+            if re.match(r"WPA:", line):
+                if current.get("encryption") not in ("WPA2",):
+                    current["encryption"] = "WPA"
+                continue
+        if current:
+            results.append(current)
+        return results
+
+    def parse_iwlist(output):
+        results = []
+        current = {}
+        for line in output.splitlines():
+            line = line.strip()
+            m = re.match(r"Cell \d+ - Address: ([0-9A-Fa-f:]{17})", line)
+            if m:
+                if current:
+                    results.append(current)
+                current = {"bssid": m.group(1).lower(), "ssid": "", "channel": None,
+                           "frequency_mhz": None, "signal_dbm": None,
+                           "quality": None, "encryption": "Open"}
+                continue
+            if not current:
+                continue
+            m = re.match(r'ESSID:"(.*)"', line)
+            if m:
+                current["ssid"] = m.group(1)
+                continue
+            m = re.match(r"Channel:(\d+)", line)
+            if m:
+                current["channel"] = int(m.group(1))
+                continue
+            m = re.match(r"Frequency:([\d.]+) GHz", line)
+            if m:
+                try:
+                    current["frequency_mhz"] = int(float(m.group(1)) * 1000)
+                except ValueError:
+                    pass
+                continue
+            m = re.search(r"Signal level=([-\d]+)\s*dBm", line)
+            if m:
+                try:
+                    current["signal_dbm"] = int(m.group(1))
+                except ValueError:
+                    pass
+                continue
+            m = re.search(r"Quality=([\d]+)/([\d]+)", line)
+            if m:
+                current["quality"] = f"{m.group(1)}/{m.group(2)}"
+                if current["signal_dbm"] is None:
+                    # Some iwlist outputs quality only without dBm
+                    try:
+                        q = int(m.group(1))
+                        t = int(m.group(2))
+                        current["signal_dbm"] = -100 + int((q / t) * 50)
+                    except (ValueError, ZeroDivisionError):
+                        pass
+                continue
+            if re.match(r"Encryption key:on", line, re.IGNORECASE):
+                current["encryption"] = "Encrypted"
+                continue
+            if re.search(r"IE:.*WPA2", line, re.IGNORECASE):
+                current["encryption"] = "WPA2"
+                continue
+            if re.search(r"IE:.*WPA ", line, re.IGNORECASE):
+                if current.get("encryption") != "WPA2":
+                    current["encryption"] = "WPA"
+                continue
+        if current:
+            results.append(current)
+        return results
+
+    # Try iw first
+    out, rc = _run(["iw", "dev", iface, "scan"], timeout=15)
+    if rc == 0 and out.strip():
+        networks = parse_iw(out)
+    else:
+        # Fallback to iwlist
+        out2, rc2 = _run(["iwlist", iface, "scan"], timeout=15)
+        if rc2 == 0 and out2.strip():
+            networks = parse_iwlist(out2)
+        else:
+            return jsonify({"networks": [], "count": 0, "iface": iface,
+                            "error": "scan unavailable"})
+
+    # Add quality string for iw results that don't have it yet
+    for net in networks:
+        if net.get("quality") is None and net.get("signal_dbm") is not None:
+            sig = net["signal_dbm"]
+            # Map -100..0 dBm to 0..100
+            q = max(0, min(100, 2 * (sig + 100)))
+            net["quality"] = f"{q}/100"
+
+    # Sort by signal descending (strongest first), treat None as -999
+    networks.sort(key=lambda n: n.get("signal_dbm") or -999, reverse=True)
+    networks = networks[:20]
+
+    return jsonify({"networks": networks, "count": len(networks), "iface": iface})
+
+
 # ── Network Interface Counters (/proc/net/dev) ────────────────────────────────
 @app.route("/api/network/netdev", methods=["GET"])
 @require_auth
