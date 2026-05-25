@@ -5087,6 +5087,35 @@ def api_config_backup():
     )
 
 
+# ── Traceroute tool ───────────────────────────────────────────────────────────
+
+@app.route("/api/network/traceroute", methods=["GET"])
+@require_auth
+def api_network_traceroute():
+    """Run traceroute/tracepath to a target host."""
+    target = request.args.get("host", "").strip()
+    if not target:
+        return jsonify({"error": "host parameter required"}), 400
+    # Basic validation — no shell injection
+    import re
+    if not re.match(r'^[a-zA-Z0-9.\-:_]+$', target):
+        return jsonify({"error": "invalid host"}), 400
+    hops = []
+    try:
+        # Try traceroute first, fall back to tracepath
+        out, rc = _run(["traceroute", "-n", "-m", "20", "-w", "2", target], timeout=45)
+        if rc != 0 or not out.strip():
+            out, rc = _run(["tracepath", "-n", target], timeout=45)
+        for line in (out or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            hops.append(line)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"target": target, "hops": hops, "count": len(hops)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
