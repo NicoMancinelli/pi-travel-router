@@ -9515,6 +9515,46 @@ def api_system_hardware():
     return jsonify(result)
 
 
+@app.route("/api/system/vmstat")
+@require_auth
+def api_system_vmstat():
+    """Return VM statistics from /proc/vmstat — paging, swapping, faults."""
+    _FIELDS = [
+        "pgpgin", "pgpgout", "pswpin", "pswpout",
+        "pgfault", "pgmajfault", "pgalloc_normal", "pgfree",
+        "oom_kill", "nr_dirty", "nr_writeback",
+        "numa_hit", "numa_miss",
+        "thp_fault_alloc", "thp_collapse_alloc",
+    ]
+    result = {}
+    try:
+        content = Path("/proc/vmstat").read_text()
+    except OSError:
+        return jsonify({"error": "cannot read /proc/vmstat"})
+
+    for line in content.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] in _FIELDS:
+            try:
+                result[parts[0]] = int(parts[1])
+            except ValueError:
+                pass
+
+    # also grab /proc/sys/vm/swappiness and dirty_ratio
+    for key, path in [
+        ("swappiness", "/proc/sys/vm/swappiness"),
+        ("dirty_ratio", "/proc/sys/vm/dirty_ratio"),
+        ("dirty_background_ratio", "/proc/sys/vm/dirty_background_ratio"),
+        ("overcommit_memory", "/proc/sys/vm/overcommit_memory"),
+    ]:
+        try:
+            result[key] = int(Path(path).read_text().strip())
+        except (OSError, ValueError):
+            pass
+
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

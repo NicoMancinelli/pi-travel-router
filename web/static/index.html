@@ -1319,6 +1319,12 @@
           <div id="hardware-info-content"><em>Loading…</em></div>
         </div>
 
+        <!-- VM Stats -->
+        <div class="card" id="card-vmstat">
+          <h2>📊 VM Statistics</h2>
+          <div id="vmstat-content"><em>Loading…</em></div>
+        </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4384,6 +4390,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNtpPeers();
   fetchOpenPorts();
   fetchHardwareInfo();
+  fetchVmstat();
 });
 
 async function fetchJournal() {
@@ -4623,6 +4630,7 @@ async function refreshAll() {
   fetchIpGeo();
   fetchNtpPeers();
   fetchHardwareInfo();
+  fetchVmstat();
 }
 
 async function init() {
@@ -8611,6 +8619,27 @@ async function fetchMemoryBreakdown() {
           d.throttle_hex ? `<tr><td>Throttle</td><td>${throttleDesc(d.throttle_hex)}</td></tr>` : '',
         ].filter(Boolean).join('');
         el.innerHTML = rows ? `<table class="info-table"><tbody>${rows}</tbody></table>` : 'No hardware data';
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+
+    async function fetchVmstat() {
+      const el = document.getElementById('vmstat-content');
+      try {
+        const r = await fetch('/api/system/vmstat');
+        const d = await r.json();
+        if (d.error) { el.textContent = d.error; return; }
+        const fmt = n => n !== undefined ? n.toLocaleString() : '—';
+        const rows = [
+          ['Page-ins', fmt(d.pgpgin)], ['Page-outs', fmt(d.pgpgout)],
+          ['Swap-ins', fmt(d.pswpin)], ['Swap-outs', fmt(d.pswpout)],
+          ['Minor faults', fmt(d.pgfault)], ['Major faults', fmt(d.pgmajfault)],
+          ['OOM kills', fmt(d.oom_kill)], ['Dirty pages', fmt(d.nr_dirty)],
+          ['Writeback', fmt(d.nr_writeback)],
+          ['Swappiness', fmt(d.swappiness)], ['Dirty ratio', d.dirty_ratio !== undefined ? d.dirty_ratio + '%' : '—'],
+          ['Dirty bg ratio', d.dirty_background_ratio !== undefined ? d.dirty_background_ratio + '%' : '—'],
+          ['Overcommit', fmt(d.overcommit_memory)],
+        ].map(([k, v]) => `<tr><td>${k}</td><td style="text-align:right;font-family:monospace">${v}</td></tr>`).join('');
+        el.innerHTML = `<table class="info-table"><tbody>${rows}</tbody></table>`;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
 
