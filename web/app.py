@@ -7617,34 +7617,35 @@ def api_network_routes():
 @app.route("/api/system/journal-errors", methods=["GET"])
 @require_auth
 def api_system_journal_errors():
-    ALLOWED_PRIORITIES = {"emerg", "alert", "crit", "err", "warning"}
-    priority = request.args.get("priority", "warning")
-    if priority not in ALLOWED_PRIORITIES:
-        return jsonify({"error": f"Invalid priority '{priority}'. Allowed: {', '.join(sorted(ALLOWED_PRIORITIES))}"}), 400
+    try:
+        cmd = ["journalctl", "-p", "err", "-n", "50", "--no-pager", "-o", "short-iso"]
+        out, rc = _run(cmd, timeout=10)
+        if rc != 0:
+            return jsonify({"error": "journalctl failed", "errors": [], "count": 0})
 
-    cmd = ["journalctl", "-p", priority, "-n", "30", "--no-pager", "--output=short-iso"]
-    out, rc = _run(cmd, timeout=10)
-    if rc != 0 or not out.strip():
-        return jsonify({"entries": [], "count": 0, "priority_filter": priority, "error": "journalctl unavailable"})
+        errors = []
+        for line in out.splitlines():
+            line = line.strip()
+            if not line or line.startswith("--"):
+                continue
+            # Filter noisy lines
+            if "audit" in line or ("NetworkManager" in line and "state" in line.lower()):
+                continue
+            # Format: YYYY-MM-DDTHH:MM:SS+ZZZZ HOSTNAME UNIT[PID]: MESSAGE
+            try:
+                parts = line.split(" ", 3)
+                timestamp = parts[0] if len(parts) > 0 else ""
+                unit_pid = parts[2] if len(parts) > 2 else ""
+                message = parts[3].split(": ", 1)[-1] if len(parts) > 3 else ""
+                # Strip [PID] from unit
+                unit = unit_pid.split("[")[0] if "[" in unit_pid else unit_pid
+                errors.append({"timestamp": timestamp, "unit": unit, "message": message})
+            except (IndexError, ValueError):
+                continue
 
-    entries = []
-    for line in out.splitlines():
-        line = line.strip()
-        if not line or line.startswith("--"):
-            continue
-        # Format: YYYY-MM-DDTHH:MM:SS+ZZZZ HOSTNAME UNIT[PID]: MESSAGE
-        try:
-            parts = line.split(" ", 3)
-            ts = parts[0] if len(parts) > 0 else ""
-            unit_pid = parts[2] if len(parts) > 2 else ""
-            msg = parts[3].split(": ", 1)[-1] if len(parts) > 3 else ""
-            # Strip [PID] from unit
-            unit = unit_pid.split("[")[0] if "[" in unit_pid else unit_pid
-            entries.append({"ts": ts, "unit": unit, "msg": msg, "priority": priority})
-        except (IndexError, ValueError):
-            continue
-
-    return jsonify({"entries": entries, "count": len(entries), "priority_filter": priority})
+        return jsonify({"errors": errors, "count": len(errors), "source": "journalctl"})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "errors": [], "count": 0})
 
 
 # ── Swap / zRAM Info ──────────────────────────────────────────────────────────
