@@ -1325,6 +1325,12 @@
           <div id="vmstat-content"><em>Loading…</em></div>
         </div>
 
+  <!-- Uptime History -->
+  <div class="card" id="card-uptime-history">
+    <h2>🔄 Uptime History</h2>
+    <div id="uptime-history-content"><em>Loading…</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4391,6 +4397,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchOpenPorts();
   fetchHardwareInfo();
   fetchVmstat();
+  fetchUptimeHistory();
 });
 
 async function fetchJournal() {
@@ -4631,6 +4638,7 @@ async function refreshAll() {
   fetchNtpPeers();
   fetchHardwareInfo();
   fetchVmstat();
+  fetchUptimeHistory();
 }
 
 async function init() {
@@ -8642,6 +8650,37 @@ async function fetchMemoryBreakdown() {
         el.innerHTML = `<table class="info-table"><tbody>${rows}</tbody></table>`;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
+
+async function fetchUptimeHistory() {
+  const el = document.getElementById('uptime-history-content');
+  try {
+    const r = await fetch('/api/system/uptime-history');
+    const d = await r.json();
+    const secs = d.uptime_seconds;
+    let uptimeStr = '—';
+    if (secs !== null && secs !== undefined) {
+      const days = Math.floor(secs / 86400);
+      const hrs  = Math.floor((secs % 86400) / 3600);
+      const mins = Math.floor((secs % 3600) / 60);
+      uptimeStr = (days > 0 ? days + 'd ' : '') + hrs + 'h ' + mins + 'm';
+    }
+    let html = '<div style="margin-bottom:8px;font-size:13px;"><strong>Current uptime:</strong> <span style="font-family:monospace">' + uptimeStr + '</span></div>';
+    const events = d.events || [];
+    if (events.length === 0) {
+      html += '<div style="color:var(--text-dim);font-size:13px;">No boot/shutdown history available</div>';
+    } else {
+      html += '<table class="info-table"><tbody>';
+      for (const ev of events) {
+        const badge = ev.type === 'reboot'
+          ? '<span style="color:var(--accent,#4af);font-size:11px;font-weight:600">BOOT</span>'
+          : '<span style="color:var(--text-dim);font-size:11px;font-weight:600">DOWN</span>';
+        html += '<tr><td style="width:50px">' + badge + '</td><td style="font-family:monospace;font-size:12px">' + ev.line + '</td></tr>';
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch (e) { el.textContent = 'Error: ' + e; }
+}
 
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
 

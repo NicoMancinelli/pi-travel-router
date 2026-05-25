@@ -9555,6 +9555,37 @@ def api_system_vmstat():
     return jsonify(result)
 
 
+@app.route("/api/system/uptime-history")
+@require_auth
+def api_system_uptime_history():
+    """Return reboot/shutdown history from `last` plus current uptime from /proc/uptime."""
+    events = []
+    for kind in ("reboot", "shutdown"):
+        out, rc = _run(["last", kind, "-n", "10"])
+        if rc == 0:
+            for line in out.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                # Skip footer lines like "wtmp begins ..."
+                if line.startswith("wtmp"):
+                    continue
+                # first token should match the kind
+                first = line.split()[0] if line.split() else ""
+                if first != kind:
+                    continue
+                events.append({"type": kind, "line": line})
+
+    # current uptime from /proc/uptime
+    uptime_seconds = None
+    try:
+        uptime_seconds = float(Path("/proc/uptime").read_text().split()[0])
+    except (OSError, ValueError):
+        pass
+
+    return jsonify({"events": events, "uptime_seconds": uptime_seconds})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
