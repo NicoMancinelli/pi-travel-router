@@ -6934,29 +6934,25 @@ async function fetchUsbDevices() {
       el.innerHTML = '<span style="color:var(--text-dim)">No USB devices detected.</span>';
       return;
     }
-    let html = '<div style="font-size:13px;font-weight:600;margin-bottom:8px;">' + d.count + ' device' + (d.count !== 1 ? 's' : '') + ' connected</div>';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
     html += '<thead><tr style="border-bottom:1px solid var(--border);">';
     html += '<th style="text-align:left;padding:4px 8px;">Bus</th>';
-    html += '<th style="text-align:left;padding:4px 8px;">Dev</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Device</th>';
     html += '<th style="text-align:left;padding:4px 8px;">ID</th>';
     html += '<th style="text-align:left;padding:4px 8px;">Description</th>';
     html += '</tr></thead><tbody>';
     for (const dev of d.devices) {
-      const desc = dev.description || '';
-      const isNet = /ethernet|wlan|wireless/i.test(desc);
-      let badge = '';
-      if (isNet) {
-        badge = ' <span style="font-size:11px;padding:1px 5px;border-radius:3px;background:rgba(33,150,243,0.15);color:#2196f3;border:1px solid rgba(33,150,243,0.3);">network</span>';
-      }
       html += '<tr style="border-bottom:1px solid var(--border);">';
       html += '<td style="padding:4px 8px;">' + dev.bus + '</td>';
       html += '<td style="padding:4px 8px;">' + dev.device + '</td>';
-      html += '<td style="padding:4px 8px;font-family:monospace;">' + dev.vendor_id + ':' + dev.product_id + '</td>';
-      html += '<td style="padding:4px 8px;">' + desc + badge + '</td>';
+      html += '<td style="padding:4px 8px;font-family:monospace;">' + dev.id + '</td>';
+      html += '<td style="padding:4px 8px;">' + (dev.description || '') + '</td>';
       html += '</tr>';
     }
     html += '</tbody></table>';
+    if (d.tree) {
+      html += '<pre style="margin-top:12px;font-size:12px;overflow-x:auto;background:var(--bg-alt);padding:8px;border-radius:4px;">' + d.tree + '</pre>';
+    }
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load USB devices</span>';
