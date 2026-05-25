@@ -7256,6 +7256,81 @@ def api_system_usb():
     return jsonify({"devices": devices, "count": len(devices)})
 
 
+# ── WireGuard Config Export ────────────────────────────────────────────────────
+
+
+@app.route("/api/vpn/wireguard/config/qr", methods=["GET"])
+@require_auth
+def api_wireguard_config_qr():
+    """Generate a QR code of the WireGuard client config for mobile import."""
+    import subprocess
+    import tempfile
+    import os
+
+    conf_path = "/etc/wireguard/wg0.conf"
+    try:
+        with open(conf_path) as f:
+            conf_text = f.read()
+    except OSError as e:
+        return jsonify({"error": f"Cannot read {conf_path}: {e}"}), 500
+
+    qr_out, qr_rc = _run(["which", "qrencode"])
+    if qr_rc != 0:
+        return jsonify({"error": "qrencode not installed"}), 500
+
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        result = subprocess.run(
+            ["qrencode", "-o", tmp_path, "-t", "PNG", "--dpi", "150"],
+            input=conf_text.encode(),
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return jsonify({"error": "qrencode failed"}), 500
+
+        with open(tmp_path, "rb") as f:
+            png_data = f.read()
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+    from flask import Response
+    return Response(
+        png_data,
+        mimetype="image/png",
+        headers={
+            "Content-Disposition": "inline; filename=wg0-qr.png",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.route("/api/vpn/wireguard/config/text", methods=["GET"])
+@require_auth
+def api_wireguard_config_text():
+    """Return the WireGuard config file text (sanitized — private key redacted)."""
+    conf_path = "/etc/wireguard/wg0.conf"
+    try:
+        with open(conf_path) as f:
+            lines = f.readlines()
+    except OSError as e:
+        return jsonify({"error": f"Cannot read {conf_path}: {e}"}), 500
+
+    sanitized = []
+    for line in lines:
+        if line.strip().lower().startswith("privatekey"):
+            sanitized.append("PrivateKey = <redacted>\n")
+        else:
+            sanitized.append(line)
+
+    return jsonify({"config": "".join(sanitized), "path": conf_path})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
