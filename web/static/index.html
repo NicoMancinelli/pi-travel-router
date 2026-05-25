@@ -1124,6 +1124,12 @@
     <div id="timers-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- I2C Devices -->
+  <div class="card" id="i2c-card">
+    <h2>🔧 I2C Devices</h2>
+    <div id="i2c-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4705,6 +4711,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRoutes();
   fetchSysctlSecurity();
   fetchTimers();
+  fetchI2cDevices();
 });
 
 async function fetchJournal() {
@@ -4985,6 +4992,7 @@ async function refreshAll() {
   fetchRoutes();
   fetchSysctlSecurity();
   fetchTimers();
+  fetchI2cDevices();
 }
 
 async function init() {
@@ -7385,6 +7393,31 @@ async function fetchIPv6Addresses() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('ipv6-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── I2C Devices ───────────────────────────────────────────────────────────────
+async function fetchI2cDevices() {
+  try {
+    const r = await fetch('/api/system/i2c-devices');
+    const d = await r.json();
+    const el = document.getElementById('i2c-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (!d.buses || d.buses.length === 0 || d.total_devices === 0) {
+      el.innerHTML = `<p class="muted">${d.note || 'No I2C devices found.'}</p>`;
+      return;
+    }
+    let html = `<p class="muted" style="margin-bottom:6px">Buses: <strong>${d.bus_count}</strong> · Devices: <strong>${d.total_devices}</strong></p>`;
+    for (const bus of d.buses) {
+      if (bus.devices.length === 0) continue;
+      html += `<p style="font-weight:600;margin:6px 0 2px">${bus.device_path}</p>`;
+      html += '<table class="table"><thead><tr><th>Address (hex)</th><th>Address (dec)</th></tr></thead><tbody>';
+      for (const dev of bus.devices) {
+        html += `<tr><td><code>0x${dev.address}</code></td><td>${dev.address_int}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('i2c-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Sysctl Security ───────────────────────────────────────────────────────────

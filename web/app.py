@@ -11504,6 +11504,65 @@ def api_sysctl_security():
         return jsonify({"error": str(exc), "params": [], "count": 0})
 
 
+@app.route("/api/system/i2c-devices")
+@require_auth
+def api_i2c_devices():
+    try:
+        buses_paths = sorted(Path("/dev").glob("i2c-*"))
+        if not buses_paths:
+            return jsonify({
+                "buses": [],
+                "total_devices": 0,
+                "bus_count": 0,
+                "source": "i2cdetect",
+                "note": "no i2c buses found or i2cdetect not installed",
+            })
+        buses = []
+        for dev_path in buses_paths:
+            try:
+                bus_num = int(dev_path.name.split("-", 1)[1])
+            except (ValueError, IndexError):
+                continue
+            rc, out, _ = _run(["i2cdetect", "-y", "-r", str(bus_num)])
+            devices = []
+            if rc == 0:
+                for line in out.splitlines():
+                    # lines look like: "00: -- -- -- -- -- -- -- -- 08 -- ..."
+                    if ":" not in line:
+                        continue
+                    _, cells = line.split(":", 1)
+                    for token in cells.split():
+                        if token == "--" or token.startswith("UU"):
+                            continue
+                        try:
+                            addr_int = int(token, 16)
+                            devices.append({"address": token.lower(), "address_int": addr_int})
+                        except ValueError:
+                            pass
+            buses.append({
+                "bus": bus_num,
+                "device_path": str(dev_path),
+                "devices": devices,
+            })
+        total = sum(len(b["devices"]) for b in buses)
+        if total == 0:
+            return jsonify({
+                "buses": buses,
+                "total_devices": 0,
+                "bus_count": len(buses),
+                "source": "i2cdetect",
+                "note": "no i2c buses found or i2cdetect not installed",
+            })
+        return jsonify({
+            "buses": buses,
+            "total_devices": total,
+            "bus_count": len(buses),
+            "source": "i2cdetect",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "buses": [], "total_devices": 0})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
