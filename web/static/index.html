@@ -1340,6 +1340,17 @@
     </div>
   </div>
 
+  <!-- USB Devices -->
+  <div class="card" id="usb-devices-card">
+    <div class="card-header">
+      <span>🔌 USB Devices</span>
+      <span class="card-badge" id="usb-devices-count">—</span>
+    </div>
+    <div class="card-body" id="usb-devices-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -11325,6 +11336,45 @@ async function fetchTrafficShaping() {
     if (e.message !== 'Unauthorized') console.error('fetchTrafficShaping error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load traffic shaping data</span>';
   }
+}
+
+// ── USB Devices (updated) ──────────────────────────────────────────────────────
+async function fetchUsbDevices() {
+  const el = document.getElementById('usb-devices-content');
+  const badge = document.getElementById('usb-devices-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/usb');
+    const d = await r.json();
+    if (badge) badge.textContent = `${d.count} device${d.count !== 1 ? 's' : ''}`;
+    let html = '';
+    const devs = d.devices || [];
+    if (devs.length === 0) {
+      html = '<p class="muted">No USB devices found.</p>';
+    } else {
+      const speedBadge = s => {
+        if (!s) return '';
+        const col = s === '480' ? '#4a9eff' : s === '5000' ? '#16a34a' : s === '10000' ? '#8b5cf6' : '#6b7280';
+        const label = s === '480' ? 'HS' : s === '5000' ? 'SS' : s === '10000' ? 'SS+' : s === '12' ? 'FS' : s === '1.5' ? 'LS' : s+'M';
+        return `<span style="background:${col};color:#fff;font-size:9px;border-radius:3px;padding:1px 4px;margin-left:4px;">${label}</span>`;
+      };
+      html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+      for (const dev of devs) {
+        const isHub = /hub/i.test(dev.description);
+        html += `<div style="background:var(--bg2);border-radius:5px;padding:6px 10px;${isHub ? 'opacity:0.65;' : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-weight:500;font-size:12px">${dev.description || 'Unknown Device'}${speedBadge(dev.speed_mbps)}</span>
+            <span style="font-size:10px;color:var(--text-dim);font-family:monospace">${dev.vendor_id}:${dev.product_id}</span>
+          </div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">Bus ${dev.bus} · Device ${dev.device}</div>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    if (d.error) html += `<p style="font-size:11px;color:var(--danger);margin-top:6px;">${d.error}</p>`;
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
