@@ -7463,7 +7463,7 @@ def api_system_diskio():
 @app.route("/api/system/meminfo", methods=["GET"])
 @require_auth
 def api_system_meminfo():
-    info = {}
+    raw: dict = {}
     try:
         with open("/proc/meminfo", "r") as fh:
             for line in fh:
@@ -7471,24 +7471,45 @@ def api_system_meminfo():
                 if len(parts) >= 2:
                     key = parts[0].rstrip(":")
                     try:
-                        val = int(parts[1])
+                        raw[key] = int(parts[1])
                     except ValueError:
-                        val = 0
-                    info[key] = val
+                        raw[key] = 0
     except OSError as exc:
-        return jsonify({"error": str(exc)}), 503
-    kb = 1024
+        return jsonify({"error": str(exc), "raw": {}}), 503
+
+    def _mb(key: str) -> float:
+        return round(raw.get(key, 0) / 1024, 2)
+
+    mem_total = raw.get("MemTotal", 0)
+    mem_avail = raw.get("MemAvailable", raw.get("MemFree", 0))
+    used_kb = mem_total - mem_avail
+    used_pct = (used_kb / mem_total * 100) if mem_total > 0 else 0.0
+
+    swap_total = raw.get("SwapTotal", 0)
+    swap_free = raw.get("SwapFree", 0)
+    swap_used = swap_total - swap_free
+    swap_pct = (swap_used / swap_total * 100) if swap_total > 0 else 0.0
+
     result = {
-        "total_kb":     info.get("MemTotal", 0),
-        "free_kb":      info.get("MemFree", 0),
-        "available_kb": info.get("MemAvailable", 0),
-        "buffers_kb":   info.get("Buffers", 0),
-        "cached_kb":    info.get("Cached", 0),
-        "swap_total_kb":info.get("SwapTotal", 0),
-        "swap_free_kb": info.get("SwapFree", 0),
-        "used_kb":      info.get("MemTotal", 0) - info.get("MemAvailable", 0),
+        "total_mb":       round(mem_total / 1024, 2),
+        "free_mb":        _mb("MemFree"),
+        "available_mb":   round(mem_avail / 1024, 2),
+        "used_mb":        round(used_kb / 1024, 2),
+        "used_pct":       round(used_pct, 1),
+        "buffers_mb":     _mb("Buffers"),
+        "cached_mb":      _mb("Cached"),
+        "swap_total_mb":  round(swap_total / 1024, 2),
+        "swap_free_mb":   round(swap_free / 1024, 2),
+        "swap_used_mb":   round(swap_used / 1024, 2),
+        "swap_pct":       round(swap_pct, 1),
+        "dirty_mb":       _mb("Dirty"),
+        "anon_pages_mb":  _mb("AnonPages"),
+        "shmem_mb":       _mb("Shmem"),
+        "hugepages_total": raw.get("HugePages_Total", 0),
+        "hugepages_free":  raw.get("HugePages_Free", 0),
+        "raw":            raw,
+        "error":          None,
     }
-    _ = kb  # suppress unused warning
     return jsonify(result)
 
 
@@ -13459,6 +13480,89 @@ def api_boot_params():
         })
     except Exception as exc:
         return jsonify({"error": str(exc)})
+
+
+_geoip_cache: dict = {}  # {"data": ..., "ts": float}
+_GEOIP_TTL = 60  # seconds
+
+
+@app.route("/api/network/geoip")
+@require_auth
+def api_network_geoip():
+    """Return public IP and geolocation; cached for 60 s."""
+    import time as _time
+    import json as _json
+    import subprocess as _sp
+
+    now = _time.time()
+    cached = _geoip_cache.get("data")
+    if cached and (now - _geoip_cache.get("ts", 0)) < _GEOIP_TTL:
+        cached["cached"] = True
+        return jsonify(cached)
+
+    def _fetch(url):
+        try:
+            out = _sp.check_output(
+                ["curl", "-s", "--max-time", "5", url],
+                stderr=_sp.DEVNULL,
+                timeout=8,
+            )
+            return _json.loads(out.decode())
+        except Exception:  # pylint: disable=broad-except
+            return None
+
+    # Primary: ipinfo.io
+    data = _fetch("https://ipinfo.io/json")
+    if data and data.get("ip") and "bogon" not in data:
+        loc = data.get("loc", "")
+        lat_s, _, lon_s = loc.partition(",")
+        try:
+            lat = float(lat_s) if lat_s else None
+            lon = float(lon_s) if lon_s else None
+        except ValueError:
+            lat = lon = None
+        result = {
+            "ip": data.get("ip"),
+            "hostname": data.get("hostname"),
+            "city": data.get("city"),
+            "region": data.get("region"),
+            "country": data.get("country"),
+            "country_name": None,
+            "lat": lat,
+            "lon": lon,
+            "org": data.get("org"),
+            "timezone": data.get("timezone"),
+            "cached": False,
+            "source": "ipinfo.io",
+            "error": None,
+        }
+        _geoip_cache["data"] = result
+        _geoip_cache["ts"] = now
+        return jsonify(result)
+
+    # Fallback: ip-api.com
+    data2 = _fetch("https://ip-api.com/json")
+    if data2 and data2.get("status") == "success":
+        result = {
+            "ip": data2.get("query"),
+            "hostname": None,
+            "city": data2.get("city"),
+            "region": data2.get("regionName"),
+            "country": data2.get("countryCode"),
+            "country_name": data2.get("country"),
+            "lat": data2.get("lat"),
+            "lon": data2.get("lon"),
+            "org": data2.get("org") or data2.get("isp"),
+            "timezone": data2.get("timezone"),
+            "cached": False,
+            "source": "ip-api.com",
+            "error": None,
+        }
+        _geoip_cache["data"] = result
+        _geoip_cache["ts"] = now
+        return jsonify(result)
+
+    return jsonify({"error": "No internet access", "ip": None})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

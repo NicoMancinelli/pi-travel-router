@@ -1395,6 +1395,17 @@
     </div>
   </div>
 
+  <!-- WAN IP & Geo -->
+  <div class="card" id="geoip-card">
+    <div class="card-header">
+      <span>🌍 WAN IP &amp; Location</span>
+      <span class="card-badge" id="geoip-ip">—</span>
+    </div>
+    <div class="card-body" id="geoip-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1601,9 +1612,15 @@
     <div id="diskio-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <div class="card full-width" id="card-meminfo">
-    <div class="card-title">&#x1F9E0; Memory Details</div>
-    <div id="meminfo-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  <!-- Memory Info -->
+  <div class="card" id="meminfo-card">
+    <div class="card-header">
+      <span>🧠 Memory</span>
+      <span class="card-badge" id="meminfo-pct">—</span>
+    </div>
+    <div class="card-body" id="meminfo-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <div class="card" id="card-ntp-status">
@@ -5172,6 +5189,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoadHistory();
   fetchDiskUsage();
   fetchBootParams();
+  fetchGeoIp();
 });
 
 async function fetchJournal() {
@@ -5428,6 +5446,7 @@ async function refreshAll() {
   fetchDnsConfig();
   fetchIpRules();
   fetchLogSummaryJournal();
+  fetchSshKeys();
   fetchActiveConnections();
   fetchPackageUpdates();
   fetchNetBandwidth();
@@ -5482,6 +5501,7 @@ async function refreshAll() {
   fetchLoadHistory();
   fetchDiskUsage();
   fetchBootParams();
+  fetchGeoIp();
 }
 
 async function init() {
@@ -7195,6 +7215,45 @@ async function fetchBootParams() {
       html += `<div style="background:var(--bg2);border-radius:4px;padding:6px;font-size:10px;font-family:monospace;word-break:break-all;max-height:80px;overflow-y:auto;">${d.cmdline}</div>`;
     }
     if (!html) html = '<p class="muted">No boot data available.</p>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── WAN IP & Geolocation ──────────────────────────────────────────────────────
+async function fetchGeoIp() {
+  const el = document.getElementById('geoip-content');
+  const badge = document.getElementById('geoip-ip');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/network/geoip');
+    const d = await r.json();
+    if (badge) badge.textContent = d.ip || '—';
+    let html = '';
+    if (d.error && !d.ip) {
+      html = `<p class="muted">${d.error}</p>`;
+    } else {
+      const location = [d.city, d.region, d.country].filter(Boolean).join(', ');
+      const items = [
+        ['Public IP', d.ip],
+        location ? ['Location', location] : null,
+        d.org ? ['ISP / ASN', d.org] : null,
+        d.timezone ? ['Timezone', d.timezone] : null,
+        d.hostname && d.hostname !== d.ip ? ['Hostname', d.hostname] : null,
+        d.lat && d.lon ? ['Coords', `${d.lat}, ${d.lon}`] : null,
+      ].filter(Boolean);
+      html += '<div style="display:flex;flex-direction:column;gap:5px;">';
+      for (const [k, v] of items) {
+        html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border);">
+          <span style="color:var(--text-dim)">${k}</span>
+          <span style="font-family:${k === 'Public IP' || k === 'Coords' ? 'monospace' : 'inherit'};font-weight:${k === 'Public IP' ? '600' : '400'}">${v}</span>
+        </div>`;
+      }
+      html += '</div>';
+      if (d.cached) {
+        html += '<div style="font-size:10px;color:var(--text-dim);margin-top:5px;text-align:right;">cached · source: ' + (d.source || 'ipinfo.io') + '</div>';
+      }
+    }
     el.innerHTML = html;
   } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
@@ -9045,41 +9104,68 @@ async function fetchDiskIO() {
   }
 }
 
+// ── Memory Info ───────────────────────────────────────────────────────────────
 async function fetchMemInfo() {
   const el = document.getElementById('meminfo-content');
+  const badge = document.getElementById('meminfo-pct');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
     const r = await fetch('/api/system/meminfo');
-    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
     const d = await r.json();
-    if (d.error) { el.textContent = d.error; return; }
-    const fmt = kb => kb >= 1024 * 1024
-      ? (kb / 1024 / 1024).toFixed(1) + ' GB'
-      : kb >= 1024
-        ? (kb / 1024).toFixed(0) + ' MB'
-        : kb + ' kB';
-    const pct = d.total_kb > 0 ? Math.round(d.used_kb / d.total_kb * 100) : 0;
-    const swapPct = d.swap_total_kb > 0
-      ? Math.round((d.swap_total_kb - d.swap_free_kb) / d.swap_total_kb * 100) : 0;
-    el.innerHTML = `
-      <div style="margin-bottom:6px;">
-        <strong>RAM:</strong> ${fmt(d.used_kb)} used / ${fmt(d.total_kb)} total
-        <div style="background:var(--border);border-radius:4px;height:8px;margin-top:4px;">
-          <div style="background:var(--accent);width:${pct}%;height:8px;border-radius:4px;"></div>
-        </div>
-        <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${pct}% used &mdash; available ${fmt(d.available_kb)}, buffers ${fmt(d.buffers_kb)}, cached ${fmt(d.cached_kb)}</div>
+    const pct = d.used_pct ?? 0;
+    if (badge) {
+      badge.textContent = `${pct.toFixed(0)}%`;
+      badge.style.background = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : '#16a34a';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
+    }
+    const fmtMb = mb => mb >= 1024 ? (mb/1024).toFixed(1)+' GB' : mb.toFixed(0)+' MB';
+    let html = '';
+    // RAM bar
+    const barColor = pct >= 85 ? '#dc2626' : pct >= 60 ? '#f59e0b' : '#16a34a';
+    html += `<div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+        <span>RAM</span>
+        <span style="color:var(--text-dim)">${fmtMb(d.used_mb || 0)} / ${fmtMb(d.total_mb || 0)}</span>
       </div>
-      ${d.swap_total_kb > 0 ? `
-      <div>
-        <strong>Swap:</strong> ${fmt(d.swap_total_kb - d.swap_free_kb)} used / ${fmt(d.swap_total_kb)} total
-        <div style="background:var(--border);border-radius:4px;height:6px;margin-top:4px;">
-          <div style="background:#e67e22;width:${swapPct}%;height:6px;border-radius:4px;"></div>
+      <div style="background:var(--border);border-radius:4px;height:10px;position:relative;overflow:hidden;">
+        <div style="position:absolute;left:0;top:0;height:10px;width:${Math.min(pct,100)}%;background:${barColor};"></div>
+        ${d.cached_mb ? `<div title="cached" style="position:absolute;left:${Math.min(pct,100)}%;top:0;height:10px;width:${Math.min((d.cached_mb/(d.total_mb||1))*100,100-pct)}%;background:#4a9eff44;"></div>` : ''}
+      </div>
+      <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">${fmtMb(d.available_mb || 0)} available · ${fmtMb(d.buffers_mb || 0)} buffers · ${fmtMb(d.cached_mb || 0)} cached</div>
+    </div>`;
+    // Swap bar (if any)
+    if ((d.swap_total_mb || 0) > 0) {
+      const spct = d.swap_pct || 0;
+      const sColor = spct >= 80 ? '#dc2626' : spct >= 40 ? '#f59e0b' : '#6b7280';
+      html += `<div style="margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+          <span>Swap</span>
+          <span style="color:var(--text-dim)">${fmtMb(d.swap_used_mb || 0)} / ${fmtMb(d.swap_total_mb || 0)}</span>
         </div>
-        <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${swapPct}% used</div>
-      </div>` : '<div style="color:var(--text-dim);">No swap configured</div>'}
-    `;
-  } catch (e) {
-    el.textContent = 'Failed: ' + e;
-  }
+        <div style="background:var(--border);border-radius:4px;height:8px;">
+          <div style="background:${sColor};width:${Math.min(spct,100)}%;height:8px;border-radius:4px;"></div>
+        </div>
+      </div>`;
+    }
+    // Key stats
+    const stats = [
+      d.dirty_mb != null ? ['Dirty', fmtMb(d.dirty_mb)] : null,
+      d.anon_pages_mb != null ? ['AnonPages', fmtMb(d.anon_pages_mb)] : null,
+      d.shmem_mb != null ? ['Shared', fmtMb(d.shmem_mb)] : null,
+    ].filter(Boolean);
+    if (stats.length) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:5px;">';
+      for (const [k, v] of stats) {
+        html += `<div style="background:var(--bg2);border-radius:4px;padding:3px 8px;font-size:11px;"><span style="color:var(--text-dim)">${k}: </span><strong>${v}</strong></div>`;
+      }
+      html += '</div>';
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 async function fetchOpenFiles() {
