@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.30.0] - 2026-05-25
+
+### Added
+
+- **SSH authorized keys viewer** (`web/app.py`, `web/static/index.html`): `GET /api/system/ssh/keys` reads `authorized_keys` for `root`, `pi`, and `travel-router` users, parses key type, comment, and fingerprint tail (last 16 chars of base64). Dashboard card shows table with color-coded type badges (green=ed25519, orange=rsa, purple=ecdsa). Loaded on page init.
+- **DNS resolver config and latency** (`web/app.py`, `web/static/index.html`): `GET /api/dns/resolvers` parses `/etc/resolv.conf` nameservers, probes each with `dig +time=2 +tries=1`, and detects DoH provider from `/etc/dnsmasq.d/`. Dashboard card with OK/FAIL badges, latency color-coding (green <50ms, orange <200ms, red ≥200ms), sample response IP, and purple DoH badge when active. Loaded on page init.
+- **Bandwidth history chart** (`web/app.py`, `web/static/index.html`): `GET /api/network/bandwidth` reads `vnstat --json` and returns hourly (last 24h, MB) and daily (last 30d, GB) RX/TX per primary non-loopback interface. Dashboard card with Hourly/Daily tab switcher and SVG bar chart (blue=RX, green=TX split per bar) with total summary. Auto-refreshes on poll.
+
 ## [2.29.0] - 2026-05-25
 
 ### Added
