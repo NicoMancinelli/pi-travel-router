@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.58.0] - 2026-05-25
+
+### Added
+- `GET /api/system/open-sockets` — open sockets via `ss -tunap` with protocol, state, local/peer addresses, and owning process; dashboard card shows per-protocol counts + table of top 50 sockets
+- `GET /api/network/wifi-signal` — WiFi signal strength per wireless interface via `iw dev <iface> link`; dashboard card shows SSID, dBm, quality bar (green ≥70%, amber ≥40%, red <40%), band, and Tx/Rx bitrate
+- `GET /api/system/cgroup-stats` — per-cgroup memory usage from cgroup v2 (`memory.current`, `memory.high`, `cpu.stat`) with v1 fallback; dashboard card color-codes memory by usage (>200 MB red, >80 MB amber)
+- Dashboard cards: Open Sockets (🔌), WiFi Signal (📶), Cgroup Memory (📊)
+
 ## [2.57.0] - 2026-05-25
 
 ### Added
