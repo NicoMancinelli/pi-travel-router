@@ -1161,6 +1161,10 @@
     <div id="journal-errors-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-swap">
+    <div id="swap-content">Loading&hellip;</div>
+  </div>
+
   <div class="card" id="card-wifi-scan">
     <div id="wifi-scan-content">Loading&hellip;</div>
   </div>
@@ -4202,6 +4206,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchArpTable();
   fetchRouteTable();
   fetchJournalErrors();
+  fetchSwapInfo();
   fetchWifiScan();
   fetchNetdev();
 });
@@ -4411,6 +4416,7 @@ async function refreshAll() {
   fetchCpuFreq();
   fetchRouteTable();
   fetchJournalErrors();
+  fetchSwapInfo();
   fetchNetdev();
 }
 
@@ -7205,6 +7211,72 @@ async function fetchJournalErrors() {
       html += '</div>';
     }
 
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+<<<<<<< HEAD
+// ── Swap / zRAM Info ──────────────────────────────────────────────────────────
+
+async function fetchSwapInfo() {
+  const el = document.getElementById('swap-content');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/swap');
+    const d = await r.json();
+    if (d.error) {
+      el.innerHTML = `<div class="card-title">&#x1F4BE; Swap / zRAM</div><div style="color:var(--error,#e55);font-size:13px;">${d.error}</div>`;
+      return;
+    }
+    const fmt = kb => kb >= 1024 * 1024
+      ? (kb / 1024 / 1024).toFixed(1) + ' GB'
+      : kb >= 1024
+        ? (kb / 1024).toFixed(0) + ' MB'
+        : kb + ' kB';
+    const hasZram = d.devices && d.devices.some(dv => dv.file && dv.file.includes('zram'));
+    const zramBadge = hasZram
+      ? '<span style="background:#17a2b8;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;margin-left:6px;">zRAM</span>'
+      : '';
+    let html = `<div class="card-title">&#x1F4BE; Swap / zRAM${zramBadge}</div>`;
+    if (d.swap_total_kb === 0) {
+      html += '<div style="color:var(--text-dim);font-size:13px;">No swap configured</div>';
+    } else {
+      const pct = d.pct_used;
+      const barColor = pct >= 80 ? '#e74c3c' : pct >= 50 ? '#f39c12' : '#e67e22';
+      html += `
+        <div style="margin-bottom:10px;">
+          <div style="margin-bottom:4px;">
+            <strong>${fmt(d.swap_used_kb)}</strong> used / <strong>${fmt(d.swap_total_kb)}</strong> total
+            <span style="color:var(--text-dim);font-size:12px;"> (${pct}%)</span>
+          </div>
+          <div style="background:var(--border);border-radius:4px;height:8px;">
+            <div style="background:${barColor};width:${Math.min(pct, 100)}%;height:8px;border-radius:4px;"></div>
+          </div>
+          <div style="color:var(--text-dim);font-size:11px;margin-top:2px;">${fmt(d.swap_free_kb)} free</div>
+        </div>`;
+      if (d.devices && d.devices.length > 0) {
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+        html += `<thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border);">
+          <th style="text-align:left;padding:3px 8px;">Device</th>
+          <th style="text-align:left;padding:3px 8px;">Type</th>
+          <th style="text-align:right;padding:3px 8px;">Size</th>
+          <th style="text-align:right;padding:3px 8px;">Used</th>
+        </tr></thead><tbody>`;
+        for (const dv of d.devices) {
+          const isZram = dv.file && dv.file.includes('zram');
+          const badge = isZram ? '<span style="background:#17a2b8;color:#fff;border-radius:3px;padding:0 4px;font-size:10px;margin-left:4px;">zRAM</span>' : '';
+          html += `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:3px 8px;font-family:monospace;">${dv.file}${badge}</td>
+            <td style="padding:3px 8px;color:var(--text-dim);">${dv.type}</td>
+            <td style="padding:3px 8px;text-align:right;">${fmt(dv.size_kb)}</td>
+            <td style="padding:3px 8px;text-align:right;">${fmt(dv.used_kb)}</td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+      }
+    }
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
