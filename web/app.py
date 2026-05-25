@@ -4926,6 +4926,64 @@ def api_system_logins():
     return jsonify({"logins": logins[:limit], "failed": failed[:10]})
 
 
+# ── DNS lookup tool ───────────────────────────────────────────────────────────
+
+@app.route("/api/dns/lookup", methods=["GET"])
+@require_auth
+def api_dns_lookup():
+    """Run a DNS lookup for a hostname."""
+    host = request.args.get("host", "").strip()
+    record_type = request.args.get("type", "A").strip().upper()
+    if not host:
+        return jsonify({"error": "host parameter required"}), 400
+    valid_types = {"A", "AAAA", "MX", "TXT", "CNAME", "NS", "PTR", "SOA"}
+    if record_type not in valid_types:
+        record_type = "A"
+    try:
+        out, rc = _run(["dig", "+short", f"-t{record_type}", host], timeout=10)
+        if rc != 0 or not out.strip():
+            # Fall back to nslookup
+            out2, rc2 = _run(["nslookup", "-type=" + record_type, host], timeout=10)
+            records = [l.strip() for l in (out2 or "").splitlines() if l.strip() and not l.startswith(("Server:", "Address:", "Non-authoritative"))]
+        else:
+            records = [l.strip() for l in (out or "").splitlines() if l.strip()]
+        return jsonify({"host": host, "type": record_type, "records": records, "rc": rc})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── Route table viewer ────────────────────────────────────────────────────────
+
+@app.route("/api/network/routes", methods=["GET"])
+@require_auth
+def api_network_routes():
+    """Return the current IP routing table."""
+    routes = []
+    try:
+        out, _ = _run(["ip", "route", "show"], timeout=5)
+        for line in (out or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            dest = parts[0] if parts else ""
+            route = {"dest": dest, "raw": line}
+            # Extract common fields
+            for i, p in enumerate(parts):
+                if p == "via" and i + 1 < len(parts):
+                    route["via"] = parts[i + 1]
+                elif p == "dev" and i + 1 < len(parts):
+                    route["dev"] = parts[i + 1]
+                elif p == "metric" and i + 1 < len(parts):
+                    route["metric"] = parts[i + 1]
+                elif p == "src" and i + 1 < len(parts):
+                    route["src"] = parts[i + 1]
+            routes.append(route)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"routes": routes, "count": len(routes)})
+
+
 # ── ARP / neighbour table ─────────────────────────────────────────────────────
 
 @app.route("/api/network/arp", methods=["GET"])

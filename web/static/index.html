@@ -793,6 +793,36 @@
     </div>
   </div>
 
+  <!-- DNS Lookup Tool -->
+  <div class="card full-width" id="card-dns-lookup" style="margin-top:16px;">
+    <div class="card-header">
+      <span>🔍 DNS Lookup</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+      <input id="dns-lookup-host" type="text" placeholder="hostname or IP…" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:14px;">
+      <select id="dns-lookup-type" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:14px;">
+        <option value="A">A</option>
+        <option value="AAAA">AAAA</option>
+        <option value="MX">MX</option>
+        <option value="TXT">TXT</option>
+        <option value="CNAME">CNAME</option>
+        <option value="NS">NS</option>
+        <option value="PTR">PTR</option>
+      </select>
+      <button class="btn btn-sm" onclick="runDnsLookup()">Lookup</button>
+    </div>
+    <div id="dns-lookup-result" style="font-size:13px;color:var(--text-dim);">Enter a hostname and click Lookup.</div>
+  </div>
+
+  <!-- Route Table -->
+  <div class="card full-width" id="card-routes" style="margin-top:16px;">
+    <div class="card-header">
+      <span>🗺️ Routing Table</span>
+      <button class="btn btn-sm" onclick="fetchRouteTable()">&#x21BB; Refresh</button>
+    </div>
+    <div id="route-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
+  </div>
+
   <!-- ARP / Neighbor Table -->
   <div class="card full-width" id="card-arp" style="margin-top:16px;">
     <div class="card-header">
@@ -3922,6 +3952,7 @@ async function refreshAll() {
   fetchDnsHosts();
   fetchDhcpReservations();
   fetchDhcpLeases();
+  fetchRouteTable();
   fetchUpdateCheck();
   fetchJournal();
   fetchRouterConfig();
@@ -4672,6 +4703,67 @@ async function fetchDhcpLeases() {
       html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;font-size:11px;">' + l.mac + '</td>';
       html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (l.hostname || '—') + '</td>';
       html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + expColor + ';font-family:monospace;font-size:12px;">' + l.remaining + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+// ── DNS Lookup Tool ────────────────────────────────────────────────────────────
+
+async function runDnsLookup() {
+  const host = (document.getElementById('dns-lookup-host').value || '').trim();
+  const type = document.getElementById('dns-lookup-type').value;
+  const el = document.getElementById('dns-lookup-result');
+  if (!host) { el.innerHTML = '<span style="color:var(--error,#e55);">Enter a hostname.</span>'; return; }
+  el.textContent = 'Looking up…';
+  try {
+    const r = await apiFetch('/api/dns/lookup?host=' + encodeURIComponent(host) + '&type=' + type);
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);">' + (d.error || 'Error') + '</span>'; return; }
+    if (!d.records || d.records.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);">No records found for ' + host + ' (' + type + ')</span>';
+      return;
+    }
+    let html = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">' + d.records.length + ' record(s) for <strong>' + host + '</strong> (' + type + ')</div>';
+    html += '<div style="font-family:monospace;font-size:13px;">';
+    for (const r of d.records) {
+      html += '<div style="padding:3px 0;border-bottom:1px solid var(--border);">' + r + '</div>';
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);">Error: ' + e + '</span>';
+  }
+}
+
+// ── Route Table Viewer ─────────────────────────────────────────────────────────
+
+async function fetchRouteTable() {
+  const el = document.getElementById('route-table-content');
+  try {
+    const r = await apiFetch('/api/network/routes');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);">' + (d.error || 'Error') + '</span>'; return; }
+    const routes = d.routes || [];
+    if (routes.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No routes found</span>'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Destination</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Via</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Dev</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Metric</th>';
+    html += '</tr></thead><tbody>';
+    for (const rt of routes) {
+      const isDefault = rt.dest === 'default';
+      html += '<tr' + (isDefault ? ' style="font-weight:600;"' : '') + '>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dest || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.via || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dev || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + (rt.metric || '—') + '</td>';
       html += '</tr>';
     }
     html += '</tbody></table>';
