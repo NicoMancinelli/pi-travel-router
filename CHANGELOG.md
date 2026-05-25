@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.16.0] - 2026-05-24
+
+### Added
+
+- **LAN network scanner** (`web/app.py`, `web/static/index.html`): `GET /api/network/scan` auto-detects the AP subnet from `ip route show dev uap0`, runs `arp-scan --localnet` (up to 15s) with ARP table fallback, deduplicates by IP, and returns hosts sorted numerically. Dashboard "LAN Scanner" card with on-demand Scan button (not wired to auto-refresh) showing IP/MAC/Vendor table.
+- **Service control panel** (`web/app.py`, `web/static/index.html`): `GET /api/services/status` calls `systemctl is-active` for 9 key router services and returns `{unit, state}` pairs. Dashboard card with color-coded status indicators (● active / ✖ failed / ○ other) and per-service Restart buttons that call the existing `/api/service/<name>/restart` endpoint.
+- **Router config editor** (`web/app.py`, `web/static/index.html`): `GET /api/config/travel-router` reads 21 allowlisted keys from `/etc/default/travel-router`. `POST /api/config/travel-router` validates keys against allowlist, rejects newlines, and atomically rewrites the file preserving comments. Dashboard card renders an editable table with inline inputs; a Save Changes button appears on first edit.
+
 ## [2.15.0] - 2026-05-24
 
 ### Added
