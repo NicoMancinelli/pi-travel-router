@@ -12705,6 +12705,104 @@ def api_network_wifi_survey():
         return jsonify({"error": str(e), "networks": []})
 
 
+@app.route("/api/network/connected-clients")
+def api_network_connected_clients():
+    """WiFi clients connected to the AP (hostapd) and all LAN clients."""
+    result = {"ap_clients": [], "lan_clients": [], "ap_interface": None}
+
+    # hostapd connected stations
+    try:
+        iface_out, _ = _run("iw dev 2>/dev/null | awk '/Interface/{print $2}'")
+        ap_iface = None
+        for iface in iface_out.strip().splitlines():
+            iface = iface.strip()
+            type_out, rc = _run(f"iw dev {iface} info 2>/dev/null | grep type")
+            if rc == 0 and "AP" in type_out:
+                ap_iface = iface
+                break
+        if ap_iface:
+            result["ap_interface"] = ap_iface
+            sta_out, rc = _run(f"iw dev {ap_iface} station dump 2>/dev/null")
+            if rc == 0 and sta_out.strip():
+                current = {}
+                for line in sta_out.strip().splitlines():
+                    line = line.strip()
+                    if line.startswith("Station "):
+                        if current:
+                            result["ap_clients"].append(current)
+                        mac = line.split()[1]
+                        current = {"mac": mac}
+                    elif "signal:" in line:
+                        m = re.search(r"signal:\s+([-\d]+)", line)
+                        if m:
+                            current["signal_dbm"] = int(m.group(1))
+                    elif "rx bytes:" in line:
+                        m = re.search(r"rx bytes:\s+(\d+)", line)
+                        if m:
+                            current["rx_bytes"] = int(m.group(1))
+                    elif "tx bytes:" in line:
+                        m = re.search(r"tx bytes:\s+(\d+)", line)
+                        if m:
+                            current["tx_bytes"] = int(m.group(1))
+                    elif "connected time:" in line:
+                        m = re.search(r"connected time:\s+(\d+)", line)
+                        if m:
+                            secs = int(m.group(1))
+                            h, rem = divmod(secs, 3600)
+                            current["connected_time"] = f"{h}h {rem//60}m" if h else f"{rem//60}m"
+                if current:
+                    result["ap_clients"].append(current)
+    except Exception as e:
+        result["ap_error"] = str(e)
+
+    # All LAN clients from ARP + neighbor table
+    try:
+        neigh_out, _ = _run("ip neigh show 2>/dev/null")
+        seen_macs = {c["mac"] for c in result["ap_clients"]}
+        lan = []
+        for line in neigh_out.strip().splitlines():
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            ip = parts[0]
+            mac_idx = next((i for i, p in enumerate(parts) if re.match(r'^([0-9a-f]{2}:){5}[0-9a-f]{2}$', p.lower())), None)
+            if mac_idx is None:
+                continue
+            mac = parts[mac_idx]
+            state = parts[-1]
+            if state in ("FAILED", "INCOMPLETE"):
+                continue
+            iface = parts[2] if len(parts) > 2 else ""
+            if mac not in seen_macs:
+                lan.append({"ip": ip, "mac": mac, "state": state, "iface": iface})
+                seen_macs.add(mac)
+        result["lan_clients"] = lan
+    except Exception as e:
+        result["lan_error"] = str(e)
+
+    # Enrich with hostnames from dnsmasq leases
+    try:
+        lease_paths = ["/var/lib/misc/dnsmasq.leases", "/var/lib/dnsmasq/dnsmasq.leases", "/tmp/dnsmasq.leases"]
+        mac_to_host = {}
+        for path in lease_paths:
+            try:
+                for line in Path(path).read_text().strip().splitlines():
+                    parts = line.split()
+                    if len(parts) >= 4 and parts[3] != "*":
+                        mac_to_host[parts[1].lower()] = parts[3]
+                break
+            except (FileNotFoundError, PermissionError):
+                continue
+        for c in result["ap_clients"] + result["lan_clients"]:
+            c["hostname"] = mac_to_host.get(c.get("mac", "").lower(), "")
+    except Exception:
+        pass
+
+    result["ap_count"] = len(result["ap_clients"])
+    result["lan_count"] = len(result["lan_clients"])
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

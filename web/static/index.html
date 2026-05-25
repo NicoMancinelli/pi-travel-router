@@ -1260,6 +1260,16 @@
     </div>
   </div>
 
+  <!-- Connected Clients -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">👥 Connected Clients</span>
+    </div>
+    <div class="card-body" id="connected-clients-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1361,7 +1371,7 @@
   <div class="card full-width" id="card-clients">
     <div class="card-title">
       &#x1F4BB; Connected Clients
-      <button class="btn btn-sm" onclick="fetchConnectedClients()" style="margin-left:8px;">&#x27F3; Refresh</button>
+      <button class="btn btn-sm" onclick="fetchArpClients()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
     <div id="clients-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
@@ -4795,6 +4805,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchBandwidthHistory();
   fetchDnsResolvers();
   fetchConnectedClients();
+  fetchArpClients();
   fetchKillSwitchStatus();
   fetchLogSummary();
   fetchVnstatDataCap();
@@ -5068,6 +5079,7 @@ async function refreshAll() {
   fetchNtfyConfig();
   fetchLoginHistory();
   fetchConnectedClients();
+  fetchArpClients();
   fetchWifiClients();
   fetchWanUplinks();
   fetchSystemResources();
@@ -6600,6 +6612,84 @@ async function fetchSystemServices() {
   }
 }
 
+// ── Connected Clients ─────────────────────────────────────────────────────────
+async function fetchConnectedClients() {
+  const el = document.getElementById('connected-clients-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/network/connected-clients');
+    const d = await r.json();
+    const fmtBytes = b => b >= 1073741824 ? (b/1073741824).toFixed(1)+'GB' : b >= 1048576 ? (b/1048576).toFixed(1)+'MB' : b >= 1024 ? (b/1024).toFixed(0)+'KB' : b+'B';
+    const sigBar = dbm => {
+      const pct = Math.max(0, Math.min(100, Math.round((dbm + 90) / 60 * 100)));
+      const col = pct >= 66 ? '#16a34a' : pct >= 33 ? '#f59e0b' : '#dc2626';
+      return `<div style="display:inline-block;width:40px;height:5px;background:var(--border);border-radius:2px;vertical-align:middle;margin-left:3px;"><div style="width:${pct}%;height:5px;background:${col};border-radius:2px;"></div></div>`;
+    };
+    let html = '';
+
+    // AP clients
+    const apClients = d.ap_clients || [];
+    if (d.ap_interface || apClients.length > 0) {
+      html += `<div style="font-weight:600;font-size:12px;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px;">AP (${d.ap_interface || '?'}) — ${apClients.length} client${apClients.length !== 1 ? 's' : ''}</div>`;
+      if (apClients.length === 0) {
+        html += '<p class="muted" style="font-size:12px;margin-bottom:8px;">No stations connected.</p>';
+      } else {
+        html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:10px;">';
+        html += `<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);">
+          <th style="text-align:left;padding:2px 5px;">MAC</th>
+          <th style="text-align:left;padding:2px 5px;">Hostname</th>
+          <th style="text-align:left;padding:2px 5px;">Signal</th>
+          <th style="text-align:right;padding:2px 5px;">RX/TX</th>
+          <th style="text-align:right;padding:2px 5px;">Uptime</th>
+        </tr></thead><tbody>`;
+        for (const c of apClients) {
+          const sig = c.signal_dbm !== undefined ? `${c.signal_dbm}dBm${sigBar(c.signal_dbm)}` : '—';
+          const rxTx = (c.rx_bytes !== undefined && c.tx_bytes !== undefined)
+            ? `${fmtBytes(c.rx_bytes)}/${fmtBytes(c.tx_bytes)}` : '—';
+          html += `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:2px 5px;font-family:monospace;font-size:10px">${c.mac}</td>
+            <td style="padding:2px 5px">${c.hostname || '<span style="color:var(--text-dim)">—</span>'}</td>
+            <td style="padding:2px 5px;white-space:nowrap">${sig}</td>
+            <td style="padding:2px 5px;text-align:right;font-size:10px">${rxTx}</td>
+            <td style="padding:2px 5px;text-align:right;color:var(--text-dim)">${c.connected_time || '—'}</td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+      }
+    }
+
+    // LAN clients
+    const lanClients = d.lan_clients || [];
+    if (lanClients.length > 0 || apClients.length === 0) {
+      html += `<div style="font-weight:600;font-size:12px;color:var(--text-dim);text-transform:uppercase;margin-bottom:6px;">LAN Neighbors — ${lanClients.length}</div>`;
+      if (lanClients.length === 0) {
+        html += '<p class="muted" style="font-size:12px;">No LAN neighbors.</p>';
+      } else {
+        html += '<div style="max-height:180px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:11px;">';
+        html += `<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);">
+          <th style="text-align:left;padding:2px 5px;">IP</th>
+          <th style="text-align:left;padding:2px 5px;">MAC</th>
+          <th style="text-align:left;padding:2px 5px;">Hostname</th>
+          <th style="text-align:left;padding:2px 5px;">Iface</th>
+        </tr></thead><tbody>`;
+        for (const c of lanClients) {
+          html += `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:2px 5px;font-family:monospace;font-weight:500">${c.ip}</td>
+            <td style="padding:2px 5px;font-family:monospace;font-size:10px;color:var(--text-dim)">${c.mac}</td>
+            <td style="padding:2px 5px">${c.hostname || '—'}</td>
+            <td style="padding:2px 5px;color:var(--text-dim)">${c.iface}</td>
+          </tr>`;
+        }
+        html += '</tbody></table></div>';
+      }
+    }
+
+    if (!html) html = '<p class="muted">No client data available.</p>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
 // ── Tailscale Status ──────────────────────────────────────────────────────────
 
 async function fetchTailscaleStatus() {
@@ -7021,9 +7111,9 @@ async function fetchSshKeys() {
   }
 }
 
-// ── Connected Clients ─────────────────────────────────────────────────────────
+// ── ARP Clients ───────────────────────────────────────────────────────────────
 
-async function fetchConnectedClients() {
+async function fetchArpClients() {
   const el = document.getElementById('clients-content');
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
