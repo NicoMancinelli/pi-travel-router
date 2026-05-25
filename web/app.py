@@ -3003,6 +3003,64 @@ def api_datacap_post():
     return jsonify({"ok": True})
 
 
+# ── Bandwidth quota status ────────────────────────────────────────────────────
+
+@app.route("/api/datacap/status", methods=["GET"])
+@require_auth
+def api_datacap_status():
+    """Return current month bandwidth usage vs configured data cap."""
+    # Read cap config
+    cap_mb = 0
+    alert_pct = 80
+    try:
+        text = Path(DATACAP_FILE).read_text().strip()
+        cfg = json.loads(text) if text else {}
+        cap_mb = int(cfg.get("cap_mb", 0))
+        alert_pct = int(cfg.get("alert_pct", 80))
+    except (OSError, json.JSONDecodeError, ValueError):
+        pass
+    if cap_mb <= 0:
+        return jsonify({"enabled": False, "cap_mb": 0, "used_mb": 0, "pct": 0, "alert_pct": alert_pct})
+    # Read current month usage from vnstat
+    used_mb = 0
+    try:
+        out, _ = _run(["vnstat", "--json", "m", "1"], timeout=5)
+        if out:
+            data = json.loads(out)
+            # vnstat JSON: interfaces[0].months[-1].{rx,tx} in bytes or KiB depending on version
+            for iface_data in (data.get("interfaces") or []):
+                months = iface_data.get("traffic", {}).get("months") or iface_data.get("months") or []
+                if months:
+                    m = months[-1]
+                    # Try bytes first (vnstat 2.x), then KiB
+                    rx = m.get("rx", 0)
+                    tx = m.get("tx", 0)
+                    if rx > 0 or tx > 0:
+                        # If values seem too small to be bytes, assume KiB
+                        total = rx + tx
+                        if total < 1_000_000:  # likely KiB
+                            used_mb += total / 1024
+                        else:  # bytes
+                            used_mb += total / (1024 * 1024)
+    except Exception:
+        pass
+    used_mb = round(used_mb, 1)
+    pct = round((used_mb / cap_mb) * 100, 1) if cap_mb > 0 else 0
+    over_alert = pct >= alert_pct
+    over_cap = used_mb >= cap_mb
+    return jsonify({
+        "enabled": True,
+        "cap_mb": cap_mb,
+        "cap_gb": round(cap_mb / 1024, 2),
+        "used_mb": used_mb,
+        "used_gb": round(used_mb / 1024, 2),
+        "pct": pct,
+        "alert_pct": alert_pct,
+        "over_alert": over_alert,
+        "over_cap": over_cap,
+    })
+
+
 # ── Device aliases ────────────────────────────────────────────────────────────
 
 _ALIAS_MAC_RE = re.compile(r'^([0-9a-fA-F]{2}[:\-]?){5}[0-9a-fA-F]{2}$')
