@@ -1313,6 +1313,12 @@
           <div id="ntp-peers-content"><em>Loading…</em></div>
         </div>
 
+        <!-- Hardware Info -->
+        <div class="card" id="card-hardware-info">
+          <h2>🖥 Hardware Info</h2>
+          <div id="hardware-info-content"><em>Loading…</em></div>
+        </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4376,6 +4382,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchFailedServices();
   fetchIpGeo();
   fetchNtpPeers();
+  fetchOpenPorts();
+  fetchHardwareInfo();
 });
 
 async function fetchJournal() {
@@ -8574,6 +8582,37 @@ async function fetchMemoryBreakdown() {
         el.innerHTML = html;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
+    async function fetchHardwareInfo() {
+      const el = document.getElementById('hardware-info-content');
+      try {
+        const r = await fetch('/api/system/hardware');
+        const d = await r.json();
+        const fmtBytes = b => b >= 1073741824 ? (b/1073741824).toFixed(1)+' GiB' : (b/1048576).toFixed(0)+' MiB';
+        const throttleDesc = h => {
+          if (!h) return '—';
+          const v = parseInt(h.replace('throttled=',''), 16);
+          if (v === 0) return '✓ OK';
+          const flags = [];
+          if (v & 0x1) flags.push('under-voltage');
+          if (v & 0x2) flags.push('freq-capped');
+          if (v & 0x4) flags.push('throttled');
+          if (v & 0x10000) flags.push('uv-occurred');
+          if (v & 0x40000) flags.push('throttle-occurred');
+          return flags.length ? flags.join(', ') : h;
+        };
+        const rows = [
+          d.board_model ? `<tr><td>Board</td><td>${d.board_model}</td></tr>` : '',
+          d.hardware ? `<tr><td>Hardware</td><td>${d.hardware}</td></tr>` : '',
+          d.revision ? `<tr><td>Revision</td><td style="font-family:monospace">${d.revision}</td></tr>` : '',
+          d.serial ? `<tr><td>Serial</td><td style="font-family:monospace">${d.serial}</td></tr>` : '',
+          d.mem_total_kb ? `<tr><td>RAM</td><td>${fmtBytes(d.mem_total_kb * 1024)}</td></tr>` : '',
+          d.storage_bytes ? `<tr><td>Storage</td><td>${fmtBytes(d.storage_bytes)}${d.storage_device ? ' ('+d.storage_device+')' : ''}</td></tr>` : '',
+          d.throttle_hex ? `<tr><td>Throttle</td><td>${throttleDesc(d.throttle_hex)}</td></tr>` : '',
+        ].filter(Boolean).join('');
+        el.innerHTML = rows ? `<table class="info-table"><tbody>${rows}</tbody></table>` : 'No hardware data';
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+
 // ── LAN Network Scanner ───────────────────────────────────────────────────────
 
 async function runLanScan() {
