@@ -479,6 +479,17 @@
     </div>
   </div>
 
+  <!-- Network Interface Stats -->
+  <div class="card full-width" id="card-iface-stats" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4CA; Interface Stats</span>
+      <button class="btn btn-sm" onclick="fetchIfaceStats()">&#x21BB; Refresh</button>
+    </div>
+    <div id="iface-stats-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Data Cap -->
@@ -3690,6 +3701,7 @@ async function refreshAll() {
   fetchJournal();
   fetchRouterConfig();
   fetchServices();
+  fetchIfaceStats();
 }
 
 async function init() {
@@ -3762,6 +3774,53 @@ async function fetchResourceStats() {
       temp !== null ? 'Temp ' + temp + '°C' : 'Temp N/A');
   } catch (e) {
     // silently ignore — non-critical
+  }
+}
+
+// ── Network interface stats ───────────────────────────────────────────────────
+function _fmtBytes(b) {
+  if (b == null) return '—';
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
+
+async function fetchIfaceStats() {
+  const el = document.getElementById('iface-stats-content');
+  try {
+    const r = await apiFetch('/api/network/interfaces');
+    const d = await r.json();
+    const ifaces = d.interfaces || [];
+    if (ifaces.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No interfaces found</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Interface</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">State</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">RX</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">TX</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">RX Err</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">TX Err</th>';
+    html += '</tr></thead><tbody>';
+    for (const iface of ifaces) {
+      const stateColor = iface.operstate === 'up' ? 'var(--success,#4c4)' : 'var(--text-dim)';
+      const dot = iface.operstate === 'up' ? '●' : '○';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + iface.interface + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:' + stateColor + ';">' + dot + ' ' + iface.operstate + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + _fmtBytes(iface.rx_bytes) + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + _fmtBytes(iface.tx_bytes) + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + (iface.rx_errors > 0 ? 'var(--error,#e55)' : 'var(--text-dim)') + ';">' + iface.rx_errors + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + (iface.tx_errors > 0 ? 'var(--error,#e55)' : 'var(--text-dim)') + ';">' + iface.tx_errors + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   }
 }
 

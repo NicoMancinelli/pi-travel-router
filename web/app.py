@@ -4322,6 +4322,63 @@ def api_monitor_ping_delete(host):
     return jsonify({"ok": True})
 
 
+# ── Network interface stats ───────────────────────────────────────────────────
+
+@app.route("/api/network/interfaces", methods=["GET"])
+@require_auth
+def api_network_interfaces():
+    """Return per-interface stats from /proc/net/dev."""
+    interfaces = []
+    try:
+        text = Path("/proc/net/dev").read_text()
+        lines = text.splitlines()
+        # Skip 2-line header
+        for line in lines[2:]:
+            line = line.strip()
+            if not line:
+                continue
+            iface, _, data = line.partition(":")
+            iface = iface.strip()
+            # Skip loopback
+            if iface == "lo":
+                continue
+            parts = data.split()
+            if len(parts) < 16:
+                continue
+            try:
+                rx_bytes = int(parts[0])
+                rx_packets = int(parts[1])
+                rx_errs = int(parts[2])
+                rx_drop = int(parts[3])
+                tx_bytes = int(parts[8])
+                tx_packets = int(parts[9])
+                tx_errs = int(parts[10])
+                tx_drop = int(parts[11])
+            except (ValueError, IndexError):
+                continue
+            # Get link state
+            operstate = "unknown"
+            try:
+                operstate = Path(f"/sys/class/net/{iface}/operstate").read_text().strip()
+            except OSError:
+                pass
+            interfaces.append({
+                "interface": iface,
+                "operstate": operstate,
+                "rx_bytes": rx_bytes,
+                "rx_packets": rx_packets,
+                "rx_errors": rx_errs,
+                "rx_dropped": rx_drop,
+                "tx_bytes": tx_bytes,
+                "tx_packets": tx_packets,
+                "tx_errors": tx_errs,
+                "tx_dropped": tx_drop,
+            })
+    except OSError:
+        pass
+    return jsonify({"interfaces": interfaces})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
