@@ -10668,6 +10668,45 @@ def api_system_dns_cache():
     })
 
 
+# ── TCP Connection State Counts ──────────────────────────────────────────────
+
+@app.route("/api/system/tcp-state-counts", methods=["GET"])
+@require_auth
+def api_system_tcp_state_counts():
+    """Return TCP and UDP connection state breakdown."""
+    # Use ss -tan for TCP states, ss -uan for UDP
+    states = {}
+    out, rc = _run(["ss", "-tan"])
+    if rc == 0:
+        for line in out.splitlines()[1:]:  # skip header
+            parts = line.split()
+            if parts:
+                state = parts[0]
+                states[state] = states.get(state, 0) + 1
+
+    udp_count = 0
+    out2, rc2 = _run(["ss", "-uan"])
+    if rc2 == 0:
+        udp_count = max(0, len(out2.splitlines()) - 1)
+
+    # Also get listen counts
+    listen_count = states.get("LISTEN", 0)
+    established_count = states.get("ESTAB", 0)
+    time_wait_count = states.get("TIME-WAIT", 0)
+    close_wait_count = states.get("CLOSE-WAIT", 0)
+
+    return jsonify({
+        "states": states,
+        "udp_count": udp_count,
+        "listen": listen_count,
+        "established": established_count,
+        "time_wait": time_wait_count,
+        "close_wait": close_wait_count,
+        "total_tcp": sum(states.values()),
+        "ss_available": rc == 0,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
