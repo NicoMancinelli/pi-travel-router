@@ -4314,6 +4314,70 @@ def api_dhcp_reservations_delete(mac):
     return jsonify({"ok": True})
 
 
+# ── Active DHCP leases ────────────────────────────────────────────────────────
+
+DNSMASQ_LEASES_FILE = "/var/lib/misc/dnsmasq.leases"
+
+
+@app.route("/api/dhcp/leases", methods=["GET"])
+@require_auth
+def api_dhcp_leases():
+    """Return active DHCP leases from dnsmasq.leases file."""
+    import time as _time
+    now = int(_time.time())
+    leases = []
+    try:
+        text = Path(DNSMASQ_LEASES_FILE).read_text()
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            # Format: <expiry_epoch> <mac> <ip> <hostname> <client-id>
+            if len(parts) < 4:
+                continue
+            try:
+                expiry = int(parts[0])
+                mac = parts[1]
+                ip = parts[2]
+                hostname = parts[3] if parts[3] != "*" else ""
+                client_id = parts[4] if len(parts) > 4 and parts[4] != "*" else ""
+                remaining_s = expiry - now
+                expired = remaining_s <= 0
+                # Format remaining time
+                if expired:
+                    remaining_str = "expired"
+                elif remaining_s < 60:
+                    remaining_str = f"{remaining_s}s"
+                elif remaining_s < 3600:
+                    remaining_str = f"{remaining_s // 60}m {remaining_s % 60}s"
+                elif remaining_s < 86400:
+                    h = remaining_s // 3600
+                    m = (remaining_s % 3600) // 60
+                    remaining_str = f"{h}h {m}m"
+                else:
+                    d = remaining_s // 86400
+                    h = (remaining_s % 86400) // 3600
+                    remaining_str = f"{d}d {h}h"
+                leases.append({
+                    "mac": mac,
+                    "ip": ip,
+                    "hostname": hostname,
+                    "expiry": expiry,
+                    "remaining_s": remaining_s,
+                    "remaining": remaining_str,
+                    "expired": expired,
+                    "client_id": client_id,
+                })
+            except (ValueError, IndexError):
+                continue
+    except OSError:
+        pass
+    # Sort by IP address
+    leases.sort(key=lambda x: tuple(int(o) for o in x["ip"].split(".") if o.isdigit()))
+    return jsonify({"leases": leases, "count": len(leases), "file": DNSMASQ_LEASES_FILE})
+
+
 # ── LAN network scanner ───────────────────────────────────────────────────────
 
 @app.route("/api/network/scan", methods=["GET"])

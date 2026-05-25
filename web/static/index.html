@@ -749,6 +749,17 @@
     </div>
   </div>
 
+  <!-- Active DHCP Leases -->
+  <div class="card full-width" id="card-dhcp-leases" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F4CB; DHCP Leases</span>
+      <button class="btn btn-sm" onclick="fetchDhcpLeases()">&#x21BB; Refresh</button>
+    </div>
+    <div id="dhcp-leases-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3769,6 +3780,7 @@ async function refreshAll() {
   fetchCronJobs();
   fetchDnsHosts();
   fetchDhcpReservations();
+  fetchDhcpLeases();
   fetchUpdateCheck();
   fetchJournal();
   fetchRouterConfig();
@@ -4487,6 +4499,42 @@ async function restartService(unit, btn) {
     toast('Error: ' + e, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↺ Restart'; }
+  }
+}
+
+// ── Active DHCP Leases ────────────────────────────────────────────────────────
+
+async function fetchDhcpLeases() {
+  const el = document.getElementById('dhcp-leases-content');
+  try {
+    const r = await apiFetch('/api/dhcp/leases');
+    const d = await r.json();
+    const leases = d.leases || [];
+    if (leases.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No active DHCP leases</span>';
+      return;
+    }
+    let html = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">' + d.count + ' active lease(s)</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">IP</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">MAC</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Hostname</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Expires</th>';
+    html += '</tr></thead><tbody>';
+    for (const l of leases) {
+      const expColor = l.expired ? 'var(--error,#e55)' : l.remaining_s < 300 ? '#e93' : 'var(--text-dim)';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + l.ip + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;font-size:11px;">' + l.mac + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (l.hostname || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;color:' + expColor + ';font-family:monospace;font-size:12px;">' + l.remaining + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
   }
 }
 
