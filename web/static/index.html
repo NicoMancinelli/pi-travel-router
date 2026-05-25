@@ -1375,6 +1375,24 @@
     <div id="iptables-content"><em>Loading&hellip;</em></div>
   </div>
 
+  <!-- Thermal History -->
+  <div class="card" id="card-thermal-history">
+    <h2>🌡️ Thermal Zones</h2>
+    <div id="thermal-history-content"><em>Loading…</em></div>
+  </div>
+
+  <!-- Network Neighbors -->
+  <div class="card" id="card-network-neighbors">
+    <h2>&#x1F517; Network Neighbors</h2>
+    <div id="network-neighbors-content"><em>Loading&hellip;</em></div>
+  </div>
+
+  <!-- Process Tree -->
+  <div class="card" id="card-process-tree">
+    <h2>&#x1F333; Top Processes</h2>
+    <div id="process-tree-content"><em>Loading&hellip;</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4452,6 +4470,9 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchPackageUpdates();
   fetchNetBandwidth();
   fetchIptables();
+  fetchThermalHistory();
+  fetchProcessTree();
+  fetchNetworkNeighbors();
 });
 
 async function fetchJournal() {
@@ -4702,6 +4723,9 @@ async function refreshAll() {
   fetchPackageUpdates();
   fetchNetBandwidth();
   fetchIptables();
+  fetchThermalHistory();
+  fetchProcessTree();
+  fetchNetworkNeighbors();
 }
 
 async function init() {
@@ -9010,6 +9034,133 @@ async function fetchIptables() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load firewall rules</span>';
+  }
+}
+
+// ── Thermal History ───────────────────────────────────────────────────────────
+
+async function fetchThermalHistory() {
+  const el = document.getElementById('thermal-history-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/thermal-history');
+    const d = await r.json();
+    const zones = d.zones || [];
+    let html = '';
+    if (d.gpu_temp_c != null) {
+      const g = d.gpu_temp_c;
+      const gColor = g >= 80 ? 'var(--error,#e55)' : g >= 60 ? '#e8a000' : 'var(--success,#4c4)';
+      html += '<p style="margin:0 0 8px;font-size:13px;">GPU: <strong style="color:' + gColor + ';">' + g.toFixed(1) + ' °C</strong></p>';
+    }
+    if (zones.length === 0 && d.gpu_temp_c == null) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No thermal data available</span>';
+      return;
+    }
+    if (zones.length > 0) {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr>';
+      html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Zone</th>';
+      html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Type</th>';
+      html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Temp (°C)</th>';
+      html += '</tr></thead><tbody>';
+      for (const z of zones) {
+        const t = z.temp_c;
+        const col = t >= 80 ? 'var(--error,#e55)' : t >= 60 ? '#e8a000' : 'var(--success,#4c4)';
+        html += '<tr>';
+        html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + z.zone + '</td>';
+        html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);">' + z.type + '</td>';
+        html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:' + col + ';font-weight:600;">' + t.toFixed(1) + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+// ── Process Tree ──────────────────────────────────────────────────────────────
+
+async function fetchProcessTree() {
+  const el = document.getElementById('process-tree-content');
+  if (!el) return;
+  try {
+    const res = await apiFetch('/api/system/process-tree');
+    if (!res.ok) { el.innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const data = await res.json();
+    if (!data.processes || data.processes.length === 0) {
+      el.innerHTML = '<span class="dim">No data</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);text-align:left;">'
+          + '<th style="padding:3px 6px;">PID</th>'
+          + '<th style="padding:3px 6px;">User</th>'
+          + '<th style="padding:3px 6px;">CPU%</th>'
+          + '<th style="padding:3px 6px;">Mem%</th>'
+          + '<th style="padding:3px 6px;">Command</th>'
+          + '</tr></thead><tbody>';
+    for (const p of data.processes) {
+      const cpuColor = p.cpu > 50 ? 'var(--danger,#e55)' : p.cpu > 20 ? 'var(--warning,#e90)' : 'inherit';
+      html += '<tr style="border-bottom:1px solid var(--border-faint,#2a2a2a);">'
+            + `<td style="padding:3px 6px;">${p.pid}</td>`
+            + `<td style="padding:3px 6px;">${p.user}</td>`
+            + `<td style="padding:3px 6px;color:${cpuColor};">${p.cpu.toFixed(1)}</td>`
+            + `<td style="padding:3px 6px;">${p.mem.toFixed(1)}</td>`
+            + `<td style="padding:3px 6px;font-family:monospace;">${p.command}</td>`
+            + '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchProcessTree error', e);
+    el.innerHTML = '<span class="dim">Unavailable</span>';
+  }
+}
+
+// ── Network Neighbors (ARP/NDP) ──────────────────────────────────────────────
+
+async function fetchNetworkNeighbors() {
+  const el = document.getElementById('network-neighbors-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/network/neighbors');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error loading neighbors') + '</span>';
+      return;
+    }
+    if (!d.neighbors || d.neighbors.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No neighbors found</span>';
+      return;
+    }
+    const stateColor = s => {
+      if (s === 'REACHABLE') return 'var(--success,#4caf50)';
+      if (s === 'STALE') return 'var(--warning,#ff9800)';
+      return 'var(--text-dim)';
+    };
+    let html = '<div style="overflow-x:auto;">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
+      + '<thead><tr>'
+      + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">IP</th>'
+      + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">MAC</th>'
+      + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">Interface</th>'
+      + '<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">State</th>'
+      + '</tr></thead><tbody>';
+    for (const n of d.neighbors) {
+      html += '<tr>'
+        + '<td style="padding:5px 8px;font-family:monospace;">' + n.ip + '</td>'
+        + '<td style="padding:5px 8px;font-family:monospace;">' + n.mac + '</td>'
+        + '<td style="padding:5px 8px;">' + n.interface + '</td>'
+        + '<td style="padding:5px 8px;font-weight:600;color:' + stateColor(n.state) + ';">' + n.state + '</td>'
+        + '</tr>';
+    }
+    html += '</tbody></table></div>';
+    html += '<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">' + d.count + ' neighbor' + (d.count !== 1 ? 's' : '') + '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load neighbor table</span>';
   }
 }
 

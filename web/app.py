@@ -9816,6 +9816,123 @@ def api_network_iptables():
     return jsonify({"ipv4": ipv4, "ipv6": ipv6})
 
 
+@app.route("/api/system/thermal-history")
+@require_auth
+def api_thermal_history():
+    """Return current thermal zone readings and GPU temp."""
+    zones = []
+    thermal_base = Path("/sys/class/thermal")
+    if thermal_base.exists():
+        for zone_dir in sorted(thermal_base.iterdir()):
+            if not zone_dir.name.startswith("thermal_zone"):
+                continue
+            try:
+                raw = (zone_dir / "temp").read_text().strip()
+                temp_c = round(int(raw) / 1000.0, 1)
+            except (OSError, ValueError):
+                continue
+            try:
+                zone_type = (zone_dir / "type").read_text().strip()
+            except OSError:
+                zone_type = zone_dir.name
+            zones.append({"zone": zone_dir.name, "type": zone_type, "temp_c": temp_c})
+
+    gpu_temp_c = None
+    vcgencmd_out, vcgencmd_rc = _run(["vcgencmd", "measure_temp"])
+    if vcgencmd_rc == 0:
+        m = re.search(r"temp=([\d.]+)", vcgencmd_out)
+        if m:
+            try:
+                gpu_temp_c = round(float(m.group(1)), 1)
+            except ValueError:
+                pass
+
+    result = {"zones": zones, "timestamp": time.time()}
+    if gpu_temp_c is not None:
+        result["gpu_temp_c"] = gpu_temp_c
+    return jsonify(result)
+
+
+# ── Process Tree ──────────────────────────────────────────────────────────────
+
+@app.route("/api/system/process-tree")
+@require_auth
+def api_process_tree():
+    out, rc = _run(
+        ["ps", "-eo", "pid,ppid,user,%cpu,%mem,comm", "--sort=-%cpu", "--no-headers"]
+    )
+    processes = []
+    for line in out.splitlines()[:20]:
+        parts = line.split(None, 5)
+        if len(parts) < 6:
+            continue
+        processes.append({
+            "pid":     int(parts[0]),
+            "ppid":    int(parts[1]),
+            "user":    parts[2],
+            "cpu":     float(parts[3]),
+            "mem":     float(parts[4]),
+            "command": parts[5],
+        })
+    return jsonify({"processes": processes, "count": len(processes)})
+
+
+# ── Network Neighbors (ARP/NDP) ───────────────────────────────────────────────
+
+
+@app.route("/api/network/neighbors")
+@require_auth
+def api_network_neighbors():
+    """Return ARP/NDP neighbor table parsed from `ip neigh show`."""
+
+    # Regex: <ip> dev <iface> [lladdr <mac>] <STATE> [<extra>]
+    _LINE_RE = re.compile(
+        r"^(?P<ip>\S+)\s+dev\s+(?P<iface>\S+)"
+        r"(?:\s+lladdr\s+(?P<mac>[0-9a-fA-F:]+))?"
+        r"\s+(?P<state>[A-Z]+)"
+    )
+    _SKIP_STATES = {"FAILED", "INCOMPLETE"}
+
+    def _parse_neigh(output):
+        entries = {}
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            m = _LINE_RE.match(line)
+            if not m:
+                continue
+            state = m.group("state")
+            if state in _SKIP_STATES:
+                continue
+            mac = m.group("mac")
+            if not mac:
+                continue
+            ip = m.group("ip")
+            entries[ip] = {
+                "ip": ip,
+                "mac": mac,
+                "interface": m.group("iface"),
+                "state": state,
+            }
+        return entries
+
+    neighbors = {}
+
+    out4, rc4 = _run(["ip", "neigh", "show"])
+    if rc4 == 0:
+        neighbors.update(_parse_neigh(out4))
+
+    out6, rc6 = _run(["ip", "-6", "neigh", "show"])
+    if rc6 == 0:
+        for ip, entry in _parse_neigh(out6).items():
+            if ip not in neighbors:
+                neighbors[ip] = entry
+
+    result = sorted(neighbors.values(), key=lambda e: e["ip"])
+    return jsonify({"neighbors": result, "count": len(result)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
