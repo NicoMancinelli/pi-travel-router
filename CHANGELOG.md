@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.18.0] - 2026-05-24
+
+### Added
+
+- **Speedtest history** (`web/app.py`, `web/static/index.html`, `install/10-finalize.sh`): `_append_speedtest_result()` helper hooks into the existing `POST /api/system/speedtest` handler to persist each result (download_mbps, upload_mbps, ping_ms, server, method, timestamp) to `speedtest-history.json` (max 50 entries). `GET /api/system/speedtest/history` returns results newest-first. Dashboard card shows history table.
+- **Reboot schedule manager** (`web/app.py`, `web/static/index.html`): `GET /api/system/reboot-schedule` reads `/etc/cron.d/travel-router-reboot` and calculates next reboot time. `POST /api/system/reboot-schedule` calls `schedule-reboot.sh` or writes the cron file directly. Dashboard card with enabled checkbox, hour/minute inputs, and Save button.
+- **Network interface stats** (`web/app.py`, `web/static/index.html`): `GET /api/network/interfaces` parses `/proc/net/dev` for all non-loopback interfaces, reads `operstate` from `/sys/class/net/`, returns rx/tx bytes, packets, errors, and drops. Dashboard card with per-interface table showing RX/TX with human-readable sizes and error counts highlighted in red when non-zero.
+
 ## [2.17.0] - 2026-05-24
 
 ### Added
