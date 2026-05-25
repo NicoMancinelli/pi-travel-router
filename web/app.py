@@ -13565,6 +13565,58 @@ def api_network_geoip():
     return jsonify({"error": "No internet access", "ip": None})
 
 
+# ── Ping Latency ──────────────────────────────────────────────────────────────
+
+
+@app.route("/api/network/latency")
+@require_auth
+def api_network_latency():
+    """Ping a set of DNS targets plus the default gateway and return RTT stats."""
+    static_targets = [
+        {"host": "8.8.8.8", "label": "Google DNS"},
+        {"host": "1.1.1.1", "label": "Cloudflare DNS"},
+        {"host": "9.9.9.9", "label": "Quad9 DNS"},
+    ]
+
+    # Resolve default gateway
+    gw_ip = None
+    gw_out, gw_rc = _run("ip route show default")
+    if gw_rc == 0 and gw_out.strip():
+        import re as _re
+        m = _re.search(r"via\s+(\S+)", gw_out)
+        if m:
+            gw_ip = m.group(1)
+
+    targets = list(static_targets)
+    if gw_ip:
+        targets.append({"host": gw_ip, "label": "Gateway"})
+
+    results = []
+    for t in targets:
+        host = t["host"]
+        out, rc = _run(f"ping -c 3 -W 2 {host}", timeout=10)
+        rtt_ms = None
+        reachable = False
+        if rc == 0 and out:
+            import re as _re
+            m = _re.search(r"rtt min/avg/max/mdev = [\d.]+/([\d.]+)/[\d.]+/[\d.]+", out)
+            if m:
+                try:
+                    rtt_ms = float(m.group(1))
+                    reachable = True
+                except ValueError:
+                    pass
+        results.append({
+            "host": host,
+            "label": t["label"],
+            "rtt_ms": rtt_ms,
+            "reachable": reachable,
+        })
+
+    all_reachable = all(r["reachable"] for r in results)
+    return jsonify({"targets": results, "all_reachable": all_reachable})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
