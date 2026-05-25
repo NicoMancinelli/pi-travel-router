@@ -1578,7 +1578,11 @@
 
   <!-- Block Devices -->
   <div class="card" id="card-block-devices">
-    <h2>&#x1F4BE; Block Devices</h2>
+    <div class="card-title">
+      &#x1F4BE; Block Devices
+      (<span id="block-devices-total">0</span> devices)
+      <button class="btn btn-sm" onclick="fetchBlockDevices()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
     <div id="block-devices-content"><em>Loading&hellip;</em></div>
   </div>
 
@@ -9253,27 +9257,31 @@ async function fetchBlockDevices() {
   try {
     const r = await fetch('/api/system/block-devices');
     const d = await r.json();
+    const totalEl = document.getElementById('block-devices-total');
+    if (totalEl) totalEl.textContent = d.total || 0;
+    if (d.error) { el.textContent = d.error; return; }
     const devs = d.devices || [];
     if (!devs.length) { el.textContent = 'No block devices found.'; return; }
-    const headers = ['Name', 'Size', 'Type', 'FS Type', 'Mount Point', 'Model'];
+    const headers = ['Device', 'Size', 'Type', 'Filesystem', 'Mount', 'Transport'];
     let html = '<table class="info-table"><thead><tr>' +
       headers.map(h => '<th>' + h + '</th>').join('') +
       '</tr></thead><tbody>';
-    function flatten(nodes, prefix) {
-      for (const dev of nodes) {
-        const row = [
-          (prefix || '') + (dev.name || ''),
-          dev.size || '',
-          dev.type || '',
-          dev.fstype || '',
-          dev.mountpoint || '',
-          dev.model || ''
-        ];
-        html += '<tr>' + row.map(v => '<td>' + (v || '') + '</td>').join('') + '</tr>';
-        if (dev.children && dev.children.length) flatten(dev.children, '&nbsp;&nbsp;');
-      }
+    for (const dev of devs) {
+      const isUsb = (dev.transport || '').toLowerCase() === 'usb';
+      const transportCell = isUsb
+        ? '<span style="background:var(--accent,#2979ff);color:#fff;border-radius:3px;padding:1px 6px;font-size:11px;">USB</span>'
+        : (dev.transport || '');
+      const nameParts = [(dev.name || '')];
+      if (dev.model) nameParts.push('<span style="color:var(--text-dim);font-size:11px;">' + dev.model + '</span>');
+      html += '<tr>' +
+        '<td>' + nameParts.join('<br>') + '</td>' +
+        '<td>' + (dev.size || '') + '</td>' +
+        '<td>' + (dev.type || '') + '</td>' +
+        '<td>' + (dev.fstype || '') + '</td>' +
+        '<td>' + (dev.mountpoint || '') + '</td>' +
+        '<td>' + transportCell + '</td>' +
+        '</tr>';
     }
-    flatten(devs, '');
     html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) { el.textContent = 'Error: ' + e; }
