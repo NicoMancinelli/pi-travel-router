@@ -10668,6 +10668,103 @@ def api_system_dns_cache():
     })
 
 
+# ── DHCP Server Stats ─────────────────────────────────────────────────────────
+
+@app.route("/api/network/dhcp-server-stats", methods=["GET"])
+@require_auth
+def api_network_dhcp_server_stats():
+    """Return DHCP server statistics from dnsmasq lease file and process info."""
+    import os
+
+    stats = {
+        "active_leases": 0,
+        "total_leases": 0,
+        "lease_file": None,
+        "server_running": False,
+        "pid": None,
+        "uptime_seconds": None,
+        "pool_size": None,
+        "ranges": [],
+        "source": "none",
+    }
+
+    # Check if dnsmasq is running
+    pgrep_out, pgrep_rc = _run(["pgrep", "-x", "dnsmasq"])
+    if pgrep_rc == 0:
+        stats["server_running"] = True
+        pids = pgrep_out.strip().splitlines()
+        stats["pid"] = int(pids[0]) if pids else None
+
+    # Try to find and parse the lease file
+    lease_paths = [
+        "/var/lib/misc/dnsmasq.leases",
+        "/tmp/dhcp.leases",
+        "/var/lib/dnsmasq/dnsmasq.leases",
+    ]
+    for lp in lease_paths:
+        if Path(lp).exists():
+            stats["lease_file"] = lp
+            try:
+                lines = Path(lp).read_text().splitlines()
+                now = int(time.time())
+                active = 0
+                total = len(lines)
+                for line in lines:
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        try:
+                            expires = int(parts[0])
+                            if expires == 0 or expires > now:
+                                active += 1
+                        except ValueError:
+                            active += 1
+                stats["total_leases"] = total
+                stats["active_leases"] = active
+                stats["source"] = "lease_file"
+            except OSError:
+                pass
+            break
+
+    # Parse dnsmasq config for DHCP ranges
+    config_paths = [
+        "/etc/dnsmasq.conf",
+        "/etc/dnsmasq.d/travel-router.conf",
+        "/etc/dnsmasq.d/02-dhcp.conf",
+    ]
+    ranges = []
+    for cp in config_paths:
+        if Path(cp).exists():
+            try:
+                for line in Path(cp).read_text().splitlines():
+                    line = line.strip()
+                    if line.startswith("dhcp-range="):
+                        val = line[len("dhcp-range="):]
+                        parts = val.split(",")
+                        if len(parts) >= 2:
+                            r = {"start": parts[0], "end": parts[1]}
+                            if len(parts) >= 3:
+                                r["netmask_or_tag"] = parts[2]
+                            if len(parts) >= 4:
+                                r["lease_time"] = parts[-1]
+                            ranges.append(r)
+            except OSError:
+                pass
+    stats["ranges"] = ranges
+
+    # Estimate pool size from first range
+    if ranges:
+        try:
+            import ipaddress
+            r0 = ranges[0]
+            start = ipaddress.IPv4Address(r0["start"])
+            end = ipaddress.IPv4Address(r0["end"])
+            stats["pool_size"] = int(end) - int(start) + 1
+        except Exception:
+            pass
+
+    return jsonify(stats)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
