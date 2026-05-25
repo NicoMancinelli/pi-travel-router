@@ -396,6 +396,17 @@
     <div id="client-history-content"><span class="spinner"></span></div>
   </div>
 
+  <!-- LAN Network Scanner -->
+  <div class="card full-width" id="card-lan-scan" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x1F5A7; LAN Scanner</span>
+      <button class="btn btn-sm" id="lan-scan-btn" onclick="runLanScan()">&#x1F50D; Scan</button>
+    </div>
+    <div id="lan-scan-content">
+      <span style="color:var(--text-dim);font-size:13px;">Click Scan to discover all LAN devices (including static IPs)</span>
+    </div>
+  </div>
+
   <!-- Latency History -->
   <div class="card full-width" id="card-latency" style="margin-top:16px;">
     <div class="card-title">Latency History (last 24h)</div>
@@ -3760,6 +3771,44 @@ async function restartService(unit, btn) {
     toast('Error: ' + e, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↺ Restart'; }
+  }
+}
+
+// ── LAN Network Scanner ───────────────────────────────────────────────────────
+
+async function runLanScan() {
+  const el = document.getElementById('lan-scan-content');
+  const btn = document.getElementById('lan-scan-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Scanning…'; }
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Scanning subnet…</span>';
+  try {
+    const r = await apiFetch('/api/network/scan');
+    const d = await r.json();
+    const hosts = d.hosts || [];
+    if (hosts.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No hosts found (subnet: ' + (d.subnet || '?') + ')</span>';
+    } else {
+      let html = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Subnet: ' + d.subnet + ' — ' + d.count + ' host(s) found</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr>';
+      html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">IP</th>';
+      html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">MAC</th>';
+      html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Vendor</th>';
+      html += '</tr></thead><tbody>';
+      for (const h of hosts) {
+        html += '<tr>';
+        html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + h.ip + '</td>';
+        html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (h.mac || '—') + '</td>';
+        html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (h.vendor || h.state || '—') + '</td>';
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    }
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Scan failed: ' + e + '</span>';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔍 Scan'; }
   }
 }
 

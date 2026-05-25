@@ -3751,6 +3751,62 @@ def api_dns_hosts_delete(hostname):
     return jsonify({"ok": True})
 
 
+# ── LAN network scanner ───────────────────────────────────────────────────────
+
+@app.route("/api/network/scan", methods=["GET"])
+@require_auth
+def api_network_scan():
+    """Scan the AP subnet for live hosts using ARP + ping sweep."""
+    # Determine AP subnet from ip route
+    subnet = "10.3.141.0/24"
+    try:
+        out, _ = _run(["ip", "route", "show", "dev", "uap0"], timeout=3)
+        for line in (out or "").splitlines():
+            parts = line.split()
+            if parts and "/" in parts[0]:
+                subnet = parts[0]
+                break
+    except Exception:
+        pass
+
+    hosts = []
+
+    # Method 1: arp-scan (fast, comprehensive)
+    try:
+        out, _ = _run(["arp-scan", "--localnet", "--interface=uap0", "--quiet"], timeout=15)
+        for line in (out or "").splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2 and parts[0].count(".") == 3:
+                ip = parts[0].strip()
+                mac = parts[1].strip() if len(parts) > 1 else ""
+                vendor = parts[2].strip() if len(parts) > 2 else ""
+                hosts.append({"ip": ip, "mac": mac, "vendor": vendor, "method": "arp-scan"})
+    except Exception:
+        pass
+
+    # Method 2: ARP table fallback (instant, no root needed)
+    if not hosts:
+        try:
+            out, _ = _run(["ip", "neigh", "show", "dev", "uap0"], timeout=3)
+            for line in (out or "").splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[2] == "lladdr":
+                    ip = parts[0]
+                    mac = parts[4] if len(parts) > 4 else parts[3]
+                    state = parts[-1] if parts[-1] in ("REACHABLE", "STALE", "DELAY", "PROBE", "FAILED") else ""
+                    hosts.append({"ip": ip, "mac": mac, "vendor": "", "method": "arp", "state": state})
+        except Exception:
+            pass
+
+    # Deduplicate by IP
+    seen = {}
+    for h in hosts:
+        seen[h["ip"]] = h
+    hosts = sorted(seen.values(), key=lambda x: tuple(int(o) for o in x["ip"].split(".") if o.isdigit()))
+
+    return jsonify({"subnet": subnet, "hosts": hosts, "count": len(hosts)})
+
+
 # ── Journal log viewer ────────────────────────────────────────────────────────
 
 _JOURNAL_ALLOWED_UNITS = {
