@@ -7123,6 +7123,62 @@ def api_tailscale_exitnode():
     })
 
 
+# ── System Entropy ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/entropy", methods=["GET"])
+@require_auth
+def api_system_entropy():
+    """Return kernel entropy pool health metrics."""
+    import os
+
+    result = {}
+
+    # Read available entropy bits
+    try:
+        with open("/proc/sys/kernel/random/entropy_avail") as f:
+            available_bits = int(f.read().strip())
+        result["available_bits"] = available_bits
+        result["urandom_entropy_avail"] = available_bits
+    except OSError as exc:
+        result["error"] = f"entropy_avail: {exc}"
+        available_bits = None
+
+    # Read pool size
+    try:
+        with open("/proc/sys/kernel/random/poolsize") as f:
+            pool_size = int(f.read().strip())
+        result["pool_size"] = pool_size
+    except OSError as exc:
+        result.setdefault("error", f"poolsize: {exc}")
+        pool_size = None
+
+    # Compute percent
+    if available_bits is not None and pool_size and pool_size > 0:
+        result["percent"] = round(available_bits / pool_size * 100, 1)
+    else:
+        result["percent"] = None
+
+    # Detect entropy source
+    if os.path.isdir("/sys/bus/platform/drivers/bcm2835-rng"):
+        source = "hardware_rng"
+    elif os.path.exists("/dev/hwrng"):
+        source = "hwrng"
+    else:
+        source = "software"
+    result["source"] = source
+
+    # Test getrandom syscall (non-blocking)
+    try:
+        os.getrandom(32, os.GRND_NONBLOCK)
+        result["getrandom_ok"] = True
+    except BlockingIOError:
+        result["getrandom_ok"] = False
+    except OSError:
+        result["getrandom_ok"] = False
+
+    return jsonify(result)
+
+
 # ── USB Device Inventory ──────────────────────────────────────────────────────
 
 @app.route("/api/system/usb", methods=["GET"])
