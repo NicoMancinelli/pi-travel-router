@@ -12443,6 +12443,93 @@ def api_network_sockets():
     })
 
 
+# ── SMART Disk Health ─────────────────────────────────────────────────────────
+
+@app.route("/api/system/smart", methods=["GET"])
+@require_auth
+def api_system_smart():
+    """Return SMART disk health data for all block devices."""
+    # Check if smartctl is available
+    smartctl_check, smartctl_rc = _run(["which", "smartctl"])
+    smartctl_available = smartctl_rc == 0
+
+    if not smartctl_available:
+        return jsonify({
+            "disks": [],
+            "smartctl_available": False,
+            "error": "smartctl not found",
+        })
+
+    disks = []
+    try:
+        sys_block = Path("/sys/block")
+        if not sys_block.exists():
+            return jsonify({"disks": [], "smartctl_available": True})
+
+        for dev_path in sorted(sys_block.iterdir()):
+            name = dev_path.name
+            # Skip virtual/pseudo devices
+            if name.startswith(("loop", "ram", "zram")):
+                continue
+
+            device = f"/dev/{name}"
+            out, rc = _run(["smartctl", "-H", "-A", device], timeout=15)
+
+            disk_info = {
+                "device": device,
+                "health": None,
+                "temp_c": None,
+                "reallocated": None,
+                "power_on_hours": None,
+                "error": None,
+            }
+
+            if rc not in (0, 4):
+                disk_info["error"] = f"smartctl exit {rc}"
+                if not out.strip():
+                    disks.append(disk_info)
+                    continue
+
+            for line in out.splitlines():
+                # Overall health
+                if "SMART overall-health self-assessment test result:" in line:
+                    if "PASSED" in line:
+                        disk_info["health"] = "PASSED"
+                    elif "FAILED" in line:
+                        disk_info["health"] = "FAILED"
+
+                # SMART attributes
+                parts = line.split()
+                if len(parts) >= 10:
+                    attr_name = parts[1]
+                    raw_val = parts[9]
+
+                    if attr_name in ("Temperature_Celsius", "Airflow_Temperature_Cel"):
+                        try:
+                            disk_info["temp_c"] = int(raw_val.split()[0])
+                        except (ValueError, IndexError):
+                            pass
+
+                    elif attr_name == "Reallocated_Sector_Ct":
+                        try:
+                            disk_info["reallocated"] = int(raw_val)
+                        except ValueError:
+                            pass
+
+                    elif attr_name == "Power_On_Hours":
+                        try:
+                            disk_info["power_on_hours"] = int(raw_val)
+                        except ValueError:
+                            pass
+
+            disks.append(disk_info)
+
+    except Exception as exc:
+        return jsonify({"disks": disks, "smartctl_available": True, "error": str(exc)})
+
+    return jsonify({"disks": disks, "smartctl_available": True})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
