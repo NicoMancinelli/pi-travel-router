@@ -8768,6 +8768,46 @@ def api_system_cpu_temp():
         return jsonify({"zones": [], "max_temp_c": None, "error": str(exc)}), 500
 
 
+@app.route("/api/system/logged-in-users", methods=["GET"])
+@require_auth
+def api_system_logged_in_users():
+    """Return currently logged-in users parsed from 'who -u'."""
+    try:
+        out, rc = _run("who -u")
+        if rc != 0 or not out.strip():
+            return jsonify({"users": [], "count": 0})
+        users = []
+        for line in out.splitlines():
+            parts = line.split()
+            # who -u format: user tty date time [idle] pid [from]
+            # minimum fields: user tty date time idle pid
+            if len(parts) < 6:
+                continue
+            username = parts[0]
+            tty = parts[1]
+            login_time = parts[2] + " " + parts[3]
+            idle = parts[4]
+            try:
+                pid = int(parts[5])
+            except ValueError:
+                pid = 0
+            from_host = parts[6] if len(parts) >= 7 else ""
+            # Strip surrounding parens from from field if present
+            if from_host.startswith("(") and from_host.endswith(")"):
+                from_host = from_host[1:-1]
+            users.append({
+                "username": username,
+                "tty": tty,
+                "login_time": login_time,
+                "idle": idle,
+                "pid": pid,
+                "from": from_host,
+            })
+        return jsonify({"users": users, "count": len(users)})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"users": [], "count": 0, "error": str(exc)}), 500
+
+
 # ── Disk I/O Stats (spec-aligned) ────────────────────────────────────────────
 
 @app.route("/api/system/disk-io", methods=["GET"])
