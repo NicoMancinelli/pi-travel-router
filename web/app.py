@@ -12632,6 +12632,79 @@ def api_gpu_info():
     })
 
 
+@app.route("/api/network/wifi-survey")
+def api_network_wifi_survey():
+    """Available WiFi networks from iwlist scan."""
+    try:
+        # Find wireless interfaces
+        iface_out, _ = _run("iw dev 2>/dev/null | awk '/Interface/{print $2}'")
+        ifaces = [i.strip() for i in iface_out.strip().splitlines() if i.strip()]
+        if not ifaces:
+            return jsonify({"error": "No wireless interfaces found", "networks": [], "interface": None})
+        # Use the first interface that looks like a client (not ap-only)
+        iface = ifaces[0]
+        scan_out, rc = _run(f"iwlist {iface} scan 2>&1")
+        if rc != 0 or "Interface doesn't support scanning" in scan_out:
+            # Try nmcli as fallback
+            nm_out, nm_rc = _run("nmcli -t -f SSID,BSSID,CHAN,FREQ,SIGNAL,SECURITY dev wifi list 2>/dev/null")
+            if nm_rc == 0 and nm_out.strip():
+                networks = []
+                for line in nm_out.strip().splitlines():
+                    parts = line.split(":")
+                    if len(parts) >= 6:
+                        networks.append({
+                            "ssid": parts[0] or "<hidden>",
+                            "bssid": parts[1],
+                            "channel": parts[2],
+                            "frequency": parts[3],
+                            "signal_dbm": int(parts[4]) if parts[4].lstrip("-").isdigit() else None,
+                            "encryption": parts[5] if len(parts) > 5 else "Unknown",
+                            "source": "nmcli",
+                        })
+                networks.sort(key=lambda x: x.get("signal_dbm") or -100, reverse=True)
+                return jsonify({"networks": networks, "interface": iface, "count": len(networks)})
+            return jsonify({"error": f"Scan failed on {iface}: {scan_out[:200]}", "networks": [], "interface": iface})
+        # Parse iwlist output
+        networks = []
+        current = {}
+        for line in scan_out.splitlines():
+            line = line.strip()
+            if line.startswith("Cell "):
+                if current:
+                    networks.append(current)
+                # "Cell 01 - Address: AA:BB:CC:DD:EE:FF"
+                addr_match = re.search(r"Address:\s+([0-9A-Fa-f:]{17})", line)
+                current = {"bssid": addr_match.group(1) if addr_match else "", "source": "iwlist"}
+            elif line.startswith("ESSID:"):
+                ssid = re.sub(r'^ESSID:"?|"?$', "", line).strip('"')
+                current["ssid"] = ssid or "<hidden>"
+            elif line.startswith("Channel:"):
+                current["channel"] = line.split(":", 1)[1].strip()
+            elif line.startswith("Frequency:"):
+                freq_match = re.search(r"Frequency:([\d.]+\s*GHz)", line)
+                current["frequency"] = freq_match.group(1) if freq_match else line.split(":", 1)[1].split()[0]
+            elif "Signal level=" in line:
+                sig_match = re.search(r"Signal level=(-?\d+)", line)
+                current["signal_dbm"] = int(sig_match.group(1)) if sig_match else None
+            elif line.startswith("Encryption key:"):
+                enc = line.split(":", 1)[1].strip()
+                if enc == "off":
+                    current.setdefault("encryption", "Open")
+            elif "IE: IEEE 802.11i/WPA2" in line:
+                current["encryption"] = "WPA2"
+            elif "IE: WPA Version" in line:
+                current.setdefault("encryption", "WPA")
+        if current:
+            networks.append(current)
+        # Fill missing encryption
+        for n in networks:
+            n.setdefault("encryption", "Unknown")
+        networks.sort(key=lambda x: x.get("signal_dbm") or -100, reverse=True)
+        return jsonify({"networks": networks, "interface": iface, "count": len(networks)})
+    except Exception as e:
+        return jsonify({"error": str(e), "networks": []})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
