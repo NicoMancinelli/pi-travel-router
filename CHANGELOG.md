@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.64.0] - 2026-05-25
+
+### Added
+- `GET /api/system/mounts` — disk mount points via `df -h`; filters pseudo-filesystems (tmpfs, devtmpfs, squashfs, cgroup, etc.); returns source device, fstype, size, used, avail, and use_pct; dashboard card color-codes utilization (green <75%, amber <90%, red ≥90%)
+- `GET /api/network/ipv6-addresses` — IPv6 addresses per interface via `ip -6 -j addr show`; filters loopback; returns address, prefixlen, scope, dynamic, and deprecated flags; dashboard card shows global connectivity badge and per-interface address tables
+- `GET /api/system/entropy` — kernel entropy pool from `/proc/sys/kernel/random/`; detects haveged/rngd daemon; quality tiers: critical (<200 bits), low (<1000), good; dashboard card shows fill bar and quality badge
+- Dashboard cards: Mount Points (💾), IPv6 Addresses (🌐), System Entropy (🎲)
+
 ## [2.63.0] - 2026-05-25
 
 ### Added
