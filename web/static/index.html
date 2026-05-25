@@ -1171,6 +1171,10 @@
     <div id="route-table-content">Loading&hellip;</div>
   </div>
 
+  <div class="card full-width" id="card-journal-errors">
+    <div id="journal-errors-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4202,6 +4206,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchOpenFiles();
   fetchCpuFreq();
   fetchRouteTable();
+  fetchJournalErrors();
 });
 
 async function fetchJournal() {
@@ -4410,6 +4415,7 @@ async function refreshAll() {
   fetchOpenFiles();
   fetchCpuFreq();
   fetchRouteTable();
+  fetchJournalErrors();
 }
 
 async function init() {
@@ -7208,6 +7214,50 @@ async function fetchRouteTable() {
     if (d.error) {
       html += `<div style="color:var(--text-dim);font-size:11px;margin-top:4px;">Note: ${d.error}</div>`;
     }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── Journal Errors ────────────────────────────────────────────────────────────
+
+async function fetchJournalErrors() {
+  const el = document.getElementById('journal-errors-content');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/journal-errors');
+    const d = await r.json();
+    const count = d.count || 0;
+
+    let headerBadge;
+    if (count === 0) {
+      headerBadge = '<span style="background:#28a745;color:#fff;border-radius:4px;padding:1px 7px;font-size:12px;margin-left:6px;">No errors</span>';
+    } else {
+      headerBadge = `<span style="background:#dc3545;color:#fff;border-radius:4px;padding:1px 7px;font-size:12px;margin-left:6px;">${count}</span>`;
+    }
+
+    let html = `<div class="card-title">&#x1F4D3; Journal Errors ${headerBadge}</div>`;
+
+    if (d.error && count === 0) {
+      html += `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+    } else if (count === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No recent journal errors.</div>';
+    } else {
+      html += '<div style="font-size:12px;">';
+      for (const entry of d.entries) {
+        const p = entry.priority || 'warning';
+        const isHigh = ['err','crit','alert','emerg'].includes(p);
+        const badgeColor = isHigh ? '#dc3545' : '#fd7e14';
+        const badge = `<span style="background:${badgeColor};color:#fff;border-radius:3px;padding:0 5px;font-size:11px;margin-right:4px;">${p}</span>`;
+        const msg = (entry.msg || '').slice(0, 80);
+        const unit = entry.unit || '';
+        const ts = entry.ts || '';
+        html += `<div style="padding:2px 0;border-bottom:1px solid var(--border-color,#333);word-break:break-all;">${badge}<span style="color:var(--text-dim);margin-right:6px;">${ts}</span><span style="font-weight:bold;margin-right:6px;">${unit}</span><span>${msg}</span></div>`;
+      }
+      html += '</div>';
+    }
+
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
