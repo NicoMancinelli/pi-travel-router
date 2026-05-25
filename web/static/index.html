@@ -938,6 +938,15 @@
     <div id="cgroup-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- OOM Events -->
+  <div class="card full-width" id="card-oom-events">
+    <div class="card-title">
+      &#x1F4A5; OOM Kill Events
+      <button class="btn btn-sm" onclick="fetchOomEvents()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="oom-events-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4526,6 +4535,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchOpenSockets();
   fetchWifiSignal();
   fetchCgroupStats();
+  fetchOomEvents();
 });
 
 async function fetchJournal() {
@@ -4785,6 +4795,7 @@ async function refreshAll() {
   fetchOpenSockets();
   fetchWifiSignal();
   fetchCgroupStats();
+  fetchOomEvents();
 }
 
 async function init() {
@@ -9416,6 +9427,44 @@ async function fetchCgroupStats() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchCgroupStats error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load cgroup stats</span>';
+  }
+}
+
+// ── OOM Events ────────────────────────────────────────────────────────────────
+
+async function fetchOomEvents() {
+  const el = document.getElementById('oom-events-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/oom-events');
+    const d = await r.json();
+    const events = d.events || [];
+    if (!events.length) {
+      el.innerHTML = '<span style="color:var(--success)">✓ No OOM kill events found</span>';
+      return;
+    }
+    let html = `<div style="color:var(--danger);font-weight:600;margin-bottom:8px;">⚠️ ${events.length} OOM kill event${events.length > 1 ? 's' : ''} detected</div>`;
+    html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:4px 8px;">Time</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Process</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">PID</th>';
+    html += '<th style="text-align:right;padding:4px 8px;">RSS</th>';
+    html += '</tr></thead><tbody>';
+    for (const ev of events.slice(-20)) {
+      const rss = ev.anon_rss_kb ? `${Math.round(ev.anon_rss_kb / 1024)} MB` : '—';
+      html += `<tr style="border-bottom:1px solid var(--border-faint,#333);">`;
+      html += `<td style="padding:3px 8px;font-family:monospace;font-size:11px;">${ev.timestamp || '—'}</td>`;
+      html += `<td style="padding:3px 8px;font-family:monospace;color:var(--danger);">${ev.process || '—'}</td>`;
+      html += `<td style="padding:3px 8px;">${ev.pid || '—'}</td>`;
+      html += `<td style="padding:3px 8px;text-align:right;">${rss}</td>`;
+      html += `</tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') console.error('fetchOomEvents error', e);
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load OOM events</span>';
   }
 }
 

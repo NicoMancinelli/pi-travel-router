@@ -10232,6 +10232,59 @@ def api_system_cgroup_stats():
     return jsonify({"cgroups": cgroups, "count": len(cgroups)})
 
 
+# ── OOM Kill Events ───────────────────────────────────────────────────────────
+
+@app.route("/api/system/oom-events", methods=["GET"])
+@require_auth
+def api_system_oom_events():
+    """Return recent OOM kill events from dmesg/journal."""
+    events = []
+
+    # Try journalctl first (more reliable timestamps)
+    out, rc = _run(["journalctl", "-k", "--no-pager", "-n", "500", "--output=short-iso"])
+    if rc != 0:
+        out, rc = _run(["dmesg", "-T"])
+
+    if rc == 0:
+        lines = out.splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if "Out of memory" in line or "oom_kill_process" in line or "Killed process" in line:
+                # Extract timestamp if present
+                ts = ""
+                ts_match = re.search(r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})', line)
+                if ts_match:
+                    ts = ts_match.group(1)
+                # Extract process name and PID
+                proc = ""
+                pid = ""
+                proc_match = re.search(r'[Kk]illed process (\d+) \(([^)]+)\)', line)
+                if proc_match:
+                    pid = proc_match.group(1)
+                    proc = proc_match.group(2)
+                # Extract memory info
+                total_vm = ""
+                anon_rss = ""
+                vm_match = re.search(r'total-vm:(\d+)kB', line)
+                if vm_match:
+                    total_vm = vm_match.group(1)
+                rss_match = re.search(r'anon-rss:(\d+)kB', line)
+                if rss_match:
+                    anon_rss = rss_match.group(1)
+                events.append({
+                    "timestamp": ts,
+                    "process": proc,
+                    "pid": pid,
+                    "total_vm_kb": total_vm,
+                    "anon_rss_kb": anon_rss,
+                    "raw": line.strip()[-200:],
+                })
+            i += 1
+
+    return jsonify({"events": events, "count": len(events), "oom_free": len(events) == 0})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
