@@ -991,6 +991,15 @@
     </div>
   </div>
 
+  <!-- DNS Resolvers -->
+  <div class="card full-width" id="card-dns-resolvers">
+    <div class="card-title">
+      &#x1F50D; DNS Resolvers
+      <button class="btn btn-sm" onclick="fetchDnsResolvers()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="dns-resolvers-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- SSH Authorized Keys -->
   <div class="card full-width" id="card-ssh-keys">
     <div class="card-title">
@@ -3952,6 +3961,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
+  fetchDnsResolvers();
 });
 
 async function fetchJournal() {
@@ -5897,6 +5907,52 @@ async function executePowerAction(action) {
     if (statusEl) statusEl.innerHTML = `<span style="color:var(--danger)">Error: ${escHtml(String(e))}</span>`;
     if (rebootBtn) rebootBtn.disabled = false;
     if (shutdownBtn) shutdownBtn.disabled = false;
+  }
+}
+
+// ── DNS Resolvers ─────────────────────────────────────────────────────────────
+
+async function fetchDnsResolvers() {
+  const el = document.getElementById('dns-resolvers-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Testing resolvers&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/dns/resolvers');
+    const d = await resp.json();
+    if (!d.nameservers || d.nameservers.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No nameservers configured in /etc/resolv.conf.</span>';
+      return;
+    }
+    let html = '';
+    if (d.doh_active) {
+      const prov = d.doh_provider || 'Unknown';
+      html += `<div style="margin-bottom:10px;"><span style="background:#6366f1;color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">&#x1F512; DoH active${prov !== 'Unknown' ? ' (' + escHtml(prov) + ')' : ''}</span></div>`;
+    }
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Nameserver</th><th style="padding:5px 8px;">Status</th><th style="padding:5px 8px;">Latency</th><th style="padding:5px 8px;">Sample Response</th>';
+    html += '</tr></thead><tbody>';
+    for (const ns of d.nameservers) {
+      const badge = ns.reachable
+        ? '<span style="background:#22c55e;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">OK</span>'
+        : '<span style="background:#ef4444;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">FAIL</span>';
+      const lat = ns.latency_ms != null
+        ? `<span style="color:${ns.latency_ms < 50 ? '#22c55e' : ns.latency_ms < 200 ? '#f97316' : '#ef4444'};font-weight:600;">${ns.latency_ms} ms</span>`
+        : '<span style="color:var(--text-dim)">—</span>';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:600;">${escHtml(ns.address)}</td>`;
+      html += `<td style="padding:5px 8px;">${badge}</td>`;
+      html += `<td style="padding:5px 8px;">${lat}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${ns.response ? escHtml(ns.response) : '—'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (d.search_domains && d.search_domains.length > 0) {
+      html += `<div style="font-size:11px;color:var(--text-dim);">Search domains: <code>${d.search_domains.map(escHtml).join(', ')}</code></div>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load DNS resolvers</span>';
   }
 }
 
