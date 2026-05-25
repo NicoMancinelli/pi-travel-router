@@ -4581,6 +4581,76 @@ def api_network_interfaces():
     return jsonify({"interfaces": interfaces})
 
 
+# ── ntfy notification management ──────────────────────────────────────────────
+
+@app.route("/api/notify/config", methods=["GET"])
+@require_auth
+def api_notify_config_get():
+    """Return current ntfy configuration from /etc/default/travel-router."""
+    topic = ""
+    server = "https://ntfy.sh"
+    try:
+        text = Path("/etc/default/travel-router").read_text()
+        for line in text.splitlines():
+            line = line.strip()
+            if line.startswith("NTFY_TOPIC="):
+                topic = line.split("=", 1)[1].strip().strip('"').strip("'")
+            elif line.startswith("NTFY_SERVER="):
+                server = line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return jsonify({"topic": topic, "server": server or "https://ntfy.sh",
+                    "configured": bool(topic)})
+
+
+@app.route("/api/notify/test", methods=["POST"])
+@require_auth_always
+def api_notify_test():
+    """Send a test notification via ntfy."""
+    body = request.get_json(silent=True) or {}
+    topic = str(body.get("topic", "")).strip()
+    server = str(body.get("server", "https://ntfy.sh")).strip().rstrip("/")
+    if not topic:
+        # Read from config
+        try:
+            text = Path("/etc/default/travel-router").read_text()
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith("NTFY_TOPIC="):
+                    topic = line.split("=", 1)[1].strip().strip('"').strip("'")
+                elif line.startswith("NTFY_SERVER="):
+                    s = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    if s:
+                        server = s
+        except OSError:
+            pass
+    if not topic:
+        return jsonify({"error": "NTFY_TOPIC not configured"}), 400
+    # Validate: no shell chars, reasonable length
+    if any(c in topic for c in (';', '&', '|', '`', '$', '>', '<', ' ', '"', "'")):
+        return jsonify({"error": "invalid topic"}), 400
+    if len(topic) > 100:
+        return jsonify({"error": "topic too long"}), 400
+    url = f"{server}/{topic}"
+    import time as _time
+    message = f"Travel Router test notification — {_time.strftime('%H:%M:%S')}"
+    try:
+        out, _ = _run(
+            ["curl", "-s", "-o", "/dev/null", "-w", "%{http_code}",
+             "-d", message,
+             "-H", "Title: Travel Router Test",
+             "-H", "Priority: default",
+             url],
+            timeout=10,
+        )
+        status_code = int((out or "0").strip())
+        if 200 <= status_code < 300:
+            return jsonify({"ok": True, "url": url, "status": status_code})
+        return jsonify({"error": f"ntfy returned HTTP {status_code}", "url": url}), 502
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
