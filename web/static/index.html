@@ -588,14 +588,12 @@
   <hr class="divider">
 
   <!-- Login History -->
-  <div class="card full-width" id="card-logins" style="margin-top:16px;">
-    <div class="card-title" style="justify-content:space-between;">
-      <span>&#x1F512; Login History</span>
-      <button class="btn btn-sm" onclick="fetchLoginHistory()">&#x21BB; Refresh</button>
+  <div class="card" id="card-login-history">
+    <div class="card-title">
+      &#x1F464; Login History
+      <button class="btn btn-sm" onclick="fetchLoginHistory()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
-    <div id="login-history-content">
-      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
-    </div>
+    <div id="login-history-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <hr class="divider">
@@ -4074,6 +4072,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKillSwitchStatus();
   fetchLogSummary();
   fetchVnstatDataCap();
+  fetchLoginHistory();
   fetchIfaceStats();
 });
 
@@ -4170,49 +4169,48 @@ async function deletePingHost(host) {
   } catch (e) { toast('Error: ' + e, 'err'); }
 }
 
+// ── Login History ─────────────────────────────────────────────────────────────
+
 async function fetchLoginHistory() {
   const el = document.getElementById('login-history-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/system/logins?limit=15');
-    const d = await r.json();
-    const logins = d.logins || [];
-    const failed = d.failed || [];
-    let html = '';
-    if (logins.length === 0) {
-      html = '<span style="color:var(--text-dim);font-size:13px;">No login history available</span>';
-    } else {
-      html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Recent logins</div>';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-      html += '<thead><tr>';
-      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">User</th>';
-      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">From</th>';
-      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">When</th>';
-      html += '<th style="text-align:left;padding:3px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Status</th>';
-      html += '</tr></thead><tbody>';
-      for (const l of logins) {
-        const statusColor = l.still_on ? 'var(--success,#4c4)' : l.crashed ? 'var(--error,#e55)' : 'var(--text-dim)';
-        const status = l.still_on ? '● active' : l.crashed ? '✖ crash' : '—';
-        html += '<tr>';
-        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + l.user + '</td>';
-        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (l.host || l.tty || '—') + '</td>';
-        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + l.date + '</td>';
-        html += '<td style="padding:3px 8px;border-bottom:1px solid var(--border);color:' + statusColor + ';">' + status + '</td>';
-        html += '</tr>';
-      }
-      html += '</tbody></table>';
+    const resp = await apiFetch('/api/system/logins');
+    const d = await resp.json();
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
     }
-    if (failed.length > 0) {
-      html += '<div style="font-size:12px;color:var(--error,#e55);margin-top:10px;margin-bottom:4px;">&#x26A0; Failed login attempts (' + failed.length + ')</div>';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-      html += '<thead><tr><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">User</th><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">From</th><th style="text-align:left;padding:3px 8px;color:var(--text-dim);border-bottom:1px solid var(--border);">When</th></tr></thead><tbody>';
-      for (const f of failed) {
-        html += '<tr><td style="padding:3px 8px;border-bottom:1px solid var(--border);font-family:monospace;color:var(--error,#e55);">' + f.user + '</td><td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + (f.host || f.tty || '—') + '</td><td style="padding:3px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">' + f.date + '</td></tr>';
-      }
-      html += '</tbody></table>';
+    if (!d.entries || d.entries.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No login history available.</span>';
+      return;
     }
+    if (d.active_users && d.active_users.length > 0) {
+      // small header showing active sessions
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} recent login${d.count !== 1 ? 's' : ''}`;
+    if (d.active_users && d.active_users.length > 0) {
+      html += ` · <span style="color:#22c55e;">&#x25CF; ${d.active_users.length} active session${d.active_users.length !== 1 ? 's' : ''}</span>`;
+    }
+    html += '</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:4px 8px;">User</th><th style="padding:4px 8px;">TTY</th><th style="padding:4px 8px;">From</th><th style="padding:4px 8px;">When</th>';
+    html += '</tr></thead><tbody>';
+    for (const e of d.entries) {
+      const activeStyle = e.active ? 'color:#22c55e;font-weight:600;' : '';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:4px 8px;${activeStyle}">${escHtml(e.user)}${e.active ? ' ●' : ''}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(e.tty)}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${e.host ? escHtml(e.host) : '—'}</td>`;
+      html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${escHtml(e.date_raw)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load login history</span>';
   }
 }
 
