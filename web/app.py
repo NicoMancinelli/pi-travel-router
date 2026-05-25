@@ -7331,6 +7331,41 @@ def api_wireguard_config_text():
     return jsonify({"config": "".join(sanitized), "path": conf_path})
 
 
+# ── Kernel Modules ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/modules", methods=["GET"])
+@require_auth
+def api_system_modules():
+    modules = []
+    try:
+        with open("/proc/modules", "r") as fh:
+            for line in fh:
+                cols = line.split()
+                if len(cols) < 4:
+                    continue
+                name = cols[0]
+                try:
+                    size = int(cols[1])
+                except ValueError:
+                    size = 0
+                try:
+                    used_by = int(cols[2])
+                except ValueError:
+                    used_by = 0
+                raw_deps = cols[3].strip(",")
+                deps = raw_deps.split(",") if raw_deps != "-" else []
+                modules.append({
+                    "name": name,
+                    "size": size,
+                    "used_by": used_by,
+                    "deps": deps,
+                })
+    except OSError as exc:
+        return jsonify({"error": str(exc)}), 503
+    modules.sort(key=lambda m: m["name"])
+    return jsonify({"modules": modules, "count": len(modules)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
