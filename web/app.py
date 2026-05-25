@@ -13945,6 +13945,38 @@ def api_network_ap_clients():
     return jsonify({"clients": clients, "count": len(clients), "interface": iface})
 
 
+# ── ARP / Neighbor Table ──────────────────────────────────────────────────────
+
+@app.route("/api/network/arp", methods=["GET"])
+@require_auth
+def api_network_arp():
+    """Return the kernel ARP/neighbor table parsed from /proc/net/arp."""
+    _FLAG_MAP = {
+        "0x0": "INCOMPLETE",
+        "0x2": "REACHABLE",
+        "0x4": "STALE",
+        "0x6": "STALE",
+    }
+    entries = []
+    try:
+        with open("/proc/net/arp") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("IP address"):
+                    continue
+                parts = line.split()
+                if len(parts) < 6:
+                    continue
+                ip, _hwtype, flags, mac, _mask, iface = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+                if mac == "00:00:00:00:00:00":
+                    continue
+                state = _FLAG_MAP.get(flags.lower(), "UNKNOWN")
+                entries.append({"ip": ip, "mac": mac, "iface": iface, "flags": flags, "state": state})
+    except OSError as exc:
+        return jsonify({"entries": [], "count": 0, "error": str(exc)})
+    return jsonify({"entries": entries, "count": len(entries)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
