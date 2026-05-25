@@ -1253,6 +1253,18 @@
     <div id="network-ping-content"><em>Loading…</em></div>
   </div>
 
+        <!-- Cron Jobs -->
+        <div class="card" id="card-cron-jobs">
+          <h2>⏰ Cron Jobs</h2>
+          <div id="cron-jobs-content"><em>Loading…</em></div>
+        </div>
+
+        <!-- Mount Info -->
+        <div class="card" id="card-mount-info">
+          <h2>💾 Mount Points</h2>
+          <div id="mount-info-content"><em>Loading…</em></div>
+        </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4306,6 +4318,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCpuStats();
   fetchSysctl();
   fetchMemoryBreakdown();
+  fetchCronJobs();
+  fetchMountInfo();
 });
 
 async function fetchJournal() {
@@ -4534,6 +4548,8 @@ async function refreshAll() {
   fetchCpuStats();
   fetchSysctl();
   fetchMemoryBreakdown();
+  fetchCronJobs();
+  fetchMountInfo();
 }
 
 async function init() {
@@ -8354,6 +8370,40 @@ async function fetchMemoryBreakdown() {
           return `<tr><td>${h.name}</td><td style="font-family:monospace">${h.host}</td><td>${status}</td></tr>`;
         }).join('');
         el.innerHTML = `<table class="info-table"><thead><tr><th>Host</th><th>Address</th><th>Result</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+
+    async function fetchCronJobs() {
+      const el = document.getElementById('cron-jobs-content');
+      try {
+        const r = await fetch('/api/system/cron-jobs');
+        const d = await r.json();
+        if (!d.jobs || !d.jobs.length) { el.textContent = 'No cron jobs found'; return; }
+        let rows = d.jobs.map(j =>
+          `<tr><td style="font-family:monospace;white-space:nowrap">${j.schedule}</td><td style="font-family:monospace;word-break:break-all">${j.command}</td><td style="color:#888;font-size:0.85em">${j.source}</td></tr>`
+        ).join('');
+        el.innerHTML = `<p style="margin:0 0 6px">${d.count} job(s)</p><table class="info-table"><thead><tr><th>Schedule</th><th>Command</th><th>Source</th></tr></thead><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
+    }
+
+    function fmtBytes(b) {
+      if (b === undefined) return '?';
+      if (b >= 1073741824) return (b/1073741824).toFixed(1) + ' GiB';
+      if (b >= 1048576) return (b/1048576).toFixed(1) + ' MiB';
+      return (b/1024).toFixed(1) + ' KiB';
+    }
+    async function fetchMountInfo() {
+      const el = document.getElementById('mount-info-content');
+      try {
+        const r = await fetch('/api/system/mounts');
+        const d = await r.json();
+        if (!d.mounts || !d.mounts.length) { el.textContent = 'No mounts'; return; }
+        let rows = d.mounts.map(m => {
+          const used = m.use_pct ? `${fmtBytes(m.used_bytes)} / ${fmtBytes(m.size_bytes)} (${m.use_pct})` : '?';
+          const inodes = m.inode_pct ? `${m.inodes_used?.toLocaleString()} used (${m.inode_pct})` : '?';
+          return `<tr><td style="font-family:monospace">${m.mountpoint}</td><td>${m.fstype}</td><td>${used}</td><td>${inodes}</td></tr>`;
+        }).join('');
+        el.innerHTML = `<table class="info-table"><thead><tr><th>Mount</th><th>Type</th><th>Space</th><th>Inodes</th></tr></thead><tbody>${rows}</tbody></table>`;
       } catch (e) { el.textContent = 'Error: ' + e; }
     }
 // ── LAN Network Scanner ───────────────────────────────────────────────────────

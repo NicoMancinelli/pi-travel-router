@@ -9035,6 +9035,102 @@ def api_network_ping():
     return jsonify({"hosts": results})
 
 
+@app.route("/api/system/cron-jobs")
+@require_auth
+def api_system_cron_jobs():
+    """Return scheduled cron jobs from system crontabs and user crontab."""
+    import glob
+    jobs = []
+
+    def _parse_crontab_lines(lines, source):
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("@"):
+                parts = line.split(None, 1)
+                jobs.append({"schedule": parts[0], "command": parts[1] if len(parts) > 1 else "", "source": source})
+            else:
+                parts = line.split(None, 5)
+                if len(parts) >= 6:
+                    schedule = " ".join(parts[:5])
+                    jobs.append({"schedule": schedule, "command": parts[5], "source": source})
+                elif len(parts) >= 5:
+                    schedule = " ".join(parts[:5])
+                    jobs.append({"schedule": schedule, "command": "", "source": source})
+
+    # /etc/crontab
+    try:
+        content = Path("/etc/crontab").read_text()
+        _parse_crontab_lines(content.splitlines(), "/etc/crontab")
+    except OSError:
+        pass
+
+    # /etc/cron.d/*
+    for path in sorted(glob.glob("/etc/cron.d/*")):
+        try:
+            content = Path(path).read_text()
+            _parse_crontab_lines(content.splitlines(), path)
+        except OSError:
+            pass
+
+    # root crontab
+    out, rc = _run(["crontab", "-l", "-u", "root"])
+    if rc == 0:
+        _parse_crontab_lines(out.splitlines(), "crontab(root)")
+
+    return jsonify({"jobs": jobs, "count": len(jobs)})
+
+
+@app.route("/api/system/mounts")
+@require_auth
+def api_system_mounts():
+    """Return mounted filesystems with type, options, and inode/space usage."""
+    mounts = []
+    skip_types = {"proc", "sysfs", "devtmpfs", "devpts", "tmpfs", "cgroup",
+                  "cgroup2", "pstore", "debugfs", "tracefs", "securityfs",
+                  "fusectl", "hugetlbfs", "mqueue", "ramfs", "bpf", "configfs"}
+    try:
+        content = Path("/proc/mounts").read_text()
+    except OSError:
+        return jsonify({"mounts": [], "error": "cannot read /proc/mounts"})
+
+    for line in content.splitlines():
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        device, mountpoint, fstype, options = parts[0], parts[1], parts[2], parts[3]
+        if fstype in skip_types:
+            continue
+        entry = {"device": device, "mountpoint": mountpoint, "fstype": fstype, "options": options.split(",")}
+        # disk usage via df
+        out, rc = _run(["df", "-B1", "--output=size,used,avail,pcent", mountpoint])
+        if rc == 0:
+            lines = out.strip().splitlines()
+            if len(lines) >= 2:
+                vals = lines[1].split()
+                if len(vals) >= 4:
+                    entry["size_bytes"] = int(vals[0])
+                    entry["used_bytes"] = int(vals[1])
+                    entry["avail_bytes"] = int(vals[2])
+                    entry["use_pct"] = vals[3]
+        # inode usage via df -i
+        out2, rc2 = _run(["df", "-i", "--output=iused,iavail,ipcent", mountpoint])
+        if rc2 == 0:
+            lines2 = out2.strip().splitlines()
+            if len(lines2) >= 2:
+                vals2 = lines2[1].split()
+                if len(vals2) >= 3:
+                    try:
+                        entry["inodes_used"] = int(vals2[0])
+                        entry["inodes_avail"] = int(vals2[1])
+                        entry["inode_pct"] = vals2[2]
+                    except ValueError:
+                        pass
+        mounts.append(entry)
+    return jsonify({"mounts": mounts, "count": len(mounts)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
