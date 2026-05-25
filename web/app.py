@@ -5997,6 +5997,116 @@ def api_vpn_tailscale_status():
     })
 
 
+# ── WAN Uplink Status ─────────────────────────────────────────────────────────
+
+@app.route("/api/network/wan", methods=["GET"])
+@require_auth
+def api_network_wan():
+    """Return WAN uplink status: all uplinks, active route, metrics."""
+    import json as _json
+    import re
+
+    uplinks = []
+
+    # Known WAN interface patterns
+    wan_patterns = [
+        ("wlan1", "WiFi Client", "wifi"),
+        ("wlan2", "WiFi Client 2", "wifi"),
+        ("usb0", "USB Tether", "usb"),
+        ("bnep0", "Bluetooth Tether", "bluetooth"),
+        ("wwan0", "LTE/Modem", "lte"),
+        ("eth1", "Ethernet WAN", "ethernet"),
+        ("ppp0", "PPP/Modem", "ppp"),
+    ]
+
+    # Get routing table to find default routes and metrics
+    route_out, route_rc = _run(["ip", "-j", "route", "show", "default"])
+    default_routes = {}
+    if route_rc == 0:
+        try:
+            routes = _json.loads(route_out)
+            for r in routes:
+                dev = r.get("dev", "")
+                metric = r.get("metric", 0)
+                gateway = r.get("gateway", "")
+                default_routes[dev] = {"metric": metric, "gateway": gateway}
+        except ValueError:
+            pass
+
+    # Get interface states
+    link_out, link_rc = _run(["ip", "-j", "link"])
+    iface_states = {}
+    if link_rc == 0:
+        try:
+            links = _json.loads(link_out)
+            for link in links:
+                name = link.get("ifname", "")
+                operstate = link.get("operstate", "UNKNOWN").lower()
+                iface_states[name] = operstate
+        except ValueError:
+            pass
+
+    # Check config file for uplink priority order
+    config_uplinks = []
+    try:
+        with open("/etc/default/travel-router") as f:
+            for line in f:
+                m = re.match(r'^UPLINK_ORDER="([^"]+)"', line.strip())
+                if m:
+                    config_uplinks = m.group(1).split()
+    except OSError:
+        pass
+
+    for iface, label, iface_type in wan_patterns:
+        state = iface_states.get(iface)
+        if state is None:
+            continue  # Interface doesn't exist
+
+        route_info = default_routes.get(iface, {})
+        has_route = iface in default_routes
+        metric = route_info.get("metric", None)
+        gateway = route_info.get("gateway", "")
+
+        # Determine priority from config or route metric
+        priority = config_uplinks.index(iface) + 1 if iface in config_uplinks else None
+
+        uplinks.append({
+            "interface": iface,
+            "label": label,
+            "type": iface_type,
+            "state": state,
+            "up": state == "up",
+            "has_default_route": has_route,
+            "metric": metric,
+            "gateway": gateway,
+            "priority": priority,
+        })
+
+    # Sort: active routes first (by metric), then up interfaces, then down
+    def sort_key(u):
+        if u["has_default_route"] and u["metric"] is not None:
+            return (0, u["metric"])
+        if u["up"]:
+            return (1, 999)
+        return (2, 999)
+
+    uplinks.sort(key=sort_key)
+
+    # Active uplink = lowest metric default route
+    active_iface = None
+    if uplinks:
+        for u in uplinks:
+            if u["has_default_route"]:
+                active_iface = u["interface"]
+                break
+
+    return jsonify({
+        "uplinks": uplinks,
+        "count": len(uplinks),
+        "active_interface": active_iface,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
