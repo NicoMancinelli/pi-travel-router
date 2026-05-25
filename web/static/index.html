@@ -1417,6 +1417,15 @@
     </div>
   </div>
 
+  <!-- Ping Latency -->
+  <div class="card full-width" id="card-latency-ping" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      &#x1F4F6; Ping Latency
+      <span id="latency-status" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;background:#6b7280;color:#fff;">Loading</span>
+    </div>
+    <div id="latency-body" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5514,6 +5523,7 @@ async function refreshAll() {
   fetchBootParams();
   fetchGeoIp();
   fetchTemperature();
+  fetchLatency();
 }
 
 async function init() {
@@ -7308,6 +7318,69 @@ async function fetchTemperature() {
   } catch (e) {
     if (e.message !== 'Unauthorized') body.innerHTML = `<span style="color:var(--danger)">Failed to load temperature data</span>`;
   }
+}
+
+// ── Ping Latency ──────────────────────────────────────────────────────────────
+
+async function fetchLatency() {
+  const body = document.getElementById('latency-body');
+  const badge = document.getElementById('latency-status');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/latency');
+    const data = await resp.json();
+    if (badge) {
+      if (data.all_reachable) {
+        badge.textContent = 'All OK';
+        badge.style.background = '#22c55e';
+      } else {
+        badge.textContent = '⚠ Unreachable';
+        badge.style.background = '#ef4444';
+      }
+    }
+    if (!data.targets || data.targets.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim)">No data</span>';
+      return;
+    }
+    function rttColor(rtt) {
+      if (rtt === null || rtt === undefined) return '#ef4444';
+      if (rtt < 20) return '#22c55e';
+      if (rtt < 100) return '#eab308';
+      return '#ef4444';
+    }
+    function rttBar(rtt) {
+      if (rtt === null || rtt === undefined) return '';
+      const maxMs = 200;
+      const pct = Math.min(100, (rtt / maxMs) * 100);
+      const color = rttColor(rtt);
+      return `<span style="display:inline-block;vertical-align:middle;width:80px;height:8px;background:#333;border-radius:4px;margin-right:6px;"><span style="display:block;height:8px;border-radius:4px;background:${color};width:${pct}%;"></span></span>`;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="color:var(--text-dim);font-size:11px;">';
+    html += '<th style="text-align:left;padding:4px 8px;">Target</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Host</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">RTT</th>';
+    html += '<th style="text-align:center;padding:4px 8px;">Status</th>';
+    html += '</tr></thead><tbody>';
+    for (const t of data.targets) {
+      const color = rttColor(t.rtt_ms);
+      const rttText = t.rtt_ms !== null && t.rtt_ms !== undefined
+        ? `<span style="color:${color};font-weight:600;">${t.rtt_ms.toFixed(1)} ms</span>`
+        : '<span style="color:#ef4444;">—</span>';
+      const icon = t.reachable
+        ? '<span style="color:#22c55e;font-weight:700;">&#x2713;</span>'
+        : '<span style="color:#ef4444;font-weight:700;">&#x2717;</span>';
+      html += `<tr style="border-top:1px solid var(--border);">`;
+      html += `<td style="padding:6px 8px;">${escHtml(t.label)}</td>`;
+      html += `<td style="padding:6px 8px;color:var(--text-dim);">${escHtml(t.host)}</td>`;
+      html += `<td style="padding:6px 8px;">${rttBar(t.rtt_ms)}${rttText}</td>`;
+      html += `<td style="padding:6px 8px;text-align:center;">${icon}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  } catch(e) { body.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Tailscale Status ──────────────────────────────────────────────────────────
