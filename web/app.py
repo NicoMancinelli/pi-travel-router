@@ -9162,8 +9162,6 @@ def api_system_top_processes():
         "by_cpu": _parse_ps(out_cpu) if rc_cpu == 0 else [],
         "by_mem": _parse_ps(out_mem) if rc_mem == 0 else [],
     })
-
-
 @app.route("/api/network/wifi-info")
 @require_auth
 def api_network_wifi_info():
