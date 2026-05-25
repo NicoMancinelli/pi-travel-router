@@ -3097,6 +3097,71 @@ def api_system_resources():
     return jsonify({"current": current, "history": history})
 
 
+# ── Pi throttling monitor ─────────────────────────────────────────────────────
+
+def _parse_throttled(hex_val: str) -> dict:
+    """Parse vcgencmd get_throttled hex value into human-readable flags."""
+    try:
+        val = int(hex_val, 16)
+    except ValueError:
+        return {"raw": hex_val, "flags": [], "ok": True}
+    flags = []
+    # Current flags (bits 0-3)
+    if val & 0x1:
+        flags.append("undervoltage-detected")
+    if val & 0x2:
+        flags.append("arm-freq-capped")
+    if val & 0x4:
+        flags.append("throttled")
+    if val & 0x8:
+        flags.append("soft-temp-limit")
+    # Historical flags (bits 16-19)
+    if val & 0x10000:
+        flags.append("undervoltage-occurred")
+    if val & 0x20000:
+        flags.append("arm-freq-capped-occurred")
+    if val & 0x40000:
+        flags.append("throttling-occurred")
+    if val & 0x80000:
+        flags.append("soft-temp-limit-occurred")
+    current_ok = (val & 0xF) == 0
+    return {"raw": hex_val, "value": val, "flags": flags, "ok": current_ok,
+            "undervoltage": bool(val & 0x1), "throttled": bool(val & 0x4),
+            "freq_capped": bool(val & 0x2), "soft_temp": bool(val & 0x8)}
+
+
+@app.route("/api/system/throttle", methods=["GET"])
+@require_auth
+def api_system_throttle():
+    """Return Pi throttling status from vcgencmd get_throttled."""
+    throttle_info = {"available": False, "raw": None, "ok": True, "flags": []}
+    try:
+        out, _ = _run(["vcgencmd", "get_throttled"], timeout=3)
+        if out and "throttled=" in out:
+            hex_val = out.strip().split("=", 1)[1].strip()
+            throttle_info = _parse_throttled(hex_val)
+            throttle_info["available"] = True
+    except Exception:
+        pass
+    # Current CPU temp (already in system resources, but useful inline)
+    temp_c = None
+    try:
+        temp_str = Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()
+        temp_c = round(int(temp_str) / 1000, 1)
+    except (OSError, ValueError):
+        pass
+    throttle_info["temp_c"] = temp_c
+    # CPU frequency
+    freq_mhz = None
+    try:
+        freq_str = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq").read_text().strip()
+        freq_mhz = round(int(freq_str) / 1000)
+    except (OSError, ValueError):
+        pass
+    throttle_info["freq_mhz"] = freq_mhz
+    return jsonify(throttle_info)
+
+
 # ── Serve index.html ──────────────────────────────────────────────────────────
 
 
