@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.54.0] - 2026-05-25
+
+### Added
+- `GET /api/system/log-summary` — journal error/warning counts from `journalctl -n 100`, grouped by service with recent message previews; dashboard card shows severity badges
+- `GET /api/network/active-connections` — established TCP/UDP connections via `ss -tnup state established`, showing local/remote addresses, ports, PIDs, and process names
+- `GET /api/network/wifi-clients` — connected Wi-Fi station list from `iw dev station dump`, showing MAC, signal, tx/rx rates, and connected time
+- Dashboard cards: Log Summary (📋), Active Connections (🔌), Wi-Fi Clients (📡)
+
 ## [2.53.0] - 2026-05-25
 
 ### Added
