@@ -7179,6 +7179,39 @@ def api_system_entropy():
     return jsonify(result)
 
 
+# ── USB Device Inventory ──────────────────────────────────────────────────────
+
+@app.route("/api/system/usb", methods=["GET"])
+@require_auth
+def api_system_usb():
+    """Return a list of connected USB devices, filtering out root hubs."""
+    import re
+
+    out, rc = _run(["lsusb"])
+    devices = []
+    if rc == 0:
+        for line in out.splitlines():
+            m = re.match(
+                r"Bus (\d+) Device (\d+): ID ([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)",
+                line,
+            )
+            if m:
+                desc = m.group(5)
+                if "root hub" in desc.lower() or "Linux Foundation" in desc:
+                    continue
+                devices.append(
+                    {
+                        "bus": m.group(1),
+                        "device": m.group(2),
+                        "vendor_id": m.group(3),
+                        "product_id": m.group(4),
+                        "description": desc,
+                    }
+                )
+
+    return jsonify({"devices": devices, "count": len(devices)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
