@@ -1161,6 +1161,10 @@
     <div id="journal-errors-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-wifi-scan">
+    <div id="wifi-scan-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4194,6 +4198,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchArpTable();
   fetchRouteTable();
   fetchJournalErrors();
+  fetchWifiScan();
 });
 
 async function fetchJournal() {
@@ -7197,6 +7202,93 @@ async function fetchJournalErrors() {
     el.innerHTML = html;
   } catch (e) {
     el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── WiFi Scan ─────────────────────────────────────────────────────────────────
+async function fetchWifiScan() {
+  const el = document.getElementById('wifi-scan-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Scanning…</span>';
+  try {
+    const r = await apiFetch('/api/network/wifi-scan');
+    const d = await r.json();
+
+    const networks = d.networks || [];
+    const count = d.count || 0;
+    const iface = d.iface || 'wlan0';
+
+    let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">';
+    html += '<span style="font-weight:600;font-size:14px;">WiFi Networks';
+    html += ' <span style="background:var(--accent);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:6px;">' + count + '</span>';
+    html += '</span>';
+    html += '<button class="btn btn-sm" onclick="fetchWifiScan()">&#x21BA; Refresh</button>';
+    html += '</div>';
+
+    if (d.error && count === 0) {
+      html += '<div style="color:var(--text-dim);font-size:13px;">' + d.error + '</div>';
+      el.innerHTML = html;
+      return;
+    }
+
+    if (networks.length === 0) {
+      html += '<div style="color:var(--text-dim);font-size:13px;">No networks found (iface: ' + iface + ')</div>';
+      el.innerHTML = html;
+      return;
+    }
+
+    html += '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">Interface: ' + iface + '</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">SSID</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">BSSID</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Ch</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Signal</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Security</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const net of networks) {
+      const sig = net.signal_dbm;
+      let bars, barColor;
+      if (sig === null || sig === undefined) {
+        bars = '░░░░';
+        barColor = 'var(--text-dim)';
+      } else if (sig >= -50) {
+        bars = '████';
+        barColor = '#4caf50';
+      } else if (sig >= -70) {
+        bars = '███░';
+        barColor = '#ffc107';
+      } else if (sig >= -85) {
+        bars = '██░░';
+        barColor = '#ff9800';
+      } else {
+        bars = '█░░░';
+        barColor = '#f44336';
+      }
+      const sigLabel = sig !== null && sig !== undefined ? sig + ' dBm' : '—';
+      const ssid = net.ssid || '<em style="color:var(--text-dim);">hidden</em>';
+      const bssid = net.bssid || '—';
+      const ch = net.channel !== null && net.channel !== undefined ? net.channel : '—';
+      const enc = net.encryption || 'Open';
+      const encColor = enc === 'Open' ? 'var(--text-dim)' : 'var(--accent)';
+
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += '<td style="padding:5px 8px;">' + ssid + '</td>';
+      html += '<td style="padding:5px 8px;font-family:monospace;font-size:12px;">' + bssid + '</td>';
+      html += '<td style="padding:5px 8px;">' + ch + '</td>';
+      html += '<td style="padding:5px 8px;white-space:nowrap;">';
+      html += '<span style="color:' + barColor + ';font-family:monospace;">' + bars + '</span> ';
+      html += '<span style="color:var(--text-dim);font-size:12px;">' + sigLabel + '</span>';
+      html += '</td>';
+      html += '<td style="padding:5px 8px;color:' + encColor + ';font-size:12px;">' + enc + '</td>';
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">Failed: ' + e + '</div>';
   }
 }
 
