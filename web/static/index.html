@@ -1086,6 +1086,23 @@
     <div id="connections-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Entropy Pool -->
+  <div class="card" id="card-entropy">
+    <div class="card-title">&#x1F3B2; Entropy Pool</div>
+    <div id="entropy-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- USB Devices -->
+  <div class="card full-width" id="card-usb-devices">
+    <div class="card-title">
+      &#x1F50C; USB Devices
+      <button class="btn btn-sm" onclick="fetchUsbDevices()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="usb-devices-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Top Processes -->
@@ -4116,6 +4133,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchConnections();
   fetchTsExitNode();
   fetchCronJobsSystem();
+  fetchEntropy();
+  fetchUsbDevices();
   fetchProcTop();
 });
 
@@ -4316,6 +4335,7 @@ async function refreshAll() {
   fetchSystemUpdates();
   fetchConnections();
   fetchCronJobsSystem();
+  fetchEntropy();
   fetchProcTop();
 }
 
@@ -6632,6 +6652,110 @@ async function fetchProcTop() {
       + '</div>';
   } catch (e) {
     el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed to load process data</span>';
+  }
+}
+
+// ── Entropy Pool ─────────────────────────────────────────────────────────────
+
+async function fetchEntropy() {
+  const el = document.getElementById('entropy-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/entropy');
+    const d = await r.json();
+    if (d.error && d.available_bits === undefined) {
+      el.innerHTML = '<span style="color:var(--danger)">Error: ' + d.error + '</span>';
+      return;
+    }
+    const bits = d.available_bits ?? '—';
+    const pool = d.pool_size ?? '—';
+    const pct  = d.percent != null ? d.percent : null;
+    const source = d.source || 'unknown';
+    const getrandomOk = d.getrandom_ok;
+
+    // Progress bar colour
+    let barColor = 'var(--danger)';
+    if (pct !== null) {
+      if (pct >= 75) barColor = 'var(--success,#4caf50)';
+      else if (pct >= 40) barColor = 'var(--warning,#ff9800)';
+    }
+
+    // Source badge colour
+    const badgeBg = source === 'hardware_rng' ? 'var(--info,#2196f3)' : '#888';
+
+    // getrandom status
+    const grStatus = getrandomOk === true
+      ? '<span style="color:var(--success,#4caf50);">&#x2714; getrandom OK</span>'
+      : getrandomOk === false
+        ? '<span style="color:var(--danger);">&#x2718; getrandom blocked</span>'
+        : '<span style="color:var(--text-dim);">getrandom unknown</span>';
+
+    let html = '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">';
+    html += '<div style="font-size:2em;font-weight:700;line-height:1;">' + bits + '</div>';
+    html += '<div style="flex:1;min-width:120px;">';
+    if (pct !== null) {
+      html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:3px;">' + pct + '% full (' + bits + ' / ' + pool + ' bits)</div>';
+      html += '<div style="background:var(--border);border-radius:4px;height:10px;overflow:hidden;">';
+      html += '<div style="width:' + Math.min(pct, 100) + '%;background:' + barColor + ';height:100%;border-radius:4px;transition:width .4s;"></div>';
+      html += '</div>';
+    } else {
+      html += '<span style="color:var(--text-dim);">pool size unavailable</span>';
+    }
+    html += '</div>';
+    html += '<span style="background:' + badgeBg + ';color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;white-space:nowrap;">' + source + '</span>';
+    html += grStatus;
+    html += '</div>';
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load entropy data</span>';
+  }
+}
+
+// ── USB Device Inventory ──────────────────────────────────────────────────────
+
+async function fetchUsbDevices() {
+  const el = document.getElementById('usb-devices-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/usb');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error fetching USB devices') + '</span>';
+      return;
+    }
+    if (!d.devices || d.devices.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No USB devices found.</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:4px 8px;">Bus</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Device</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">ID</th>';
+    html += '<th style="text-align:left;padding:4px 8px;">Description</th>';
+    html += '</tr></thead><tbody>';
+    for (const dev of d.devices) {
+      const desc = dev.description || '';
+      let rowStyle = '';
+      if (/ethernet|rndis|ecm/i.test(desc)) {
+        rowStyle = 'color:#4caf50;';
+      } else if (/modem|lte|sierra|huawei|zte/i.test(desc)) {
+        rowStyle = 'color:#2196f3;';
+      }
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += '<td style="padding:4px 8px;' + rowStyle + '">' + dev.bus + '</td>';
+      html += '<td style="padding:4px 8px;' + rowStyle + '">' + dev.device + '</td>';
+      html += '<td style="padding:4px 8px;font-family:monospace;' + rowStyle + '">' + dev.vendor_id + ':' + dev.product_id + '</td>';
+      html += '<td style="padding:4px 8px;' + rowStyle + '">' + desc + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    html += '<div style="margin-top:6px;font-size:12px;color:var(--text-dim);">' + d.count + ' device' + (d.count !== 1 ? 's' : '') + '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load USB devices</span>';
   }
 }
 
