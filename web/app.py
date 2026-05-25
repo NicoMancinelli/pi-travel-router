@@ -3839,6 +3839,67 @@ def api_network_firewall():
     return jsonify({"tool": "none", "rules": [], "count": 0, "error": "No firewall tool available (nft/iptables)"})
 
 
+# ── DNS Resolver Config ───────────────────────────────────────────────────────
+
+@app.route("/api/dns/resolvers", methods=["GET"])
+@require_auth
+def api_dns_resolvers():
+    """Return current DNS resolver configuration and test resolution latency."""
+    import time as _time
+
+    nameservers = []
+    search_domains = []
+    options = []
+    try:
+        with open("/etc/resolv.conf") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("nameserver"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        nameservers.append(parts[1])
+                elif line.startswith("search"):
+                    search_domains = line.split()[1:]
+                elif line.startswith("options"):
+                    options = line.split()[1:]
+    except OSError:
+        pass
+
+    resolver_results = []
+    for ns in nameservers[:4]:
+        start = _time.monotonic()
+        out, rc = _run(["dig", "+short", "+time=2", "+tries=1", f"@{ns}", "google.com", "A"])
+        elapsed_ms = round((_time.monotonic() - start) * 1000)
+        resolved = rc == 0 and out.strip() != ""
+        resolver_results.append({
+            "address": ns,
+            "reachable": resolved,
+            "latency_ms": elapsed_ms if resolved else None,
+            "response": out.strip().splitlines()[0] if resolved and out.strip() else None,
+        })
+
+    doh_active = False
+    doh_provider = None
+    out2, rc2 = _run(["grep", "-r", "cloudflare-dns\\|dns.google\\|quad9", "/etc/dnsmasq.d/"])
+    if rc2 == 0 and out2.strip():
+        doh_active = True
+        if "cloudflare" in out2.lower():
+            doh_provider = "Cloudflare"
+        elif "google" in out2.lower():
+            doh_provider = "Google"
+        elif "quad9" in out2.lower():
+            doh_provider = "Quad9"
+
+    return jsonify({
+        "nameservers": resolver_results,
+        "search_domains": search_domains,
+        "options": options,
+        "doh_active": doh_active,
+        "doh_provider": doh_provider,
+        "count": len(resolver_results),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])
