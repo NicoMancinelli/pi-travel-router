@@ -798,12 +798,12 @@
   </div>
 
   <!-- Route Table -->
-  <div class="card full-width" id="card-routes" style="margin-top:16px;">
-    <div class="card-header">
-      <span>🗺️ Routing Table</span>
-      <button class="btn btn-sm" onclick="fetchRouteTable()">&#x21BB; Refresh</button>
+  <div class="card full-width" id="card-routes">
+    <div class="card-title">
+      &#x1F5FA; Route Table
+      <button class="btn btn-sm" onclick="fetchRouteTable()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
-    <div id="route-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
+    <div id="route-table-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <!-- ARP / Neighbor Table -->
@@ -1049,6 +1049,15 @@
     <div id="killswitch-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- WireGuard Peer Health -->
+  <div class="card full-width" id="card-wg-peers">
+    <div class="card-title">
+      &#x1F512; WireGuard Peers
+      <button class="btn btn-sm" onclick="fetchWgPeers()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="wg-peers-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Data Cap Tracker -->
   <div class="card" id="card-vnstat-datacap">
     <div class="card-title">&#x1F4CA; Monthly Data Usage</div>
@@ -1264,13 +1273,13 @@
 
   <hr class="divider">
 
-  <!-- WireGuard peers list -->
+  <!-- WireGuard peers list (management: add/remove) -->
   <div class="card full-width">
     <div class="card-title">
       WireGuard Peers
-      <button class="btn btn-sm" onclick="fetchWgPeers()" style="margin-left:8px;">&#x21BB; Refresh</button>
+      <button class="btn btn-sm" onclick="fetchWgPeersMgmt()" style="margin-left:8px;">&#x21BB; Refresh</button>
     </div>
-    <div id="wg-peers-content"><span class="spinner"></span></div>
+    <div id="wg-peers-mgmt-content"><span class="spinner"></span></div>
   </div>
 
   <hr class="divider">
@@ -2976,21 +2985,73 @@ async function setDohResolver() {
   }
 }
 
-// ── WireGuard peers ────────────────────────────────────────────────────────────
+// ── WireGuard Peer Health ─────────────────────────────────────────────────────
+
 async function fetchWgPeers() {
+  const el = document.getElementById('wg-peers-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const resp = await apiFetch('/api/status');
-    if (!resp.ok) { document.getElementById('wg-peers-content').innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const resp = await apiFetch('/api/vpn/wireguard/peers');
     const d = await resp.json();
-    const peers = (d.vpn && d.vpn.wireguard && d.vpn.wireguard.peers) || [];
-    renderWgPeers(peers);
+    if (d.error) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+      return;
+    }
+    if (!d.peers || d.peers.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No WireGuard peers configured.</span>';
+      return;
+    }
+    const statusColors = { recent: '#22c55e', stale: '#f97316', idle: '#6b7280', never: '#6b7280' };
+    const statusLabels = { recent: '● Active', stale: '◑ Stale', idle: '○ Idle', never: '○ Never' };
+
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} peer${d.count !== 1 ? 's' : ''}</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Interface</th>';
+    html += '<th style="padding:5px 8px;">Peer</th>';
+    html += '<th style="padding:5px 8px;">Status</th>';
+    html += '<th style="padding:5px 8px;">Last Handshake</th>';
+    html += '<th style="padding:5px 8px;">Allowed IPs</th>';
+    html += '<th style="padding:5px 8px;">RX</th>';
+    html += '<th style="padding:5px 8px;">TX</th>';
+    html += '</tr></thead><tbody>';
+    for (const p of d.peers) {
+      const color = statusColors[p.status] || '#6b7280';
+      const label = statusLabels[p.status] || p.status;
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(p.interface)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;" title="${escHtml(p.pubkey)}">${escHtml(p.pubkey_short)}</td>`;
+      html += `<td style="padding:5px 8px;color:${color};font-size:12px;font-weight:600;">${label}</td>`;
+      html += `<td style="padding:5px 8px;font-size:12px;">${escHtml(p.last_handshake_age)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${p.allowed_ips_str ? escHtml(p.allowed_ips_str) : '—'}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${escHtml(p.rx_human)}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${escHtml(p.tx_human)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
   } catch (e) {
-    if (e.message !== 'Unauthorized') document.getElementById('wg-peers-content').innerHTML = '<span class="dim">Error loading peers</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load WireGuard peers</span>';
   }
 }
 
-function renderWgPeers(peers) {
-  const el = document.getElementById('wg-peers-content');
+// ── WireGuard peers management (add/remove/QR) ────────────────────────────────
+
+async function fetchWgPeersMgmt() {
+  try {
+    const resp = await apiFetch('/api/status');
+    if (!resp.ok) { document.getElementById('wg-peers-mgmt-content').innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    const d = await resp.json();
+    const peers = (d.vpn && d.vpn.wireguard && d.vpn.wireguard.peers) || [];
+    renderWgPeersMgmt(peers);
+  } catch (e) {
+    if (e.message !== 'Unauthorized') document.getElementById('wg-peers-mgmt-content').innerHTML = '<span class="dim">Error loading peers</span>';
+  }
+}
+
+function renderWgPeersMgmt(peers) {
+  const el = document.getElementById('wg-peers-mgmt-content');
   if (!peers.length) {
     el.innerHTML = '<table><thead><tr><th>Public Key</th><th>Allowed IPs</th><th>Last Handshake</th><th>RX</th><th>TX</th><th>Actions</th></tr></thead>' +
       '<tbody><tr class="empty-row"><td colspan="6">No peers configured</td></tr></tbody></table>';
@@ -3027,7 +3088,7 @@ async function removeWgPeer(pubkey) {
     const d = await resp.json();
     if (resp.ok) {
       toast('Peer removed', 'ok');
-      fetchWgPeers();
+      fetchWgPeersMgmt();
     } else {
       toast(d.error || 'Failed', 'err');
     }
@@ -3999,6 +4060,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchListeningPorts();
   fetchStorage();
   fetchWgPeerHealth();
+  fetchWgPeers();
+  fetchWgPeersMgmt();
   fetchDhcpLeases();
   fetchSshKeys();
   fetchNetInterfaces();
@@ -4167,6 +4230,7 @@ async function refreshAll() {
   fetchDohResolver();
   fetchDohResolverNew();
   fetchWgPeers();
+  fetchWgPeersMgmt();
   fetchGuestNetwork();
   fetchWifiQr();
   fetchSpeedTestCached();
@@ -5005,36 +5069,52 @@ async function runDnsLookup() {
   }
 }
 
-// ── Route Table Viewer ─────────────────────────────────────────────────────────
+// ── Route Table ───────────────────────────────────────────────────────────────
 
 async function fetchRouteTable() {
   const el = document.getElementById('route-table-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await apiFetch('/api/network/routes');
-    const d = await r.json();
-    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);">' + (d.error || 'Error') + '</span>'; return; }
-    const routes = d.routes || [];
-    if (routes.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No routes found</span>'; return; }
-    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Destination</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Via</th>';
-    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Dev</th>';
-    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Metric</th>';
-    html += '</tr></thead><tbody>';
-    for (const rt of routes) {
-      const isDefault = rt.dest === 'default';
-      html += '<tr' + (isDefault ? ' style="font-weight:600;"' : '') + '>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dest || '—') + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.via || '—') + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dev || '—') + '</td>';
-      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + (rt.metric || '—') + '</td>';
-      html += '</tr>';
+    const resp = await apiFetch('/api/network/routes');
+    const d = await resp.json();
+    if (!d.routes || d.routes.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No routes found.</span>';
+      return;
     }
-    html += '</tbody></table>';
+    // Group by family
+    const v4 = d.routes.filter(r => r.family === '4');
+    const v6 = d.routes.filter(r => r.family === '6');
+
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} route${d.count !== 1 ? 's' : ''} (${v4.length} IPv4, ${v6.length} IPv6)</div>`;
+
+    const renderTable = (rows, label) => {
+      if (rows.length === 0) return '';
+      let t = `<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin:8px 0 4px;">${label}</div>`;
+      t += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      t += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      t += '<th style="padding:4px 8px;">Destination</th><th style="padding:4px 8px;">Gateway</th><th style="padding:4px 8px;">Interface</th><th style="padding:4px 8px;">Proto</th><th style="padding:4px 8px;">Metric</th>';
+      t += '</tr></thead><tbody>';
+      for (const r of rows) {
+        const isDefault = r.dest === 'default' || r.dest === '0.0.0.0/0' || r.dest === '::/0';
+        const destStyle = isDefault ? 'font-weight:700;color:var(--accent,#4af);' : '';
+        t += `<tr style="border-bottom:1px solid var(--border);">`;
+        t += `<td style="padding:4px 8px;font-family:monospace;${destStyle}">${escHtml(r.dest)}</td>`;
+        t += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${r.gateway ? escHtml(r.gateway) : '—'}</td>`;
+        t += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${r.dev ? escHtml(r.dev) : '—'}</td>`;
+        t += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${r.proto ? escHtml(r.proto) : '—'}</td>`;
+        t += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${r.metric || '—'}</td>`;
+        t += '</tr>';
+      }
+      t += '</tbody></table>';
+      return t;
+    };
+
+    html += renderTable(v4, 'IPv4');
+    html += renderTable(v6, 'IPv6');
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load route table</span>';
   }
 }
 
@@ -5511,7 +5591,8 @@ async function fetchWgPeerHealth() {
       return;
     }
     function statusBadge(status) {
-      const colors = { active: '#22c55e', idle: '#f97316', stale: '#6b7280', inactive: '#6b7280' };
+      const colors = { recent: '#22c55e', stale: '#f97316', idle: '#6b7280', never: '#6b7280',
+                       active: '#22c55e', inactive: '#6b7280' };
       const c = colors[status] || '#6b7280';
       return `<span style="display:inline-block;background:${c};color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">${status}</span>`;
     }

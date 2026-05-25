@@ -4025,6 +4025,57 @@ def api_system_ssh_keys():
     return jsonify({"keys": all_keys, "count": len(all_keys)})
 
 
+# ── Route Table ───────────────────────────────────────────────────────────────
+
+@app.route("/api/network/routes", methods=["GET"])
+@require_auth
+def api_network_routes():
+    """Return IPv4 and IPv6 routing table."""
+    routes = []
+
+    # IPv4 routes
+    out4, rc4 = _run(["ip", "-4", "route", "show"])
+    if rc4 == 0:
+        for line in out4.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            route = {"family": "4", "dest": parts[0], "gateway": None, "dev": None, "metric": None, "proto": None, "raw": line}
+            for i, p in enumerate(parts):
+                if p == "via" and i + 1 < len(parts):
+                    route["gateway"] = parts[i + 1]
+                elif p == "dev" and i + 1 < len(parts):
+                    route["dev"] = parts[i + 1]
+                elif p == "metric" and i + 1 < len(parts):
+                    route["metric"] = parts[i + 1]
+                elif p == "proto" and i + 1 < len(parts):
+                    route["proto"] = parts[i + 1]
+            routes.append(route)
+
+    # IPv6 routes (skip link-local and loopback)
+    out6, rc6 = _run(["ip", "-6", "route", "show"])
+    if rc6 == 0:
+        for line in out6.splitlines():
+            line = line.strip()
+            if not line or line.startswith("fe80") or line.startswith("::1"):
+                continue
+            parts = line.split()
+            route = {"family": "6", "dest": parts[0], "gateway": None, "dev": None, "metric": None, "proto": None, "raw": line}
+            for i, p in enumerate(parts):
+                if p == "via" and i + 1 < len(parts):
+                    route["gateway"] = parts[i + 1]
+                elif p == "dev" and i + 1 < len(parts):
+                    route["dev"] = parts[i + 1]
+                elif p == "metric" and i + 1 < len(parts):
+                    route["metric"] = parts[i + 1]
+                elif p == "proto" and i + 1 < len(parts):
+                    route["proto"] = parts[i + 1]
+            routes.append(route)
+
+    return jsonify({"routes": routes, "count": len(routes)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])
@@ -5370,38 +5421,6 @@ def api_dns_lookup():
         return jsonify({"error": str(exc)}), 500
 
 
-# ── Route table viewer ────────────────────────────────────────────────────────
-
-@app.route("/api/network/routes", methods=["GET"])
-@require_auth
-def api_network_routes():
-    """Return the current IP routing table."""
-    routes = []
-    try:
-        out, _ = _run(["ip", "route", "show"], timeout=5)
-        for line in (out or "").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            dest = parts[0] if parts else ""
-            route = {"dest": dest, "raw": line}
-            # Extract common fields
-            for i, p in enumerate(parts):
-                if p == "via" and i + 1 < len(parts):
-                    route["via"] = parts[i + 1]
-                elif p == "dev" and i + 1 < len(parts):
-                    route["dev"] = parts[i + 1]
-                elif p == "metric" and i + 1 < len(parts):
-                    route["metric"] = parts[i + 1]
-                elif p == "src" and i + 1 < len(parts):
-                    route["src"] = parts[i + 1]
-            routes.append(route)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-    return jsonify({"routes": routes, "count": len(routes)})
-
-
 # ── ARP / neighbour table ─────────────────────────────────────────────────────
 
 @app.route("/api/network/arp", methods=["GET"])
@@ -5830,80 +5849,86 @@ def api_network_ping():
 @require_auth
 def api_vpn_wireguard_peers():
     """Return WireGuard peer list with health stats from wg show."""
-    import re
     out, rc = _run(["wg", "show", "all", "dump"])
+    if rc != 0:
+        return jsonify({"peers": [], "count": 0, "wg_available": False,
+                        "error": "wg not available or no interfaces"})
     peers = []
-    if rc == 0:
-        for line in out.strip().splitlines():
-            parts = line.split("\t")
-            # wg show all dump: iface pubkey preshared endpoint allowed_ips latest_handshake rx_bytes tx_bytes persistent_keepalive
-            # First line per interface is the interface itself (has private key), skip those
-            if len(parts) < 9:
-                continue
-            # Interface lines have 5 fields, peer lines have 9
-            iface = parts[0]
-            pubkey = parts[1]
-            # Skip interface summary lines (pubkey == private key placeholder)
-            if parts[2] == "(none)" or len(parts) == 5:
-                continue
-            try:
-                endpoint = parts[3] if parts[3] != "(none)" else None
-                allowed_ips = parts[4].split(",") if parts[4] else []
-                latest_handshake = int(parts[5])
-                rx_bytes = int(parts[6])
-                tx_bytes = int(parts[7])
-            except (ValueError, IndexError):
-                continue
+    now = int(time.time())
+    for line in out.strip().splitlines():
+        parts = line.split("\t")
+        # wg show all dump: iface pubkey preshared endpoint allowed_ips latest_handshake rx_bytes tx_bytes persistent_keepalive
+        # Interface lines have 5 fields, peer lines have 9
+        if len(parts) < 9:
+            continue
+        iface = parts[0]
+        pubkey = parts[1]
+        # Skip interface summary lines (preshared == "(none)" distinguishes peer lines, but
+        # interface lines have exactly 5 fields — already filtered above by len < 9)
+        if parts[2] == "(none)" or len(parts) == 5:
+            continue
+        try:
+            endpoint = parts[3] if parts[3] != "(none)" else None
+            allowed_ips_list = parts[4].split(",") if parts[4] else []
+            allowed_ips_str = parts[4] if parts[4] != "(none)" else None
+            latest_handshake = int(parts[5])
+            rx_bytes = int(parts[6])
+            tx_bytes = int(parts[7])
+        except (ValueError, IndexError):
+            continue
 
-            import time
-            now = int(time.time())
-            if latest_handshake == 0:
-                handshake_age = None
-                handshake_label = "Never"
-                status = "inactive"
+        if latest_handshake == 0:
+            handshake_age = None
+            handshake_label = "Never"
+            age_sec = None
+            age_human = "never"
+            status = "inactive"
+            health_status = "never"
+        else:
+            age = now - latest_handshake
+            handshake_age = age
+            age_sec = age
+            age_human = _format_duration(age)
+            if age < 180:
+                status = "active"
+                health_status = "recent"
+            elif age < 600:
+                status = "idle"
+                health_status = "stale"
             else:
-                age = now - latest_handshake
-                handshake_age = age
-                if age < 180:
-                    status = "active"
-                elif age < 600:
-                    status = "idle"
-                else:
-                    status = "stale"
-                # Human-readable age
-                if age < 60:
-                    handshake_label = f"{age}s ago"
-                elif age < 3600:
-                    handshake_label = f"{age // 60}m ago"
-                else:
-                    handshake_label = f"{age // 3600}h {(age % 3600) // 60}m ago"
+                status = "stale"
+                health_status = "idle"
+            # Human-readable age for legacy consumers
+            if age < 60:
+                handshake_label = f"{age}s ago"
+            elif age < 3600:
+                handshake_label = f"{age // 60}m ago"
+            else:
+                handshake_label = f"{age // 3600}h {(age % 3600) // 60}m ago"
 
-            def fmt_bytes(b):
-                if b < 1024:
-                    return f"{b} B"
-                elif b < 1024 * 1024:
-                    return f"{b / 1024:.1f} KB"
-                elif b < 1024 * 1024 * 1024:
-                    return f"{b / (1024*1024):.1f} MB"
-                else:
-                    return f"{b / (1024*1024*1024):.2f} GB"
-
-            peers.append({
-                "interface": iface,
-                "pubkey": pubkey,
-                "pubkey_short": pubkey[:8] + "…",
-                "endpoint": endpoint,
-                "allowed_ips": allowed_ips,
-                "latest_handshake": latest_handshake,
-                "handshake_age": handshake_age,
-                "handshake_label": handshake_label,
-                "status": status,
-                "rx_bytes": rx_bytes,
-                "rx_label": fmt_bytes(rx_bytes),
-                "tx_bytes": tx_bytes,
-                "tx_label": fmt_bytes(tx_bytes),
-            })
-    return jsonify({"peers": peers, "count": len(peers), "wg_available": rc == 0})
+        peers.append({
+            "interface": iface,
+            "pubkey": pubkey,
+            "pubkey_short": pubkey[:8] + "…",
+            "endpoint": endpoint,
+            # Array form (legacy fetchWgPeerHealth) and string form (new health card)
+            "allowed_ips": allowed_ips_list,
+            "allowed_ips_str": allowed_ips_str,
+            "latest_handshake": latest_handshake,
+            "handshake_age": handshake_age,
+            "handshake_label": handshake_label,
+            # New health fields (for fetchWgPeers card)
+            "last_handshake_age_sec": age_sec,
+            "last_handshake_age": age_human,
+            "status": health_status,
+            "rx_bytes": rx_bytes,
+            "rx_label": _fmt_bytes(rx_bytes),
+            "rx_human": _fmt_bytes(rx_bytes),
+            "tx_bytes": tx_bytes,
+            "tx_label": _fmt_bytes(tx_bytes),
+            "tx_human": _fmt_bytes(tx_bytes),
+        })
+    return jsonify({"peers": peers, "count": len(peers), "wg_available": True})
 
 
 # ── Network Interfaces Overview ───────────────────────────────────────────────
@@ -6691,6 +6716,36 @@ def _mac_vendor(mac):
     }
     prefix = mac.lower()[:8]
     return oui_map.get(prefix, None)
+
+
+# ── WireGuard Peer Health ─────────────────────────────────────────────────────
+
+def _format_duration(seconds):
+    """Return a human-readable duration string from seconds."""
+    if seconds < 60:
+        return f"{seconds}s"
+    elif seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60}s"
+    elif seconds < 86400:
+        h = seconds // 3600
+        m = (seconds % 3600) // 60
+        return f"{h}h {m}m"
+    else:
+        d = seconds // 86400
+        h = (seconds % 86400) // 3600
+        return f"{d}d {h}h"
+
+
+def _fmt_bytes(n):
+    """Return human-readable byte count."""
+    if n < 1024:
+        return f"{n} B"
+    elif n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    elif n < 1024 * 1024 * 1024:
+        return f"{n / 1024 / 1024:.1f} MB"
+    else:
+        return f"{n / 1024 / 1024 / 1024:.2f} GB"
 
 
 # ── Data Cap Tracker ──────────────────────────────────────────────────────────
