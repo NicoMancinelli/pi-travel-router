@@ -5431,6 +5431,61 @@ def api_network_ports():
     return jsonify({"ports": ports, "count": len(ports)})
 
 
+# ── Ping Connectivity Checker ─────────────────────────────────────────────────
+
+
+@app.route("/api/network/ping", methods=["GET"])
+@require_auth
+def api_network_ping():
+    """Run ping to a target host and return packet loss + RTT stats."""
+    import re as _re
+    host = request.args.get("host", "").strip()
+    if not host:
+        return jsonify({"error": "host parameter required"}), 400
+    if not _re.match(r'^[a-zA-Z0-9.\-:_]+$', host):
+        return jsonify({"error": "invalid host"}), 400
+    try:
+        count = max(1, min(10, int(request.args.get("count", 4))))
+    except (ValueError, TypeError):
+        count = 4
+    try:
+        out, rc = _run(["ping", "-c", str(count), "-W", "2", host], timeout=30)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    transmitted = received = 0
+    loss_percent = 100.0
+    rtt_min = rtt_avg = rtt_max = None
+
+    for line in (out or "").splitlines():
+        # e.g. "4 packets transmitted, 4 received, 0% packet loss"
+        m = _re.search(r'(\d+) packets transmitted,\s*(\d+) received,\s*([\d.]+)%', line)
+        if m:
+            transmitted = int(m.group(1))
+            received = int(m.group(2))
+            loss_percent = float(m.group(3))
+        # e.g. "rtt min/avg/max/mdev = 12.3/14.1/16.2/1.5 ms"
+        m = _re.search(r'rtt min/avg/max/mdev = ([\d.]+)/([\d.]+)/([\d.]+)/', line)
+        if m:
+            rtt_min = float(m.group(1))
+            rtt_avg = float(m.group(2))
+            rtt_max = float(m.group(3))
+
+    alive = received > 0
+    result = {
+        "host": host,
+        "count": count,
+        "transmitted": transmitted,
+        "received": received,
+        "loss_percent": loss_percent,
+        "rtt_min_ms": rtt_min,
+        "rtt_avg_ms": rtt_avg,
+        "rtt_max_ms": rtt_max,
+        "alive": alive,
+    }
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
