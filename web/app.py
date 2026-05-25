@@ -11328,6 +11328,51 @@ def api_system_failed_units():
         return jsonify({"error": str(exc), "units": [], "count": 0, "healthy": True})
 
 
+# ── CPU Frequency Scaling ─────────────────────────────────────────────────────
+
+@app.route("/api/system/cpu-freq", methods=["GET"])
+@require_auth
+def api_system_cpu_freq():
+    """Return CPU frequency scaling info from sysfs for all online CPUs."""
+    import glob as _glob
+    cores = []
+    cpu_dirs = sorted(_glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq"))
+    for cpu_dir in cpu_dirs:
+        core_id = int(Path(cpu_dir).parent.name.replace("cpu", ""))
+        def _read(fname):
+            try:
+                return Path(f"{cpu_dir}/{fname}").read_text().strip()
+            except OSError:
+                return None
+        cur_khz = _read("scaling_cur_freq") or _read("cpuinfo_cur_freq")
+        min_khz = _read("scaling_min_freq")
+        max_khz = _read("scaling_max_freq")
+        governor = _read("scaling_governor")
+        def _to_mhz(val):
+            try:
+                return int(val) / 1000.0
+            except (TypeError, ValueError):
+                return 0.0
+        cores.append({
+            "core": core_id,
+            "cur_mhz": _to_mhz(cur_khz),
+            "min_mhz": _to_mhz(min_khz),
+            "max_mhz": _to_mhz(max_khz),
+            "governor": governor or "",
+        })
+    if not cores:
+        return jsonify({"error": "cpufreq sysfs not available", "cores": [], "core_count": 0})
+    avg_mhz = sum(c["cur_mhz"] for c in cores) / len(cores)
+    governor = cores[0]["governor"] if cores else ""
+    return jsonify({
+        "cores": cores,
+        "avg_mhz": round(avg_mhz, 1),
+        "governor": governor,
+        "core_count": len(cores),
+        "source": "sysfs",
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
