@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.78.0] - 2026-05-25
+
+### Added
+- `GET /api/system/ntp` — NTP synchronization status via `timedatectl show` (full key=value dict) and `chronyc tracking` (8 fields) plus `chronyc sources`; `synchronized` bool, `ntp_service` name; dashboard card NTP / Time Sync (🕐) with sync badge, timedatectl tiles, chrony tracking table, and sources pre block
+- `GET /api/system/kernel-modules` — loaded kernel modules from `lsmod` sorted by size descending; includes kernel version from `uname -r`; dashboard card Kernel Modules (🧩) with scrollable table showing name, size, use count, and dependencies
+- `GET /api/system/usb` — USB devices from `lsusb` with speed enrichment from `/sys/bus/usb/devices/`; hubs sorted last; dashboard card USB Devices (🔌) with speed badges (LS/FS/HS/SS/SS+) and hub dimming
+- Dashboard cards: NTP / Time Sync (🕐), Kernel Modules (🧩), USB Devices (🔌)
+
 ## [2.77.0] - 2026-05-25
 
 ### Added
