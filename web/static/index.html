@@ -6801,60 +6801,24 @@ async function fetchProcTop() {
 
 // ── Entropy Pool ─────────────────────────────────────────────────────────────
 
-async function fetchEntropy() {
-  const el = document.getElementById('entropy-content');
-  if (!el) return;
-  try {
-    const r = await apiFetch('/api/system/entropy');
-    const d = await r.json();
-    if (d.error && d.available_bits === undefined) {
-      el.innerHTML = '<span style="color:var(--danger)">Error: ' + d.error + '</span>';
-      return;
+    async function fetchEntropy() {
+      const el = document.getElementById('entropy-content');
+      try {
+        const r = await fetch('/api/system/entropy');
+        const d = await r.json();
+        const fillBar = d.fill_pct !== undefined
+          ? `<div style="background:#333;border-radius:4px;height:8px;margin:4px 0 8px"><div style="background:${d.fill_pct > 50 ? '#4caf50' : '#f44336'};width:${d.fill_pct}%;height:100%;border-radius:4px"></div></div>`
+          : '';
+        const rows = [
+          `<tr><td>Entropy available</td><td>${d.entropy_avail ?? '?'} bits ${d.fill_pct !== undefined ? `(${d.fill_pct}%)` : ''}</td></tr>`,
+          `<tr><td>Pool size</td><td>${d.pool_size ?? '?'} bits</td></tr>`,
+          d.read_wakeup_threshold !== undefined ? `<tr><td>Read wakeup threshold</td><td>${d.read_wakeup_threshold}</td></tr>` : '',
+          `<tr><td>HW RNG devices</td><td>${d.hwrng_devices && d.hwrng_devices.length ? d.hwrng_devices.join(', ') : 'none'}</td></tr>`,
+          `<tr><td>RNG daemons</td><td>${d.rng_daemons && d.rng_daemons.length ? d.rng_daemons.length + ' running' : 'none'}</td></tr>`,
+        ].filter(Boolean).join('');
+        el.innerHTML = fillBar + `<table class="info-table"><tbody>${rows}</tbody></table>`;
+      } catch (e) { el.textContent = 'Error: ' + e; }
     }
-    const bits = d.available_bits ?? '—';
-    const pool = d.pool_size ?? '—';
-    const pct  = d.percent != null ? d.percent : null;
-    const source = d.source || 'unknown';
-    const getrandomOk = d.getrandom_ok;
-
-    // Progress bar colour
-    let barColor = 'var(--danger)';
-    if (pct !== null) {
-      if (pct >= 75) barColor = 'var(--success,#4caf50)';
-      else if (pct >= 40) barColor = 'var(--warning,#ff9800)';
-    }
-
-    // Source badge colour
-    const badgeBg = source === 'hardware_rng' ? 'var(--info,#2196f3)' : '#888';
-
-    // getrandom status
-    const grStatus = getrandomOk === true
-      ? '<span style="color:var(--success,#4caf50);">&#x2714; getrandom OK</span>'
-      : getrandomOk === false
-        ? '<span style="color:var(--danger);">&#x2718; getrandom blocked</span>'
-        : '<span style="color:var(--text-dim);">getrandom unknown</span>';
-
-    let html = '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">';
-    html += '<div style="font-size:2em;font-weight:700;line-height:1;">' + bits + '</div>';
-    html += '<div style="flex:1;min-width:120px;">';
-    if (pct !== null) {
-      html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:3px;">' + pct + '% full (' + bits + ' / ' + pool + ' bits)</div>';
-      html += '<div style="background:var(--border);border-radius:4px;height:10px;overflow:hidden;">';
-      html += '<div style="width:' + Math.min(pct, 100) + '%;background:' + barColor + ';height:100%;border-radius:4px;transition:width .4s;"></div>';
-      html += '</div>';
-    } else {
-      html += '<span style="color:var(--text-dim);">pool size unavailable</span>';
-    }
-    html += '</div>';
-    html += '<span style="background:' + badgeBg + ';color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;white-space:nowrap;">' + source + '</span>';
-    html += grStatus;
-    html += '</div>';
-
-    el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load entropy data</span>';
-  }
-}
 
 // ── USB Device Inventory ──────────────────────────────────────────────────────
 
