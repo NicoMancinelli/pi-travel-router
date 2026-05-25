@@ -1116,6 +1116,17 @@
 
   <hr class="divider">
 
+  <!-- System Temperatures -->
+  <div class="card full-width" id="card-system-temps">
+    <div class="card-title">
+      &#x1F321;&#xFE0F; Temperatures
+      <button class="btn btn-sm" onclick="fetchSystemTemps()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="system-temps-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <hr class="divider">
+
   <!-- Logs -->
   <div class="card full-width">
     <div class="card-title">
@@ -4136,6 +4147,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchEntropy();
   fetchUsbDevices();
   fetchProcTop();
+  fetchSystemTemps();
 });
 
 async function fetchJournal() {
@@ -4337,6 +4349,7 @@ async function refreshAll() {
   fetchCronJobsSystem();
   fetchEntropy();
   fetchProcTop();
+  fetchSystemTemps();
 }
 
 async function init() {
@@ -6756,6 +6769,62 @@ async function fetchUsbDevices() {
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load USB devices</span>';
+  }
+}
+
+// ── System Temperature Details ────────────────────────────────────────────────
+
+async function fetchSystemTemps() {
+  const el = document.getElementById('system-temps-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/temps');
+    const d = await r.json();
+    if (!r.ok) {
+      el.innerHTML = '<span style="color:var(--danger)">' + (d.error || 'Error') + '</span>';
+      return;
+    }
+
+    let html = '';
+
+    // Throttling warning banner
+    if (d.throttled) {
+      html += '<div style="background:var(--danger,#f85149);color:#fff;padding:6px 10px;border-radius:6px;margin-bottom:10px;font-weight:600;">&#x26A0;&#xFE0F; CPU Throttled — flags: ' + d.throttle_flags + '</div>';
+    }
+
+    if (!d.sensors || d.sensors.length === 0) {
+      html += '<span style="color:var(--text-dim)">No thermal sensors found</span>';
+    } else {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="color:var(--text-dim);font-size:11px;text-transform:uppercase;">';
+      html += '<th style="text-align:left;padding:4px 8px;">Sensor</th>';
+      html += '<th style="text-align:right;padding:4px 8px;">Temp</th>';
+      html += '<th style="text-align:right;padding:4px 8px;">Critical</th>';
+      html += '<th style="text-align:left;padding:4px 8px;">Status</th>';
+      html += '</tr></thead><tbody>';
+
+      for (const s of d.sensors) {
+        const statusColor = s.status === 'ok' ? '#3fb950' : (s.status === 'warm' ? '#d29922' : '#f85149');
+        const critStr = s.critical !== null ? s.critical + '°C' : '—';
+        html += '<tr style="border-top:1px solid var(--border,#30363d);">';
+        html += '<td style="padding:5px 8px;">' + s.label + '</td>';
+        html += '<td style="text-align:right;padding:5px 8px;color:' + statusColor + ';font-weight:600;">' + s.temp_c + '°C</td>';
+        html += '<td style="text-align:right;padding:5px 8px;color:var(--text-dim);">' + critStr + '</td>';
+        html += '<td style="padding:5px 8px;"><span style="color:' + statusColor + ';">' + s.status + '</span></td>';
+        html += '</tr>';
+      }
+
+      html += '</tbody></table>';
+
+      if (d.max_temp_c !== null) {
+        html += '<div style="margin-top:8px;font-size:12px;color:var(--text-dim);">Max: <strong style="color:var(--text);">' + d.max_temp_c + '°C</strong> &nbsp;|&nbsp; Throttle flags: <code>' + d.throttle_flags + '</code></div>';
+      }
+    }
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load temperatures</span>';
   }
 }
 

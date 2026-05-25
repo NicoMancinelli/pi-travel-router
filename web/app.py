@@ -7256,6 +7256,99 @@ def api_system_usb():
     return jsonify({"devices": devices, "count": len(devices)})
 
 
+# ── System Temperature Details ────────────────────────────────────────────────
+
+@app.route("/api/system/temps", methods=["GET"])
+@require_auth
+def api_system_temps():
+    """Return thermal zone temperatures, vcgencmd data, and throttle flags."""
+    import glob as _glob
+
+    sensors = []
+
+    # Read all thermal zones from sysfs
+    zone_temps = sorted(_glob.glob("/sys/class/thermal/thermal_zone*/temp"))
+    for temp_path in zone_temps:
+        zone_dir = temp_path.rsplit("/temp", 1)[0]
+        # Read temperature (millidegrees → degrees)
+        try:
+            temp_c = int(Path(temp_path).read_text().strip()) / 1000.0
+        except (OSError, ValueError):
+            continue
+
+        # Read zone type (friendly name)
+        try:
+            zone_type = Path(zone_dir + "/type").read_text().strip()
+        except OSError:
+            zone_type = zone_dir.split("/")[-1]
+
+        # Try to read critical trip point (trip_point_0_temp)
+        critical_c = None
+        try:
+            crit_raw = int(Path(zone_dir + "/trip_point_0_temp").read_text().strip())
+            critical_c = crit_raw / 1000.0
+        except (OSError, ValueError):
+            pass
+
+        # Classify status
+        if temp_c < 70.0:
+            status = "ok"
+        elif temp_c <= 80.0:
+            status = "warm"
+        else:
+            status = "hot"
+
+        sensors.append({
+            "name": zone_type,
+            "label": zone_type.replace("_", " ").replace("-", " ").title(),
+            "temp_c": round(temp_c, 1),
+            "critical": round(critical_c, 1) if critical_c is not None else None,
+            "status": status,
+        })
+
+    # vcgencmd measure_temp (Pi-specific)
+    vcg_temp = None
+    out, rc = _run(["vcgencmd", "measure_temp"])
+    if rc == 0:
+        import re as _re
+        m = _re.search(r"temp=([\d.]+)", out)
+        if m:
+            vcg_temp = float(m.group(1))
+            # Add as a sensor if not already represented
+            if not any(s["name"] == "gpu_thermal" for s in sensors):
+                t = vcg_temp
+                status = "ok" if t < 70.0 else ("warm" if t <= 80.0 else "hot")
+                sensors.append({
+                    "name": "gpu_thermal",
+                    "label": "GPU",
+                    "temp_c": round(t, 1),
+                    "critical": None,
+                    "status": status,
+                })
+
+    # vcgencmd get_throttled
+    throttled = False
+    throttle_flags = "0x0"
+    out2, rc2 = _run(["vcgencmd", "get_throttled"])
+    if rc2 == 0:
+        import re as _re2
+        m2 = _re2.search(r"throttled=(0x[0-9a-fA-F]+)", out2)
+        if m2:
+            throttle_flags = m2.group(1)
+            throttled = int(throttle_flags, 16) != 0
+
+    max_temp = None
+    if sensors:
+        max_temp = max(s["temp_c"] for s in sensors)
+
+    return jsonify({
+        "sensors": sensors,
+        "max_temp_c": max_temp,
+        "throttled": throttled,
+        "throttle_flags": throttle_flags,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
