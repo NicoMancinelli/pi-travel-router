@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.66.0] - 2026-05-25
+
+### Added
+- `GET /api/system/usb-devices` — connected USB devices via `lsusb`; parses bus, device number, USB ID, and description; dashboard card shows device count and table
+- `GET /api/system/ntp-status` — NTP sync state via `timedatectl show` and `timedatectl timesync-status`; returns sync status, timezone, NTP server, offset, delay, and jitter in ms; dashboard card color-codes sync state
+- `GET /api/system/cpu-freq` — per-core CPU frequency scaling from sysfs `/sys/devices/system/cpu/cpu*/cpufreq/`; returns current/min/max MHz and governor per core; dashboard card shows avg frequency, governor, and per-core table
+- Dashboard cards: USB Devices (🔌), NTP Status (🕐), CPU Frequency (⚡)
+
 ## [2.65.0] - 2026-05-25
 
 ### Added
