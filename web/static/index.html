@@ -931,6 +931,15 @@
     <div id="ping-result" style="font-size:13px;color:var(--text-dim);">Select a target above to run a ping check.</div>
   </div>
 
+  <!-- Network Interfaces -->
+  <div class="card full-width" id="card-net-interfaces">
+    <div class="card-title">
+      &#x1F5A7; Network Interfaces (<span id="net-ifaces-count">0</span>)
+      <button class="btn btn-sm" onclick="fetchNetInterfaces()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="net-interfaces-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3874,6 +3883,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSystemResources();
   fetchListeningPorts();
   fetchStorage();
+  fetchNetInterfaces();
 });
 
 async function fetchJournal() {
@@ -5364,6 +5374,52 @@ async function runPing(host) {
       loss + ', ' + rtt;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger);">Request failed: ' + e.message + '</span>';
+  }
+}
+
+// ── Network Interfaces Overview ───────────────────────────────────────────────
+
+async function fetchNetInterfaces() {
+  const el = document.getElementById('net-interfaces-content');
+  const countEl = document.getElementById('net-ifaces-count');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/interfaces');
+    const data = await resp.json();
+    countEl.textContent = data.count || 0;
+    if (!data.interfaces || data.interfaces.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No interfaces found.</span>';
+      return;
+    }
+    function stateBadge(state) {
+      const color = state === 'up' ? '#22c55e' : state === 'down' ? '#ef4444' : '#6b7280';
+      return `<span style="display:inline-block;background:${color};color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;">${state}</span>`;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Interface</th>';
+    html += '<th style="padding:5px 8px;">State</th>';
+    html += '<th style="padding:5px 8px;">MAC</th>';
+    html += '<th style="padding:5px 8px;">Addresses</th>';
+    html += '<th style="padding:5px 8px;">RX / TX</th>';
+    html += '</tr></thead><tbody>';
+    for (const iface of data.interfaces) {
+      const addrsHtml = iface.addresses.length > 0
+        ? iface.addresses.map(a => `<span style="font-family:monospace;font-size:11px;">${escHtml(a.address)}</span>`).join('<br>')
+        : '<span style="color:var(--text-dim)">—</span>';
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:600;">${escHtml(iface.name)}</td>`;
+      html += `<td style="padding:5px 8px;">${stateBadge(iface.operstate)}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${iface.mac ? escHtml(iface.mac) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
+      html += `<td style="padding:5px 8px;">${addrsHtml}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(iface.rx_label)} / ${escHtml(iface.tx_label)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load interfaces</span>';
   }
 }
 
