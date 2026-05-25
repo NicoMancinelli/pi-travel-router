@@ -5809,6 +5809,43 @@ def api_network_interfaces():
     return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
+# ── System Services Status ────────────────────────────────────────────────────
+
+TRAVEL_ROUTER_SERVICES = [
+    "wg-quick@wg0",
+    "hostapd",
+    "dnsmasq",
+    "adguardhome",
+    "tailscaled",
+    "travel-router-web",
+    "wan-watchdog",
+    "failover-watchdog",
+    "wireguard-watchdog",
+    "vnstat",
+    "ntpd",
+    "ssh",
+]
+
+@app.route("/api/system/services", methods=["GET"])
+@require_auth
+def api_system_services():
+    """Return status of key travel-router systemd services."""
+    services = []
+    for svc in TRAVEL_ROUTER_SERVICES:
+        out, rc = _run(["systemctl", "is-active", svc])
+        active_state = out.strip() if out.strip() else "unknown"
+        # is-active returns: active, inactive, activating, deactivating, failed, unknown
+        enabled_out, enabled_rc = _run(["systemctl", "is-enabled", svc])
+        enabled_state = enabled_out.strip() if enabled_out.strip() else "unknown"
+        services.append({
+            "name": svc,
+            "active": active_state,
+            "enabled": enabled_state,
+            "running": active_state == "active",
+        })
+    return jsonify({"services": services, "count": len(services)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
