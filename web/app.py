@@ -6008,39 +6008,47 @@ def api_dns_adguard_stats():
 
 # ── System Services Status ────────────────────────────────────────────────────
 
-TRAVEL_ROUTER_SERVICES = [
-    "wg-quick@wg0",
-    "hostapd",
-    "dnsmasq",
-    "adguardhome",
-    "tailscaled",
-    "travel-router-web",
-    "wan-watchdog",
-    "failover-watchdog",
-    "wireguard-watchdog",
-    "vnstat",
-    "ntpd",
-    "ssh",
-]
-
 @app.route("/api/system/services", methods=["GET"])
 @require_auth
 def api_system_services():
-    """Return status of key travel-router systemd services."""
+    """Return all systemd service units with load/active/sub state and description."""
+    out, rc = _run(
+        "systemctl list-units --type=service --no-pager --no-legend --all",
+        timeout=10,
+    )
     services = []
-    for svc in TRAVEL_ROUTER_SERVICES:
-        out, rc = _run(["systemctl", "is-active", svc])
-        active_state = out.strip() if out.strip() else "unknown"
-        # is-active returns: active, inactive, activating, deactivating, failed, unknown
-        enabled_out, enabled_rc = _run(["systemctl", "is-enabled", svc])
-        enabled_state = enabled_out.strip() if enabled_out.strip() else "unknown"
-        services.append({
-            "name": svc,
-            "active": active_state,
-            "enabled": enabled_state,
-            "running": active_state == "active",
-        })
-    return jsonify({"services": services, "count": len(services)})
+    if rc == 0 and out:
+        for line in out.splitlines():
+            # Strip leading whitespace and bullet characters systemctl may emit
+            line = line.strip()
+            if not line:
+                continue
+            # Remove non-ASCII bullet prefix (e.g. ● or similar)
+            if line and not line[0].isascii():
+                line = line.lstrip()
+                # drop the first non-ASCII char
+                line = line[1:].lstrip()
+            parts = line.split(None, 4)
+            if len(parts) < 4:
+                continue
+            name, load, active, sub = parts[0], parts[1], parts[2], parts[3]
+            description = parts[4] if len(parts) >= 5 else ""
+            services.append({
+                "name": name,
+                "load": load,
+                "active": active,
+                "sub": sub,
+                "description": description,
+            })
+    total = len(services)
+    active_count = sum(1 for s in services if s["active"] == "active")
+    failed_count = sum(1 for s in services if s["active"] == "failed")
+    return jsonify({
+        "services": services,
+        "total": total,
+        "active": active_count,
+        "failed": failed_count,
+    })
 
 
 # ── Tailscale Status ──────────────────────────────────────────────────────────
@@ -9946,6 +9954,62 @@ def api_system_kernel_messages():
         return jsonify({"messages": messages, "count": len(messages)})
 
     return jsonify({"messages": [], "count": 0, "error": "dmesg unavailable"})
+
+
+# ── Network Interfaces ─────────────────────────────────────────────────────────
+
+@app.route("/api/network/interfaces")
+@require_auth
+def api_network_interfaces():
+    def _parse_text(output):
+        interfaces = []
+        current = None
+        _iface_re = re.compile(r"^\d+:\s+(\S+?)(?:@\S+)?:\s+<([^>]*)>\s+mtu\s+(\d+)")
+        _link_re = re.compile(r"^\s+link/\S+\s+([0-9a-fA-F:]{17})")
+        _addr_re = re.compile(r"^\s+(inet6?)\s+([0-9a-fA-F:.]+)/(\d+)")
+        for line in output.splitlines():
+            m = _iface_re.match(line)
+            if m:
+                if current is not None:
+                    interfaces.append(current)
+                flags = [f.strip() for f in m.group(2).split(",") if f.strip()]
+                current = {"name": m.group(1), "flags": flags, "mtu": int(m.group(3)),
+                           "mac": None, "addresses": []}
+                continue
+            if current is None:
+                continue
+            m = _link_re.match(line)
+            if m:
+                current["mac"] = m.group(1)
+                continue
+            m = _addr_re.match(line)
+            if m:
+                current["addresses"].append(
+                    {"family": m.group(1), "addr": m.group(2), "prefix_len": int(m.group(3))})
+        if current is not None:
+            interfaces.append(current)
+        return interfaces
+
+    def _from_json(data):
+        interfaces = []
+        for iface in data:
+            addresses = [{"family": ai.get("family", ""), "addr": ai.get("local", ""),
+                          "prefix_len": ai.get("prefixlen", 0)}
+                         for ai in (iface.get("addr_info") or [])]
+            interfaces.append({"name": iface.get("ifname", ""), "flags": iface.get("flags") or [],
+                                "mtu": iface.get("mtu", 0), "mac": iface.get("address"),
+                                "addresses": addresses})
+        return interfaces
+
+    out, rc = _run(["ip", "-j", "addr", "show"])
+    if rc == 0:
+        try:
+            return jsonify({"interfaces": _from_json(json.loads(out)), "count": len(json.loads(out))})
+        except (ValueError, KeyError):
+            pass
+    out, rc = _run(["ip", "addr", "show"])
+    interfaces = _parse_text(out) if rc == 0 else []
+    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

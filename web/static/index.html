@@ -1408,6 +1408,12 @@
     <div id="kernel-messages-content"><em>Loading…</em></div>
   </div>
 
+  <!-- Network Interfaces -->
+  <div class="card" id="card-network-interfaces">
+    <h2>🌐 Network Interfaces</h2>
+    <div id="network-interfaces-content"><em>Loading…</em></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -6132,38 +6138,39 @@ async function fetchSystemServices() {
       el.innerHTML = '<span style="color:var(--text-dim)">No services found.</span>';
       return;
     }
-    function activeBadge(state) {
-      const colors = {
-        active: '#22c55e',
-        inactive: '#6b7280',
-        failed: '#ef4444',
-        activating: '#f97316',
-        deactivating: '#f97316',
-      };
-      const color = colors[state] || '#6b7280';
-      return `<span style="display:inline-block;background:${color};color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;">${escHtml(state)}</span>`;
+    // Summary counts
+    const failedColor = data.failed > 0 ? '#ef4444' : 'var(--text-dim)';
+    let html = `<div style="display:flex;gap:18px;margin-bottom:10px;font-size:13px;">`;
+    html += `<span>Total: <strong>${data.total}</strong></span>`;
+    html += `<span style="color:#22c55e;">Active: <strong>${data.active}</strong></span>`;
+    html += `<span style="color:${failedColor};">Failed: <strong>${data.failed}</strong></span>`;
+    html += `</div>`;
+    // Scrollable table — first 30 services
+    const shown = data.services.slice(0, 30);
+    html += '<div style="overflow-x:auto;max-height:420px;overflow-y:auto;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border);text-align:left;">';
+    html += '<th style="padding:4px 8px;">Service</th>';
+    html += '<th style="padding:4px 8px;">Load</th>';
+    html += '<th style="padding:4px 8px;">Active</th>';
+    html += '<th style="padding:4px 8px;">Sub</th>';
+    html += '<th style="padding:4px 8px;">Description</th>';
+    html += '</tr></thead><tbody>';
+    for (const svc of shown) {
+      const isFailed = svc.active === 'failed';
+      const rowStyle = isFailed ? 'color:#ef4444;' : '';
+      html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">`;
+      html += `<td style="padding:3px 8px;font-family:monospace;">${escHtml(svc.name)}</td>`;
+      html += `<td style="padding:3px 8px;">${escHtml(svc.load)}</td>`;
+      html += `<td style="padding:3px 8px;">${escHtml(svc.active)}</td>`;
+      html += `<td style="padding:3px 8px;">${escHtml(svc.sub)}</td>`;
+      html += `<td style="padding:3px 8px;color:var(--text-dim);">${escHtml(svc.description)}</td>`;
+      html += '</tr>';
     }
-    function enabledBadge(state) {
-      if (state === 'enabled') return '<span style="color:#22c55e;font-size:11px;">enabled</span>';
-      if (state === 'disabled') return '<span style="color:#6b7280;font-size:11px;">disabled</span>';
-      if (state === 'static') return '<span style="color:#6366f1;font-size:11px;">static</span>';
-      return `<span style="color:var(--text-dim);font-size:11px;">${escHtml(state)}</span>`;
+    html += '</tbody></table></div>';
+    if (data.total > 30) {
+      html += `<div style="margin-top:6px;font-size:11px;color:var(--text-dim);">Showing 30 of ${data.total} services.</div>`;
     }
-    // Two-column grid layout
-    const mid = Math.ceil(data.services.length / 2);
-    const cols = [data.services.slice(0, mid), data.services.slice(mid)];
-    let html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">';
-    for (const col of cols) {
-      html += '<div>';
-      for (const svc of col) {
-        html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);">`;
-        html += `<span style="font-family:monospace;font-size:12px;">${escHtml(svc.name)}</span>`;
-        html += `<span style="display:flex;gap:6px;align-items:center;">${enabledBadge(svc.enabled)} ${activeBadge(svc.active)}</span>`;
-        html += `</div>`;
-      }
-      html += '</div>';
-    }
-    html += '</div>';
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">Failed to load services</span>';
