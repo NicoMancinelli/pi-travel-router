@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.0] - 2026-05-24
+
+### Added
+
+- **DNS lookup tool** (`web/app.py`, `web/static/index.html`): `GET /api/dns/lookup?host=X&type=A` runs `dig +short` with fallback to `nslookup`, returns records list. Dashboard card with hostname input, record type selector (A/AAAA/MX/TXT/CNAME/NS/PTR), and inline results display.
+- **IP route table viewer** (`web/app.py`, `web/static/index.html`): `GET /api/network/routes` parses `ip route show` into dest/via/dev/metric/src fields, highlights default route in bold. Dashboard card with refresh button and full routing table.
+- **ARP / neighbour table** (`web/app.py`, `web/static/index.html`): `GET /api/network/arp` parses `ip neigh show` into ip/mac/dev/state objects. Dashboard card with color-coded state column (green=REACHABLE, red=FAILED/INCOMPLETE).
+
 ## [2.21.0] - 2026-05-24
 
 ### Added
