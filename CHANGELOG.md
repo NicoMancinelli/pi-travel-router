@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.45.0] - 2026-05-25
+
+### Added
+
+- **Disk I/O stats card** (`web/app.py`, `web/static/index.html`): `GET /api/system/disk-io` reads `/proc/diskstats`, skips loop/ram devices, converts sectors to bytes (×512). Returns per-device reads_completed/read_bytes/writes_completed/written_bytes/time_reading_ms/time_writing_ms. Dashboard card with Device/Reads/Read Bytes/Writes/Written Bytes table, human-readable byte sizes. Auto-refreshes on poll.
+- **Logged-in users card** (`web/app.py`, `web/static/index.html`): `GET /api/system/logged-in-users` parses `who -u` output extracting username/tty/login_time/idle/pid/from fields. Dashboard card with User/TTY/Login Time/Idle/From table, green dot for active sessions (idle="."), "Local" for console sessions. Auto-refreshes on poll.
+- **Kernel modules card** (`web/app.py`, `web/static/index.html`): `GET /api/system/kernel-modules` reads `/proc/modules`, parses name/size/used/depends, returns top 50 by size with total count. Dashboard card with Module/Size/Used/Depends table, KB/MB size formatting, depends as comma-separated tags. On-demand refresh.
+
 ## [2.44.0] - 2026-05-25
 
 ### Added
