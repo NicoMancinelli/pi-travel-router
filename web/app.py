@@ -7487,7 +7487,6 @@ def api_system_meminfo():
     return jsonify(result)
 
 
-
 # ── NTP / Time Sync Status ────────────────────────────────────────────────────
 
 @app.route("/api/system/ntp", methods=["GET"])
@@ -7568,6 +7567,94 @@ def api_system_ntp():
         result["service"] = "systemd-timesyncd"
 
     return jsonify(result)
+
+
+# ── Open File Descriptors ─────────────────────────────────────────────────────
+
+@app.route("/api/system/openfiles", methods=["GET"])
+@require_auth
+def api_system_openfiles():
+    """Return open file descriptor stats from /proc/sys/fs/file-nr and top procs."""
+    result = {
+        "allocated": 0,
+        "free": 0,
+        "max": 0,
+        "pct_used": 0.0,
+        "top_procs": [],
+    }
+    # System-wide fd counts from /proc/sys/fs/file-nr
+    # Format: allocated  free  max
+    try:
+        line = open("/proc/sys/fs/file-nr").read().strip()
+        parts = line.split()
+        if len(parts) >= 3:
+            result["allocated"] = int(parts[0])
+            result["free"]      = int(parts[1])
+            result["max"]       = int(parts[2])
+            if result["max"] > 0:
+                result["pct_used"] = round(result["allocated"] / result["max"] * 100, 1)
+    except (OSError, ValueError):
+        pass
+
+    # Per-process fd counts — top 10 by open fd count
+    import os as _os
+    proc_fds = []
+    try:
+        for pid_str in _os.listdir("/proc"):
+            if not pid_str.isdigit():
+                continue
+            fd_dir = f"/proc/{pid_str}/fd"
+            try:
+                fd_count = len(_os.listdir(fd_dir))
+            except OSError:
+                continue
+            try:
+                comm = open(f"/proc/{pid_str}/comm").read().strip()
+            except OSError:
+                comm = pid_str
+            proc_fds.append({"pid": int(pid_str), "comm": comm, "fds": fd_count})
+    except OSError:
+        pass
+
+    proc_fds.sort(key=lambda x: x["fds"], reverse=True)
+    result["top_procs"] = proc_fds[:10]
+    return jsonify(result)
+
+
+# ── CPU Frequency ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/cpufreq", methods=["GET"])
+@require_auth
+def api_system_cpufreq():
+    """Return CPU frequency scaling info from sysfs for all online CPUs."""
+    import glob as _glob
+    cpus = []
+    cpu_dirs = sorted(_glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq"))
+    for cpu_dir in cpu_dirs:
+        cpu_id = cpu_dir.split("/")[-2]  # e.g. "cpu0"
+        info = {"cpu": cpu_id}
+        for key, filename in (
+            ("cur_khz",      "scaling_cur_freq"),
+            ("min_khz",      "scaling_min_freq"),
+            ("max_khz",      "scaling_max_freq"),
+            ("governor",     "scaling_governor"),
+            ("driver",       "scaling_driver"),
+            ("avail_govs",   "scaling_available_governors"),
+        ):
+            try:
+                val = open(f"{cpu_dir}/{filename}").read().strip()
+                if key.endswith("_khz"):
+                    try:
+                        val = int(val)
+                    except ValueError:
+                        pass
+                info[key] = val
+            except OSError:
+                info[key] = None
+        cpus.append(info)
+    if not cpus:
+        return jsonify({"error": "cpufreq sysfs not available", "cpus": []})
+    return jsonify({"cpus": cpus, "count": len(cpus)})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
