@@ -1059,12 +1059,9 @@
   <hr class="divider">
 
   <!-- Active Connections -->
-  <div class="card full-width" id="card-connections">
-    <div class="card-title">
-      &#x1F310; Active Connections
-      <button class="btn btn-sm" onclick="fetchConnections()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="connections-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  <div class="card" id="card-active-connections">
+    <h2>🔗 Active Connections</h2>
+    <div id="active-connections-content"><em>Loading…</em></div>
   </div>
 
   <!-- Entropy / RNG -->
@@ -4435,6 +4432,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDnsConfig();
   fetchIpRules();
   fetchLogSummaryJournal();
+  fetchActiveConnections();
 });
 
 async function fetchJournal() {
@@ -4681,6 +4679,7 @@ async function refreshAll() {
   fetchDnsConfig();
   fetchIpRules();
   fetchLogSummaryJournal();
+  fetchActiveConnections();
 }
 
 async function init() {
@@ -6752,52 +6751,35 @@ async function fetchCronJobsSystem() {
 
 // ── Active Connections ────────────────────────────────────────────────────────
 
-async function fetchConnections() {
-  const el = document.getElementById('connections-content');
+async function fetchActiveConnections() {
+  const el = document.getElementById('active-connections-content');
   if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  el.innerHTML = '<em>Loading…</em>';
   try {
-    const resp = await apiFetch('/api/network/connections');
+    const resp = await apiFetch('/api/network/active-connections');
     const d = await resp.json();
-    if (d.error) {
-      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
-      return;
-    }
     if (!d.connections || d.connections.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No active connections.</span>';
+      el.innerHTML = '<em>No active connections.</em>';
       return;
     }
-    const stateColors = {
-      'ESTABLISHED': '#22c55e',
-      'LISTEN': '#60a5fa',
-      'SYN-SENT': '#f97316',
-      'SYN-RECV': '#f97316',
-      'UNCONN': '#6b7280',
-      '—': '#6b7280',
-    };
-    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} connection${d.count !== 1 ? 's' : ''}</div>`;
+    let html = `<div style="margin-bottom:6px;font-size:12px;color:var(--text-dim);">Total: ${d.total}</div>`;
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
     html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
-    html += '<th style="padding:4px 8px;">Proto</th>';
-    html += '<th style="padding:4px 8px;">State</th>';
     html += '<th style="padding:4px 8px;">Local</th>';
-    html += '<th style="padding:4px 8px;">Peer</th>';
+    html += '<th style="padding:4px 8px;">Remote</th>';
     html += '<th style="padding:4px 8px;">Process</th>';
     html += '</tr></thead><tbody>';
     for (const c of d.connections) {
-      const color = stateColors[c.state] || '#6b7280';
-      html += `<tr style="border-bottom:1px solid var(--border);">`;
-      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;text-transform:uppercase;">${escHtml(c.proto)}</td>`;
-      html += `<td style="padding:4px 8px;font-size:11px;font-weight:600;color:${color};">${escHtml(c.state)}</td>`;
+      html += '<tr style="border-bottom:1px solid var(--border);">';
       html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${escHtml(c.local)}</td>`;
-      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${c.peer !== '*' ? escHtml(c.peer) : '—'}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${escHtml(c.remote)}</td>`;
       html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${c.process ? escHtml(c.process) : '—'}</td>`;
       html += '</tr>';
     }
     html += '</tbody></table>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load connections</span>';
+    el.innerHTML = '<em style="color:var(--danger)">Failed to load connections</em>';
   }
 }
 

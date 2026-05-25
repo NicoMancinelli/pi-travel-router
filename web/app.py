@@ -4019,63 +4019,30 @@ def api_network_routes():
     return jsonify({"routes": routes, "count": len(routes)})
 
 
-# ── Active Connections ────────────────────────────────────────────────────────
-
-@app.route("/api/network/connections", methods=["GET"])
+@app.route("/api/network/active-connections")
 @require_auth
-def api_network_connections():
-    """Return active TCP/UDP connections from ss."""
-    import re
-
+def api_network_active_connections():
+    out, rc = _run(["ss", "-tnup", "state", "established"])
     connections = []
-
-    # ss -tunatp: TCP+UDP, numeric, all states, with process info
-    out, rc = _run(["ss", "-tunatp"])
-    if rc != 0:
-        return jsonify({"error": "ss not available", "connections": []})
-
-    for line in out.splitlines()[1:]:  # skip header
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split()
-        if len(parts) < 5:
-            continue
-
-        proto = parts[0]
-        state = parts[1] if proto == "tcp" or proto.startswith("tcp") else "—"
-        local = parts[4] if len(parts) > 4 else ""
-        peer = parts[5] if len(parts) > 5 else ""
-        process = parts[6] if len(parts) > 6 else ""
-
-        # Skip LISTEN on loopback and TIME-WAIT/CLOSE-WAIT clutter
-        if state in ("TIME-WAIT", "CLOSE-WAIT"):
-            continue
-
-        # Extract process name from ss output like users:(("sshd",pid=1234,fd=3))
-        proc_name = None
-        m = re.search(r'users:\(\("([^"]+)"', process)
-        if m:
-            proc_name = m.group(1)
-
-        # Skip pure loopback connections (both sides 127.x or ::1)
-        if (local.startswith("127.") or local.startswith("[::1]")) and \
-           (peer.startswith("127.") or peer.startswith("[::1]") or peer == "*"):
-            continue
-
-        connections.append({
-            "proto": proto,
-            "state": state,
-            "local": local,
-            "peer": peer,
-            "process": proc_name,
-        })
-
-    # Sort: ESTABLISHED first, then by proto
-    state_order = {"ESTABLISHED": 0, "LISTEN": 1, "SYN-SENT": 2, "SYN-RECV": 3}
-    connections.sort(key=lambda c: (state_order.get(c["state"], 9), c["proto"], c["local"]))
-
-    return jsonify({"connections": connections, "count": len(connections)})
+    if rc == 0:
+        for line in out.splitlines()[1:]:  # skip header
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            conn = {
+                "proto": parts[0],
+                "local": parts[3],
+                "remote": parts[4],
+                "process": None,
+            }
+            # extract process name from users:(("name",pid=N,fd=N))
+            for p in parts[5:]:
+                if p.startswith("users:"):
+                    m = re.search(r'"([^"]+)"', p)
+                    if m:
+                        conn["process"] = m.group(1)
+            connections.append(conn)
+    return jsonify({"connections": connections, "total": len(connections)})
 
 
 @app.route("/api/privacy/profile", methods=["GET"])
