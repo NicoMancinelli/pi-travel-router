@@ -4926,6 +4926,32 @@ def api_system_logins():
     return jsonify({"logins": logins[:limit], "failed": failed[:10]})
 
 
+# ── DNS lookup tool ───────────────────────────────────────────────────────────
+
+@app.route("/api/dns/lookup", methods=["GET"])
+@require_auth
+def api_dns_lookup():
+    """Run a DNS lookup for a hostname."""
+    host = request.args.get("host", "").strip()
+    record_type = request.args.get("type", "A").strip().upper()
+    if not host:
+        return jsonify({"error": "host parameter required"}), 400
+    valid_types = {"A", "AAAA", "MX", "TXT", "CNAME", "NS", "PTR", "SOA"}
+    if record_type not in valid_types:
+        record_type = "A"
+    try:
+        out, rc = _run(["dig", "+short", f"-t{record_type}", host], timeout=10)
+        if rc != 0 or not out.strip():
+            # Fall back to nslookup
+            out2, rc2 = _run(["nslookup", "-type=" + record_type, host], timeout=10)
+            records = [l.strip() for l in (out2 or "").splitlines() if l.strip() and not l.startswith(("Server:", "Address:", "Non-authoritative"))]
+        else:
+            records = [l.strip() for l in (out or "").splitlines() if l.strip()]
+        return jsonify({"host": host, "type": record_type, "records": records, "rc": rc})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Route table viewer ────────────────────────────────────────────────────────
 
 @app.route("/api/network/routes", methods=["GET"])
