@@ -1426,6 +1426,17 @@
     <div id="latency-body" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Firewall Rules Summary -->
+  <div class="card" id="card-firewall">
+    <div class="card-header">
+      <span>🛡️ Firewall Rules</span>
+      <span class="card-badge" id="firewall-rules-count">—</span>
+    </div>
+    <div class="card-body" id="firewall-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5524,6 +5535,7 @@ async function refreshAll() {
   fetchGeoIp();
   fetchTemperature();
   fetchLatency();
+  fetchFirewall();
 }
 
 async function init() {
@@ -7381,6 +7393,65 @@ async function fetchLatency() {
     html += '</tbody></table>';
     body.innerHTML = html;
   } catch(e) { body.innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Firewall Rules Summary ────────────────────────────────────────────────────
+
+async function fetchFirewall() {
+  const badge = document.getElementById('firewall-rules-count');
+  const body = document.getElementById('firewall-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/network/firewall');
+    const data = await resp.json();
+    if (badge) badge.textContent = data.total_rules ?? '—';
+
+    if (!data.chains || data.chains.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim)">No chains found.</span>';
+      return;
+    }
+
+    function policyBadge(policy) {
+      if (policy === 'DROP' || policy === 'REJECT') {
+        return `<span style="display:inline-block;background:#ef4444;color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;">${escHtml(policy)}</span>`;
+      } else if (policy === 'ACCEPT') {
+        return `<span style="display:inline-block;background:#22c55e;color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;">${escHtml(policy)}</span>`;
+      }
+      return `<span style="display:inline-block;background:#6b7280;color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:600;">${escHtml(policy)}</span>`;
+    }
+
+    function fmtBytes(b) {
+      if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+      if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+      return b + ' B';
+    }
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="color:var(--text-dim);border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:4px 6px;">Chain</th>';
+    html += '<th style="text-align:left;padding:4px 6px;">Policy</th>';
+    html += '<th style="text-align:right;padding:4px 6px;">Rules</th>';
+    html += '<th style="text-align:right;padding:4px 6px;">Packets</th>';
+    html += '<th style="text-align:right;padding:4px 6px;">Bytes</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const c of data.chains) {
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:4px 6px;font-weight:600;">${escHtml(c.name)}</td>`;
+      html += `<td style="padding:4px 6px;">${policyBadge(c.policy)}</td>`;
+      html += `<td style="padding:4px 6px;text-align:right;">${c.rules}</td>`;
+      html += `<td style="padding:4px 6px;text-align:right;">${c.packets.toLocaleString()}</td>`;
+      html += `<td style="padding:4px 6px;text-align:right;">${fmtBytes(c.bytes)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (data.ipv6_available) {
+      html += '<p style="margin:6px 0 0;font-size:11px;color:var(--text-dim);">IPv6 (ip6tables) available.</p>';
+    }
+    body.innerHTML = html;
+  } catch(e) { body.innerHTML = `<p class="error">${escHtml(String(e))}</p>`; }
 }
 
 // ── Tailscale Status ──────────────────────────────────────────────────────────
