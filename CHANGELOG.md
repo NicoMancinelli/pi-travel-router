@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.59.0] - 2026-05-25
+
+### Added
+- `GET /api/system/oom-events` — parses `journalctl -k` (fallback `dmesg -T`) for OOM kill events with timestamp, process name, PID, and RSS; dashboard card shows green "no events" or red alert with kill table
+- `GET /api/system/hardware-sensors` — Pi firmware readings via `vcgencmd`: throttle bitmask (decoded flags), core/SDRAM voltages, 12 clock speeds, GPU temperature; sysfs thermal zones as fallback; gracefully no-ops on non-Pi hardware
+- `GET /api/network/firewall-rules` — active rules from `nft list ruleset` (falls back to `iptables -t {filter,nat,mangle}`); groups by table/chain; dashboard card shows per-chain rule listing
+- Dashboard cards: OOM Kill Events (💥), Hardware Sensors (🔍), Firewall Rules (🛡️)
+
 ## [2.58.0] - 2026-05-25
 
 ### Added
