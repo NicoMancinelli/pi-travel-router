@@ -1260,6 +1260,26 @@
     </div>
   </div>
 
+  <!-- Swap Stats -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">&#x1F4BE; Swap &amp; Virtual Memory</span>
+    </div>
+    <div class="card-body" id="swap-stats-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
+  <!-- Firewall Rules -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🛡️ Firewall Rules</span>
+    </div>
+    <div class="card-body" id="firewall-content">
+      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4821,6 +4841,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRouteTable();
   fetchJournalErrors();
   fetchSwapInfo();
+  fetchSwapStats();
   fetchWifiScan();
   fetchNetdev();
   fetchTcpConnections();
@@ -5091,6 +5112,7 @@ async function refreshAll() {
   fetchRouteTable();
   fetchJournalErrors();
   fetchSwapInfo();
+  fetchSwapStats();
   fetchNetdev();
   fetchTcpConnections();
   fetchProcMem();
@@ -8519,6 +8541,83 @@ async function fetchSwapInfo() {
   return fetchSwap();
 }
 
+// ── Swap & Virtual Memory ─────────────────────────────────────────────────────
+async function fetchSwapStats() {
+  const el = document.getElementById('swap-stats-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/swap');
+    const d = await r.json();
+    const fmtKb = kb => kb >= 1024*1024 ? (kb/1024/1024).toFixed(1)+' GB' : kb >= 1024 ? (kb/1024).toFixed(0)+' MB' : kb+' kB';
+    const fmtBytes = b => b >= 1073741824 ? (b/1073741824).toFixed(1)+' GB' : b >= 1048576 ? (b/1048576).toFixed(1)+' MB' : b >= 1024 ? (b/1024).toFixed(0)+' kB' : b+' B';
+    let html = '';
+
+    const swaps = d.swaps || [];
+    if (swaps.length === 0) {
+      html += '<p class="muted" style="margin-bottom:8px">No swap configured.</p>';
+    } else {
+      for (const s of swaps) {
+        const pct = s.pct_used || 0;
+        const barColor = pct >= 80 ? '#dc2626' : pct >= 50 ? '#f59e0b' : '#16a34a';
+        html += `<div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:12px">
+            <span style="font-family:monospace">${s.filename}</span>
+            <span style="color:var(--text-dim)">${s.type} &middot; priority ${s.priority}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:12px">
+            <span><strong>${fmtKb(s.used_kb)}</strong> used of ${fmtKb(s.total_kb)}</span>
+            <span style="color:var(--text-dim)">${pct}%</span>
+          </div>
+          <div style="background:var(--border);border-radius:4px;height:6px">
+            <div style="background:${barColor};width:${Math.min(pct,100)}%;height:6px;border-radius:4px"></div>
+          </div>
+        </div>`;
+      }
+    }
+
+    // vmstat
+    const vm = d.vmstat || {};
+    const vmKeys = [
+      ['page_faults', 'Page Faults'], ['major_faults', 'Major Faults'],
+      ['swap_in_pages', 'Swap In'], ['swap_out_pages', 'Swap Out'],
+      ['oom_kills', 'OOM Kills'],
+    ];
+    const vmRows = vmKeys.filter(([k]) => vm[k] !== undefined);
+    if (vmRows.length > 0) {
+      html += '<div style="margin-top:8px"><div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">VM Stats (cumulative)</div>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+      for (const [k, label] of vmRows) {
+        const val = vm[k];
+        const isWarning = k === 'oom_kills' && val > 0;
+        html += `<div style="background:var(--bg2);border-radius:6px;padding:6px 12px;text-align:center;min-width:90px">
+          <div style="font-size:1.1em;font-weight:700;${isWarning ? 'color:var(--red,#ef4444)' : ''}">${val.toLocaleString()}</div>
+          <div style="font-size:11px;color:var(--text-dim)">${label}</div>
+        </div>`;
+      }
+      html += '</div></div>';
+    }
+
+    // zram
+    const zrams = d.zram || [];
+    if (zrams.length > 0) {
+      html += '<div style="margin-top:8px"><div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">ZRAM Devices</div>';
+      for (const z of zrams) {
+        const ratio = z.orig_bytes && z.compr_bytes && z.compr_bytes > 0
+          ? (z.orig_bytes / z.compr_bytes).toFixed(1) + 'x' : '&mdash;';
+        html += `<div style="font-size:12px;margin-bottom:4px">
+          <code>${z.device}</code>
+          ${z.orig_bytes !== undefined ? ` &mdash; ${fmtBytes(z.orig_bytes)} &rarr; ${fmtBytes(z.compr_bytes)} (${ratio} ratio, ${fmtBytes(z.mem_used_bytes)} RAM)` : ''}
+          ${z.disksize_bytes !== undefined ? ` &mdash; ${fmtBytes(z.disksize_bytes)} disk size` : ''}
+        </div>`;
+      }
+      html += '</div>';
+    }
+
+    el.innerHTML = html || '<p class="muted">No data available.</p>';
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
 // ── WiFi Scan ─────────────────────────────────────────────────────────────────
 async function fetchWifiScan() {
   const el = document.getElementById('wifi-scan-content');
@@ -8950,37 +9049,40 @@ async function fetchDiskPartitions() {
   }
 }
 
-// ── Kernel Log (dmesg) ────────────────────────────────────────────────────────
-
+// ── Kernel Ring Buffer ────────────────────────────────────────────────────────
 async function fetchDmesg() {
   const el = document.getElementById('dmesg-content');
   if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const res = await fetch('/api/system/dmesg');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (data.error) {
-      el.innerHTML = `<div class="card-title">&#x1F514; Kernel Log (dmesg)</div><span style="color:var(--danger)">${data.error}</span>`;
+    const r = await fetch('/api/system/dmesg');
+    const d = await r.json();
+    if (d.error && (!d.entries || d.entries.length === 0)) {
+      el.innerHTML = `<p class="error">${d.error}</p>`;
       return;
     }
-    const badge = `<span class="badge" style="background:var(--accent);color:#fff;margin-left:6px;">${data.count}</span>`;
-    let html = `<div class="card-title">&#x1F514; Kernel Log (dmesg)${badge}</div>`;
-    if (data.count === 0) {
-      html += `<span style="color:var(--success)">No kernel warnings</span>`;
-    } else {
-      html += `<table style="width:100%;border-collapse:collapse;font-size:0.82em;">`;
-      for (const m of data.messages) {
-        const lvlColor = (m.level === 'err' || m.level === 'crit') ? 'var(--danger)' : 'var(--warning,#f0a500)';
-        const lvlBadge = `<span class="badge" style="background:${lvlColor};color:#fff;min-width:36px;text-align:center;">${m.level}</span>`;
-        const tsSpan = m.ts ? `<span style="color:var(--muted,#888);margin-right:8px;">${m.ts}</span>` : '';
-        html += `<tr><td style="white-space:nowrap;padding:2px 6px 2px 0;">${lvlBadge}</td><td style="white-space:nowrap;padding:2px 6px 2px 0;">${tsSpan}</td><td style="padding:2px 0;word-break:break-all;">${m.msg}</td></tr>`;
-      }
-      html += `</table>`;
+    const entries = d.entries || [];
+    if (entries.length === 0) {
+      el.innerHTML = '<p class="muted">No dmesg output.</p>';
+      return;
     }
+    const errorCount = entries.filter(e => e.level === 'error').length;
+    const warnCount = entries.filter(e => e.level === 'warn').length;
+    let summary = `<div style="display:flex;gap:12px;margin-bottom:8px;font-size:12px;">`;
+    summary += `<span>Showing last <strong>${entries.length}</strong> messages</span>`;
+    if (errorCount > 0) summary += `<span style="color:var(--red,#ef4444);">&#9888; ${errorCount} error${errorCount !== 1 ? 's' : ''}</span>`;
+    if (warnCount > 0) summary += `<span style="color:var(--amber,#f59e0b);">&#9888; ${warnCount} warning${warnCount !== 1 ? 's' : ''}</span>`;
+    summary += '</div>';
+    let html = summary;
+    html += '<div style="max-height:300px;overflow-y:auto;font-family:monospace;font-size:11px;background:var(--bg2);border-radius:4px;padding:8px;">';
+    for (const e of entries) {
+      const col = e.level === 'error' ? 'color:var(--red,#ef4444)' : e.level === 'warn' ? 'color:var(--amber,#f59e0b)' : 'color:var(--text)';
+      const tsSpan = e.ts ? `<span style="color:var(--text-dim);margin-right:8px;">${e.ts}</span>` : '';
+      html += `<div style="${col};margin-bottom:1px;word-break:break-all;">${tsSpan}${e.msg}</div>`;
+    }
+    html += '</div>';
     el.innerHTML = html;
-  } catch (e) {
-    if (el) el.innerHTML = `<div class="card-title">&#x1F514; Kernel Log (dmesg)</div><span style="color:var(--danger)">${e.message}</span>`;
-  }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Socket Statistics ─────────────────────────────────────────────────────────
