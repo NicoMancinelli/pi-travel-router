@@ -11926,6 +11926,65 @@ def api_system_login_history():
     return jsonify({"entries": entries, "count": len(entries), "source": "last"})
 
 
+# ── Open File Descriptors ─────────────────────────────────────────────────────
+
+@app.route("/api/system/open-fds", methods=["GET"])
+@require_auth
+def api_system_open_fds():
+    """Return system-wide open file descriptor stats and top processes by FD count."""
+    try:
+        # Read system-wide FD stats from /proc/sys/fs/file-nr
+        system = {"allocated": 0, "unused": 0, "max": 0, "used_pct": 0.0}
+        try:
+            nr = Path("/proc/sys/fs/file-nr").read_text().strip().split()
+            if len(nr) >= 3:
+                allocated = int(nr[0])
+                unused = int(nr[1])
+                max_fds = int(nr[2])
+                used_pct = round((allocated / max_fds * 100), 1) if max_fds > 0 else 0.0
+                system = {
+                    "allocated": allocated,
+                    "unused": unused,
+                    "max": max_fds,
+                    "used_pct": used_pct,
+                }
+        except Exception:
+            pass
+
+        # Walk /proc/[0-9]*/fd to count per-process FD usage
+        proc_fds = []
+        total_scanned = 0
+        proc_root = Path("/proc")
+        for pid_dir in proc_root.iterdir():
+            if not pid_dir.name.isdigit():
+                continue
+            fd_dir = pid_dir / "fd"
+            try:
+                fd_count = sum(1 for _ in fd_dir.iterdir())
+            except (PermissionError, FileNotFoundError, OSError):
+                continue
+            total_scanned += 1
+            # Read process name
+            name = pid_dir.name
+            try:
+                name = (pid_dir / "comm").read_text().strip()
+            except (PermissionError, FileNotFoundError, OSError):
+                pass
+            proc_fds.append({"pid": int(pid_dir.name), "name": name, "fds": fd_count})
+
+        # Sort descending by FD count and take top 10
+        proc_fds.sort(key=lambda x: x["fds"], reverse=True)
+        top_processes = proc_fds[:10]
+
+        return jsonify({
+            "system": system,
+            "top_processes": top_processes,
+            "total_scanned": total_scanned,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "system": {}, "top_processes": [], "total_scanned": 0})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

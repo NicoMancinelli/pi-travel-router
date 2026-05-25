@@ -1178,6 +1178,15 @@
     <div id="login-history-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- Open File Descriptors -->
+  <div class="card" id="card-open-fds">
+    <div class="card-title">
+      📂 Open File Descriptors
+      <button class="btn btn-sm" onclick="fetchOpenFds()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="open-fds-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4755,6 +4764,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchThermalZones();
   fetchMemoryDetail();
   fetchContainers();
+  fetchOpenFds();
 });
 
 async function fetchJournal() {
@@ -5016,6 +5026,7 @@ async function refreshAll() {
   fetchThermalZones();
   fetchMemoryDetail();
   fetchContainers();
+  fetchOpenFds();
 }
 
 async function init() {
@@ -7457,6 +7468,50 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Open File Descriptors ─────────────────────────────────────────────────────
+async function fetchOpenFds() {
+  const el = document.getElementById('open-fds-content');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/system/open-fds');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    const sys = d.system || {};
+    const pct = (sys.used_pct || 0).toFixed(1);
+    const barColor = sys.used_pct >= 85 ? 'var(--red)' : sys.used_pct >= 65 ? 'var(--amber)' : 'var(--green)';
+    let html = `<div style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span>Allocated</span>
+        <span style="color:${barColor};font-weight:600">${sys.allocated || 0} / ${sys.max || 0} (${pct}%)</span>
+      </div>
+      <div style="background:var(--bg2);border-radius:4px;height:8px">
+        <div style="width:${Math.min(100, sys.used_pct || 0)}%;background:${barColor};height:8px;border-radius:4px"></div>
+      </div>
+      <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Unused: ${sys.unused || 0} &nbsp;|&nbsp; Scanned ${d.total_scanned || 0} processes</div>
+    </div>`;
+    const procs = d.top_processes || [];
+    if (procs.length > 0) {
+      html += `<table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:var(--text-dim)">
+          <th style="text-align:left;padding:4px 6px">PID</th>
+          <th style="text-align:left;padding:4px 6px">Name</th>
+          <th style="text-align:right;padding:4px 6px">FD Count</th>
+        </tr></thead><tbody>`;
+      procs.forEach(p => {
+        html += `<tr style="border-top:1px solid var(--border)">
+          <td style="padding:4px 6px;font-family:monospace">${p.pid}</td>
+          <td style="padding:4px 6px">${p.name}</td>
+          <td style="padding:4px 6px;text-align:right;font-weight:600">${p.fds}</td>
+        </tr>`;
+      });
+      html += `</tbody></table>`;
+    } else {
+      html += `<p class="muted">No process data available.</p>`;
+    }
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Memory Detail ─────────────────────────────────────────────────────────────
