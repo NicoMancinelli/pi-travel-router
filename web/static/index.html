@@ -1004,6 +1004,24 @@
     <div id="bandwidth-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- DNS Resolvers -->
+  <div class="card full-width" id="card-dns-resolvers">
+    <div class="card-title">
+      &#x1F50D; DNS Resolvers
+      <button class="btn btn-sm" onclick="fetchDnsResolvers()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="dns-resolvers-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
+  <!-- SSH Authorized Keys -->
+  <div class="card full-width" id="card-ssh-keys">
+    <div class="card-title">
+      &#x1F511; SSH Authorized Keys
+      <button class="btn btn-sm" onclick="fetchSshKeys()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="ssh-keys-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3949,6 +3967,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchStorage();
   fetchWgPeerHealth();
   fetchDhcpLeases();
+  fetchSshKeys();
   fetchNetInterfaces();
   fetchAdguardStats();
   fetchSystemServices();
@@ -3956,6 +3975,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWanUplinks();
   fetchTempHistory();
   fetchBandwidthHistory();
+  fetchDnsResolvers();
 });
 
 async function fetchJournal() {
@@ -5970,6 +5990,87 @@ function renderBwTab(tab) {
   html += '</div>' + svg;
   html += `<div style="font-size:10px;color:var(--text-dim);margin-top:2px;">&#x1F7E6; RX &nbsp; &#x1F7E9; TX</div>`;
   el.innerHTML = html;
+}
+
+// ── DNS Resolvers ─────────────────────────────────────────────────────────────
+
+async function fetchDnsResolvers() {
+  const el = document.getElementById('dns-resolvers-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Testing resolvers&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/dns/resolvers');
+    const d = await resp.json();
+    if (!d.nameservers || d.nameservers.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No nameservers configured in /etc/resolv.conf.</span>';
+      return;
+    }
+    let html = '';
+    if (d.doh_active) {
+      const prov = d.doh_provider || 'Unknown';
+      html += `<div style="margin-bottom:10px;"><span style="background:#6366f1;color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">&#x1F512; DoH active${prov !== 'Unknown' ? ' (' + escHtml(prov) + ')' : ''}</span></div>`;
+    }
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">Nameserver</th><th style="padding:5px 8px;">Status</th><th style="padding:5px 8px;">Latency</th><th style="padding:5px 8px;">Sample Response</th>';
+    html += '</tr></thead><tbody>';
+    for (const ns of d.nameservers) {
+      const badge = ns.reachable
+        ? '<span style="background:#22c55e;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">OK</span>'
+        : '<span style="background:#ef4444;color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">FAIL</span>';
+      const lat = ns.latency_ms != null
+        ? `<span style="color:${ns.latency_ms < 50 ? '#22c55e' : ns.latency_ms < 200 ? '#f97316' : '#ef4444'};font-weight:600;">${ns.latency_ms} ms</span>`
+        : '<span style="color:var(--text-dim)">—</span>';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:600;">${escHtml(ns.address)}</td>`;
+      html += `<td style="padding:5px 8px;">${badge}</td>`;
+      html += `<td style="padding:5px 8px;">${lat}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${ns.response ? escHtml(ns.response) : '—'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (d.search_domains && d.search_domains.length > 0) {
+      html += `<div style="font-size:11px;color:var(--text-dim);">Search domains: <code>${d.search_domains.map(escHtml).join(', ')}</code></div>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load DNS resolvers</span>';
+  }
+}
+
+// ── SSH Authorized Keys ───────────────────────────────────────────────────────
+
+async function fetchSshKeys() {
+  const el = document.getElementById('ssh-keys-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/ssh/keys');
+    const d = await resp.json();
+    if (!d.keys || d.keys.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No authorized keys found.</span>';
+      return;
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;">${d.count} key${d.count !== 1 ? 's' : ''}</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">User</th><th style="padding:5px 8px;">Type</th><th style="padding:5px 8px;">Comment</th><th style="padding:5px 8px;font-family:monospace;">Fingerprint (tail)</th><th style="padding:5px 8px;">Options</th>';
+    html += '</tr></thead><tbody>';
+    for (const k of d.keys) {
+      const tc = k.type === 'ssh-ed25519' || k.type.includes('ed25519') ? '#22c55e' : k.type === 'ssh-rsa' ? '#f97316' : '#6366f1';
+      html += `<tr style="border-bottom:1px solid var(--border);">`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(k.user)}</td>`;
+      html += `<td style="padding:5px 8px;"><span style="color:${tc};font-weight:600;font-size:11px;">${escHtml(k.type)}</span></td>`;
+      html += `<td style="padding:5px 8px;color:var(--text-dim);">${k.comment ? escHtml(k.comment) : '<em>no comment</em>'}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(k.fingerprint)}</td>`;
+      html += `<td style="padding:5px 8px;font-size:11px;color:var(--text-dim);">${k.options ? escHtml(k.options) : '—'}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">Failed to load SSH keys</span>';
+  }
 }
 
 // ── LAN Network Scanner ───────────────────────────────────────────────────────

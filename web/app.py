@@ -3904,6 +3904,127 @@ def api_network_bandwidth():
     return jsonify(result)
 
 
+# ── DNS Resolver Config ───────────────────────────────────────────────────────
+
+@app.route("/api/dns/resolvers", methods=["GET"])
+@require_auth
+def api_dns_resolvers():
+    """Return current DNS resolver configuration and test resolution latency."""
+    import time as _time
+
+    nameservers = []
+    search_domains = []
+    options = []
+    try:
+        with open("/etc/resolv.conf") as f:
+            for line in f:
+                line = line.strip()
+                if line.startswith("nameserver"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        nameservers.append(parts[1])
+                elif line.startswith("search"):
+                    search_domains = line.split()[1:]
+                elif line.startswith("options"):
+                    options = line.split()[1:]
+    except OSError:
+        pass
+
+    resolver_results = []
+    for ns in nameservers[:4]:
+        start = _time.monotonic()
+        out, rc = _run(["dig", "+short", "+time=2", "+tries=1", f"@{ns}", "google.com", "A"])
+        elapsed_ms = round((_time.monotonic() - start) * 1000)
+        resolved = rc == 0 and out.strip() != ""
+        resolver_results.append({
+            "address": ns,
+            "reachable": resolved,
+            "latency_ms": elapsed_ms if resolved else None,
+            "response": out.strip().splitlines()[0] if resolved and out.strip() else None,
+        })
+
+    doh_active = False
+    doh_provider = None
+    out2, rc2 = _run(["grep", "-r", "cloudflare-dns\\|dns.google\\|quad9", "/etc/dnsmasq.d/"])
+    if rc2 == 0 and out2.strip():
+        doh_active = True
+        if "cloudflare" in out2.lower():
+            doh_provider = "Cloudflare"
+        elif "google" in out2.lower():
+            doh_provider = "Google"
+        elif "quad9" in out2.lower():
+            doh_provider = "Quad9"
+
+    return jsonify({
+        "nameservers": resolver_results,
+        "search_domains": search_domains,
+        "options": options,
+        "doh_active": doh_active,
+        "doh_provider": doh_provider,
+        "count": len(resolver_results),
+    })
+
+
+# ── SSH Authorized Keys ───────────────────────────────────────────────────────
+
+@app.route("/api/system/ssh/keys", methods=["GET"])
+@require_auth
+def api_system_ssh_keys():
+    """Return parsed SSH authorized_keys entries for root and pi/travel-router users."""
+    import re
+    import os
+
+    users_to_check = ["root", "pi", "travel-router"]
+    all_keys = []
+
+    for user in users_to_check:
+        path = "/root/.ssh/authorized_keys" if user == "root" else f"/home/{user}/.ssh/authorized_keys"
+        try:
+            with open(path) as f:
+                content = f.read()
+        except OSError:
+            continue
+        key_types = {
+            "ssh-rsa", "ssh-ed25519", "ssh-dss", "ecdsa-sha2-nistp256",
+            "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521", "sk-ssh-ed25519@openssh.com",
+        }
+        for lineno, line in enumerate(content.splitlines(), 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            options = ""
+            keytype = ""
+            pubkey = ""
+            comment = ""
+            if parts[0] in key_types:
+                keytype, pubkey = parts[0], parts[1]
+                comment = " ".join(parts[2:]) if len(parts) > 2 else ""
+            else:
+                options = parts[0]
+                if len(parts) >= 3 and parts[1] in key_types:
+                    keytype, pubkey = parts[1], parts[2]
+                    comment = " ".join(parts[3:]) if len(parts) > 3 else ""
+                else:
+                    keytype = parts[1] if len(parts) > 1 else ""
+                    pubkey = parts[2] if len(parts) > 2 else ""
+                    comment = " ".join(parts[3:]) if len(parts) > 3 else ""
+            fingerprint = pubkey[-16:] if len(pubkey) > 16 else pubkey
+            all_keys.append({
+                "user": user,
+                "file": path,
+                "line": lineno,
+                "type": keytype,
+                "comment": comment,
+                "fingerprint": f"…{fingerprint}",
+                "options": options,
+            })
+
+    return jsonify({"keys": all_keys, "count": len(all_keys)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 @app.route("/api/privacy/profile", methods=["GET"])
