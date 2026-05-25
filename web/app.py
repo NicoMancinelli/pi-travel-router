@@ -7653,46 +7653,11 @@ def api_system_journal_errors():
 @app.route("/api/system/swap", methods=["GET"])
 @require_auth
 def api_system_swap():
-    """Return swap usage from /proc/swaps and /proc/meminfo."""
-    empty = {
-        "swap_total_kb": 0,
-        "swap_used_kb": 0,
-        "swap_free_kb": 0,
-        "pct_used": 0,
-        "devices": [],
-        "count": 0,
-    }
-
-    # Read /proc/swaps for per-device breakdown
-    devices = []
+    """Return swap usage from /proc/meminfo and swapon --show."""
     try:
-        with open("/proc/swaps", "r") as fh:
-            lines = fh.readlines()
-        # First line is header: Filename Type Size Used Priority
-        for line in lines[1:]:
-            parts = line.split()
-            if len(parts) < 5:
-                continue
-            try:
-                devices.append({
-                    "file": parts[0],
-                    "type": parts[1],
-                    "size_kb": int(parts[2]),
-                    "used_kb": int(parts[3]),
-                    "priority": int(parts[4]),
-                })
-            except (ValueError, IndexError):
-                continue
-    except OSError as exc:
-        return jsonify({"error": str(exc), **empty})
-
-    if not devices:
-        return jsonify(empty)
-
-    # Cross-check totals from /proc/meminfo
-    swap_total_kb = 0
-    swap_free_kb = 0
-    try:
+        total_kb = 0
+        free_kb = 0
+        cached_kb = 0
         with open("/proc/meminfo", "r") as fh:
             for line in fh:
                 parts = line.split()
@@ -7703,25 +7668,45 @@ def api_system_swap():
                     except ValueError:
                         val = 0
                     if key == "SwapTotal":
-                        swap_total_kb = val
+                        total_kb = val
                     elif key == "SwapFree":
-                        swap_free_kb = val
-    except OSError:
-        # Fall back to summing devices
-        swap_total_kb = sum(d["size_kb"] for d in devices)
-        swap_free_kb = swap_total_kb - sum(d["used_kb"] for d in devices)
+                        free_kb = val
+                    elif key == "SwapCached":
+                        cached_kb = val
 
-    swap_used_kb = swap_total_kb - swap_free_kb
-    pct_used = round(swap_used_kb / swap_total_kb * 100, 1) if swap_total_kb > 0 else 0
+        used_kb = total_kb - free_kb
+        use_pct = round(used_kb / total_kb * 100, 1) if total_kb > 0 else 0
 
-    return jsonify({
-        "swap_total_kb": swap_total_kb,
-        "swap_used_kb": swap_used_kb,
-        "swap_free_kb": swap_free_kb,
-        "pct_used": pct_used,
-        "devices": devices,
-        "count": len(devices),
-    })
+        devices = []
+        out, rc = _run(["swapon", "--show", "--noheadings", "--bytes"])
+        if rc == 0:
+            for line in (out or "").splitlines():
+                parts = line.split()
+                if len(parts) < 5:
+                    continue
+                try:
+                    devices.append({
+                        "name": parts[0],
+                        "type": parts[1],
+                        "size_bytes": int(parts[2]),
+                        "used_bytes": int(parts[3]),
+                        "priority": int(parts[4]),
+                    })
+                except (ValueError, IndexError):
+                    continue
+
+        return jsonify({
+            "total_kb": total_kb,
+            "free_kb": free_kb,
+            "used_kb": used_kb,
+            "cached_kb": cached_kb,
+            "use_pct": use_pct,
+            "devices": devices,
+            "enabled": total_kb > 0,
+            "source": "proc+swapon",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "total_kb": 0, "enabled": False})
 
 
 # ── WiFi Network Scan ─────────────────────────────────────────────────────────
@@ -11297,6 +11282,51 @@ def api_ipv6_addresses():
         })
     except Exception as exc:
         return jsonify({"error": str(exc), "interfaces": [], "total_addresses": 0, "has_global": False})
+
+
+@app.route("/api/system/failed-units", methods=["GET"])
+@require_auth
+def api_system_failed_units():
+    """Return a list of failed systemd units."""
+    try:
+        out, rc = _run(
+            ["systemctl", "list-units", "--state=failed", "--no-legend", "--no-pager"],
+            timeout=10,
+        )
+        if rc != 0 or not out.strip():
+            out, rc = _run(
+                ["systemctl", "--failed", "--no-legend", "--no-pager"],
+                timeout=10,
+            )
+        units = []
+        for line in (out or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(None, 4)
+            if len(parts) < 4:
+                continue
+            unit = parts[0]
+            load = parts[1]
+            active = parts[2]
+            sub = parts[3]
+            description = parts[4] if len(parts) > 4 else ""
+            units.append({
+                "unit": unit,
+                "load": load,
+                "active": active,
+                "sub": sub,
+                "description": description,
+            })
+        count = len(units)
+        return jsonify({
+            "units": units,
+            "count": count,
+            "healthy": count == 0,
+            "source": "systemctl",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "units": [], "count": 0, "healthy": True})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
