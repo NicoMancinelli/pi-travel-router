@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.60.0] - 2026-05-25
+
+### Added
+- `GET /api/system/dns-cache` — DNS resolver cache statistics; uses `resolvectl statistics` (systemd-resolved) with `pgrep`/`killall -USR1 dnsmasq` fallback; returns cache size, hit/miss counts, hit rate percentage, insertion and eviction counts; dashboard card shows metric grid with source label
+- `GET /api/network/traffic-shaping` — tc qdisc statistics per network interface via `tc -s qdisc show`; returns type, handle, sent bytes/packets, dropped packets, and backlog; dashboard card renders sortable table with drop count color-coded amber on non-zero
+- `GET /api/system/logged-in-sessions` — active login sessions via `loginctl list-sessions` (with per-session `loginctl show-session` detail enrichment); falls back to `who -a` parsing; returns user, seat, TTY, remote host, session state, service, and login time; dashboard card shows SSH badge and state colour coding
+- Dashboard cards: DNS Cache Stats (🔍), Traffic Shaping (📊), Active Sessions (👤)
+
 ## [2.59.0] - 2026-05-25
 
 ### Added
