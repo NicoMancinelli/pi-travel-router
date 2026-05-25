@@ -9706,6 +9706,23 @@ def api_network_ip_rules():
     return jsonify({"rules": rules, "raw": out})
 
 
+@app.route("/api/system/log-summary")
+@require_auth
+def api_system_log_summary():
+    out, rc = _run(["journalctl", "-n", "100", "--no-pager", "-o", "short"])
+    if rc != 0:
+        return jsonify({"error": "journalctl failed", "total": 0, "errors": 0, "warnings": 0, "recent_errors": []})
+    lines = out.splitlines()
+    errors = [l for l in lines if ": err" in l.lower() or " error" in l.lower() or "[error]" in l.lower()]
+    warnings = [l for l in lines if "warning" in l.lower() or "warn" in l.lower()]
+    return jsonify({
+        "total": len(lines),
+        "errors": len(errors),
+        "warnings": len(warnings),
+        "recent_errors": errors[-5:],
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
