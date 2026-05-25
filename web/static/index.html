@@ -4803,6 +4803,59 @@ async function fetchClientHistory(limitOverride) {
   }
 }
 
+// ── Services Status ───────────────────────────────────────────────────────────
+async function fetchServicesStatus() {
+  const el = document.getElementById('services-status-content');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/services');
+    const d = await r.json();
+    if (d.error && (!d.services || d.services.length === 0)) {
+      el.innerHTML = `<p class="error">${d.error}</p>`;
+      return;
+    }
+    const s = d.summary || {};
+    let html = '<div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">';
+    const tiles = [
+      { label: 'Total', val: s.total ?? 0, color: 'var(--text)' },
+      { label: 'Active', val: s.active ?? 0, color: '#16a34a' },
+      { label: 'Failed', val: s.failed ?? 0, color: s.failed > 0 ? '#dc2626' : '#16a34a' },
+      { label: 'Inactive', val: s.inactive ?? 0, color: 'var(--text-dim)' },
+    ];
+    for (const t of tiles) {
+      html += `<div style="background:var(--bg2);border-radius:6px;padding:6px 12px;text-align:center;min-width:70px;">
+        <div style="font-size:1.3em;font-weight:700;color:${t.color}">${t.val}</div>
+        <div style="font-size:11px;color:var(--text-dim)">${t.label}</div>
+      </div>`;
+    }
+    html += '</div>';
+
+    const services = d.services || [];
+    if (services.length > 0) {
+      const shown = d.total > services.length ? `<div style="color:var(--text-dim);font-size:11px;margin-bottom:4px;">Showing ${services.length} of ${d.total} (failed/active first)</div>` : '';
+      html += shown;
+      html += '<div style="max-height:260px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
+        <th style="text-align:left;padding:2px 6px;">Service</th>
+        <th style="text-align:left;padding:2px 6px;">State</th>
+        <th style="text-align:left;padding:2px 6px;">Sub-state</th>
+      </tr></thead><tbody>`;
+      for (const svc of services) {
+        const stateColor = svc.active === 'active' ? '#16a34a' : svc.active === 'failed' ? '#dc2626' : 'var(--text-dim)';
+        html += `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:2px 6px;font-family:monospace;font-size:11px;" title="${svc.description || ''}">${svc.name}</td>
+          <td style="padding:2px 6px;color:${stateColor};font-weight:${svc.active === 'failed' ? '600' : 'normal'}">${svc.active}</td>
+          <td style="padding:2px 6px;color:var(--text-dim)">${svc.sub}</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
 // Wire up the limit selector change
 document.addEventListener('DOMContentLoaded', () => {
   const sel = document.getElementById('client-history-limit');
@@ -4819,6 +4872,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNetInterfaces();
   fetchAdguardStats();
   fetchSystemServices();
+  fetchServicesStatus();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
@@ -5168,6 +5222,7 @@ async function refreshAll() {
   fetchProcessTree();
   fetchKernelMessages();
   fetchSystemServices();
+  fetchServicesStatus();
   fetchNetworkInterfaces();
   fetchOpenSockets();
   fetchWifiSignal();
