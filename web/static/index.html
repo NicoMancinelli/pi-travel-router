@@ -1197,6 +1197,10 @@
     <div id="dmesg-content">Loading&hellip;</div>
   </div>
 
+  <div class="card" id="card-osinfo">
+    <div id="osinfo-content">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4237,6 +4241,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
+  fetchOsInfo();
   fetchBatteryStatus();
   fetchInterrupts();
 });
@@ -4452,6 +4457,7 @@ async function refreshAll() {
   fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
+  fetchOsInfo();
   fetchBatteryStatus();
   fetchInterrupts();
 }
@@ -7771,6 +7777,27 @@ async function fetchDmesg() {
     el.innerHTML = html;
   } catch (e) {
     if (el) el.innerHTML = `<div class="card-title">&#x1F514; Kernel Log (dmesg)</div><span style="color:var(--danger)">${e.message}</span>`;
+  }
+}
+
+async function fetchOsInfo() {
+  const el = document.getElementById('osinfo-content');
+  if (!el) return;
+  try {
+    const res = await apiFetch('/api/system/osinfo');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+    let html = `<div class="card-title">&#x1F5A5;&#xFE0F; System Info</div>`;
+    html += `<div style="font-size:1.1em;font-weight:600;margin-bottom:8px;">${d.hostname || 'unknown'}</div>`;
+    html += `<table style="border-collapse:collapse;font-size:0.88em;">`;
+    html += `<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;white-space:nowrap;">Distro</td><td>${d.distro || 'unknown'}</td></tr>`;
+    html += `<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;white-space:nowrap;">Kernel</td><td style="word-break:break-all;">${d.kernel || 'unknown'}</td></tr>`;
+    html += `<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;white-space:nowrap;">Arch</td><td>${d.arch || 'unknown'}</td></tr>`;
+    html += `<tr><td style="color:var(--text-dim);padding:2px 12px 2px 0;white-space:nowrap;">Uptime</td><td>${d.uptime || 'unknown'}</td></tr>`;
+    html += `</table>`;
+    el.innerHTML = html;
+  } catch (e) {
+    if (el) el.innerHTML = `<div class="card-title">&#x1F5A5;&#xFE0F; System Info</div><span style="color:var(--danger)">${e.message}</span>`;
   }
 }
 
