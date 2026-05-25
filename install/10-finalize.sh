@@ -114,6 +114,11 @@ run_finalize() {
     touch /var/lib/travel-router/ping-hosts.json 2>/dev/null || true
     ok "Ping monitor store initialised"
 
+    # ── Speedtest history store ────────────────────────────────────────────────────
+    section "Speedtest history store"
+    touch /var/lib/travel-router/speedtest-history.json 2>/dev/null || true
+    ok "Speedtest history store initialised"
+
     # ── Version stamp ────────────────────────────────────────────────────────────
     section "Version stamp"
     local _INSTALLED_VERSION

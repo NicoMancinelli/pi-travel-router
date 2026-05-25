@@ -344,6 +344,17 @@
     </div>
   </div>
 
+  <!-- Speedtest History -->
+  <div class="card full-width" id="card-speedtest-history" style="margin-top:16px;">
+    <div class="card-title" style="justify-content:space-between;">
+      <span>&#x26A1; Speedtest History</span>
+      <button class="btn btn-sm" onclick="fetchSpeedtestHistory()">&#x21BB; Refresh</button>
+    </div>
+    <div id="speedtest-history-content">
+      <span style="color:var(--text-dim);font-size:13px;">No speedtest results yet — run a speedtest to start tracking</span>
+    </div>
+  </div>
+
   <hr class="divider">
 
   <!-- Traceroute -->
@@ -2881,6 +2892,45 @@ async function runSpeedTest() {
   }
 }
 
+async function fetchSpeedtestHistory() {
+  const el = document.getElementById('speedtest-history-content');
+  try {
+    const r = await apiFetch('/api/system/speedtest/history');
+    const d = await r.json();
+    const history = d.history || [];
+    if (history.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No speedtest results yet — run a speedtest to start tracking</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Time</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Download</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Upload</th>';
+    html += '<th style="text-align:right;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Ping</th>';
+    html += '</tr></thead><tbody>';
+    for (const entry of history) {
+      const ts = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '—';
+      const dl = entry.download_mbps != null ? entry.download_mbps.toFixed(1) + ' Mbps'
+               : entry.download != null ? (entry.download / 1e6).toFixed(1) + ' Mbps' : '—';
+      const ul = entry.upload_mbps != null ? entry.upload_mbps.toFixed(1) + ' Mbps'
+               : entry.upload != null ? (entry.upload / 1e6).toFixed(1) + ' Mbps' : '—';
+      const ping = entry.ping_ms != null ? entry.ping_ms.toFixed(1) + ' ms'
+                 : entry.ping != null ? entry.ping.toFixed(1) + ' ms' : '—';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);font-size:12px;">' + ts + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + dl + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + ul + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + ping + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
 // ── Traceroute ────────────────────────────────────────────────────────────────
 async function runTraceroute() {
   const btn = document.getElementById('btn-traceroute');
@@ -3541,6 +3591,7 @@ async function refreshAll() {
   fetchGuestNetwork();
   fetchWifiQr();
   fetchSpeedTestCached();
+  fetchSpeedtestHistory();
   fetchCaptiveStatus();
   fetchSignal();
   fetchRebootSchedule();
