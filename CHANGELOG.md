@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.0] - 2026-05-24
+
+### Added
+
+- **System resource monitor** (`web/app.py`, `web/static/index.html`): `GET /api/system/resources` samples `/proc/stat` twice (0.5s apart) for CPU %, reads `/proc/meminfo` for memory, `/proc/uptime` for uptime, `/proc/loadavg` for load averages, and `vcgencmd measure_temp` / `/sys/class/thermal/thermal_zone0/temp` for CPU temperature. Dashboard card with CPU/memory progress bars, temperature color-badge (green/orange/red), and uptime+load grid.
+- **Firewall rules viewer** (`web/app.py`, `web/static/index.html`): `GET /api/firewall/rules` parses `iptables -L -n --line-numbers` (filter table) and `iptables -t nat -L -n --line-numbers` (nat table) into structured JSON. Dashboard card with Filter/NAT tab switcher and color-coded targets (green=ACCEPT, red=DROP/REJECT, orange=MASQUERADE/SNAT/DNAT).
+- **Wi-Fi connected clients** (`web/app.py`, `web/static/index.html`): `GET /api/wifi/clients` parses `iw dev wlan0 station dump` (wlan1 fallback) for connected station MAC, signal dBm (quality 0-100), rx/tx bytes, and inactive time. Dashboard card with signal strength bars (green/orange/red), human-readable byte counts, wired into `refreshAll()`.
+
 ## [2.23.0] - 2026-05-24
 
 ### Added
