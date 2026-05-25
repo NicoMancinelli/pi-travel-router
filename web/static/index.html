@@ -1226,6 +1226,11 @@
     <div id="disk-io-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <div class="card full-width" id="card-cpu-stats">
+    <div class="card-title">CPU Utilisation</div>
+    <div id="cpu-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -4275,6 +4280,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchFirewallStats();
   fetchCpuTemp();
   fetchLoggedInUsers();
+  fetchCpuStats();
 });
 
 async function fetchJournal() {
@@ -4499,6 +4505,7 @@ async function refreshAll() {
   fetchCpuTemp();
   fetchKernelModules();
   fetchLoggedInUsers();
+  fetchCpuStats();
 }
 
 async function init() {
@@ -8145,6 +8152,55 @@ async function fetchDiskIo() {
       </tr>`;
     }
     html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (el) el.textContent = 'Failed: ' + e;
+  }
+}
+
+// ── CPU Utilisation ───────────────────────────────────────────────────────────
+
+async function fetchCpuStats() {
+  const el = document.getElementById('cpu-stats-content');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/cpu-stats');
+    const d = await r.json();
+    if (d.error && !d.total.idle) {
+      el.innerHTML = '<span style="color:var(--danger)">Error: ' + d.error + '</span>';
+      return;
+    }
+    const t = d.total;
+    const utilPct = t.idle !== undefined ? Math.round((100 - t.idle) * 10) / 10 : 0;
+    const barColor = utilPct >= 80 ? 'var(--danger)' : utilPct >= 50 ? 'var(--warning)' : 'var(--success)';
+    let html = '<div style="margin-bottom:8px;">';
+    html += '<div style="display:flex;justify-content:space-between;margin-bottom:3px;">';
+    html += '<span>Overall CPU Usage</span><strong>' + utilPct + '%</strong>';
+    html += '</div>';
+    html += '<div style="background:var(--border);border-radius:3px;height:10px;overflow:hidden;">';
+    html += '<div style="width:' + Math.min(utilPct, 100) + '%;height:100%;background:' + barColor + ';transition:width 0.3s;"></div>';
+    html += '</div></div>';
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:' + (d.num_cores > 1 ? '10px' : '0') + ';font-size:12px;">';
+    html += '<span>User: <strong>' + (t.user || 0) + '%</strong></span>';
+    html += '<span>System: <strong>' + (t.system || 0) + '%</strong></span>';
+    html += '<span>IOWait: <strong>' + (t.iowait || 0) + '%</strong></span>';
+    html += '<span>IRQ: <strong>' + ((t.irq || 0) + (t.softirq || 0)).toFixed(1) + '%</strong></span>';
+    html += '</div>';
+    if (d.num_cores > 1 && d.cores && d.cores.length) {
+      html += '<div style="font-size:12px;">';
+      d.cores.forEach(c => {
+        const cUtil = c.idle !== undefined ? Math.round((100 - c.idle) * 10) / 10 : 0;
+        const cColor = cUtil >= 80 ? 'var(--danger)' : cUtil >= 50 ? 'var(--warning)' : 'var(--success)';
+        html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">';
+        html += '<span style="width:42px;color:var(--text-dim);">Core ' + c.core + '</span>';
+        html += '<div style="flex:1;background:var(--border);border-radius:2px;height:7px;overflow:hidden;">';
+        html += '<div style="width:' + Math.min(cUtil, 100) + '%;height:100%;background:' + cColor + ';transition:width 0.3s;"></div>';
+        html += '</div>';
+        html += '<span style="width:36px;text-align:right;">' + cUtil + '%</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
     el.innerHTML = html;
   } catch (e) {
     if (el) el.textContent = 'Failed: ' + e;

@@ -8888,6 +8888,41 @@ def api_system_disk_io():
     return jsonify({"devices": devices})
 
 
+@app.route("/api/system/cpu-stats", methods=["GET"])
+@require_auth
+def api_system_cpu_stats():
+    """Parse /proc/stat for overall and per-core CPU utilisation percentages."""
+    FIELDS = ("user", "nice", "system", "idle", "iowait", "irq", "softirq")
+    try:
+        with open("/proc/stat", "r") as fh:
+            lines = fh.readlines()
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"total": {}, "cores": [], "num_cores": 0, "error": str(exc)})
+
+    def parse_line(line):
+        parts = line.split()
+        values = [int(x) for x in parts[1:len(FIELDS) + 1]]
+        total = sum(values)
+        if total == 0:
+            return {f: 0.0 for f in FIELDS}
+        return {f: round(values[i] / total * 100, 1) for i, f in enumerate(FIELDS)}
+
+    total_pct = {}
+    cores = []
+    try:
+        for line in lines:
+            if line.startswith("cpu ") or line.startswith("cpu\t"):
+                total_pct = parse_line(line)
+            elif line.startswith("cpu") and len(line) > 3 and line[3].isdigit():
+                parts = line.split()
+                core_id = int(parts[0][3:])
+                cores.append({"core": core_id, **parse_line(line)})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"total": {}, "cores": [], "num_cores": 0, "error": str(exc)})
+
+    return jsonify({"total": total_pct, "cores": cores, "num_cores": len(cores)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
