@@ -7665,31 +7665,94 @@ def api_system_cpufreq():
 @app.route("/api/network/arp", methods=["GET"])
 @require_auth
 def api_network_arp():
-    """Return the kernel ARP/neighbor table parsed from /proc/net/arp."""
-    _FLAG_MAP = {
-        "0x0": "INCOMPLETE",
-        "0x2": "REACHABLE",
-        "0x4": "STALE",
-        "0x6": "STALE",
-    }
-    entries = []
+    """Return ARP/NDP neighbor table using `ip neigh show` (IPv4+IPv6) with fallback to /proc/net/arp."""
+    import ipaddress
+
+    def _classify(ip_str):
+        try:
+            return isinstance(ipaddress.ip_address(ip_str), ipaddress.IPv6Address)
+        except ValueError:
+            return False
+
+    def _sort_key(n):
+        order = 0 if n["state"] == "REACHABLE" else 1
+        try:
+            packed = ipaddress.ip_address(n["ip"]).packed
+        except ValueError:
+            packed = b""
+        return (order, packed)
+
+    neighbors = []
     try:
-        with open("/proc/net/arp") as fh:
-            for line in fh:
+        out, rc = _run(["ip", "neigh", "show"], timeout=5)
+        if rc == 0 and out.strip():
+            for line in out.splitlines():
                 line = line.strip()
-                if not line or line.startswith("IP address"):
+                if not line:
                     continue
                 parts = line.split()
-                if len(parts) < 6:
+                # format: IP dev IFACE [lladdr MAC] [PROBES N] STATE
+                if len(parts) < 4:
                     continue
-                ip, _hwtype, flags, mac, _mask, iface = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
-                if mac == "00:00:00:00:00:00":
+                ip = parts[0]
+                iface = parts[2] if len(parts) > 2 else ""
+                mac = None
+                state = parts[-1].upper()
+                if "lladdr" in parts:
+                    idx = parts.index("lladdr")
+                    if idx + 1 < len(parts):
+                        mac = parts[idx + 1]
+                if state in ("FAILED", "INCOMPLETE"):
+                    neighbors.append({
+                        "ip": ip,
+                        "mac": mac,
+                        "iface": iface,
+                        "state": state,
+                        "is_ipv6": _classify(ip),
+                    })
                     continue
-                state = _FLAG_MAP.get(flags.lower(), "UNKNOWN")
-                entries.append({"ip": ip, "mac": mac, "iface": iface, "flags": flags, "state": state})
-    except OSError as exc:
-        return jsonify({"entries": [], "count": 0, "error": str(exc)})
-    return jsonify({"entries": entries, "count": len(entries)})
+                neighbors.append({
+                    "ip": ip,
+                    "mac": mac,
+                    "iface": iface,
+                    "state": state,
+                    "is_ipv6": _classify(ip),
+                })
+        else:
+            # Fallback: /proc/net/arp (IPv4 only)
+            _FLAG_MAP = {"0x0": "INCOMPLETE", "0x2": "REACHABLE", "0x4": "STALE", "0x6": "STALE"}
+            try:
+                with open("/proc/net/arp") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line or line.startswith("IP address"):
+                            continue
+                        parts = line.split()
+                        if len(parts) < 6:
+                            continue
+                        ip, flags, mac, iface = parts[0], parts[2], parts[3], parts[5]
+                        if mac == "00:00:00:00:00:00":
+                            continue
+                        neighbors.append({
+                            "ip": ip,
+                            "mac": mac,
+                            "iface": iface,
+                            "state": _FLAG_MAP.get(flags.lower(), "UNKNOWN"),
+                            "is_ipv6": False,
+                        })
+            except OSError:
+                pass
+    except Exception as exc:
+        return jsonify({"neighbors": [], "count": 0, "reachable": 0, "stale": 0, "error": str(exc)})
+
+    # Filter FAILED/INCOMPLETE unless no others exist
+    visible = [n for n in neighbors if n["state"] not in ("FAILED", "INCOMPLETE")]
+    if not visible:
+        visible = neighbors
+    visible.sort(key=_sort_key)
+    reachable = sum(1 for n in visible if n["state"] == "REACHABLE")
+    stale = sum(1 for n in visible if n["state"] in ("STALE", "DELAY", "PROBE"))
+    return jsonify({"neighbors": visible, "count": len(visible), "reachable": reachable, "stale": stale})
 
 
 # ── IP Routing Table ──────────────────────────────────────────────────────────
@@ -12086,62 +12149,74 @@ def api_system_containers():
 @app.route("/api/system/login-history", methods=["GET"])
 @require_auth
 def api_system_login_history():
-    """Return last 20 login events from the `last` command."""
-    entries = []
-    out, rc = _run(["last", "-n", "20", "--time-format", "iso"])
-    if rc != 0:
-        return jsonify({"error": "last command not available or --time-format iso not supported", "entries": [], "count": 0})
-    for line in out.splitlines():
-        line = line.rstrip()
-        if not line or line.startswith("wtmp begins"):
-            continue
-        parts = line.split()
-        if len(parts) < 3:
-            continue
-        user = parts[0]
-        tty = parts[1]
-        # Determine 'from' field: if parts[2] looks like a date (starts with digit), there is no from field
-        idx = 2
-        from_host = ""
-        if not (parts[2][0].isdigit() or parts[2].startswith("-")):
-            from_host = parts[2]
-            idx = 3
-        # Login time
-        login_time = parts[idx] if idx < len(parts) else ""
-        # Logout time / duration
-        still_logged_in = False
-        logout_time = ""
-        duration = ""
-        rest = " ".join(parts[idx + 1:]) if idx + 1 < len(parts) else ""
-        if "still logged in" in rest:
-            still_logged_in = True
-            logout_time = "still logged in"
-        elif "logged in" in rest:
-            still_logged_in = True
-            logout_time = "still logged in"
-        else:
-            # Format: - logout_time  (duration)
-            dash_pos = rest.find(" - ")
-            if dash_pos != -1:
-                after_dash = rest[dash_pos + 3:].strip()
-                # Split on whitespace: first token is logout time, rest may have duration in parens
-                after_parts = after_dash.split()
-                logout_time = after_parts[0] if after_parts else ""
-                # Duration in parentheses
-                paren_start = rest.find("(")
-                paren_end = rest.find(")")
-                if paren_start != -1 and paren_end != -1:
-                    duration = rest[paren_start + 1:paren_end]
-        entries.append({
-            "user": user,
-            "tty": tty,
-            "from": from_host,
-            "login_time": login_time,
-            "logout_time": logout_time,
-            "duration": duration,
-            "still_logged_in": still_logged_in,
-        })
-    return jsonify({"entries": entries, "count": len(entries), "source": "last"})
+    """Return recent login history from `last` command."""
+
+    def _parse_last_lines(lines):
+        parsed = []
+        for line in lines:
+            line = line.rstrip()
+            if not line or line.startswith("wtmp begins") or line.startswith("btmp begins"):
+                continue
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            user = parts[0]
+            tty = parts[1]
+            # Determine 'from' field: if parts[2] looks like a date/dash, there is no from field
+            idx = 2
+            from_host = ""
+            if not (parts[2][0].isdigit() or parts[2].startswith("-")):
+                from_host = parts[2]
+                idx = 3
+            login_time = parts[idx] if idx < len(parts) else ""
+            still_logged_in = False
+            logout_time = None
+            duration = None
+            rest = " ".join(parts[idx + 1:]) if idx + 1 < len(parts) else ""
+            if "still logged in" in rest or "logged in" in rest:
+                still_logged_in = True
+            else:
+                dash_pos = rest.find(" - ")
+                if dash_pos != -1:
+                    after_dash = rest[dash_pos + 3:].strip()
+                    after_parts = after_dash.split()
+                    logout_time = after_parts[0] if after_parts else None
+                    paren_start = rest.find("(")
+                    paren_end = rest.find(")")
+                    if paren_start != -1 and paren_end != -1:
+                        duration = rest[paren_start + 1:paren_end]
+            parsed.append({
+                "user": user,
+                "tty": tty,
+                "host": from_host,
+                "login_time": login_time,
+                "logout_time": logout_time,
+                "duration": duration,
+                "still_logged_in": still_logged_in,
+            })
+        return parsed
+
+    logins = []
+    out, rc = _run(["last", "-n", "30", "--time-format", "iso"])
+    if rc == 0:
+        logins = _parse_last_lines(out.splitlines())
+
+    failed_attempts = []
+    try:
+        out_b, rc_b = _run(["lastb", "-n", "10", "--time-format", "iso"])
+        if rc_b == 0:
+            failed_attempts = _parse_last_lines(out_b.splitlines())
+    except Exception:
+        pass
+
+    still_logged_in_count = sum(1 for e in logins if e["still_logged_in"])
+    return jsonify({
+        "logins": logins,
+        "count": len(logins),
+        "failed_attempts": failed_attempts,
+        "failed_count": len(failed_attempts),
+        "still_logged_in": still_logged_in_count,
+    })
 
 
 # ── Open File Descriptors ─────────────────────────────────────────────────────
