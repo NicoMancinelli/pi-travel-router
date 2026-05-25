@@ -9451,46 +9451,32 @@ def api_network_mdns():
 @app.route("/api/system/failed-services")
 @require_auth
 def api_system_failed_services():
-    """Return systemd units in failed state with recent journal snippet."""
-    out, rc = _run(["systemctl", "list-units", "--state=failed", "--no-pager",
-                    "--no-legend", "--output=json"])
-    units = []
-    if rc == 0 and out.strip():
-        try:
-            import json as _json
-            data = _json.loads(out)
-            for u in data:
-                unit = {
-                    "unit": u.get("unit", ""),
-                    "load": u.get("load", ""),
-                    "active": u.get("active", ""),
-                    "sub": u.get("sub", ""),
-                    "description": u.get("description", ""),
-                }
-                # grab last 5 journal lines for this unit
-                jout, jrc = _run(["journalctl", "-u", unit["unit"], "-n", "5",
-                                   "--no-pager", "--output=short"])
-                if jrc == 0:
-                    unit["journal_tail"] = jout.strip().splitlines()
-                units.append(unit)
-        except (ValueError, KeyError):
-            pass
-    if not units:
-        # fallback: plain text output
-        out2, rc2 = _run(["systemctl", "list-units", "--state=failed",
-                           "--no-pager", "--no-legend"])
-        if rc2 == 0:
-            for line in out2.strip().splitlines():
-                parts = line.split(None, 4)
-                if len(parts) >= 5:
-                    units.append({
-                        "unit": parts[0],
-                        "load": parts[1],
-                        "active": parts[2],
-                        "sub": parts[3],
-                        "description": parts[4],
-                    })
-    return jsonify({"units": units, "count": len(units)})
+    """Return systemd units in failed state with recent log snippet."""
+    out, _rc = _run(["systemctl", "list-units", "--state=failed",
+                     "--no-pager", "--plain"])
+    services = []
+    for line in (out or "").splitlines():
+        parts = line.split(None, 4)
+        if len(parts) < 4:
+            continue
+        unit_name = parts[0]
+        svc = {
+            "unit": unit_name,
+            "load": parts[1] if len(parts) > 1 else "",
+            "active": parts[2] if len(parts) > 2 else "",
+            "sub": parts[3] if len(parts) > 3 else "",
+            "description": parts[4] if len(parts) > 4 else "",
+            "recent_log": [],
+        }
+        log_out, log_rc = _run(["systemctl", "status", unit_name,
+                                 "--no-pager", "-n", "5"])
+        if log_rc in (0, 3) and log_out:
+            svc["recent_log"] = log_out.strip().splitlines()[-5:]
+        services.append(svc)
+        if len(services) >= 20:
+            break
+    count = len(services)
+    return jsonify({"services": services, "count": count, "has_failures": count > 0})
 
 
 @app.route("/api/network/ip-geo")
