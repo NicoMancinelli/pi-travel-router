@@ -1154,8 +1154,13 @@
 
   <!-- Journal Errors -->
   <div class="card" id="journal-errors-card">
-    <h2>🚨 Recent Errors</h2>
-    <div id="journal-errors-content"><p class="muted">Loading…</p></div>
+    <div class="card-header">
+      <span>📜 Journal Errors</span>
+      <span class="card-badge" id="journal-errors-badge">—</span>
+    </div>
+    <div class="card-body" id="journal-errors-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <!-- DNS Config -->
@@ -8924,20 +8929,49 @@ async function fetchRouteTable() {
 
 // ── Journal Errors ────────────────────────────────────────────────────────────
 async function fetchJournalErrors() {
+  const el = document.getElementById('journal-errors-content');
+  const badge = document.getElementById('journal-errors-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
     const r = await fetch('/api/system/journal-errors');
     const d = await r.json();
-    const el = document.getElementById('journal-errors-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    if (d.count === 0) { el.innerHTML = '<p style="color:var(--green)">✓ No recent errors</p>'; return; }
-    let html = `<p class="muted" style="margin-bottom:6px">Last 50 errors: <strong>${d.count}</strong> found</p>`;
-    html += '<div style="max-height:220px;overflow-y:auto"><table class="table"><thead><tr><th>Time</th><th>Unit</th><th>Message</th></tr></thead><tbody>';
-    for (const e of d.errors) {
-      html += `<tr><td style="white-space:nowrap;font-size:0.8em">${e.timestamp}</td><td><code style="font-size:0.75em">${e.unit}</code></td><td style="font-size:0.8em">${e.message}</td></tr>`;
+    if (badge) {
+      const errCount = d.error_count || 0;
+      badge.textContent = errCount > 0 ? `${errCount} errors` : 'Clean';
+      badge.style.background = errCount > 0 ? 'var(--danger,#dc2626)' : 'var(--success,#16a34a)';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
     }
-    html += '</tbody></table></div>';
+    let html = '';
+    const entries = d.entries || [];
+    if (entries.length === 0) {
+      html = '<p class="muted" style="color:var(--success,#16a34a);">✓ No recent errors or warnings.</p>';
+    } else {
+      const levelColor = p => p <= 2 ? '#dc2626' : p === 3 ? '#ef4444' : p === 4 ? '#f59e0b' : '#6b7280';
+      html += `<div style="display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+        <div style="background:var(--bg2);border-radius:5px;padding:5px 12px;font-size:12px;"><span style="color:#ef4444;font-weight:700">${d.error_count || 0}</span> <span style="color:var(--text-dim)">errors</span></div>
+        <div style="background:var(--bg2);border-radius:5px;padding:5px 12px;font-size:12px;"><span style="color:#f59e0b;font-weight:700">${d.warning_count || 0}</span> <span style="color:var(--text-dim)">warnings</span></div>
+      </div>`;
+      html += '<div style="max-height:240px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">';
+      for (const e of entries) {
+        const col = levelColor(e.priority);
+        html += `<div style="background:var(--bg2);border-radius:4px;padding:5px 8px;border-left:3px solid ${col};">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim);margin-bottom:2px;">
+            <span style="font-weight:600;color:${col}">${e.level?.toUpperCase() || 'ERR'}</span>
+            <span>${e.unit || ''}</span>
+            <span>${e.ts || ''}</span>
+          </div>
+          <div style="font-size:11px;font-family:monospace;word-break:break-all;">${e.message || ''}</div>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    if (d.error) html += `<p style="font-size:11px;color:var(--danger);margin-top:4px;">${d.error}</p>`;
     el.innerHTML = html;
-  } catch(e) { document.getElementById('journal-errors-content').innerHTML = `<p class="error">${e}</p>`; }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Swap Usage ────────────────────────────────────────────────────────────────

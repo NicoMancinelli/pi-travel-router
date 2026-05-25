@@ -7710,35 +7710,71 @@ def api_network_routes():
 @app.route("/api/system/journal-errors", methods=["GET"])
 @require_auth
 def api_system_journal_errors():
+    """Return recent systemd journal error and warning entries."""
+    _LEVEL_MAP = {0: "emerg", 1: "alert", 2: "crit", 3: "err", 4: "warning",
+                  5: "notice", 6: "info", 7: "debug"}
     try:
-        cmd = ["journalctl", "-p", "err", "-n", "50", "--no-pager", "-o", "short-iso"]
+        import json as _json
+        import datetime as _dt
+
+        # Primary: journalctl JSON output for error-priority entries
+        cmd = ["journalctl", "-p", "err", "-n", "50", "--no-pager", "--output=json"]
         out, rc = _run(cmd, timeout=10)
-        if rc != 0:
-            return jsonify({"error": "journalctl failed", "errors": [], "count": 0})
 
-        errors = []
-        for line in out.splitlines():
-            line = line.strip()
-            if not line or line.startswith("--"):
-                continue
-            # Filter noisy lines
-            if "audit" in line or ("NetworkManager" in line and "state" in line.lower()):
-                continue
-            # Format: YYYY-MM-DDTHH:MM:SS+ZZZZ HOSTNAME UNIT[PID]: MESSAGE
-            try:
-                parts = line.split(" ", 3)
-                timestamp = parts[0] if len(parts) > 0 else ""
-                unit_pid = parts[2] if len(parts) > 2 else ""
-                message = parts[3].split(": ", 1)[-1] if len(parts) > 3 else ""
-                # Strip [PID] from unit
-                unit = unit_pid.split("[")[0] if "[" in unit_pid else unit_pid
-                errors.append({"timestamp": timestamp, "unit": unit, "message": message})
-            except (IndexError, ValueError):
-                continue
+        entries = []
+        if rc == 0 and out:
+            for raw_line in out.splitlines():
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    obj = _json.loads(raw_line)
+                    ts_us = int(obj.get("__REALTIME_TIMESTAMP", 0))
+                    if ts_us:
+                        ts_iso = _dt.datetime.utcfromtimestamp(ts_us / 1_000_000).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    else:
+                        ts_iso = ""
+                    priority = int(obj.get("PRIORITY", 3))
+                    unit = (obj.get("_SYSTEMD_UNIT") or obj.get("SYSLOG_IDENTIFIER") or obj.get("_COMM") or "")
+                    message = obj.get("MESSAGE", "")
+                    if isinstance(message, list):
+                        message = " ".join(str(m) for m in message)
+                    entries.append({
+                        "ts": ts_iso,
+                        "priority": priority,
+                        "level": _LEVEL_MAP.get(priority, "err"),
+                        "unit": str(unit),
+                        "message": str(message),
+                    })
+                except (ValueError, KeyError):
+                    continue
 
-        return jsonify({"errors": errors, "count": len(errors), "source": "journalctl"})
+        # Fallback plaintext: warnings + errors for context
+        plain_cmd = ["journalctl", "-p", "warning", "-n", "100", "--no-pager", "--output=short-iso"]
+        plain_out, plain_rc = _run(plain_cmd, timeout=10)
+        plaintext = ""
+        if plain_rc == 0 and plain_out:
+            lines = [ln for ln in plain_out.splitlines() if ln.strip() and not ln.startswith("--")]
+            plaintext = "\n".join(lines[-30:])
+
+        error_count = sum(1 for e in entries if e["priority"] <= 3)
+        warning_count = sum(1 for e in entries if e["priority"] == 4)
+        return jsonify({
+            "entries": entries,
+            "count": len(entries),
+            "has_errors": any(e["priority"] <= 3 for e in entries),
+            "error_count": error_count,
+            "warning_count": warning_count,
+            "plaintext": plaintext,
+        })
+    except FileNotFoundError:
+        return jsonify({"entries": [], "count": 0, "has_errors": False,
+                        "error_count": 0, "warning_count": 0, "plaintext": "",
+                        "error": "journalctl not available"})
     except Exception as exc:
-        return jsonify({"error": str(exc), "errors": [], "count": 0})
+        return jsonify({"entries": [], "count": 0, "has_errors": False,
+                        "error_count": 0, "warning_count": 0, "plaintext": "",
+                        "error": str(exc)})
 
 
 # ── Swap / zRAM Info ──────────────────────────────────────────────────────────
