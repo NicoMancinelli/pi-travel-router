@@ -8745,9 +8745,13 @@ def api_system_cpu_temp():
 @require_auth
 def api_system_kernel_modules():
     try:
-        out, rc = _run("lsmod")
+        kernel_ver = None
+        uname_out, uname_rc = _run("uname -r 2>/dev/null")
+        if uname_rc == 0:
+            kernel_ver = uname_out.strip()
+        out, rc = _run("lsmod 2>/dev/null")
         if rc != 0:
-            return jsonify({"error": "lsmod failed", "modules": [], "count": 0})
+            return jsonify({"modules": [], "count": 0, "kernel": kernel_ver, "error": "lsmod failed"})
         modules = []
         lines = out.strip().splitlines()
         for line in lines[1:]:  # skip header
@@ -8760,20 +8764,21 @@ def api_system_kernel_modules():
             except ValueError:
                 size = 0
             try:
-                used_by = int(cols[2])
+                used_count = int(cols[2])
             except ValueError:
-                used_by = 0
+                used_count = 0
             raw_deps = cols[3].strip(",") if len(cols) > 3 else ""
-            dependents = [d for d in raw_deps.split(",") if d] if raw_deps else []
+            used_by = [d for d in raw_deps.split(",") if d] if raw_deps else []
             modules.append({
                 "name": name,
                 "size": size,
+                "used_count": used_count,
                 "used_by": used_by,
-                "dependents": dependents,
             })
-        return jsonify({"modules": modules, "count": len(modules), "source": "lsmod"})
+        modules.sort(key=lambda m: m["size"], reverse=True)
+        return jsonify({"modules": modules, "count": len(modules), "kernel": kernel_ver, "error": None})
     except Exception as exc:  # pylint: disable=broad-except
-        return jsonify({"error": str(exc), "modules": [], "count": 0})
+        return jsonify({"modules": [], "count": 0, "kernel": None, "error": str(exc)})
 
 
 @app.route("/api/system/logged-in-users", methods=["GET"])
