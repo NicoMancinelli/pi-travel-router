@@ -11504,6 +11504,135 @@ def api_sysctl_security():
         return jsonify({"error": str(exc), "params": [], "count": 0})
 
 
+@app.route("/api/network/packet-stats")
+@require_auth
+def api_network_packet_stats():
+    try:
+        interfaces = []
+        with open("/proc/net/dev") as f:
+            lines = f.readlines()
+        for line in lines[2:]:  # skip two header lines
+            if ":" not in line:
+                continue
+            name, rest = line.split(":", 1)
+            name = name.strip()
+            if name == "lo":
+                continue
+            fields = rest.split()
+            if len(fields) < 16:
+                continue
+            rx_bytes    = int(fields[0])
+            rx_packets  = int(fields[1])
+            rx_errors   = int(fields[2])
+            rx_dropped  = int(fields[3])
+            tx_bytes    = int(fields[8])
+            tx_packets  = int(fields[9])
+            tx_errors   = int(fields[10])
+            tx_dropped  = int(fields[11])
+            interfaces.append({
+                "name":       name,
+                "rx_bytes":   rx_bytes,
+                "rx_packets": rx_packets,
+                "rx_errors":  rx_errors,
+                "rx_dropped": rx_dropped,
+                "tx_bytes":   tx_bytes,
+                "tx_packets": tx_packets,
+                "tx_errors":  tx_errors,
+                "tx_dropped": tx_dropped,
+                "rx_mb":      round(rx_bytes / 1048576, 2),
+                "tx_mb":      round(tx_bytes / 1048576, 2),
+            })
+        return jsonify({"interfaces": interfaces, "count": len(interfaces), "source": "proc-net-dev"})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "interfaces": [], "count": 0})
+
+
+@app.route("/api/system/i2c-devices")
+@require_auth
+def api_i2c_devices():
+    try:
+        buses_paths = sorted(Path("/dev").glob("i2c-*"))
+        if not buses_paths:
+            return jsonify({
+                "buses": [],
+                "total_devices": 0,
+                "bus_count": 0,
+                "source": "i2cdetect",
+                "note": "no i2c buses found or i2cdetect not installed",
+            })
+        buses = []
+        for dev_path in buses_paths:
+            try:
+                bus_num = int(dev_path.name.split("-", 1)[1])
+            except (ValueError, IndexError):
+                continue
+            rc, out, _ = _run(["i2cdetect", "-y", "-r", str(bus_num)])
+            devices = []
+            if rc == 0:
+                for line in out.splitlines():
+                    # lines look like: "00: -- -- -- -- -- -- -- -- 08 -- ..."
+                    if ":" not in line:
+                        continue
+                    _, cells = line.split(":", 1)
+                    for token in cells.split():
+                        if token == "--" or token.startswith("UU"):
+                            continue
+                        try:
+                            addr_int = int(token, 16)
+                            devices.append({"address": token.lower(), "address_int": addr_int})
+                        except ValueError:
+                            pass
+            buses.append({
+                "bus": bus_num,
+                "device_path": str(dev_path),
+                "devices": devices,
+            })
+        total = sum(len(b["devices"]) for b in buses)
+        if total == 0:
+            return jsonify({
+                "buses": buses,
+                "total_devices": 0,
+                "bus_count": len(buses),
+                "source": "i2cdetect",
+                "note": "no i2c buses found or i2cdetect not installed",
+            })
+        return jsonify({
+            "buses": buses,
+            "total_devices": total,
+            "bus_count": len(buses),
+            "source": "i2cdetect",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "buses": [], "total_devices": 0})
+
+
+@app.route("/api/system/inotify-stats")
+@require_auth
+def api_inotify_stats():
+    try:
+        def _read_int(path):
+            with open(path) as f:
+                return int(f.read().strip())
+        max_watches = _read_int("/proc/sys/fs/inotify/max_user_watches")
+        max_instances = _read_int("/proc/sys/fs/inotify/max_user_instances")
+        max_queued = _read_int("/proc/sys/fs/inotify/max_queued_events")
+        out, _rc = _run(
+            "grep -r 'inotify' /proc/*/fdinfo/ --include='*' -l 2>/dev/null | wc -l"
+        )
+        current_watchers = int(out.strip()) if out.strip().isdigit() else 0
+        watch_pct = min(100.0, current_watchers / max_watches * 100) if max_watches else 0.0
+        return jsonify({
+            "max_watches": max_watches,
+            "max_instances": max_instances,
+            "max_queued_events": max_queued,
+            "current_watchers": current_watchers,
+            "watch_usage_pct": round(watch_pct, 2),
+            "source": "proc-sysfs",
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "max_watches": 0, "current_watchers": 0})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

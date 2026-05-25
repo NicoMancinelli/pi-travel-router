@@ -1124,6 +1124,24 @@
     <div id="timers-content"><p class="muted">Loading…</p></div>
   </div>
 
+  <!-- Network Packet Stats -->
+  <div class="card" id="packet-stats-card">
+    <h2>📦 Packet Statistics</h2>
+    <div id="packet-stats-content"><p class="muted">Loading…</p></div>
+  </div>
+
+  <!-- I2C Devices -->
+  <div class="card" id="i2c-card">
+    <h2>🔧 I2C Devices</h2>
+    <div id="i2c-content"><p class="muted">Loading…</p></div>
+  </div>
+
+  <!-- Inotify Stats -->
+  <div class="card" id="inotify-card">
+    <h2>👁️ Inotify Watches</h2>
+    <div id="inotify-content"><p class="muted">Loading…</p></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4705,6 +4723,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRoutes();
   fetchSysctlSecurity();
   fetchTimers();
+  fetchPacketStats();
+  fetchI2cDevices();
 });
 
 async function fetchJournal() {
@@ -4985,6 +5005,8 @@ async function refreshAll() {
   fetchRoutes();
   fetchSysctlSecurity();
   fetchTimers();
+  fetchPacketStats();
+  fetchI2cDevices();
 }
 
 async function init() {
@@ -7385,6 +7407,77 @@ async function fetchIPv6Addresses() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('ipv6-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Network Packet Stats ──────────────────────────────────────────────────────
+async function fetchPacketStats() {
+  try {
+    const r = await fetch('/api/network/packet-stats');
+    const d = await r.json();
+    const el = document.getElementById('packet-stats-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    let html = '<table class="table"><thead><tr><th>Interface</th><th>RX MB</th><th>RX Pkts</th><th>RX Err</th><th>TX MB</th><th>TX Pkts</th><th>TX Err</th></tr></thead><tbody>';
+    for (const iface of (d.interfaces || [])) {
+      const rxErrColor = iface.rx_errors > 0 ? 'color:var(--amber)' : '';
+      const txErrColor = iface.tx_errors > 0 ? 'color:var(--amber)' : '';
+      html += `<tr><td><code>${iface.name}</code></td><td>${iface.rx_mb.toFixed(1)}</td><td>${iface.rx_packets.toLocaleString()}</td><td style="${rxErrColor}">${iface.rx_errors}</td><td>${iface.tx_mb.toFixed(1)}</td><td>${iface.tx_packets.toLocaleString()}</td><td style="${txErrColor}">${iface.tx_errors}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('packet-stats-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── I2C Devices ───────────────────────────────────────────────────────────────
+async function fetchI2cDevices() {
+  try {
+    const r = await fetch('/api/system/i2c-devices');
+    const d = await r.json();
+    const el = document.getElementById('i2c-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    if (!d.buses || d.buses.length === 0 || d.total_devices === 0) {
+      el.innerHTML = `<p class="muted">${d.note || 'No I2C devices found.'}</p>`;
+      return;
+    }
+    let html = `<p class="muted" style="margin-bottom:6px">Buses: <strong>${d.bus_count}</strong> · Devices: <strong>${d.total_devices}</strong></p>`;
+    for (const bus of d.buses) {
+      if (bus.devices.length === 0) continue;
+      html += `<p style="font-weight:600;margin:6px 0 2px">${bus.device_path}</p>`;
+      html += '<table class="table"><thead><tr><th>Address (hex)</th><th>Address (dec)</th></tr></thead><tbody>';
+      for (const dev of bus.devices) {
+        html += `<tr><td><code>0x${dev.address}</code></td><td>${dev.address_int}</td></tr>`;
+      }
+      html += '</tbody></table>';
+    }
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('i2c-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Inotify Stats ─────────────────────────────────────────────────────────────
+async function fetchInotifyStats() {
+  try {
+    const r = await fetch('/api/system/inotify-stats');
+    const d = await r.json();
+    const el = document.getElementById('inotify-content');
+    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
+    const pct = (d.watch_usage_pct || 0).toFixed(1);
+    const barColor = d.watch_usage_pct >= 80 ? 'var(--red)' : d.watch_usage_pct >= 50 ? 'var(--amber)' : 'var(--green)';
+    let html = `<div class="metric-grid">
+      <div class="metric"><span class="metric-label">Watchers</span><span class="metric-value">${d.current_watchers}</span></div>
+      <div class="metric"><span class="metric-label">Max Watches</span><span class="metric-value">${d.max_watches.toLocaleString()}</span></div>
+      <div class="metric"><span class="metric-label">Max Instances</span><span class="metric-value">${d.max_instances.toLocaleString()}</span></div>
+      <div class="metric"><span class="metric-label">Max Queue</span><span class="metric-value">${d.max_queued_events.toLocaleString()}</span></div>
+    </div>`;
+    html += `<div style="margin-top:8px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+        <span class="muted">Watch usage</span>
+        <span style="color:${barColor}">${pct}%</span>
+      </div>
+      <div style="background:var(--bg2);border-radius:4px;height:6px">
+        <div style="width:${Math.min(100,d.watch_usage_pct||0)}%;background:${barColor};height:6px;border-radius:4px"></div>
+      </div>
+    </div>`;
+    el.innerHTML = html;
+  } catch(e) { document.getElementById('inotify-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Sysctl Security ───────────────────────────────────────────────────────────
