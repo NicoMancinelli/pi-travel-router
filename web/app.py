@@ -8645,34 +8645,35 @@ def api_system_cpu_temp():
 @require_auth
 def api_system_kernel_modules():
     try:
+        out, rc = _run("lsmod")
+        if rc != 0:
+            return jsonify({"error": "lsmod failed", "modules": [], "count": 0})
         modules = []
-        with open("/proc/modules", "r") as fh:
-            for line in fh:
-                cols = line.split()
-                if len(cols) < 4:
-                    continue
-                name = cols[0]
-                try:
-                    size = int(cols[1])
-                except ValueError:
-                    size = 0
-                try:
-                    instance_count = int(cols[2])
-                except ValueError:
-                    instance_count = 0
-                raw_deps = cols[3].strip(",")
-                depends = raw_deps.split(",") if raw_deps != "-" else []
-                modules.append({
-                    "name": name,
-                    "size": size,
-                    "used": instance_count,
-                    "depends": depends,
-                })
-        total = len(modules)
-        modules.sort(key=lambda m: m["size"], reverse=True)
-        return jsonify({"modules": modules[:50], "total": total})
+        lines = out.strip().splitlines()
+        for line in lines[1:]:  # skip header
+            cols = line.split()
+            if len(cols) < 3:
+                continue
+            name = cols[0]
+            try:
+                size = int(cols[1])
+            except ValueError:
+                size = 0
+            try:
+                used_by = int(cols[2])
+            except ValueError:
+                used_by = 0
+            raw_deps = cols[3].strip(",") if len(cols) > 3 else ""
+            dependents = [d for d in raw_deps.split(",") if d] if raw_deps else []
+            modules.append({
+                "name": name,
+                "size": size,
+                "used_by": used_by,
+                "dependents": dependents,
+            })
+        return jsonify({"modules": modules, "count": len(modules), "source": "lsmod"})
     except Exception as exc:  # pylint: disable=broad-except
-        return jsonify({"modules": [], "total": 0, "error": str(exc)}), 500
+        return jsonify({"error": str(exc), "modules": [], "count": 0})
 
 
 @app.route("/api/system/logged-in-users", methods=["GET"])
