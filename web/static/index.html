@@ -1223,6 +1223,15 @@
     <div id="env-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Disk Health (SMART) -->
+  <div class="card full-width" id="card-smart-disk-health">
+    <div class="card-title">
+      <span id="smart-health-icon">&#x1F7E2;</span> Disk Health (SMART)
+      <button class="btn btn-sm" onclick="fetchSmart()" style="margin-left:8px;">&#x27F3; Refresh</button>
+    </div>
+    <div id="smart-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4809,6 +4818,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKernelConfig();
   fetchBonding();
   fetchEnvironment();
+  fetchSmart();
 });
 
 async function fetchJournal() {
@@ -5075,6 +5085,7 @@ async function refreshAll() {
   fetchKernelConfig();
   fetchBonding();
   fetchEnvironment();
+  fetchSmart();
 }
 
 async function init() {
@@ -7516,6 +7527,49 @@ async function fetchDnsConfig() {
     }
     el.innerHTML = html;
   } catch(e) { document.getElementById('dns-config-content').innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── SMART Disk Health ─────────────────────────────────────────────────────────
+async function fetchSmart() {
+  const el = document.getElementById('smart-content');
+  const iconEl = document.getElementById('smart-health-icon');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/smart');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = `<p class="error">${d.error || 'Request failed'}</p>`; return; }
+    if (!d.smartctl_available) {
+      if (iconEl) iconEl.textContent = '⚠️';
+      el.innerHTML = '<p class="muted">smartctl not installed — install <code>smartmontools</code> to enable SMART monitoring.</p>';
+      return;
+    }
+    const disks = d.disks || [];
+    if (disks.length === 0) {
+      if (iconEl) iconEl.textContent = '🔵';
+      el.innerHTML = '<p class="muted">No block devices found.</p>';
+      return;
+    }
+    const anyFailed = disks.some(dk => dk.health === 'FAILED');
+    if (iconEl) iconEl.textContent = anyFailed ? '🔴' : '🟢';
+    let html = '<div style="overflow-x:auto"><table class="table"><thead><tr>'
+      + '<th>Device</th><th>Health</th><th>Temp (°C)</th><th>Reallocated Sectors</th><th>Power-On Hours</th>'
+      + '</tr></thead><tbody>';
+    for (const dk of disks) {
+      const healthBadge = dk.health === 'PASSED'
+        ? '<span style="background:#16a34a;color:#fff;padding:1px 8px;border-radius:9px;font-size:0.85em">PASSED</span>'
+        : dk.health === 'FAILED'
+          ? '<span style="background:#dc2626;color:#fff;padding:1px 8px;border-radius:9px;font-size:0.85em">FAILED</span>'
+          : '<span style="color:var(--text-dim)">N/A</span>';
+      const temp = dk.temp_c !== null && dk.temp_c !== undefined ? dk.temp_c + ' °C' : '—';
+      const realloc = dk.reallocated !== null && dk.reallocated !== undefined ? dk.reallocated : '—';
+      const poh = dk.power_on_hours !== null && dk.power_on_hours !== undefined ? dk.power_on_hours.toLocaleString() + ' h' : '—';
+      const errNote = dk.error ? ` <span style="color:var(--text-dim);font-size:0.8em">(${dk.error})</span>` : '';
+      html += `<tr><td><code>${dk.device}</code>${errNote}</td><td>${healthBadge}</td><td>${temp}</td><td>${realloc}</td><td>${poh}</td></tr>`;
+    }
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── System Environment ────────────────────────────────────────────────────────
