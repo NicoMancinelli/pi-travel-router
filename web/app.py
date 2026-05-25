@@ -12130,6 +12130,73 @@ def api_system_crontab():
     })
 
 
+# ── System Environment ────────────────────────────────────────────────────────
+
+_ENV_SAFE_KEYS = {
+    "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "SHELL", "USER", "HOME",
+    "HOSTNAME", "TZ", "PYTHONPATH", "VIRTUAL_ENV", "DBUS_SESSION_BUS_ADDRESS",
+    "XDG_RUNTIME_DIR", "SYSTEMD_EXEC_PID",
+}
+
+_ENV_SYSTEMD_EXTRA_KEYS = {
+    "INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_UNIT_PATH",
+}
+
+_ENV_SECRET_PATTERNS = re.compile(
+    r"PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|AUTH", re.IGNORECASE
+)
+
+
+def _env_is_safe(key):
+    """Return True if the key is allowed to be exposed."""
+    return not _ENV_SECRET_PATTERNS.search(key)
+
+
+@app.route("/api/system/environment", methods=["GET"])
+@require_auth
+def api_system_environment():
+    """Return a filtered view of process and systemd environment variables."""
+    variables = []
+
+    # Source 1: current process environment
+    process_allowed = _ENV_SAFE_KEYS
+    for key, value in os.environ.items():
+        if key in process_allowed and _env_is_safe(key):
+            variables.append({"key": key, "value": value, "source": "process"})
+
+    # Source 2: systemd / init environment from /proc/1/environ
+    systemd_allowed = _ENV_SAFE_KEYS | _ENV_SYSTEMD_EXTRA_KEYS
+    seen_keys = {v["key"] for v in variables}
+    try:
+        raw = Path("/proc/1/environ").read_bytes()
+        for entry in raw.split(b"\x00"):
+            if b"=" not in entry:
+                continue
+            try:
+                decoded = entry.decode("utf-8", errors="replace")
+            except Exception:
+                continue
+            key, _, value = decoded.partition("=")
+            key = key.strip()
+            if not key:
+                continue
+            if key not in systemd_allowed:
+                continue
+            if not _env_is_safe(key):
+                continue
+            source = "systemd"
+            if key in seen_keys:
+                # already have a process entry — skip duplicate
+                continue
+            variables.append({"key": key, "value": value, "source": source})
+            seen_keys.add(key)
+    except OSError:
+        pass
+
+    variables.sort(key=lambda v: v["key"])
+    return jsonify({"variables": variables, "total": len(variables)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
