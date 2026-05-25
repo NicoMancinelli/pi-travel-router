@@ -10590,36 +10590,54 @@ async function fetchLogSummaryJournal() {
 }
 
 // ── Package Updates ───────────────────────────────────────────────────────────
-
 async function fetchPackageUpdates() {
   const el = document.getElementById('package-updates-content');
+  const badge = document.getElementById('package-updates-count');
   if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await fetch('/api/system/package-updates', { headers: authHeaders() });
-    if (!r.ok) { el.innerHTML = '<span style="color:var(--danger)">Failed to load</span>'; return; }
+    const r = await fetch('/api/system/package-updates');
     const d = await r.json();
-    if (d.count === 0) {
-      el.innerHTML = '<span style="color:#22c55e;font-weight:600;">&#x2714; Up to date</span>';
-      return;
+    const count = d.count || 0;
+    const secCount = d.security_count || 0;
+    if (badge) {
+      badge.textContent = count > 0 ? `${count} pending` : 'Up to date';
+      badge.style.background = secCount > 0 ? '#dc2626' : count > 0 ? '#f59e0b' : '#16a34a';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
     }
-    let html = `<div style="font-weight:600;margin-bottom:8px;">${d.count} update${d.count !== 1 ? 's' : ''} pending</div>`;
-    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr style="border-bottom:1px solid var(--border);text-align:left;">';
-    html += '<th style="padding:4px 8px;">Package</th><th style="padding:4px 8px;">Current</th><th style="padding:4px 8px;">Available</th><th style="padding:4px 8px;">Arch</th>';
-    html += '</tr></thead><tbody>';
-    for (const pkg of d.packages) {
-      html += `<tr style="border-bottom:1px solid var(--border);">`;
-      html += `<td style="padding:4px 8px;">${pkg.package}</td>`;
-      html += `<td style="padding:4px 8px;color:var(--muted);">${pkg.current}</td>`;
-      html += `<td style="padding:4px 8px;color:#22c55e;">${pkg.available}</td>`;
-      html += `<td style="padding:4px 8px;">${pkg.arch}</td>`;
-      html += '</tr>';
+    let html = '';
+    if (count === 0) {
+      html = '<p class="muted" style="color:var(--success,#16a34a);">&#x2713; System is up to date.</p>';
+    } else {
+      html += `<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <div style="background:var(--bg2);border-radius:5px;padding:5px 12px;font-size:12px;"><span style="font-weight:700;${count > 0 ? 'color:#f59e0b' : ''}">${count}</span> <span style="color:var(--text-dim)">upgradable</span></div>
+        ${secCount > 0 ? `<div style="background:rgba(220,38,38,0.1);border-radius:5px;padding:5px 12px;font-size:12px;"><span style="font-weight:700;color:#dc2626">${secCount}</span> <span style="color:var(--text-dim)">security</span></div>` : ''}
+      </div>`;
+      const pkgs = d.upgradable || [];
+      html += '<div style="max-height:220px;overflow-y:auto;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+      html += `<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">
+        <th style="text-align:left;padding:2px 5px;">Package</th>
+        <th style="text-align:left;padding:2px 5px;">New Version</th>
+        <th style="text-align:left;padding:2px 5px;"></th>
+      </tr></thead><tbody>`;
+      for (const p of pkgs) {
+        html += `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:2px 5px;font-family:monospace;font-weight:500">${p.name}</td>
+          <td style="padding:2px 5px;font-family:monospace;font-size:10px;color:var(--text-dim)">${p.new_version || '&#x2014;'}</td>
+          <td style="padding:2px 5px;">${p.is_security ? '<span style="font-size:9px;background:#dc2626;color:#fff;border-radius:3px;padding:1px 4px;">SEC</span>' : ''}</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
     }
-    html += '</tbody></table>';
+    if (d.last_update) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">Last apt update: ${d.last_update}</div>`;
+    }
     el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load package updates</span>';
-  }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Net Bandwidth ─────────────────────────────────────────────────────────────
