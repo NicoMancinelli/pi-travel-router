@@ -8768,6 +8768,42 @@ def api_system_cpu_temp():
         return jsonify({"zones": [], "max_temp_c": None, "error": str(exc)}), 500
 
 
+# ── Kernel Modules (v2) ───────────────────────────────────────────────────────
+
+@app.route("/api/system/kernel-modules", methods=["GET"])
+@require_auth
+def api_system_kernel_modules():
+    try:
+        modules = []
+        with open("/proc/modules", "r") as fh:
+            for line in fh:
+                cols = line.split()
+                if len(cols) < 4:
+                    continue
+                name = cols[0]
+                try:
+                    size = int(cols[1])
+                except ValueError:
+                    size = 0
+                try:
+                    instance_count = int(cols[2])
+                except ValueError:
+                    instance_count = 0
+                raw_deps = cols[3].strip(",")
+                depends = raw_deps.split(",") if raw_deps != "-" else []
+                modules.append({
+                    "name": name,
+                    "size": size,
+                    "used": instance_count,
+                    "depends": depends,
+                })
+        total = len(modules)
+        modules.sort(key=lambda m: m["size"], reverse=True)
+        return jsonify({"modules": modules[:50], "total": total})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"modules": [], "total": 0, "error": str(exc)}), 500
+
+
 @app.route("/api/system/logged-in-users", methods=["GET"])
 @require_auth
 def api_system_logged_in_users():
