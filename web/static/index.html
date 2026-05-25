@@ -1095,9 +1095,14 @@
   </div>
 
   <!-- NTP Status -->
-  <div class="card" id="ntp-card">
-    <h2>🕐 NTP Status</h2>
-    <div id="ntp-content"><p class="muted">Loading…</p></div>
+  <div class="card" id="ntp-status-card">
+    <div class="card-header">
+      <span>🕐 NTP / Time Sync</span>
+      <span class="card-badge" id="ntp-sync-badge">—</span>
+    </div>
+    <div class="card-body" id="ntp-status-content">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
   </div>
 
   <!-- CPU Frequency -->
@@ -8558,29 +8563,56 @@ async function fetchTimers() {
 
 // ── NTP Status ────────────────────────────────────────────────────────────────
 async function fetchNtpStatus() {
+  const el = document.getElementById('ntp-status-content');
+  const badge = document.getElementById('ntp-sync-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await fetch('/api/system/ntp-status');
+    const r = await fetch('/api/system/ntp');
     const d = await r.json();
-    const el = document.getElementById('ntp-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    const syncColor = d.ntp_synced ? 'var(--green)' : 'var(--red)';
-    const syncLabel = d.ntp_synced ? '✓ Synchronized' : '✗ Not synchronized';
-    let html = `<div class="metric-grid">
-      <div class="metric"><span class="metric-label">Sync</span><span class="metric-value" style="color:${syncColor}">${syncLabel}</span></div>
-      <div class="metric"><span class="metric-label">NTP</span><span class="metric-value">${d.ntp_enabled ? 'Enabled' : 'Disabled'}</span></div>
-      <div class="metric"><span class="metric-label">Timezone</span><span class="metric-value">${d.timezone || '-'}</span></div>
-      <div class="metric"><span class="metric-label">Server</span><span class="metric-value">${d.ntp_server || '-'}</span></div>
-    </div>`;
-    if (d.offset_ms !== null) {
-      html += `<div class="metric-grid" style="margin-top:6px">
-        <div class="metric"><span class="metric-label">Offset</span><span class="metric-value">${d.offset_ms?.toFixed(2)} ms</span></div>
-        <div class="metric"><span class="metric-label">Delay</span><span class="metric-value">${d.delay_ms?.toFixed(2)} ms</span></div>
-        <div class="metric"><span class="metric-label">Jitter</span><span class="metric-value">${d.jitter_ms?.toFixed(2)} ms</span></div>
-      </div>`;
+    if (badge) {
+      badge.textContent = d.synchronized ? 'Synced' : 'Not Synced';
+      badge.style.background = d.synchronized ? 'var(--success,#16a34a)' : 'var(--danger,#dc2626)';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
     }
-    if (d.local_time) html += `<p class="muted" style="margin-top:6px;font-size:0.85em">Local time: ${d.local_time}</p>`;
+    let html = '';
+    const td = d.timedatectl || {};
+    const items = [
+      ['Local Time', td.TimeUSec ? new Date(parseInt(td.TimeUSec)/1000).toLocaleString() : (td.LocalRTC || '')],
+      ['Time Zone', td.Timezone || '—'],
+      ['NTP Service', d.ntp_service || '—'],
+      ['RTC in UTC', td.LocalRTC === '0' ? 'Yes' : (td.LocalRTC || '—')],
+    ].filter(([,v]) => v);
+    if (items.length) {
+      html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+      for (const [k, v] of items) {
+        html += `<div style="background:var(--bg2);border-radius:5px;padding:5px 10px;font-size:12px;"><span style="color:var(--text-dim)">${k}: </span><strong>${v}</strong></div>`;
+      }
+      html += '</div>';
+    }
+    const ch = d.chrony?.tracking || {};
+    if (Object.keys(ch).length) {
+      html += '<div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Chrony Tracking</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;">';
+      for (const [k, v] of Object.entries(ch)) {
+        html += `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:3px 6px;color:var(--text-dim);width:45%">${k}</td>
+          <td style="padding:3px 6px;font-family:monospace">${v}</td>
+        </tr>`;
+      }
+      html += '</table>';
+    }
+    const src = d.chrony?.sources_raw || '';
+    if (src.trim()) {
+      html += '<div style="font-weight:600;font-size:12px;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px;">Chrony Sources</div>';
+      html += `<pre style="font-size:10px;overflow-x:auto;background:var(--bg2);padding:6px;border-radius:4px;max-height:120px;overflow-y:auto;">${src}</pre>`;
+    }
+    if (!html) html = '<p class="muted">No NTP data available.</p>';
     el.innerHTML = html;
-  } catch(e) { document.getElementById('ntp-content').innerHTML = `<p class="error">${e}</p>`; }
+  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── CPU Frequency ─────────────────────────────────────────────────────────────

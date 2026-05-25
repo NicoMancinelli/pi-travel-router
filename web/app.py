@@ -7421,79 +7421,62 @@ def api_system_meminfo():
 @app.route("/api/system/ntp", methods=["GET"])
 @require_auth
 def api_system_ntp():
-    """Return NTP/time sync status via timedatectl and chronyc/ntpq."""
+    """Return NTP/time sync status via timedatectl and chronyc."""
+    _CHRONY_TRACKING_KEYS = {
+        "Reference ID", "Stratum", "System time", "RMS offset",
+        "Frequency", "Last offset", "Root delay", "Root dispersion",
+    }
     result = {
-        "synced": False,
-        "service": None,
-        "time_utc": None,
-        "timezone": None,
-        "offset_ms": None,
-        "stratum": None,
-        "server": None,
-        "peers": [],
+        "synchronized": False,
+        "ntp_service": "systemd-timesyncd",
+        "timedatectl": {},
+        "chrony": {"tracking": {}, "sources_raw": ""},
+        "error": None,
     }
 
-    # timedatectl gives us basic sync status
-    out, rc = _run(["timedatectl", "show", "--no-pager"])
-    if rc == 0:
-        for line in out.splitlines():
-            if "=" not in line:
-                continue
-            k, _, v = line.partition("=")
-            k = k.strip()
-            v = v.strip()
-            if k == "NTPSynchronized":
-                result["synced"] = v == "yes"
-            elif k == "Timezone":
-                result["timezone"] = v
-            elif k == "TimeUSec":
-                result["time_utc"] = v
+    # timedatectl show --no-pager → key=value pairs
+    try:
+        out, rc = _run(["timedatectl", "show", "--no-pager"])
+        if rc == 0 and out:
+            td = {}
+            for line in out.splitlines():
+                if "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                td[k.strip()] = v.strip()
+            result["timedatectl"] = td
+            result["synchronized"] = td.get("NTPSynchronized", "") == "yes"
+            if td.get("NTPService"):
+                result["ntp_service"] = td["NTPService"]
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = str(exc)
 
-    # Try chronyc tracking for detailed offset info
-    out2, rc2 = _run(["chronyc", "tracking"])
-    if rc2 == 0:
-        result["service"] = "chrony"
-        for line in out2.splitlines():
-            line = line.strip()
-            if line.startswith("Reference ID"):
-                # "Reference ID    : A29FC801 (time.cloudflare.com)"
-                parts = line.split(":", 1)
-                if len(parts) > 1:
-                    ref = parts[1].strip()
-                    if "(" in ref and ")" in ref:
-                        result["server"] = ref[ref.index("(")+1:ref.index(")")]
-            elif line.startswith("System time"):
-                # "System time     : 0.000123456 seconds fast of NTP time"
-                parts = line.split(":", 1)
-                if len(parts) > 1:
-                    try:
-                        val = float(parts[1].strip().split()[0])
-                        result["offset_ms"] = round(val * 1000, 3)
-                    except (ValueError, IndexError):
-                        pass
-            elif line.startswith("Stratum"):
-                parts = line.split(":", 1)
-                if len(parts) > 1:
-                    try:
-                        result["stratum"] = int(parts[1].strip())
-                    except ValueError:
-                        pass
-    elif _run(["ntpq", "-p"])[1] == 0:
-        out3, _ = _run(["ntpq", "-p"])
-        result["service"] = "ntpd"
-        for line in out3.splitlines():
-            if line.startswith(("*", "o")):
-                parts = line[1:].split()
-                if len(parts) >= 9:
-                    result["server"] = parts[0]
-                    try:
-                        result["stratum"] = int(parts[2])
-                        result["offset_ms"] = float(parts[8])
-                    except (ValueError, IndexError):
-                        pass
-                break
-    else:
-        result["service"] = "systemd-timesyncd"
+    # chronyc tracking
+    try:
+        out2, rc2 = _run(["chronyc", "tracking"])
+        if rc2 == 0 and out2:
+            result["ntp_service"] = "chrony"
+            tracking = {}
+            for line in out2.splitlines():
+                line = line.strip()
+                for key in _CHRONY_TRACKING_KEYS:
+                    if line.startswith(key):
+                        parts = line.split(":", 1)
+                        if len(parts) > 1:
+                            tracking[key] = parts[1].strip()
+                        break
+            result["chrony"]["tracking"] = tracking
+    except Exception:  # noqa: BLE001
+        pass
+
+    # chronyc sources -v (first 30 lines)
+    try:
+        out3, rc3 = _run(["chronyc", "sources", "-v"])
+        if rc3 == 0 and out3:
+            lines = out3.splitlines()[:30]
+            result["chrony"]["sources_raw"] = "\n".join(lines)
+    except Exception:  # noqa: BLE001
+        pass
 
     return jsonify(result)
 
