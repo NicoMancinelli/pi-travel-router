@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.50.0] - 2026-05-25
+
+### Added
+- `GET /api/system/failed-services` — systemd units in failed state with 5-line journalctl tail per unit; shows green checkmark when clean
+- `GET /api/system/ntp-peers` — NTP peer status via `chronyc sources/tracking` (ntpq fallback) with stratum, offset, and sync state
+- `GET /api/network/ip-geo` — public IP and geolocation from ip-api.com (country, region, city, ISP, org, ASN); useful to verify VPN exit node
+- Dashboard cards: Failed Services (💥), NTP Peers (🕐), Public IP & Location (🌍)
+
 ## [2.49.0] - 2026-05-25
 
 ### Added
