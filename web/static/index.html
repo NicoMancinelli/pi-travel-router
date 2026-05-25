@@ -823,6 +823,15 @@
     <div id="route-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
   </div>
 
+  <!-- ARP / Neighbor Table -->
+  <div class="card full-width" id="card-arp" style="margin-top:16px;">
+    <div class="card-header">
+      <span>📡 ARP Table</span>
+      <button class="btn btn-sm" onclick="fetchArpTable()">&#x21BB; Refresh</button>
+    </div>
+    <div id="arp-table-content"><span style="color:var(--text-dim);font-size:13px;">Loading…</span></div>
+  </div>
+
   <hr class="divider">
 
   <!-- Logs -->
@@ -3951,6 +3960,7 @@ async function refreshAll() {
   fetchIfaceStats();
   fetchNtfyConfig();
   fetchLoginHistory();
+  fetchArpTable();
 }
 
 async function init() {
@@ -4754,6 +4764,40 @@ async function fetchRouteTable() {
       html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.via || '—') + '</td>';
       html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (rt.dev || '—') + '</td>';
       html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);text-align:right;font-family:monospace;">' + (rt.metric || '—') + '</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--error,#e55);font-size:13px;">Failed: ' + e + '</span>';
+  }
+}
+
+// ── ARP / Neighbor Table ───────────────────────────────────────────────────────
+
+async function fetchArpTable() {
+  const el = document.getElementById('arp-table-content');
+  try {
+    const r = await apiFetch('/api/network/arp');
+    const d = await r.json();
+    if (!r.ok) { el.innerHTML = '<span style="color:var(--error,#e55);">' + (d.error || 'Error') + '</span>'; return; }
+    const neighbors = d.neighbors || [];
+    if (neighbors.length === 0) { el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No ARP entries found</span>'; return; }
+    let html = '<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">' + d.count + ' neighbor(s)</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">IP</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">MAC</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">Dev</th>';
+    html += '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;border-bottom:1px solid var(--border);">State</th>';
+    html += '</tr></thead><tbody>';
+    for (const n of neighbors) {
+      const stateColor = n.state === 'REACHABLE' ? 'var(--ok,#4c4)' : n.state === 'FAILED' || n.state === 'INCOMPLETE' ? 'var(--error,#e55)' : 'var(--text-dim)';
+      html += '<tr>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + n.ip + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;font-size:11px;">' + (n.mac || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);font-family:monospace;">' + (n.dev || '—') + '</td>';
+      html += '<td style="padding:4px 8px;border-bottom:1px solid var(--border);color:' + stateColor + ';font-size:12px;">' + (n.state || '—') + '</td>';
       html += '</tr>';
     }
     html += '</tbody></table>';

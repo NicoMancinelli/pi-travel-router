@@ -4984,6 +4984,37 @@ def api_network_routes():
     return jsonify({"routes": routes, "count": len(routes)})
 
 
+# ── ARP / neighbour table ─────────────────────────────────────────────────────
+
+@app.route("/api/network/arp", methods=["GET"])
+@require_auth
+def api_network_arp():
+    """Return the current ARP/neighbour table."""
+    neighbors = []
+    try:
+        out, _ = _run(["ip", "neigh", "show"], timeout=5)
+        for line in (out or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split()
+            # Format: <ip> dev <iface> lladdr <mac> <state>
+            ip_addr = parts[0] if parts else ""
+            entry = {"ip": ip_addr, "dev": "", "mac": "", "state": ""}
+            for i, p in enumerate(parts):
+                if p == "dev" and i + 1 < len(parts):
+                    entry["dev"] = parts[i + 1]
+                elif p == "lladdr" and i + 1 < len(parts):
+                    entry["mac"] = parts[i + 1]
+            # Last token is state (REACHABLE, STALE, FAILED, etc.)
+            if parts:
+                entry["state"] = parts[-1]
+            neighbors.append(entry)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"neighbors": neighbors, "count": len(neighbors)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
