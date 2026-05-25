@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.41.0] - 2026-05-25
+
+### Added
+
+- **IRQ interrupts card** (`web/app.py`, `web/static/index.html`): `GET /api/system/interrupts` parses `/proc/interrupts`, sums counts across all CPUs, returns top 15 IRQs by total sorted descending. Dashboard card with IRQ/total/type/description table, count badge, on-demand Refresh button.
+- **Battery / UPS status card** (`web/app.py`, `web/static/index.html`): `GET /api/system/battery` reads `/sys/class/power_supply/` sysfs entries, skips Mains/USB adapters, returns capacity, status, voltage, current, manufacturer, model, technology per battery. Dashboard card with per-battery capacity bar (green/orange/red), status badge (Charging/Discharging/Full), metadata row. Auto-refreshes on poll.
+- **TCP connections card** (`web/app.py`, `web/static/index.html`): `GET /api/network/tcp` parses `/proc/net/tcp` and `/proc/net/tcp6`, converts little-endian hex addresses to dotted/colon notation, maps state hex to state names, skips loopback-only connections, returns top 50 sorted LISTEN-first then ESTABLISHED. Dashboard card with local/remote/state table, established+listening summary, state colour-coding. Auto-refreshes on poll.
+
 ## [2.40.0] - 2026-05-25
 
 ### Added
