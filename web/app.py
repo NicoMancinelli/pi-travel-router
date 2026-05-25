@@ -13565,6 +13565,72 @@ def api_network_geoip():
     return jsonify({"error": "No internet access", "ip": None})
 
 
+@app.route("/api/network/firewall", methods=["GET"])
+@require_auth
+def api_network_firewall():
+    """Return iptables chain summary: policy, rule count, packet/byte stats."""
+    import re as _re
+
+    def _parse_chains(output):
+        chains = []
+        current_chain = None
+        rule_count = 0
+        for line in output.splitlines():
+            # Chain header: "Chain INPUT (policy DROP 1024 packets, 98304 bytes)"
+            m = _re.match(
+                r"^Chain\s+(\S+)\s+\(policy\s+(\S+)\s+(\d+)\s+packets,\s+(\d+)\s+bytes\)",
+                line,
+            )
+            if m:
+                if current_chain is not None:
+                    current_chain["rules"] = rule_count
+                    chains.append(current_chain)
+                current_chain = {
+                    "name": m.group(1),
+                    "policy": m.group(2),
+                    "packets": int(m.group(3)),
+                    "bytes": int(m.group(4)),
+                    "rules": 0,
+                }
+                rule_count = 0
+                continue
+            # Also handle chains referenced by name without policy (e.g. user-defined)
+            m2 = _re.match(r"^Chain\s+(\S+)\s+\((\d+)\s+references\)", line)
+            if m2:
+                if current_chain is not None:
+                    current_chain["rules"] = rule_count
+                    chains.append(current_chain)
+                current_chain = {
+                    "name": m2.group(1),
+                    "policy": "—",
+                    "packets": 0,
+                    "bytes": 0,
+                    "rules": 0,
+                }
+                rule_count = 0
+                continue
+            # Count rule rows (non-empty lines that aren't the header row)
+            if current_chain is not None and line.strip() and not line.startswith("pkts"):
+                rule_count += 1
+        if current_chain is not None:
+            current_chain["rules"] = rule_count
+            chains.append(current_chain)
+        return chains
+
+    ipv4_out, _ = _run("iptables -L -n -v --line-numbers 2>/dev/null", timeout=10)
+    ip6_out, ip6_rc = _run("ip6tables -L -n -v --line-numbers 2>/dev/null", timeout=10)
+
+    chains = _parse_chains(ipv4_out)
+    total_rules = sum(c["rules"] for c in chains)
+    ipv6_available = ip6_rc == 0 and bool(ip6_out.strip())
+
+    return jsonify({
+        "chains": chains,
+        "total_rules": total_rules,
+        "ipv6_available": ipv6_available,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
