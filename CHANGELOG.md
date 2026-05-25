@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.83.0] - 2026-05-25
+
+### Added
+- `GET /api/system/boot-params` — kernel boot parameters from `/proc/cmdline` (parsed key=value pairs); `/proc/version`, sysctl values (pid_max, threads-max, swappiness, dirty_ratio); `systemd-analyze time` boot breakdown; dashboard card Boot & Kernel (🚀) with boot time, sysctl tiles, and cmdline display
+- `GET /api/system/block-devices` — block device tree from `lsblk -J` with partition hierarchy; I/O stats from `/sys/block/*/stat`; transport, hotplug, rotational flags; dashboard card Block Devices (💾) with per-disk sub-cards showing transport/hotplug badges, partition chips, and I/O counts
+- `GET /api/network/bandwidth` — cumulative per-interface RX/TX stats from `/proc/net/dev`; bytes, packets, errors, dropped; human-readable totals; dashboard card Network Bandwidth (📈) with per-interface RX/TX bars normalized to most-active interface
+- Dashboard cards: Boot & Kernel (🚀), Block Devices (💾), Network Bandwidth (📈)
+
 ## [2.82.0] - 2026-05-25
 
 ### Added
