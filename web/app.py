@@ -8808,6 +8808,50 @@ def api_system_logged_in_users():
         return jsonify({"users": [], "count": 0, "error": str(exc)}), 500
 
 
+# ── Disk I/O Stats (spec-aligned) ────────────────────────────────────────────
+
+@app.route("/api/system/disk-io", methods=["GET"])
+@require_auth
+def api_system_disk_io():
+    """Parse /proc/diskstats for block devices (exclude loop/ram devices)."""
+    import re as _re
+    devices = []
+    try:
+        with open("/proc/diskstats", "r") as fh:
+            for line in fh:
+                cols = line.split()
+                if len(cols) < 14:
+                    continue
+                name = cols[2]
+                if _re.search(r"^(loop|ram)\d+", name):
+                    continue
+                try:
+                    reads_completed  = int(cols[3])
+                    reads_merged     = int(cols[4])
+                    sectors_read     = int(cols[5])
+                    time_reading_ms  = int(cols[6])
+                    writes_completed = int(cols[7])
+                    writes_merged    = int(cols[8])
+                    sectors_written  = int(cols[9])
+                    time_writing_ms  = int(cols[10])
+                except (ValueError, IndexError):
+                    continue
+                devices.append({
+                    "name":             name,
+                    "reads_completed":  reads_completed,
+                    "reads_merged":     reads_merged,
+                    "read_bytes":       sectors_read * 512,
+                    "time_reading_ms":  time_reading_ms,
+                    "writes_completed": writes_completed,
+                    "writes_merged":    writes_merged,
+                    "written_bytes":    sectors_written * 512,
+                    "time_writing_ms":  time_writing_ms,
+                })
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"devices": [], "error": str(exc)})
+    return jsonify({"devices": devices})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
