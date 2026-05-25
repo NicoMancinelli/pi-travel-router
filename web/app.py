@@ -13461,6 +13461,41 @@ def api_boot_params():
         return jsonify({"error": str(exc)})
 
 
+@app.route("/api/system/temperature")
+@require_auth
+def api_system_temperature():
+    """Read thermal zone temperatures from /sys/class/thermal and vcgencmd."""
+    zones = []
+    thermal_base = Path("/sys/class/thermal")
+    try:
+        for zone_dir in sorted(thermal_base.glob("thermal_zone*")):
+            try:
+                temp_raw = (zone_dir / "temp").read_text().strip()
+                zone_type = (zone_dir / "type").read_text().strip()
+                temp_c = int(temp_raw) / 1000.0
+                zones.append({"name": zone_type, "temp_c": round(temp_c, 1)})
+            except (OSError, ValueError):
+                continue
+    except OSError:
+        pass
+
+    # Try vcgencmd for GPU temp
+    gpu_out, gpu_rc = _run("vcgencmd measure_temp")
+    if gpu_rc == 0 and gpu_out:
+        import re as _re
+        m = _re.search(r"temp=([\d.]+)'C", gpu_out)
+        if m:
+            zones.append({"name": "gpu", "temp_c": round(float(m.group(1)), 1)})
+
+    max_c = max((z["temp_c"] for z in zones), default=0.0)
+    return jsonify({
+        "zones": zones,
+        "max_c": round(max_c, 1),
+        "warn": max_c >= 70.0,
+        "critical": max_c >= 80.0,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

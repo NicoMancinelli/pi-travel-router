@@ -1395,6 +1395,17 @@
     </div>
   </div>
 
+  <!-- Temperature Sensors -->
+  <div class="card" id="card-temperature">
+    <div class="card-header">
+      <span>🌡️ Temperature Sensors</span>
+      <span class="badge" id="temp-max">--°C</span>
+    </div>
+    <div class="card-body" id="temp-body">
+      <p class="muted">Loading…</p>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5482,6 +5493,7 @@ async function refreshAll() {
   fetchLoadHistory();
   fetchDiskUsage();
   fetchBootParams();
+  fetchTemperature();
 }
 
 async function init() {
@@ -7197,6 +7209,46 @@ async function fetchBootParams() {
     if (!html) html = '<p class="muted">No boot data available.</p>';
     el.innerHTML = html;
   } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── Temperature Sensors ───────────────────────────────────────────────────────
+
+async function fetchTemperature() {
+  const badge = document.getElementById('temp-max');
+  const body = document.getElementById('temp-body');
+  if (!body) return;
+  body.innerHTML = '<p class="muted"><span class="spinner"></span> Loading…</p>';
+  try {
+    const resp = await apiFetch('/api/system/temperature');
+    const data = await resp.json();
+    if (data.error) {
+      body.innerHTML = `<span style="color:var(--text-dim)">${escHtml(data.error)}</span>`;
+      return;
+    }
+    // Update badge
+    if (badge) {
+      badge.textContent = data.max_c.toFixed(1) + '°C';
+      badge.style.background = data.critical ? 'var(--danger)' : data.warn ? 'var(--warning, #f0a500)' : 'var(--success, #2e7d32)';
+      badge.style.color = '#fff';
+    }
+    // Render zone list
+    if (!data.zones || data.zones.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim)">No thermal zones found.</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    for (const z of data.zones) {
+      const color = z.temp_c >= 80 ? 'var(--danger)' : z.temp_c >= 70 ? 'var(--warning, #f0a500)' : 'var(--success, #2e7d32)';
+      html += `<tr>
+        <td style="padding:3px 8px 3px 0;color:var(--text-dim);">${escHtml(z.name)}</td>
+        <td style="padding:3px 0;font-weight:600;color:${color};">${z.temp_c.toFixed(1)}°C</td>
+      </tr>`;
+    }
+    html += '</table>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') body.innerHTML = `<span style="color:var(--danger)">Failed to load temperature data</span>`;
+  }
 }
 
 // ── Tailscale Status ──────────────────────────────────────────────────────────
