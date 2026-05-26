@@ -2070,6 +2070,13 @@
     <span class="badge" id="top-memory-badge">…</span>
   </div>
   <div class="card-body" id="top-memory-body"></div>
+<!-- DNS Test -->
+<div class="card" id="card-dns-test">
+  <div class="card-header" onclick="toggleCard('card-dns-test')">
+    <span>🔍 DNS Test</span>
+    <span class="badge" id="dns-test-badge">…</span>
+  </div>
+  <div class="card-body" id="dns-test-body"></div>
 </div>
 
   <!-- Tailscale Status -->
@@ -7766,6 +7773,7 @@ async function refreshAll() {
   fetchRouteSummary();
   fetchServiceHealth();
   fetchTopMemory();
+  fetchDnsTest();
 }
 
 async function init() {
@@ -7788,6 +7796,7 @@ async function init() {
   setInterval(fetchRouteSummary, 60000);
   setInterval(fetchServiceHealth, 30000);
   setInterval(fetchTopMemory, 30000);
+  setInterval(fetchDnsTest, 30000);
   // Connect SSE event stream
   initEventStream();
 }
@@ -11123,6 +11132,26 @@ async function fetchTopMemory() {
         <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Name</th>
         <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">RSS</th>
         <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Swap</th>
+// ── DNS Test ──
+async function fetchDnsTest() {
+  const badge = document.getElementById('dns-test-badge');
+  const body = document.getElementById('dns-test-body');
+  try {
+    const d = await apiFetch('/api/network/dns-test');
+    badge.textContent = d.all_passed ? `${d.passed}/${d.passed + d.failed} ok` : `${d.failed} failed`;
+    badge.style.background = d.all_passed ? '#22c55e' : '#ef4444';
+    const rows = d.tests.map(t => `<tr>
+      <td style="padding:2px 8px;font-size:13px;font-family:monospace;">${t.hostname}</td>
+      <td style="padding:2px 8px;font-size:12px;color:var(--text-dim);">${t.resolved || '—'}</td>
+      <td style="padding:2px 8px;font-size:12px;text-align:right;">${t.latency_ms !== null ? t.latency_ms + 'ms' : '—'}</td>
+      <td style="padding:2px 8px;font-size:12px;color:${t.success ? '#22c55e' : '#ef4444'};">${t.success ? '✓' : '✗'}</td>
+    </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Host</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Resolved</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Latency</th>
+        <th style="padding:2px 8px;font-size:11px;color:var(--text-dim);"></th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;

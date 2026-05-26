@@ -16931,6 +16931,41 @@ def api_system_top_memory():
     return jsonify({"processes": top, "total_shown": len(top)})
 
 
+# ── DNS test ──────────────────────────────────────────────────────────────────
+
+@app.route("/api/network/dns-test", methods=["GET"])
+@require_auth
+def api_network_dns_test():
+    """Test DNS resolution for a set of hostnames."""
+    import socket, time
+    TEST_HOSTS = ["google.com", "cloudflare.com", "github.com"]
+    tests = []
+    for hostname in TEST_HOSTS:
+        resolved = None
+        latency_ms = None
+        success = False
+        try:
+            t0 = time.monotonic()
+            resolved = socket.gethostbyname(hostname)
+            latency_ms = round((time.monotonic() - t0) * 1000, 1)
+            success = True
+        except Exception:
+            pass
+        tests.append({
+            "hostname": hostname,
+            "resolved": resolved,
+            "latency_ms": latency_ms,
+            "success": success,
+        })
+    passed = sum(1 for t in tests if t["success"])
+    return jsonify({
+        "tests": tests,
+        "all_passed": passed == len(tests),
+        "passed": passed,
+        "failed": len(tests) - passed,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
