@@ -1187,17 +1187,6 @@
     </div>
   </div>
 
-  <!-- Open File Descriptors -->
-  <div class="card" id="open-fds-card">
-    <div class="card-header">
-      <span>📂 Open File Descriptors</span>
-      <span class="card-badge" id="open-fds-pct">—</span>
-    </div>
-    <div class="card-body" id="open-fds-content">
-      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
-    </div>
-  </div>
-
   <!-- Crontab -->
   <div class="card full-width" id="card-crontab">
     <div class="card-title">
@@ -1544,6 +1533,17 @@
       <span class="card-badge" id="who-badge">0</span>
     </div>
     <div class="card-body" id="who-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
+  <!-- Open File Descriptors -->
+  <div class="card" id="card-open-fds">
+    <div class="card-header">
+      <span>📂 File Descriptors</span>
+      <span class="card-badge" id="open-fds-badge">—</span>
+    </div>
+    <div class="card-body" id="open-fds-content">
       <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
     </div>
   </div>
@@ -4237,6 +4237,51 @@ async function fetchWho() {
     </table>`;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim);">Error loading sessions</span>';
+  }
+}
+
+// ── Open File Descriptors ─────────────────────────────────────────────────────
+async function fetchOpenFds() {
+  const el = document.getElementById('open-fds-content');
+  const badge = document.getElementById('open-fds-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/open-fds');
+    const d = await r.json();
+    const used = d.used ?? (d.allocated - (d.free ?? 0));
+    const pct = d.used_pct ?? d.pct_used ?? 0;
+    if (badge) {
+      badge.textContent = `${used.toLocaleString()} / ${(d.max || 0).toLocaleString()}`;
+      badge.style.background = pct >= 80 ? '#dc2626' : pct >= 50 ? '#f59e0b' : '#16a34a';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
+    }
+    const barColor = pct >= 80 ? '#dc2626' : pct >= 50 ? '#f59e0b' : '#16a34a';
+    let html = `<div style="margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
+        <span>File descriptors</span>
+        <span style="color:var(--text-dim)">${used.toLocaleString()} / ${(d.max || 0).toLocaleString()} (${pct.toFixed(1)}%)</span>
+      </div>
+      <div style="background:var(--border);border-radius:4px;height:8px;">
+        <div style="background:${barColor};width:${Math.min(pct,100)}%;height:8px;border-radius:4px;"></div>
+      </div>
+    </div>`;
+    const stats = [
+      ['Allocated', d.allocated?.toLocaleString()],
+      ['Used', used.toLocaleString()],
+      ['Max', d.max?.toLocaleString()],
+    ].filter(([,v]) => v != null);
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
+    for (const [k, v] of stats) {
+      html += `<div style="background:var(--bg2);border-radius:4px;padding:4px 10px;font-size:11px;"><span style="color:var(--text-dim)">${k}: </span><strong>${v}</strong></div>`;
+    }
+    html += '</div>';
+    el.innerHTML = html;
+  } catch(e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = `<p class="error">${e}</p>`;
   }
 }
 
@@ -9418,66 +9463,6 @@ async function fetchCrontab() {
     html += '</tbody></table></div>';
     el.innerHTML = html;
   } catch(e) { document.getElementById('crontab-content').innerHTML = `<p class="error">${e}</p>`; }
-}
-
-// ── Open File Descriptors ─────────────────────────────────────────────────────
-async function fetchOpenFds() {
-  const el = document.getElementById('open-fds-content');
-  const badge = document.getElementById('open-fds-pct');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const r = await fetch('/api/system/open-fds');
-    const d = await r.json();
-    const pct = d.pct_used ?? 0;
-    if (badge) {
-      badge.textContent = `${pct.toFixed(1)}%`;
-      badge.style.background = pct >= 80 ? '#dc2626' : pct >= 50 ? '#f59e0b' : '#16a34a';
-      badge.style.color = '#fff';
-      badge.style.borderRadius = '4px';
-      badge.style.padding = '1px 7px';
-      badge.style.fontSize = '11px';
-    }
-    let html = '';
-    const barColor = pct >= 80 ? '#dc2626' : pct >= 50 ? '#f59e0b' : '#16a34a';
-    html += `<div style="margin-bottom:10px;">
-      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
-        <span>File descriptors</span>
-        <span style="color:var(--text-dim)">${(d.allocated - d.free).toLocaleString()} / ${(d.max || 0).toLocaleString()}</span>
-      </div>
-      <div style="background:var(--border);border-radius:4px;height:8px;">
-        <div style="background:${barColor};width:${Math.min(pct,100)}%;height:8px;border-radius:4px;"></div>
-      </div>
-    </div>`;
-    const stats = [
-      ['Allocated', d.allocated?.toLocaleString()],
-      ['Free', d.free?.toLocaleString()],
-      ['Max', d.max?.toLocaleString()],
-      d.lsof_total ? ['lsof total', d.lsof_total.toLocaleString()] : null,
-      d.inodes_allocated ? ['Inodes alloc', d.inodes_allocated?.toLocaleString()] : null,
-    ].filter(Boolean);
-    html += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">';
-    for (const [k, v] of stats) {
-      html += `<div style="background:var(--bg2);border-radius:4px;padding:4px 10px;font-size:11px;"><span style="color:var(--text-dim)">${k}: </span><strong>${v}</strong></div>`;
-    }
-    html += '</div>';
-    const top = d.top_procs || [];
-    if (top.length > 0) {
-      html += '<div style="font-weight:600;font-size:11px;text-transform:uppercase;color:var(--text-dim);margin-bottom:4px;">Top Processes by FD</div>';
-      html += '<div style="display:flex;flex-direction:column;gap:3px;">';
-      const maxC = top[0]?.count || 1;
-      for (const p of top.slice(0, 8)) {
-        const w = Math.round((p.count / maxC) * 100);
-        html += `<div style="display:flex;align-items:center;gap:6px;">
-          <div style="width:80px;font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-dim)">${p.name}</div>
-          <div style="flex:1;background:var(--border);border-radius:2px;height:10px;"><div style="background:var(--accent,#4a9eff);width:${w}%;height:10px;border-radius:2px;"></div></div>
-          <div style="font-size:10px;width:30px;text-align:right">${p.count}</div>
-        </div>`;
-      }
-      html += '</div>';
-    }
-    el.innerHTML = html;
-  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
 // ── Memory Detail ─────────────────────────────────────────────────────────────

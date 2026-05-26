@@ -12347,12 +12347,15 @@ def api_system_open_fds():
     except Exception:
         top_procs = []
 
-    pct_used = round((allocated - free) / max_fds * 100, 1) if max_fds > 0 else 0.0
+    used = allocated - free
+    pct_used = round(used / max_fds * 100, 1) if max_fds > 0 else 0.0
 
     return jsonify({
         "allocated": allocated,
+        "used": used,
         "free": free,
         "max": max_fds,
+        "used_pct": pct_used,
         "pct_used": pct_used,
         "inodes_allocated": inodes_allocated,
         "inodes_free": inodes_free,
