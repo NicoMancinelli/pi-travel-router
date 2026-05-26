@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.98.0] - 2026-05-25
+
+### Added
+- `GET /api/system/cron-jobs` — reads `/etc/crontab`, `/etc/cron.d/*`, and `crontab -l`; parses schedule/user/command/source; handles `@reboot`/`@daily` specials; dashboard card ⏰ Cron Jobs with 40-char command truncation
+- `GET /api/network/ping-check` — parallel pings of Cloudflare/Google/Quad9 DNS servers using `ThreadPoolExecutor`; returns per-host reachability and latency_ms; dashboard card 🏓 Ping Check with ✓/✗ indicators and "N/4 up" badge
+- `GET /api/system/log-summary` — recent journald errors via `journalctl -p err --since "1 hour ago"`; returns `error_services[]` top-10, `recent_errors[]` last-5; dashboard card 📜 Log Errors (1h) with CSS mini bar chart and monospace error block
+
 ## [2.97.0] - 2026-05-25
 
 ### Added
