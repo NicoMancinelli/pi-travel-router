@@ -17872,6 +17872,51 @@ def api_network_interface_stats():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Resolved DNS ─────────────────────────────────────────────────────────────
+@app.route("/api/network/resolved-dns")
+@require_auth
+def api_network_resolved_dns():
+    """Return current DNS servers from systemd-resolved or /etc/resolv.conf."""
+    try:
+        servers = []
+        source = None
+        # Try resolvectl first
+        try:
+            result = _run(["resolvectl", "dns"], timeout=5)
+            import re
+            for line in result.stdout.splitlines():
+                # Format: "Link N (iface): ip1 ip2..."
+                m = re.match(r"Link\s+\d+\s+\(([^)]+)\):\s*(.*)", line)
+                if m:
+                    iface = m.group(1)
+                    ips = m.group(2).split()
+                    for ip in ips:
+                        servers.append({"server": ip, "iface": iface, "source": "resolved"})
+            if servers:
+                source = "systemd-resolved"
+        except Exception:
+            pass
+        # Fall back to /etc/resolv.conf
+        if not servers:
+            try:
+                with open("/etc/resolv.conf") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("nameserver"):
+                            ip = line.split()[1]
+                            servers.append({"server": ip, "iface": "global", "source": "resolv.conf"})
+                source = "resolv.conf"
+            except FileNotFoundError:
+                pass
+        return jsonify({
+            "servers": servers,
+            "total": len(servers),
+            "source": source,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
