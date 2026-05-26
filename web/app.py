@@ -17575,6 +17575,36 @@ def api_system_pci_devices():
             "devices": devices,
             "total": len(devices),
             "by_class": classes,
+# ── Kernel Modules ───────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/system/kernel-modules")
+@require_auth
+def api_system_kernel_modules():
+    """Return loaded kernel modules from /proc/modules."""
+    try:
+        modules = []
+        try:
+            with open("/proc/modules") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        modules.append({
+                            "name": parts[0],
+                            "size": int(parts[1]),
+                            "used_by": int(parts[2]),
+                            "deps": parts[3].strip(",") if len(parts) > 3 and parts[3] != "-" else "",
+                        })
+        except FileNotFoundError:
+            pass
+        modules.sort(key=lambda x: x["size"], reverse=True)
+        return jsonify({
+            "modules": modules[:50],
+            "total": len(modules),
+            "top_by_size": modules[:10],
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

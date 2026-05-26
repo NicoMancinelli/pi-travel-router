@@ -2187,6 +2187,10 @@
 <div class="card" id="card-pci-devices">
   <div class="card-header"><span>🖧 PCI Devices</span><button class="refresh-btn" onclick="fetchPciDevices()">↻</button></div>
   <div class="card-body" id="pci-devices-body">
+<!-- Kernel Modules -->
+<div class="card" id="card-kernel-modules">
+  <div class="card-header"><span>🧩 Kernel Modules</span><button class="refresh-btn" onclick="fetchKernelModules()">↻</button></div>
+  <div class="card-body" id="kernel-modules-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -6444,6 +6448,21 @@ async function fetchPciDevices() {
       `<div class="stat-row"><span>${cls}</span><span class="val">${n}</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Total</span><span class="val">${d.total}</span></div>${classRows}`;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
+// ── Kernel Modules ──
+async function fetchKernelModules() {
+  const el = document.getElementById('kernel-modules-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/kernel-modules');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    const rows = d.top_by_size.map(m =>
+      `<div class="stat-row"><span>${m.name}</span><span class="val">${Math.round(m.size/1024)} KB</span></div>`
+    ).join('');
+    el.innerHTML = `<div class="stat-row"><span>Total modules</span><span class="val">${d.total}</span></div>${rows}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
