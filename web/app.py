@@ -9213,31 +9213,77 @@ def api_system_cpu_governors():
 @app.route("/api/system/timers", methods=["GET"])
 @require_auth
 def api_system_timers():
-    """Return systemd timers list with last/next trigger times."""
+    """Return systemd timers via systemctl list-timers --all --no-pager --no-legend."""
     try:
-        out, rc = _run(
-            ["systemctl", "list-timers", "--all", "--no-legend", "--no-pager"],
+        # Fetch with header to determine column positions
+        out_hdr, rc_hdr = _run(
+            ["systemctl", "list-timers", "--all", "--no-pager"],
             timeout=10,
         )
-        if rc != 0:
-            return jsonify({"error": "systemctl unavailable", "timers": [], "count": 0})
+        if rc_hdr != 0 or not out_hdr:
+            return jsonify({"timers": [], "count": 0, "next_timer": None,
+                            "error": "systemctl unavailable"})
+
+        lines = out_hdr.splitlines()
+        # Find the header line (starts with NEXT)
+        header_idx = next(
+            (i for i, l in enumerate(lines) if l.lstrip().startswith("NEXT")), None
+        )
+        if header_idx is None:
+            return jsonify({"timers": [], "count": 0, "next_timer": None})
+
+        header = lines[header_idx]
+        # Locate column start offsets from header
+        col_names = ["NEXT", "LEFT", "LAST", "PASSED", "UNIT", "ACTIVATES"]
+        col_offsets = []
+        for col in col_names:
+            idx = header.find(col)
+            if idx == -1:
+                col_offsets = None
+                break
+            col_offsets.append(idx)
+
         timers = []
-        for line in (out or "").strip().splitlines():
-            # format: NEXT LEFT LAST PASSED UNIT ACTIVATES
-            parts = line.split(None, 5)
-            if len(parts) < 6:
-                continue
+        data_lines = lines[header_idx + 1:]
+        for line in data_lines:
+            if not line.strip() or line.strip().startswith("timers listed"):
+                break
+            if col_offsets:
+                # Use column positions for fixed-width extraction
+                fields = []
+                for i, start in enumerate(col_offsets):
+                    end = col_offsets[i + 1] if i + 1 < len(col_offsets) else len(line)
+                    fields.append(line[start:end].strip())
+                if len(fields) < 6:
+                    continue
+                next_val, left_val, last_val, passed_val, unit_val, activates_val = (
+                    fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]
+                )
+            else:
+                # Fallback: naive split when header parse failed
+                parts = line.split()
+                if len(parts) < 6:
+                    continue
+                next_val = parts[0]
+                left_val = parts[1]
+                last_val = parts[2]
+                passed_val = parts[3]
+                unit_val = parts[4]
+                activates_val = parts[5]
+
             timers.append({
-                "unit": parts[4],
-                "activates": parts[5],
-                "next": parts[0] if parts[0] != "n/a" else "",
-                "left": parts[1] if parts[1] != "n/a" else "",
-                "last": parts[2] if parts[2] != "n/a" else "",
-                "passed": parts[3] if parts[3] != "n/a" else "",
+                "next": next_val if next_val.lower() != "n/a" else "",
+                "left": left_val if left_val.lower() != "n/a" else "",
+                "last": last_val if last_val.lower() != "n/a" else "",
+                "passed": passed_val if passed_val.lower() != "n/a" else "",
+                "unit": unit_val,
+                "activates": activates_val,
             })
-        return jsonify({"timers": timers, "count": len(timers), "source": "systemctl"})
+
+        next_timer = timers[0]["unit"] if timers else None
+        return jsonify({"timers": timers, "count": len(timers), "next_timer": next_timer})
     except Exception as exc:
-        return jsonify({"error": str(exc), "timers": [], "count": 0})
+        return jsonify({"error": str(exc), "timers": [], "count": 0, "next_timer": None})
 
 
 @app.route("/api/network/mdns")

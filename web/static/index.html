@@ -1826,6 +1826,13 @@
     <div class="card-body" id="speedtest-body">
       <button class="btn btn-sm" onclick="fetchSpeedtest()">&#x25B6; Run Speed Test</button>
     </div>
+  <!-- System Timers -->
+  <div class="card" id="card-sys-timers">
+    <div class="card-header" onclick="toggleCard('card-sys-timers')">
+      <span>⏱️ Timers</span>
+      <span class="badge" id="sys-timers-badge">…</span>
+    </div>
+    <div class="card-body" id="sys-timers-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -6837,6 +6844,7 @@ async function refreshAll() {
   fetchMemPressure();
   fetchFirewallSummary();
   fetchNetIfaces();
+  fetchSysTimers();
 }
 
 async function init() {
@@ -9874,6 +9882,47 @@ async function fetchSpeedtest() {
   } catch (e) {
     body.innerHTML = `<div style="color:var(--danger)">Failed: ${e}</div>
       <div style="margin-top:8px;"><button class="btn btn-sm" onclick="fetchSpeedtest()">&#x25B6; Retry</button></div>`;
+// ── System Timers ─────────────────────────────────────────────────────────────
+
+async function fetchSysTimers() {
+  const badge = document.getElementById('sys-timers-badge');
+  const body = document.getElementById('sys-timers-body');
+  if (!body) return;
+  try {
+    const r = await fetch('/api/system/timers');
+    const d = await r.json();
+    if (badge) badge.textContent = d.count != null ? `${d.count} timers` : '—';
+    if (d.error && !d.timers.length) {
+      body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</div>`;
+      return;
+    }
+    if (!d.timers || d.timers.length === 0) {
+      body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No timers found.</div>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:4px 8px;">Unit</th>';
+    html += '<th style="padding:4px 8px;">Next</th>';
+    html += '<th style="padding:4px 8px;">Left</th>';
+    html += '<th style="padding:4px 8px;">Activates</th>';
+    html += '</tr></thead><tbody>';
+    for (const t of d.timers) {
+      const isSoonest = t.unit === d.next_timer;
+      const rowStyle = isSoonest
+        ? 'border-bottom:1px solid var(--border);background:var(--bg2);font-weight:600;'
+        : 'border-bottom:1px solid var(--border);';
+      html += `<tr style="${rowStyle}">`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${escHtml(t.unit)}</td>`;
+      html += `<td style="padding:4px 8px;">${escHtml(t.next || '—')}</td>`;
+      html += `<td style="padding:4px 8px;color:var(--text-dim);">${escHtml(t.left || '—')}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${escHtml(t.activates || '—')}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
     if (badge) badge.textContent = 'error';
   }
 }
