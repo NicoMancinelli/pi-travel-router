@@ -4167,6 +4167,46 @@ function closeQrModal(evt) {
   img.style.display = 'none';
 }
 
+// ── Tailscale Status ───────────────────────────────────────────────────────────
+
+// ── ARP Table ─────────────────────────────────────────────────────────────────
+async function fetchArpTable() {
+  const el = document.getElementById('arp-content');
+  const badge = document.getElementById('arp-badge');
+  try {
+    const d = await apiFetch('/api/network/arp');
+    badge.textContent = d.reachable + '/' + d.count;
+    if (!d.neighbors || d.neighbors.length === 0) {
+      el.innerHTML = '<span class="dim">No ARP neighbors found</span>';
+      return;
+    }
+    const stateColor = s => {
+      if (s === 'REACHABLE') return 'color:#4caf50;';
+      if (s === 'STALE')     return 'color:#ff9800;';
+      return 'color:var(--text-dim);';
+    };
+    const rows = d.neighbors.map(n =>
+      `<tr>
+        <td style="padding:4px 8px;">${n.ip}</td>
+        <td style="padding:4px 8px;font-family:monospace;">${n.mac}</td>
+        <td style="padding:4px 8px;">${n.dev}</td>
+        <td style="padding:4px 8px;${stateColor(n.state)}">${n.state}</td>
+      </tr>`
+    ).join('');
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="text-align:left;color:var(--text-dim);font-size:11px;">
+        <th style="padding:4px 8px;">IP</th>
+        <th style="padding:4px 8px;">MAC</th>
+        <th style="padding:4px 8px;">Interface</th>
+        <th style="padding:4px 8px;">State</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch(e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span class="dim">Error loading ARP table</span>';
+  }
+}
+
 // ── Tailscale peers ────────────────────────────────────────────────────────────
 
 function relTime(isoStr) {
@@ -5162,6 +5202,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchAdguardStats();
   fetchSystemServices();
   fetchServicesStatus();
+  fetchArpTable();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();

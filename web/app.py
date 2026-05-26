@@ -14008,6 +14008,34 @@ def api_network_arp():
     return jsonify({"neighbors": neighbors, "count": len(neighbors)})
 
 
+# ── ARP / Neighbor Table ──────────────────────────────────────────────────────
+@app.route("/api/network/arp", methods=["GET"])
+@require_auth
+def api_network_arp():
+    import re as _re
+    VALID_STATES = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}
+    out, rc = _run(["ip", "neigh", "show"])
+    neighbors = []
+    if rc == 0:
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            # Format: <IP> dev <iface> lladdr <MAC> <STATE>
+            m = _re.match(
+                r'^(\S+)\s+dev\s+(\S+)\s+lladdr\s+([0-9a-fA-F:]+)\s+(\S+)$',
+                line,
+            )
+            if not m:
+                continue
+            ip, dev, mac, state = m.group(1), m.group(2), m.group(3), m.group(4).upper()
+            if state not in VALID_STATES:
+                continue
+            neighbors.append({"ip": ip, "dev": dev, "mac": mac, "state": state})
+    reachable = sum(1 for n in neighbors if n["state"] == "REACHABLE")
+    return jsonify({"neighbors": neighbors, "count": len(neighbors), "reachable": reachable})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
