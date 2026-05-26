@@ -2183,6 +2183,14 @@
   </div>
 </div>
 
+<!-- PCI Devices -->
+<div class="card" id="card-pci-devices">
+  <div class="card-header"><span>🖧 PCI Devices</span><button class="refresh-btn" onclick="fetchPciDevices()">↻</button></div>
+  <div class="card-body" id="pci-devices-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6423,6 +6431,19 @@ async function fetchDnsCacheStats() {
       ${d.hits !== null ? `<div class="stat-row"><span>Hits / Misses</span><span class="val">${d.hits} / ${d.misses}</span></div>` : ''}
       ${d.hit_rate_pct !== null ? `<div class="stat-row"><span>Hit rate</span><span class="val">${d.hit_rate_pct}%</span></div>` : ''}
     `;
+// ── PCI Devices ──
+async function fetchPciDevices() {
+  const el = document.getElementById('pci-devices-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/pci-devices');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No PCI devices</div>'; return; }
+    const classRows = Object.entries(d.by_class).map(([cls, n]) =>
+      `<div class="stat-row"><span>${cls}</span><span class="val">${n}</span></div>`
+    ).join('');
+    el.innerHTML = `<div class="stat-row"><span>Total</span><span class="val">${d.total}</span></div>${classRows}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
@@ -8059,6 +8080,7 @@ async function refreshAll() {
   fetchMtuInfo();
   fetchCpuCache();
   fetchDnsCacheStats();
+  fetchPciDevices();
 }
 
 async function init() {

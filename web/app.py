@@ -17547,6 +17547,39 @@ def api_network_dns_cache_stats():
         return jsonify({"error": str(e)}), 500
 
 
+# ── PCI Devices ──────────────────────────────────────────────────────────────
+@app.route("/api/system/pci-devices")
+@require_auth
+def api_system_pci_devices():
+    """Return PCI devices from lspci."""
+    try:
+        import re
+        result = _run(["lspci", "-mm"], timeout=10)
+        devices = []
+        for line in result.stdout.splitlines():
+            # Format: slot "class" "vendor" "device" ...
+            parts = re.findall(r'[^"\s][^"]*|"[^"]*"', line)
+            parts = [p.strip('"') for p in parts]
+            if len(parts) >= 4:
+                devices.append({
+                    "slot": parts[0],
+                    "class": parts[1],
+                    "vendor": parts[2],
+                    "device": parts[3],
+                })
+        classes = {}
+        for d in devices:
+            cls = d["class"]
+            classes[cls] = classes.get(cls, 0) + 1
+        return jsonify({
+            "devices": devices,
+            "total": len(devices),
+            "by_class": classes,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
