@@ -1656,6 +1656,15 @@
     <div class="card-body" id="swap-detail-body"></div>
   </div>
 
+  <!-- mDNS Services -->
+  <div class="card" id="card-mdns-services">
+    <div class="card-header" onclick="toggleCard('card-mdns-services')">
+      <span>&#x1F4E1; mDNS Services</span>
+      <span class="badge" id="mdns-services-badge">&#x2026;</span>
+    </div>
+    <div class="card-body" id="mdns-services-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4615,6 +4624,62 @@ async function fetchSwapDetail() {
   }
 }
 
+// ── mDNS Services ─────────────────────────────────────────────────────────────
+
+async function fetchMdnsServicesV2() {
+  const badge = document.getElementById('mdns-services-badge');
+  const el = document.getElementById('mdns-services-body');
+  if (!el) return;
+  try {
+    const d = await apiFetch('/api/network/mdns-services');
+    if (!d.available) {
+      badge.textContent = 'N/A';
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">avahi-browse not installed</span>';
+      return;
+    }
+    if (!d.daemon_running) {
+      badge.textContent = 'off';
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">avahi-daemon is not running</span>';
+      return;
+    }
+    const services = d.services || [];
+    badge.textContent = d.count;
+    if (services.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No mDNS services discovered</span>';
+      return;
+    }
+    // Collect unique service types for pills
+    const types = [...new Set(services.map(s => s.type))];
+    let html = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;">';
+    for (const t of types) {
+      const label = t.replace(/^_+/, '').replace(/\._?(tcp|udp)$/, '');
+      html += `<span style="font-size:11px;padding:2px 7px;border-radius:10px;background:var(--accent,#3b82f6);color:#fff;opacity:0.85;">${escHtml(label)}</span>`;
+    }
+    html += '</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="color:var(--text-dim);">';
+    html += '<th style="text-align:left;padding:3px 6px;border-bottom:1px solid var(--border);">Name</th>';
+    html += '<th style="text-align:left;padding:3px 6px;border-bottom:1px solid var(--border);">Type</th>';
+    html += '<th style="text-align:left;padding:3px 6px;border-bottom:1px solid var(--border);">Address:Port</th>';
+    html += '<th style="text-align:left;padding:3px 6px;border-bottom:1px solid var(--border);">Host</th>';
+    html += '</tr></thead><tbody>';
+    for (const svc of services) {
+      const addrPort = svc.address ? (escHtml(svc.address) + (svc.port ? ':' + svc.port : '')) : '&#x2014;';
+      const typeLabel = svc.type.replace(/^_+/, '').replace(/\._?(tcp|udp)$/, '');
+      html += '<tr>';
+      html += `<td style="padding:3px 6px;border-bottom:1px solid var(--border);">${escHtml(svc.name)}</td>`;
+      html += `<td style="padding:3px 6px;border-bottom:1px solid var(--border);color:var(--text-dim);">${escHtml(typeLabel)}</td>`;
+      html += `<td style="padding:3px 6px;border-bottom:1px solid var(--border);font-family:monospace;">${addrPort}</td>`;
+      html += `<td style="padding:3px 6px;border-bottom:1px solid var(--border);color:var(--text-dim);">${escHtml(svc.hostname || '—')}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading mDNS services</span>';
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -5787,6 +5852,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNatConn();
   fetchRouteTableCard();
   fetchSwapDetail();
+  fetchMdnsServicesV2();
 });
 
 async function fetchJournal() {
@@ -6107,6 +6173,7 @@ async function refreshAll() {
   fetchNatConn();
   fetchRouteTableCard();
   fetchSwapDetail();
+  fetchMdnsServicesV2();
 }
 
 async function init() {

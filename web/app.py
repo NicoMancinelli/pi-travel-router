@@ -14659,6 +14659,65 @@ def api_system_swap_detail():
     })
 
 
+# ── mDNS Services Discovery ───────────────────────────────────────────────────
+
+@app.route("/api/network/mdns-services", methods=["GET"])
+@require_auth
+def api_network_mdns_services():
+    """Discover local mDNS/Avahi services using avahi-browse."""
+    # Check if avahi-browse is available
+    _, rc_probe = _run(["which", "avahi-browse"], timeout=3)
+    if rc_probe != 0:
+        return jsonify({"services": [], "count": 0, "available": False, "daemon_running": False})
+
+    # Check if avahi-daemon is running
+    _, rc_daemon = _run(["systemctl", "is-active", "--quiet", "avahi-daemon"], timeout=3)
+    daemon_running = rc_daemon == 0
+
+    if not daemon_running:
+        return jsonify({"services": [], "count": 0, "available": True, "daemon_running": False})
+
+    # Run avahi-browse: all services, terminate after entries, parseable, no-fail
+    out, _ = _run(
+        ["avahi-browse", "-a", "-t", "-p", "--no-fail"],
+        timeout=10,
+    )
+
+    services = []
+    seen: set = set()
+    for line in (out or "").splitlines():
+        # Parseable format: type;iface;proto;name;stype;domain;hostname;addr;port;txt...
+        # type '=' means fully resolved
+        parts = line.split(";")
+        if len(parts) < 9 or parts[0] != "=":
+            continue
+        _, iface, proto, name, stype, domain, hostname, addr, port = parts[:9]
+        key = (name, stype, addr)
+        if key in seen:
+            continue
+        seen.add(key)
+        services.append({
+            "name": name,
+            "type": stype,
+            "domain": domain,
+            "iface": iface,
+            "proto": proto,
+            "hostname": hostname,
+            "address": addr,
+            "port": int(port) if port.isdigit() else 0,
+        })
+        if len(services) >= 50:
+            break
+
+    services.sort(key=lambda s: (s["type"], s["name"].lower()))
+    return jsonify({
+        "services": services,
+        "count": len(services),
+        "available": True,
+        "daemon_running": True,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
