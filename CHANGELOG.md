@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-05-26
+
+### Added
+- `GET /api/system/cpu-freq` — per-core frequency and governor from `/sys/devices/system/cpu/*/cpufreq/`; kHz→MHz conversion; returns `cores[]`, `avg_freq_mhz`, `governor`; dashboard card ⚙️ CPU Freq with per-core bars (width = cur/max%)
+- `GET /api/vpn/tailscale/peers` — Tailscale peers from `tailscale status --json`; returns `peers[]` with hostname, IP, OS, online, relay, RX/TX; dashboard card 🌐 Tailscale Peers with green/grey online dots
+- `GET /api/system/entropy` — entropy pool from `/proc/sys/kernel/random/`; health classification (good/low/critical); RNG source detection (hardware/jitter/software); dashboard card 🎲 Entropy with fill bar
+
 ## [3.3.0] - 2026-05-26
 
 ### Added
