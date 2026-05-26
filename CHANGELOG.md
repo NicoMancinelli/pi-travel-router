@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-05-26
+
+### Added
+- `GET /api/system/ota-status` — reads `/etc/travel-router/ota-state`; returns `current_slot`, `current_version`, `next_slot`, `last_update`, `update_available`, `ota_enabled`; dashboard card 🔄 OTA Status with slot/version details
+- `GET /api/network/connected-clients` — deduplicates ARP+DHCP leases+`iw station dump` by MAC; returns `clients[]` with mac, ip, hostname, interface, signal_dbm; dashboard card 💻 Clients with sortable table
+- `GET /api/vpn/tailscale/exit-node` — advertising/using exit node status from `tailscale status --json`; returns `is_exit_node`, `advertising_exit_node`, `active_exit_node`, `exit_node_peers[]`; dashboard card 🚪 TS Exit Node
+
 ## [3.5.0] - 2026-05-26
 
 ### Added
