@@ -16378,6 +16378,55 @@ def api_system_memory_map():
         "swap_total_mb": kb_to_mb("SwapTotal"),
         "swap_used_mb": round(kb_to_mb("SwapTotal") - kb_to_mb("SwapFree"), 1),
         "percent_used": percent_used,
+# ── Network connection stats ──────────────────────────────────────────────────
+
+@app.route("/api/network/connection-stats", methods=["GET"])
+@require_auth
+def api_network_connection_stats():
+    """Return TCP/UDP connection counts from /proc/net/."""
+    TCP_STATES = {
+        "01": "ESTABLISHED", "02": "SYN_SENT", "03": "SYN_RECV",
+        "04": "FIN_WAIT1", "05": "FIN_WAIT2", "06": "TIME_WAIT",
+        "07": "CLOSE", "08": "CLOSE_WAIT", "09": "LAST_ACK",
+        "0A": "LISTEN", "0B": "CLOSING",
+    }
+    tcp_counts = {}
+
+    def count_proc_net(path):
+        count = 0
+        try:
+            with open(path) as f:
+                for line in f.readlines()[1:]:  # skip header
+                    parts = line.split()
+                    if len(parts) > 3:
+                        count += 1
+        except OSError:
+            pass
+        return count
+
+    def count_tcp_states(path):
+        try:
+            with open(path) as f:
+                for line in f.readlines()[1:]:
+                    parts = line.split()
+                    if len(parts) > 3:
+                        state_hex = parts[3].upper()
+                        state_name = TCP_STATES.get(state_hex, state_hex)
+                        tcp_counts[state_name] = tcp_counts.get(state_name, 0) + 1
+        except OSError:
+            pass
+
+    count_tcp_states("/proc/net/tcp")
+    count_tcp_states("/proc/net/tcp6")
+    tcp_total = sum(tcp_counts.values())
+    udp_total = count_proc_net("/proc/net/udp")
+    udp6_total = count_proc_net("/proc/net/udp6")
+
+    return jsonify({
+        "tcp": tcp_counts,
+        "tcp_total": tcp_total,
+        "udp_total": udp_total,
+        "udp6_total": udp6_total,
     })
 
 

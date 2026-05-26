@@ -1949,6 +1949,13 @@
       <span class="badge" id="memory-map-badge">…</span>
     </div>
     <div class="card-body" id="memory-map-body"></div>
+  <!-- Connection Stats -->
+  <div class="card" id="card-connection-stats">
+    <div class="card-header" onclick="toggleCard('card-connection-stats')">
+      <span>🔗 Connections</span>
+      <span class="badge" id="connection-stats-badge">…</span>
+    </div>
+    <div class="card-body" id="connection-stats-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -5835,6 +5842,35 @@ async function fetchRecentErrors() {
   }
 }
 
+// ── Connection Stats ──
+async function fetchConnectionStats() {
+  const badge = document.getElementById('connection-stats-badge');
+  const body = document.getElementById('connection-stats-body');
+  try {
+    const d = await apiFetch('/api/network/connection-stats');
+    badge.textContent = `${d.tcp_total} TCP`;
+    const stateOrder = ['ESTABLISHED','LISTEN','TIME_WAIT','CLOSE_WAIT','SYN_SENT','SYN_RECV','FIN_WAIT1','FIN_WAIT2'];
+    const stateColor = {'ESTABLISHED':'#22c55e','LISTEN':'#3b82f6','TIME_WAIT':'#f59e0b','CLOSE_WAIT':'#f97316'};
+    const tcpRows = stateOrder
+      .filter(s => d.tcp[s])
+      .map(s => `<tr>
+        <td style="padding:2px 8px;font-size:13px;color:${stateColor[s]||'var(--text-dim)'};">${s}</td>
+        <td style="padding:2px 8px;font-size:13px;text-align:right;">${d.tcp[s]}</td>
+      </tr>`).join('');
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">
+        ${tcpRows}
+        <tr style="border-top:1px solid var(--border);">
+          <td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">UDP</td>
+          <td style="padding:2px 8px;font-size:13px;text-align:right;">${d.udp_total + d.udp6_total}</td>
+        </tr>
+      </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -6942,6 +6978,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoadedModules();
   fetchHostnameInfo();
   fetchRecentErrors();
+  fetchConnectionStats();
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
@@ -7265,6 +7302,7 @@ async function refreshAll() {
   fetchLoadedModules();
   fetchHostnameInfo();
   fetchRecentErrors();
+  fetchConnectionStats();
   fetchMdnsServices();
   fetchScheduledTasks();
   fetchCronJobs();
