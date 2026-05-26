@@ -2022,6 +2022,15 @@
     <div class="card-body" id="iface-errors-body"></div>
   </div>
 
+<!-- Uptime Detail -->
+<div class="card" id="card-uptime-detail">
+  <div class="card-header" onclick="toggleCard('card-uptime-detail')">
+    <span>⏰ Uptime</span>
+    <span class="badge" id="uptime-detail-badge">…</span>
+  </div>
+  <div class="card-body" id="uptime-detail-body"></div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6011,6 +6020,26 @@ async function fetchIfaceErrors() {
   }
 }
 
+// ── Uptime Detail ──
+async function fetchUptimeDetail() {
+  const badge = document.getElementById('uptime-detail-badge');
+  const body = document.getElementById('uptime-detail-body');
+  try {
+    const d = await apiFetch('/api/system/uptime-detail');
+    badge.textContent = d.uptime_str;
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Uptime</td><td style="padding:3px 8px;font-size:13px;">${d.uptime_str}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Booted</td><td style="padding:3px 8px;font-size:13px;">${d.boot_timestamp}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Idle</td><td style="padding:3px 8px;font-size:13px;">${d.idle_pct}%</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Uptime (s)</td><td style="padding:3px 8px;font-size:13px;">${d.uptime_seconds.toLocaleString()}</td></tr>
+      </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -7153,6 +7182,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoadAvgLegacy();
   fetchPacketLoss();
   fetchIfaceErrors();
+  fetchUptimeDetail();
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();
@@ -7504,6 +7534,7 @@ async function refreshAll() {
   fetchLoadAvgLegacy();
   fetchPacketLoss();
   fetchIfaceErrors();
+  fetchUptimeDetail();
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();

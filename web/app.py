@@ -16714,6 +16714,36 @@ def api_network_interface_errors():
         "interfaces": interfaces,
         "total_errors": total_errors,
         "total_drops": total_drops,
+# ── Uptime detail ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/uptime-detail", methods=["GET"])
+@require_auth
+def api_system_uptime_detail():
+    """Return detailed uptime from /proc/uptime."""
+    import time, datetime
+    try:
+        with open("/proc/uptime") as f:
+            parts = f.read().split()
+        uptime_s = float(parts[0])
+        idle_s = float(parts[1])
+    except Exception:
+        return jsonify({"error": "Could not read /proc/uptime"}), 500
+
+    days = int(uptime_s // 86400)
+    hours = int((uptime_s % 86400) // 3600)
+    minutes = int((uptime_s % 3600) // 60)
+    uptime_str = f"{days}d {hours}h {minutes}m"
+    idle_pct = round(idle_s / uptime_s * 100, 1) if uptime_s else 0
+
+    boot_ts = datetime.datetime.fromtimestamp(time.time() - uptime_s)
+    boot_timestamp = boot_ts.strftime("%Y-%m-%dT%H:%M:%S")
+
+    return jsonify({
+        "uptime_seconds": int(uptime_s),
+        "uptime_str": uptime_str,
+        "idle_seconds": int(idle_s),
+        "idle_pct": idle_pct,
+        "boot_timestamp": boot_timestamp,
     })
 
 
