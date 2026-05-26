@@ -1602,6 +1602,13 @@
       <span class="card-badge" id="wifi-signal-badge">—</span>
     </div>
     <div class="card-body" id="wifi-signal-body">
+  <!-- Sysctl Params -->
+  <div class="card" id="card-sysctl-net">
+    <div class="card-header">
+      <span>&#x2699;&#xFE0F; Sysctl</span>
+      <span class="card-badge" id="sysctl-net-badge">—</span>
+    </div>
+    <div class="card-body" id="sysctl-net-body">
       <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
     </div>
   </div>
@@ -4449,6 +4456,32 @@ async function fetchWifiSignal() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading WiFi signal</span>';
+// ── Sysctl Params ─────────────────────────────────────────────────────────────
+async function fetchSysctlNet() {
+  const el = document.getElementById('sysctl-net-body');
+  const badge = document.getElementById('sysctl-net-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/sysctl-net');
+    if (badge) badge.textContent = d.count ?? '—';
+    if (!d.params || d.params.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No params found.</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    for (const p of d.params) {
+      const secIcon = p.security ? '🔒 ' : '';
+      const valColor = p.security && p.value === '0' ? '#f59e0b' : 'inherit';
+      html += `<tr>
+        <td style="padding:2px 4px;font-family:monospace;color:var(--text-dim);">${secIcon}${escHtml(p.key.replace('net.ipv4.','').replace('net.ipv6.','').replace('net.core.','').replace('kernel.',''))}</td>
+        <td style="padding:2px 4px;font-family:monospace;text-align:right;color:${valColor};">${escHtml(p.value)}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading sysctl</span>';
   }
 }
 
@@ -5543,6 +5576,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchWho();
   fetchCpuStats();
   fetchSysctl();
+  fetchSysctlNet();
   fetchMemoryBreakdown();
   fetchCronJobs();
   fetchMountInfo();

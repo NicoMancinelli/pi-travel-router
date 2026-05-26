@@ -14361,6 +14361,47 @@ def api_system_diskstats():
     return jsonify({"devices": devices, "count": len(devices)})
 
 
+# ── Sysctl Networking Params ──────────────────────────────────────────────────
+
+@app.route("/api/system/sysctl-net", methods=["GET"])
+@require_auth
+def api_system_sysctl_net():
+    """Read a curated set of networking and security sysctl values."""
+    KEYS = [
+        "net.ipv4.ip_forward",
+        "net.ipv4.conf.all.forwarding",
+        "net.ipv6.conf.all.forwarding",
+        "net.ipv4.tcp_syncookies",
+        "net.ipv4.conf.all.rp_filter",
+        "net.ipv4.icmp_echo_ignore_broadcasts",
+        "kernel.dmesg_restrict",
+        "net.core.rmem_max",
+        "net.core.wmem_max",
+        "net.ipv4.tcp_rmem",
+        "net.ipv4.tcp_wmem",
+    ]
+    SECURITY_KEYS = {
+        "net.ipv4.ip_forward",
+        "net.ipv4.conf.all.forwarding",
+        "net.ipv4.tcp_syncookies",
+        "net.ipv4.conf.all.rp_filter",
+        "kernel.dmesg_restrict",
+    }
+    params = []
+    for key in KEYS:
+        try:
+            out, _err, rc = _run(["sysctl", "-n", key])
+            if rc == 0:
+                params.append({
+                    "key": key,
+                    "value": out.strip(),
+                    "security": key in SECURITY_KEYS,
+                })
+        except Exception:
+            pass
+    return jsonify({"params": params, "count": len(params)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
