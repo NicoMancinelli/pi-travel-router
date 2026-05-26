@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.17.0] - 2026-05-26
+
+### Added
+- `GET /api/system/cpu-governors` — CPU frequency scaling governor per core with current MHz, dashboard card ⚡ CPU Governors
+- `GET /api/network/open-ports` — listening TCP/UDP ports from /proc/net/{tcp,tcp6,udp} with counts, dashboard card 🔌 Open Ports
+- `GET /api/system/usb-devices` — connected USB devices via lsusb with hub separation, dashboard card 🔷 USB Devices
+
 ## [3.16.0] - 2026-05-26
 
 ### Added
