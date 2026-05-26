@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.29.0] — 2026-05-26
+
+### Added
+- `GET /api/network/network-bonds` — bonded interface info from /proc/net/bonding with slave states
+- `GET /api/system/cpu-steal` — CPU time breakdown (user/system/idle/steal/iowait) with steal warning flag
+- `GET /api/system/meminfo-detail` — 22-field extended memory info from /proc/meminfo in MB
+
 ## [3.28.0] — 2026-05-26
 
 ### Added
