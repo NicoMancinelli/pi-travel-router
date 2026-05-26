@@ -1492,6 +1492,11 @@
     </div>
   </div>
 
+  <!-- IRQ Stats -->
+  <div class="card" id="card-interrupts">
+    <div id="interrupts-body">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1748,10 +1753,6 @@
 
   <div class="card" id="card-tcp">
     <div id="tcp-content">Loading&hellip;</div>
-  </div>
-
-  <div class="card" id="card-interrupts">
-    <div id="interrupts-content">Loading&hellip;</div>
   </div>
 
   <div class="card" id="card-proc-mem">
@@ -7742,6 +7743,50 @@ async function fetchSockStat() {
   }
 }
 
+// ── IRQ Stats ─────────────────────────────────────────────────────────────────
+function fmtCount(n) {
+  if (n >= 1e9) return (n / 1e9).toFixed(1) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+async function fetchInterrupts() {
+  const el = document.getElementById('interrupts-body');
+  if (!el) return;
+  try {
+    const r = await apiFetch('/api/system/interrupts');
+    const d = await r.json();
+    const irqs = d.irqs || [];
+    const totalBadge = `<span class="badge badge-blue" style="margin-left:6px;">${fmtCount(d.total ?? 0)}</span>`;
+    let html = `<div class="card-title">&#x26A1; IRQ Stats ${totalBadge}` +
+      `<button class="btn btn-sm" onclick="fetchInterrupts()" style="margin-left:auto;">&#x21BB; Refresh</button></div>`;
+    if (d.error && irqs.length === 0) {
+      html += `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+    } else if (irqs.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No interrupts found.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+      html += '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">' +
+        '<th style="text-align:left;padding:4px 6px;">IRQ</th>' +
+        '<th style="text-align:right;padding:4px 6px;">Total</th>' +
+        '<th style="text-align:left;padding:4px 6px;">Description</th>' +
+        '</tr></thead><tbody>';
+      for (const irq of irqs) {
+        html += `<tr style="border-bottom:1px solid var(--border-color,#222);">` +
+          `<td style="padding:3px 6px;font-weight:bold;">${irq.irq}</td>` +
+          `<td style="text-align:right;padding:3px 6px;">${fmtCount(irq.total)}</td>` +
+          `<td style="padding:3px 6px;">${irq.description || '—'}</td>` +
+          '</tr>';
+      }
+      html += '</tbody></table></div>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Failed: ' + e;
+  }
+}
+
 // ── Tailscale Status ──────────────────────────────────────────────────────────
 
 async function fetchTailscaleStatus() {
@@ -10226,52 +10271,6 @@ async function fetchBatteryStatus() {
   }
 }
 
-// ── CPU Interrupts ────────────────────────────────────────────────────────────
-async function fetchInterrupts() {
-  const el = document.getElementById('interrupts-content');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const r = await fetch('/api/system/interrupts');
-    const d = await r.json();
-    if (d.error && (!d.entries || d.entries.length === 0)) {
-      el.innerHTML = `<p class="error">${d.error}</p>`;
-      return;
-    }
-    const entries = d.entries || [];
-    if (entries.length === 0) {
-      el.innerHTML = '<p class="muted">No interrupt data available.</p>';
-      return;
-    }
-    const maxTotal = entries[0].total || 1;
-    let html = `<div style="color:var(--text-dim);font-size:11px;margin-bottom:8px;">${d.cpu_count} CPU(s) &mdash; showing top ${entries.length} of ${d.total_irqs} IRQs by total count</div>`;
-    html += '<div style="max-height:280px;overflow-y:auto">';
-    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
-      <th style="text-align:left;padding:2px 6px;width:3em">IRQ</th>
-      <th style="text-align:right;padding:2px 6px;width:6em">Total</th>
-      <th style="padding:2px 6px;">Distribution</th>
-      <th style="text-align:left;padding:2px 6px;">Description</th>
-    </tr></thead><tbody>`;
-    for (const e of entries) {
-      const pct = maxTotal > 0 ? Math.round(e.total / maxTotal * 100) : 0;
-      const barColor = e.total > maxTotal * 0.5 ? 'var(--accent,#4a9eff)' : 'var(--text-dim,#94a3b8)';
-      const desc = (e.description || '').slice(0, 48);
-      html += `<tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:2px 6px;font-family:monospace;color:var(--text-dim)">${e.irq}</td>
-        <td style="padding:2px 6px;text-align:right;font-family:monospace">${e.total.toLocaleString()}</td>
-        <td style="padding:2px 6px;min-width:80px">
-          <div style="background:var(--border);border-radius:2px;height:6px;">
-            <div style="background:${barColor};width:${pct}%;height:6px;border-radius:2px;"></div>
-          </div>
-        </td>
-        <td style="padding:2px 6px;color:var(--text-dim);font-size:11px">${desc}</td>
-      </tr>`;
-    }
-    html += '</tbody></table></div>';
-    el.innerHTML = html;
-  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
-}
 
 // ── Top Processes by Memory ───────────────────────────────────────────────────
 async function fetchProcMem() {
