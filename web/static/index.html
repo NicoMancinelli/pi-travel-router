@@ -2248,7 +2248,12 @@
   <div class="card-header"><span class="card-icon">🗄️</span>Shared Memory</div>
   <div class="card-body" id="shm-body"><span class="loading">Loading…</span></div>
 </div>
-  <!-- Tailscale Status -->
+  <!-- Hugepages -->
+<div class="card" id="hugepages-card">
+  <div class="card-header"><span class="card-icon">📄</span>Hugepages</div>
+  <div class="card-body" id="hugepages-body"><span class="loading">Loading…</span></div>
+</div>
+<!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
       &#x1F331; Tailscale (<span id="tailscale-online-count">0</span>/<span id="tailscale-peer-count">0</span> peers online)
@@ -6632,6 +6637,19 @@ async function loadSharedMemory() {
   } catch(e) { document.getElementById('shm-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadSharedMemory();
+// ── Hugepages ──
+async function loadHugepages() {
+  try {
+    const r = await fetch('/api/system/hugepages');
+    const d = await r.json();
+    if (d.error) { document.getElementById('hugepages-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    document.getElementById('hugepages-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Total / Free</span><span class="stat-value">${d.total} / ${d.free} pages</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Page size</span><span class="stat-value">${d.page_size_kb} KB</span></div>` +
+      `<div class="stat-row"><span class="stat-label">THP mode</span><span class="stat-value">${d.transparent_hugepages}</span></div>`;
+  } catch(e) { document.getElementById('hugepages-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadHugepages();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────

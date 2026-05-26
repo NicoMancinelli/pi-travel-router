@@ -17974,6 +17974,49 @@ def api_system_shared_memory():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ── Hugepages ──────────────────────────────────────────────────────────────────
+@app.route("/api/system/hugepages")
+@require_auth
+def api_system_hugepages():
+    """Return huge pages memory stats."""
+    try:
+        stats = {}
+        try:
+            with open("/proc/meminfo") as fh:
+                for line in fh:
+                    for key in ("HugePages_Total", "HugePages_Free", "HugePages_Rsvd", "HugePages_Surp", "Hugepagesize"):
+                        if line.startswith(key + ":"):
+                            parts = line.split()
+                            stats[key] = int(parts[1])
+        except OSError:
+            pass
+        thp = "unknown"
+        try:
+            with open("/sys/kernel/mm/transparent_hugepage/enabled") as fh:
+                val = fh.read().strip()
+                for token in val.split():
+                    if token.startswith("[") and token.endswith("]"):
+                        thp = token[1:-1]
+                        break
+        except OSError:
+            pass
+        total = stats.get("HugePages_Total", 0)
+        free = stats.get("HugePages_Free", 0)
+        page_kb = stats.get("Hugepagesize", 2048)
+        used = total - free
+        return jsonify({
+            "total": total,
+            "free": free,
+            "used": used,
+            "reserved": stats.get("HugePages_Rsvd", 0),
+            "surplus": stats.get("HugePages_Surp", 0),
+            "page_size_kb": page_kb,
+            "used_mb": round(used * page_kb / 1024, 1),
+            "transparent_hugepages": thp,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
