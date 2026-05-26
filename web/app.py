@@ -16808,6 +16808,7 @@ def api_system_process_states():
         "total": total,
         "zombies": zombies,
         "has_zombies": zombies > 0,
+    })
 # ── Route summary ─────────────────────────────────────────────────────────────
 
 @app.route("/api/network/route-summary", methods=["GET"])
