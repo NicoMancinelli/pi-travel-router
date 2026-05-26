@@ -1470,6 +1470,17 @@
     </div>
   </div>
 
+  <!-- WiFi AP Clients -->
+  <div class="card" id="card-ap-clients">
+    <div class="card-header">
+      <span>&#x1F4E1; WiFi AP Clients</span>
+      <span class="card-badge" id="ap-client-count">—</span>
+    </div>
+    <div class="card-body" id="ap-clients-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5570,6 +5581,7 @@ async function refreshAll() {
   fetchLatency();
   fetchFirewall();
   fetchClockSync();
+  fetchApClients();
 }
 
 async function init() {
@@ -7576,6 +7588,65 @@ async function fetchConnections() {
     const tcp = (data.by_proto || {}).tcp || 0;
     const udp = (data.by_proto || {}).udp || 0;
     html += `<p style="margin:6px 0 0;font-size:11px;color:var(--text-dim);">TCP: ${tcp} &nbsp; UDP: ${udp}</p>`;
+    body.innerHTML = html;
+  } catch(e) { body.innerHTML = `<p class="error">${escHtml(String(e))}</p>`; }
+}
+
+// ── WiFi AP Clients ───────────────────────────────────────────────────────────
+
+async function fetchApClients() {
+  const body = document.getElementById('ap-clients-body');
+  const badge = document.getElementById('ap-client-count');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>';
+  try {
+    const resp = await apiFetch('/api/network/ap-clients');
+    const data = await resp.json();
+    const clients = data.clients || [];
+    badge.textContent = data.count != null ? data.count : clients.length;
+
+    if (clients.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim);">No clients connected to AP.</span>';
+      return;
+    }
+
+    function signalBar(dbm) {
+      let label, color;
+      if (dbm == null) { return '<span style="color:var(--text-dim);">—</span>'; }
+      if (dbm > -60)      { label = 'Excellent'; color = '#22c55e'; }
+      else if (dbm > -70) { label = 'Good';      color = '#84cc16'; }
+      else if (dbm > -80) { label = 'Fair';      color = '#f59e0b'; }
+      else                { label = 'Poor';      color = '#ef4444'; }
+      return `<span style="color:${color};font-weight:600;">${label}</span> <span style="color:var(--text-dim);font-size:11px;">(${dbm} dBm)</span>`;
+    }
+
+    function fmtBytes(n) {
+      if (n == null || n === 0) return '0 B';
+      const units = ['B','KB','MB','GB'];
+      let i = 0;
+      while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+      return `${n.toFixed(1)} ${units[i]}`;
+    }
+
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">MAC</th>';
+    html += '<th style="padding:5px 8px;">Signal</th>';
+    html += '<th style="padding:5px 8px;">RX</th>';
+    html += '<th style="padding:5px 8px;">TX</th>';
+    html += '</tr></thead><tbody>';
+    for (const c of clients) {
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:5px 8px;font-family:monospace;">${escHtml(c.mac || '—')}</td>`;
+      html += `<td style="padding:5px 8px;">${signalBar(c.signal_dbm)}</td>`;
+      html += `<td style="padding:5px 8px;">${fmtBytes(c.rx_bytes)}</td>`;
+      html += `<td style="padding:5px 8px;">${fmtBytes(c.tx_bytes)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    if (data.interface) {
+      html += `<p style="margin:6px 0 0;font-size:11px;color:var(--text-dim);">Interface: ${escHtml(data.interface)}</p>`;
+    }
     body.innerHTML = html;
   } catch(e) { body.innerHTML = `<p class="error">${escHtml(String(e))}</p>`; }
 }
