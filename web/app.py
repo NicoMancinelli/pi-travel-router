@@ -16667,6 +16667,56 @@ def api_network_packet_loss():
     return jsonify({"targets": results, "overall_loss_pct": overall_loss})
 
 
+# ── Interface errors ──────────────────────────────────────────────────────────
+
+@app.route("/api/network/interface-errors", methods=["GET"])
+@require_auth
+def api_network_interface_errors():
+    """Return per-interface error/drop counters from /proc/net/dev."""
+    interfaces = []
+    total_errors = 0
+    total_drops = 0
+    try:
+        with open("/proc/net/dev") as f:
+            lines = f.readlines()[2:]  # skip 2 header lines
+        for line in lines:
+            if ":" not in line:
+                continue
+            name, _, data = line.partition(":")
+            name = name.strip()
+            if name == "lo":
+                continue
+            parts = data.split()
+            if len(parts) < 13:
+                continue
+            # RX: bytes[0] packets[1] errs[2] drop[3] fifo[4] frame[5] compressed[6] multicast[7]
+            # TX: bytes[8] packets[9] errs[10] drop[11] fifo[12] colls[13] carrier[14]
+            rx_errors = int(parts[2])
+            rx_drops = int(parts[3])
+            rx_overruns = int(parts[4])
+            tx_errors = int(parts[10])
+            tx_drops = int(parts[11])
+            has_errors = (rx_errors + rx_drops + tx_errors + tx_drops) > 0
+            total_errors += rx_errors + tx_errors
+            total_drops += rx_drops + tx_drops
+            interfaces.append({
+                "name": name,
+                "rx_errors": rx_errors,
+                "rx_drops": rx_drops,
+                "rx_overruns": rx_overruns,
+                "tx_errors": tx_errors,
+                "tx_drops": tx_drops,
+                "has_errors": has_errors,
+            })
+    except Exception:
+        pass
+    return jsonify({
+        "interfaces": interfaces,
+        "total_errors": total_errors,
+        "total_drops": total_drops,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

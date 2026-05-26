@@ -2013,6 +2013,14 @@
   </div>
   <div class="card-body" id="packet-loss-body"></div>
 </div>
+  <!-- Interface Errors -->
+  <div class="card" id="card-iface-errors">
+    <div class="card-header" onclick="toggleCard('card-iface-errors')">
+      <span>⚠️ Interface Errors</span>
+      <span class="badge" id="iface-errors-badge">…</span>
+    </div>
+    <div class="card-body" id="iface-errors-body"></div>
+  </div>
 
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
@@ -5960,6 +5968,27 @@ async function fetchPacketLoss() {
         <td style="padding:3px 8px;font-size:13px;text-align:right;color:${c};">${t.loss_pct}%</td>
         <td style="padding:3px 8px;font-size:13px;text-align:right;">${t.avg_ms !== null ? t.avg_ms+'ms' : '—'}</td>
         <td style="padding:3px 8px;font-size:12px;color:${t.reachable?'#22c55e':'#ef4444'};">${t.reachable?'✓':'✗'}</td>
+// ── Interface Errors ──
+async function fetchIfaceErrors() {
+  const badge = document.getElementById('iface-errors-badge');
+  const body = document.getElementById('iface-errors-body');
+  try {
+    const d = await apiFetch('/api/network/interface-errors');
+    const hasAny = d.total_errors + d.total_drops > 0;
+    badge.textContent = hasAny ? `${d.total_errors}err ${d.total_drops}drop` : 'clean';
+    badge.style.background = hasAny ? '#f59e0b' : '#22c55e';
+    if (!d.interfaces || d.interfaces.length === 0) {
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No interfaces found.</p>';
+      return;
+    }
+    const rows = d.interfaces.map(iface => {
+      const rowColor = iface.has_errors ? '#f59e0b' : 'inherit';
+      return `<tr style="color:${rowColor}">
+        <td style="padding:2px 8px;font-size:13px;font-family:monospace;">${iface.name}</td>
+        <td style="padding:2px 8px;font-size:12px;text-align:right;">${iface.rx_errors}</td>
+        <td style="padding:2px 8px;font-size:12px;text-align:right;">${iface.rx_drops}</td>
+        <td style="padding:2px 8px;font-size:12px;text-align:right;">${iface.tx_errors}</td>
+        <td style="padding:2px 8px;font-size:12px;text-align:right;">${iface.tx_drops}</td>
       </tr>`;
     }).join('');
     body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
@@ -5968,6 +5997,11 @@ async function fetchPacketLoss() {
         <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Loss</th>
         <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Avg RTT</th>
         <th style="padding:3px 8px;font-size:11px;color:var(--text-dim);">Up</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Iface</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">RX err</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">RX drop</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">TX err</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">TX drop</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
@@ -7118,6 +7152,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLoadAvg();
   fetchLoadAvgLegacy();
   fetchPacketLoss();
+  fetchIfaceErrors();
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();
@@ -7468,6 +7503,7 @@ async function refreshAll() {
   fetchLoadAvg();
   fetchLoadAvgLegacy();
   fetchPacketLoss();
+  fetchIfaceErrors();
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();
