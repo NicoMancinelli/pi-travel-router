@@ -16963,6 +16963,7 @@ def api_network_dns_test():
         "all_passed": passed == len(tests),
         "passed": passed,
         "failed": len(tests) - passed,
+    })
 # ── Firewall rules summary ────────────────────────────────────────────────────
 
 @app.route("/api/network/firewall-rules", methods=["GET"])
