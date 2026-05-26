@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-05-26
+
+### Added
+- `GET /api/system/irq-stats` — top-20 IRQs from `/proc/interrupts`; per-CPU counts summed to total; returns `irqs[]` with type, devices, per_cpu; dashboard card ⚡ IRQ Stats with comma-formatted counts table
+- `GET /api/vpn/wireguard/peer-health` — per-peer health from `wg show all`; classifies active (<180s)/stale/offline; returns `interfaces[]`, `healthy_peers`, `total_peers`; dashboard card 🔐 WG Peers with colour-coded status dots
+- `GET /api/network/interfaces` — network interfaces via `ip -j addr show`; returns name, state, MAC, MTU, flags, addresses with prefix/broadcast/scope; dashboard card 🌐 Interfaces with per-interface blocks
+
 ## [3.1.0] - 2026-05-25
 
 ### Added
