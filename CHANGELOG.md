@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.27.0] — 2026-05-26
+
+### Added
+- `GET /api/system/numa-info` — NUMA topology from /sys/devices/system/node with UMA fallback
+- `GET /api/network/socket-stats` — socket summary via ss -s with /proc/net/sockstat fallback
+- `GET /api/system/kernel-version` — kernel release/arch/build + OS pretty name from /etc/os-release
+
 ## [3.26.0] — 2026-05-26
 
 ### Added
