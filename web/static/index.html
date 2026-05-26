@@ -1670,6 +1670,13 @@
       <span class="badge" id="usb-devices-badge">…</span>
     </div>
     <div class="card-body" id="usb-devices-body"></div>
+  <!-- Process Tree -->
+  <div class="card" id="card-process-tree">
+    <div class="card-header" onclick="toggleCard('card-process-tree')">
+      <span>🌳 Process Tree</span>
+      <span class="badge" id="process-tree-badge">…</span>
+    </div>
+    <div class="card-body" id="process-tree-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -2135,12 +2142,6 @@
   <div class="card" id="card-network-neighbors">
     <h2>&#x1F517; Network Neighbors</h2>
     <div id="network-neighbors-content"><em>Loading&hellip;</em></div>
-  </div>
-
-  <!-- Process Tree -->
-  <div class="card" id="card-process-tree">
-    <h2>&#x1F333; Top Processes</h2>
-    <div id="process-tree-content"><em>Loading&hellip;</em></div>
   </div>
 
   <!-- Kernel Messages -->
@@ -12414,39 +12415,44 @@ async function fetchThermalHistory() {
 // ── Process Tree ──────────────────────────────────────────────────────────────
 
 async function fetchProcessTree() {
-  const el = document.getElementById('process-tree-content');
-  if (!el) return;
+  const badge = document.getElementById('process-tree-badge');
+  const body  = document.getElementById('process-tree-body');
+  if (!body) return;
   try {
     const res = await apiFetch('/api/system/process-tree');
-    if (!res.ok) { el.innerHTML = '<span class="dim">Unavailable</span>'; return; }
+    if (!res.ok) { body.innerHTML = '<span class="dim">Unavailable</span>'; return; }
     const data = await res.json();
     if (!data.processes || data.processes.length === 0) {
-      el.innerHTML = '<span class="dim">No data</span>';
+      body.innerHTML = '<span class="dim">No data</span>';
       return;
     }
+    if (badge) badge.textContent = (data.total || data.processes.length) + ' processes';
+    const sorted = [...data.processes].sort((a, b) => b.cpu - a.cpu);
     let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
     html += '<thead><tr style="border-bottom:1px solid var(--border);text-align:left;">'
           + '<th style="padding:3px 6px;">PID</th>'
           + '<th style="padding:3px 6px;">User</th>'
+          + '<th style="padding:3px 6px;">Command</th>'
           + '<th style="padding:3px 6px;">CPU%</th>'
           + '<th style="padding:3px 6px;">Mem%</th>'
-          + '<th style="padding:3px 6px;">Command</th>'
+          + '<th style="padding:3px 6px;">Children</th>'
           + '</tr></thead><tbody>';
-    for (const p of data.processes) {
+    for (const p of sorted) {
       const cpuColor = p.cpu > 50 ? 'var(--danger,#e55)' : p.cpu > 20 ? 'var(--warning,#e90)' : 'inherit';
       html += '<tr style="border-bottom:1px solid var(--border-faint,#2a2a2a);">'
             + `<td style="padding:3px 6px;">${p.pid}</td>`
             + `<td style="padding:3px 6px;">${p.user}</td>`
+            + `<td style="padding:3px 6px;font-family:monospace;">${p.comm}</td>`
             + `<td style="padding:3px 6px;color:${cpuColor};">${p.cpu.toFixed(1)}</td>`
             + `<td style="padding:3px 6px;">${p.mem.toFixed(1)}</td>`
-            + `<td style="padding:3px 6px;font-family:monospace;">${p.command}</td>`
+            + `<td style="padding:3px 6px;">${p.children}</td>`
             + '</tr>';
     }
     html += '</tbody></table>';
-    el.innerHTML = html;
+    body.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchProcessTree error', e);
-    el.innerHTML = '<span class="dim">Unavailable</span>';
+    body.innerHTML = '<span class="dim">Unavailable</span>';
   }
 }
 

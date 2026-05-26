@@ -10207,23 +10207,53 @@ def api_thermal_history():
 @app.route("/api/system/process-tree")
 @require_auth
 def api_process_tree():
+    """Return flattened process tree with parent→child counts, limited to 100."""
     out, rc = _run(
-        ["ps", "-eo", "pid,ppid,user,%cpu,%mem,comm", "--sort=-%cpu", "--no-headers"]
+        ["ps", "-eo", "pid,ppid,user,comm,%cpu,%mem", "--sort=pid", "--no-headers"]
     )
-    processes = []
-    for line in out.splitlines()[:20]:
+    all_procs = []
+    for line in out.splitlines():
         parts = line.split(None, 5)
         if len(parts) < 6:
             continue
+        try:
+            all_procs.append({
+                "pid":  int(parts[0]),
+                "ppid": int(parts[1]),
+                "user": parts[2],
+                "comm": parts[3],
+                "cpu":  float(parts[4]),
+                "mem":  float(parts[5]),
+            })
+        except (ValueError, IndexError):
+            continue
+
+    # Build direct child count per PID
+    child_counts = {}
+    pid_set = {p["pid"] for p in all_procs}
+    for p in all_procs:
+        ppid = p["ppid"]
+        if ppid in pid_set:
+            child_counts[ppid] = child_counts.get(ppid, 0) + 1
+
+    # Attach children count and limit to 100
+    processes = []
+    for p in all_procs[:100]:
         processes.append({
-            "pid":     int(parts[0]),
-            "ppid":    int(parts[1]),
-            "user":    parts[2],
-            "cpu":     float(parts[3]),
-            "mem":     float(parts[4]),
-            "command": parts[5],
+            "pid":      p["pid"],
+            "ppid":     p["ppid"],
+            "user":     p["user"],
+            "comm":     p["comm"],
+            "cpu":      p["cpu"],
+            "mem":      p["mem"],
+            "children": child_counts.get(p["pid"], 0),
         })
-    return jsonify({"processes": processes, "count": len(processes)})
+
+    return jsonify({
+        "processes": processes,
+        "total":     len(all_procs),
+        "top_level": sum(1 for p in all_procs if p["ppid"] not in pid_set),
+    })
 
 
 # ── Network Neighbors (ARP/NDP) ───────────────────────────────────────────────
