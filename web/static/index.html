@@ -491,12 +491,14 @@
   </div>
 
   <!-- Network Interface Stats -->
-  <div class="card full-width" id="card-iface-stats">
-    <div class="card-title">
-      &#x1F4F6; Interface Statistics
-      <button class="btn btn-sm" onclick="fetchIfaceStats()" style="margin-left:8px;">&#x27F3; Refresh</button>
+  <div class="card" id="card-iface-stats">
+    <div class="card-header">
+      <span>&#x1F4CA; Interface Stats</span>
+      <span class="card-badge" id="iface-stats-badge">—</span>
     </div>
-    <div id="iface-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+    <div class="card-body" id="iface-stats-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
   </div>
 
   <hr class="divider">
@@ -5891,55 +5893,43 @@ async function fetchThrottle() {
 }
 
 // ── Network Interface Stats ───────────────────────────────────────────────────
-
 async function fetchIfaceStats() {
-  const el = document.getElementById('iface-stats-content');
+  const el = document.getElementById('iface-stats-body');
+  const badge = document.getElementById('iface-stats-badge');
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const resp = await apiFetch('/api/network/iface/stats');
-    const d = await resp.json();
-    if (d.error) {
-      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${escHtml(d.error)}</span>`;
+    const r = await apiFetch('/api/network/iface-stats');
+    const d = await r.json();
+    if (badge) badge.textContent = d.count ?? '—';
+    if (!d.interfaces || d.interfaces.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No interfaces found.</span>';
       return;
     }
-    if (!d.interfaces || d.interfaces.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No network interfaces found.</span>';
-      return;
+    function fmtBytes(n) {
+      if (n >= 1073741824) return (n/1073741824).toFixed(2) + ' GB';
+      if (n >= 1048576) return (n/1048576).toFixed(1) + ' MB';
+      if (n >= 1024) return (n/1024).toFixed(0) + ' KB';
+      return n + ' B';
     }
     let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
-    html += '<th style="padding:5px 8px;">Interface</th>';
-    html += '<th style="padding:5px 8px;text-align:right;">RX</th>';
-    html += '<th style="padding:5px 8px;text-align:right;">TX</th>';
-    html += '<th style="padding:5px 8px;text-align:right;">RX Pkts</th>';
-    html += '<th style="padding:5px 8px;text-align:right;">TX Pkts</th>';
-    html += '<th style="padding:5px 8px;text-align:right;">RX Err/Drop</th>';
-    html += '<th style="padding:5px 8px;text-align:right;">TX Err/Drop/Coll</th>';
-    html += '</tr></thead><tbody>';
+    html += '<tr style="color:var(--text-dim);"><th style="text-align:left;padding:2px 6px;">Iface</th><th style="text-align:right;padding:2px 6px;">RX</th><th style="text-align:right;padding:2px 6px;">TX</th><th style="text-align:right;padding:2px 6px;">Err</th></tr>';
     for (const iface of d.interfaces) {
-      const errColor = iface.has_errors ? '#ef4444' : 'var(--text-dim)';
-      const rxErr = `${iface.rx_errors}/${iface.rx_drop}`;
-      const txErr = `${iface.tx_errors}/${iface.tx_drop}/${iface.tx_colls}`;
-      const active = (iface.rx_bytes + iface.tx_bytes) > 0;
-      html += `<tr style="border-bottom:1px solid var(--border);">`;
-      html += `<td style="padding:5px 8px;font-family:monospace;font-weight:${active ? '600' : '400'};">${escHtml(iface.name)}</td>`;
-      html += `<td style="padding:5px 8px;text-align:right;color:#60a5fa;">${escHtml(iface.rx_human)}</td>`;
-      html += `<td style="padding:5px 8px;text-align:right;color:#34d399;">${escHtml(iface.tx_human)}</td>`;
-      html += `<td style="padding:5px 8px;text-align:right;color:var(--text-dim);font-size:11px;">${iface.rx_packets.toLocaleString()}</td>`;
-      html += `<td style="padding:5px 8px;text-align:right;color:var(--text-dim);font-size:11px;">${iface.tx_packets.toLocaleString()}</td>`;
-      html += `<td style="padding:5px 8px;text-align:right;font-size:11px;color:${errColor};">${rxErr}</td>`;
-      html += `<td style="padding:5px 8px;text-align:right;font-size:11px;color:${errColor};">${txErr}</td>`;
-      html += '</tr>';
+      const errs = (iface.rx_errors || 0) + (iface.tx_errors || 0) + (iface.rx_dropped || 0) + (iface.tx_dropped || 0);
+      const errColor = errs > 0 ? '#f59e0b' : 'var(--text-dim)';
+      html += `<tr>
+        <td style="padding:2px 6px;font-family:monospace;color:var(--accent);">${escHtml(iface.name)}</td>
+        <td style="text-align:right;padding:2px 6px;">${fmtBytes(iface.rx_bytes||0)}</td>
+        <td style="text-align:right;padding:2px 6px;">${fmtBytes(iface.tx_bytes||0)}</td>
+        <td style="text-align:right;padding:2px 6px;color:${errColor};">${errs}</td>
+      </tr>`;
     }
-    html += '</tbody></table>';
+    html += '</table>';
     el.innerHTML = html;
   } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load interface stats</span>';
-  }
-}
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading interface stats</span>';
 
-// ── ntfy notification config ──────────────────────────────────────────────────
+
 async function fetchNtfyConfig() {
   const el = document.getElementById('ntfy-config-content');
   try {

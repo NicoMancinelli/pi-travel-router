@@ -14045,6 +14045,66 @@ def api_system_who():
     return jsonify({"sessions": sessions, "count": len(sessions)})
 
 
+# ── Network Interface Counters ────────────────────────────────────────────────
+
+@app.route("/api/network/iface-stats", methods=["GET"])
+@require_auth
+def api_network_iface_stats():
+    """Return per-interface byte/packet counters from /proc/net/dev."""
+
+    def _fmt_bytes(n):
+        if n >= 1_073_741_824:
+            return f"{n / 1_073_741_824:.2f} GB"
+        if n >= 1_048_576:
+            return f"{n / 1_048_576:.1f} MB"
+        if n >= 1024:
+            return f"{n / 1024:.0f} KB"
+        return f"{n} B"
+
+    interfaces = []
+    try:
+        with open("/proc/net/dev") as f:
+            lines = f.readlines()
+    except OSError:
+        return jsonify({"error": "Cannot read /proc/net/dev", "interfaces": [], "count": 0})
+
+    for line in lines[2:]:
+        line = line.strip()
+        if not line:
+            continue
+        colon = line.index(":")
+        name = line[:colon].strip()
+        if name == "lo":
+            continue
+        fields = line[colon + 1:].split()
+        if len(fields) < 16:
+            continue
+        try:
+            rx_bytes   = int(fields[0])
+            rx_packets = int(fields[1])
+            rx_errors  = int(fields[2])
+            rx_dropped = int(fields[3])
+            tx_bytes   = int(fields[8])
+            tx_packets = int(fields[9])
+            tx_errors  = int(fields[10])
+            tx_dropped = int(fields[11])
+        except (ValueError, IndexError):
+            continue
+        interfaces.append({
+            "name":       name,
+            "rx_bytes":   rx_bytes,
+            "rx_packets": rx_packets,
+            "rx_errors":  rx_errors,
+            "rx_dropped": rx_dropped,
+            "tx_bytes":   tx_bytes,
+            "tx_packets": tx_packets,
+            "tx_errors":  tx_errors,
+            "tx_dropped": tx_dropped,
+        })
+
+    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
