@@ -16428,6 +16428,7 @@ def api_network_connection_stats():
         "tcp_total": tcp_total,
         "udp_total": udp_total,
         "udp6_total": udp6_total,
+    })
 # ── VPN split tunnel status ───────────────────────────────────────────────────
 
 @app.route("/api/vpn/split-tunnel-status", methods=["GET"])
