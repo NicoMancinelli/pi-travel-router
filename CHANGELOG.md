@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-05-26
+
+### Added
+- `GET /api/system/thermal-zones` — per-zone thermal readings from `/sys/class/thermal/thermal_zone*/temp`; classifies cool/warm/hot; returns `zones[]`, `max_temp`, `hottest_zone`; dashboard card 🌡️ Thermal Zones with colour-coded temp table
+- `GET /api/network/gateway-info` — default gateway IP/interface/MAC from `ip route` + ARP, single ping RTT; returns `gateway_ip`, `interface`, `mac`, `ping_ms`, `reachable`; dashboard card 🌐 Gateway with reachability colour badge
+- `GET /api/system/loaded-modules` — top-50 kernel modules by size from `lsmod`; returns `modules[]` with name/size_kb/used_by, `total`; dashboard card 🔩 Kernel Modules showing top-15 by size
+
 ## [3.6.0] - 2026-05-26
 
 ### Added
