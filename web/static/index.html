@@ -2211,6 +2211,14 @@
   </div>
 </div>
 
+<!-- Memory Zones -->
+<div class="card" id="card-memory-zones">
+  <div class="card-header"><span>🗺️ Memory Zones</span><button class="refresh-btn" onclick="fetchMemoryZones()">↻</button></div>
+  <div class="card-body" id="memory-zones-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6517,6 +6525,19 @@ async function fetchNftablesCounters() {
       `<div class="stat-row"><span>${c.name}</span><span class="val">${c.packets} pkts / ${Math.round(c.bytes/1024)} KB</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Total packets</span><span class="val">${d.total_packets}</span></div>${rows}`;
+// ── Memory Zones ──
+async function fetchMemoryZones() {
+  const el = document.getElementById('memory-zones-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/memory-zones');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No zone info</div>'; return; }
+    const rows = d.zones.map(z =>
+      `<div class="stat-row"><span>N${z.node} ${z.zone}</span><span class="val">${z.free_mb}/${z.managed_mb} MB</span></div>`
+    ).join('');
+    el.innerHTML = rows;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
@@ -8157,6 +8178,7 @@ async function refreshAll() {
   fetchVpnLatency();
   fetchDiskTemp();
   fetchNftablesCounters();
+  fetchMemoryZones();
 }
 
 async function init() {

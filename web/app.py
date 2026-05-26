@@ -17746,6 +17746,46 @@ def api_network_nftables_counters():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Memory Zones ─────────────────────────────────────────────────────────────
+@app.route("/api/system/memory-zones")
+@require_auth
+def api_system_memory_zones():
+    """Return memory zone info from /proc/zoneinfo."""
+    try:
+        import re
+        zones = []
+        current = {}
+        try:
+            with open("/proc/zoneinfo") as f:
+                for line in f:
+                    line = line.rstrip()
+                    m = re.match(r"Node (\d+), zone\s+(\S+)", line)
+                    if m:
+                        if current:
+                            zones.append(current)
+                        current = {"node": int(m.group(1)), "zone": m.group(2)}
+                    elif "pages free" in line:
+                        current["pages_free"] = int(line.split()[-1])
+                    elif "pages managed" in line:
+                        current["pages_managed"] = int(line.split()[-1])
+                    elif "min" in line and "low" in line.split()[0:2]:
+                        pass
+            if current:
+                zones.append(current)
+        except FileNotFoundError:
+            pass
+        PAGE_SIZE = 4096
+        for z in zones:
+            z["free_mb"] = round(z.get("pages_free", 0) * PAGE_SIZE / 1024 / 1024, 1)
+            z["managed_mb"] = round(z.get("pages_managed", 0) * PAGE_SIZE / 1024 / 1024, 1)
+        return jsonify({
+            "zones": zones,
+            "total": len(zones),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
