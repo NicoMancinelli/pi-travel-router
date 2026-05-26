@@ -1933,6 +1933,15 @@
     <div class="card-body" id="hostname-info-body"></div>
   </div>
 
+  <!-- Recent Errors -->
+  <div class="card" id="card-recent-errors">
+    <div class="card-header" onclick="toggleCard('card-recent-errors')">
+      <span>🚨 Recent Errors</span>
+      <span class="badge" id="recent-errors-badge">…</span>
+    </div>
+    <div class="card-body" id="recent-errors-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5785,6 +5794,32 @@ async function fetchHostnameInfo() {
       <td style="padding:3px 8px;font-size:13px;">${v || 'n/a'}</td>
     </tr>`).join('');
     body.innerHTML = `<table style="width:100%;border-collapse:collapse;">${rows}</table>`;
+// ── Recent Errors ──
+async function fetchRecentErrors() {
+  const badge = document.getElementById('recent-errors-badge');
+  const body = document.getElementById('recent-errors-body');
+  try {
+    const d = await apiFetch('/api/system/recent-errors');
+    badge.textContent = d.count > 0 ? `${d.count} errors` : 'clean';
+    badge.style.background = d.count > 0 ? '#ef4444' : '#22c55e';
+    if (d.count === 0) {
+      body.innerHTML = '<p style="color:#22c55e;font-size:13px;">✓ No recent errors in journal.</p>';
+      return;
+    }
+    const rows = d.errors.map(e => `
+      <tr>
+        <td style="padding:3px 8px;font-size:11px;color:var(--text-dim);white-space:nowrap;">${e.timestamp.substring(0,19)}</td>
+        <td style="padding:3px 8px;font-size:12px;color:#f59e0b;white-space:nowrap;">${e.unit}</td>
+        <td style="padding:3px 8px;font-size:12px;word-break:break-word;">${e.message}</td>
+      </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Time</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Unit</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Message</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
     if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
@@ -6897,6 +6932,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchGatewayInfo();
   fetchLoadedModules();
   fetchHostnameInfo();
+  fetchRecentErrors();
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
@@ -7219,6 +7255,7 @@ async function refreshAll() {
   fetchGatewayInfo();
   fetchLoadedModules();
   fetchHostnameInfo();
+  fetchRecentErrors();
   fetchMdnsServices();
   fetchScheduledTasks();
   fetchCronJobs();

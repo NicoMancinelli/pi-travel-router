@@ -16315,6 +16315,33 @@ def api_system_hostname_info():
     return jsonify(result)
 
 
+# ── Recent journal errors ─────────────────────────────────────────────────────
+
+@app.route("/api/system/recent-errors", methods=["GET"])
+@require_auth
+def api_system_recent_errors():
+    """Return recent error+ journal entries."""
+    import re
+    errors = []
+    try:
+        out, _ = _run(["journalctl", "-p", "err", "-n", "30", "--no-pager", "-o", "short-iso"])
+        for line in out.splitlines():
+            # Format: 2026-05-26T01:23:45+0000 hostname unit[pid]: message
+            m = re.match(
+                r"^(\S+)\s+\S+\s+(\S+?)(?:\[\d+\])?:\s+(.+)$",
+                line
+            )
+            if m:
+                errors.append({
+                    "timestamp": m.group(1),
+                    "unit": m.group(2),
+                    "message": m.group(3)[:200],
+                })
+    except Exception:
+        pass
+    return jsonify({"errors": errors, "count": len(errors)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
