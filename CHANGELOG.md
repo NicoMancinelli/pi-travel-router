@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.97.0] - 2026-05-25
+
+### Added
+- `GET /api/network/arp-table` — ARP cache from `/proc/net/arp`; skips incomplete entries (MAC `00:00:00:00:00:00`); returns `entries[]` with ip, mac, iface, flags, type; dashboard card 📋 ARP Table with IP/MAC/Interface table
+- `GET /api/system/ssh-keys` — SSH authorized_keys for root + all home users; returns key type, comment, 20-char preview (never full key); dashboard card 🔑 SSH Keys with colour-coded key-type badges (green=ed25519, orange=rsa)
+- `GET /api/system/environment` — system facts from `/proc/version`, `/etc/os-release`, `/proc/uptime`; returns hostname, kernel, arch, os_name, os_version, boot_time, uptime_seconds; dashboard card 🖥️ System Info key-value grid
+
 ## [2.96.0] - 2026-05-25
 
 ### Added
