@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.94.0] - 2026-05-25
+
+### Added
+- `GET /api/system/sysctl-net` — 11 curated networking sysctl keys via `sysctl -n`; flags security-relevant params; returns `{params: [{key, value, security}], count}`; dashboard card ⚙️ Sysctl with security-flagged rows highlighted
+- `GET /api/network/ipv6` — IPv6 addresses per interface from `ip -6 addr show`; returns `{interfaces: [{name, addresses: [{address, scope}]}], global_count, total_count}`; dashboard card 🌐 IPv6 with per-interface address table
+- `GET /api/network/nat-connections` — active NAT/conntrack connections from `/proc/net/nf_conntrack`; returns `total`, `by_proto`, `tcp_states`, `top_dests`; graceful fallback when conntrack unavailable; dashboard card 🔀 NAT Connections with protocol pills and TCP state breakdown
+
 ## [2.93.0] - 2026-05-25
 
 ### Added

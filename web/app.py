@@ -14443,6 +14443,7 @@ def api_network_ipv6():
         "interfaces": interfaces,
         "global_count": global_count,
         "total_count": total_count,
+    })
 # ── NAT / Conntrack Connections ───────────────────────────────────────────────
 
 @app.route("/api/network/nat-connections", methods=["GET"])
