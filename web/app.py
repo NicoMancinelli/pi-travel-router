@@ -17099,6 +17099,36 @@ def api_network_multicast_groups():
         return jsonify({
             "groups": groups,
             "total": len(groups),
+# ── Kernel Cmdline ────────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/system/kernel-cmdline")
+@require_auth
+def api_system_kernel_cmdline():
+    """Return parsed kernel command line parameters from /proc/cmdline."""
+    try:
+        try:
+            with open("/proc/cmdline") as f:
+                raw = f.read().strip()
+        except FileNotFoundError:
+            raw = ""
+        params = raw.split()
+        parsed = {}
+        flags = []
+        for p in params:
+            if "=" in p:
+                k, v = p.split("=", 1)
+                parsed[k] = v
+            else:
+                flags.append(p)
+        return jsonify({
+            "raw": raw,
+            "params": parsed,
+            "flags": flags,
+            "total": len(params),
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

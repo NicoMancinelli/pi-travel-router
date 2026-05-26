@@ -2096,6 +2096,10 @@
 <div class="card" id="card-multicast-groups">
   <div class="card-header"><span>📡 Multicast Groups</span><button class="refresh-btn" onclick="fetchMulticastGroups()">↻</button></div>
   <div class="card-body" id="multicast-groups-body">
+<!-- Kernel Cmdline -->
+<div class="card" id="card-kernel-cmdline">
+  <div class="card-header"><span>⚙️ Kernel Cmdline</span><button class="refresh-btn" onclick="fetchKernelCmdline()">↻</button></div>
+  <div class="card-body" id="kernel-cmdline-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -6190,6 +6194,17 @@ async function fetchMulticastGroups() {
     if (!d.total) { el.innerHTML = '<div class="ok-msg">No multicast groups</div>'; return; }
     const rows = d.groups.map(g => `<div class="stat-row"><span>${g.iface}</span><span class="val">${g.group} (${g.users})</span></div>`).join('');
     el.innerHTML = `<div class="stat-row"><span>Total</span><span class="val">${d.total}</span></div>${rows}`;
+// ── Kernel Cmdline ──
+async function fetchKernelCmdline() {
+  const el = document.getElementById('kernel-cmdline-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/kernel-cmdline');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    const paramRows = Object.entries(d.params).map(([k,v]) => `<div class="stat-row"><span>${k}</span><span class="val">${v}</span></div>`).join('');
+    const flagStr = d.flags.length ? `<div class="stat-row"><span>Flags</span><span class="val">${d.flags.join(' ')}</span></div>` : '';
+    el.innerHTML = `<div class="stat-row"><span>Total params</span><span class="val">${d.total}</span></div>${paramRows}${flagStr}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
@@ -7441,6 +7456,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNtpSync();
   fetchJournalBoot();
   fetchMulticastGroups();
+  fetchKernelCmdline();
 });
 
 async function fetchJournal() {
@@ -7813,6 +7829,7 @@ async function refreshAll() {
   fetchDnsTest();
   fetchFirewallRules();
   fetchMulticastGroups();
+  fetchKernelCmdline();
 }
 
 async function init() {
