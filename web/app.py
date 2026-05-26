@@ -16195,6 +16195,40 @@ def api_network_gateway_info():
         "mac": mac,
         "ping_ms": ping_ms,
         "reachable": reachable,
+# ── Loaded kernel modules ─────────────────────────────────────────────────────
+
+@app.route("/api/system/loaded-modules", methods=["GET"])
+@require_auth
+def api_system_loaded_modules():
+    """Return loaded kernel modules from lsmod."""
+    out, _ = _run(["lsmod"])
+    modules = []
+    for line in out.splitlines()[1:]:  # skip header
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+        name = parts[0]
+        try:
+            size_kb = int(parts[1]) // 1024
+        except ValueError:
+            size_kb = 0
+        try:
+            used_by_count = int(parts[2])
+        except ValueError:
+            used_by_count = 0
+        used_by_modules = parts[3].split(",") if len(parts) > 3 else []
+        used_by_modules = [m for m in used_by_modules if m]
+        modules.append({
+            "name": name,
+            "size_kb": size_kb,
+            "used_by": used_by_count,
+            "used_by_modules": used_by_modules,
+        })
+    # Sort by size descending, return top 50
+    modules.sort(key=lambda m: m["size_kb"], reverse=True)
+    return jsonify({
+        "modules": modules[:50],
+        "total": len(modules),
     })
 
 

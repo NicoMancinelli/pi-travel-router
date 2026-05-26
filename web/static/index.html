@@ -1908,6 +1908,13 @@
       <span class="badge" id="gateway-info-badge">…</span>
     </div>
     <div class="card-body" id="gateway-info-body"></div>
+  <!-- Loaded Modules -->
+  <div class="card" id="card-loaded-modules">
+    <div class="card-header" onclick="toggleCard('card-loaded-modules')">
+      <span>🔩 Kernel Modules</span>
+      <span class="badge" id="loaded-modules-badge">…</span>
+    </div>
+    <div class="card-body" id="loaded-modules-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -5709,6 +5716,32 @@ async function fetchGatewayInfo() {
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">MAC</td><td style="padding:3px 8px;font-size:13px;">${d.mac || 'n/a'}</td></tr>
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Ping</td><td style="padding:3px 8px;font-size:13px;">${d.ping_ms !== null ? d.ping_ms + ' ms' : 'n/a'}</td></tr>
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Status</td><td style="padding:3px 8px;font-size:13px;color:${reachColor};">${reachText}</td></tr>
+// ── Loaded Modules ──
+async function fetchLoadedModules() {
+  const badge = document.getElementById('loaded-modules-badge');
+  const body = document.getElementById('loaded-modules-body');
+  try {
+    const d = await apiFetch('/api/system/loaded-modules');
+    badge.textContent = `${d.total} modules`;
+    if (!d.modules || d.modules.length === 0) {
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No modules found.</p>';
+      return;
+    }
+    const rows = d.modules.slice(0, 15).map(m => `
+      <tr>
+        <td style="padding:3px 8px;font-size:13px;font-family:monospace;">${m.name}</td>
+        <td style="padding:3px 8px;font-size:13px;text-align:right;">${m.size_kb} KB</td>
+        <td style="padding:3px 8px;font-size:12px;color:var(--text-dim);">${m.used_by > 0 ? m.used_by : ''}</td>
+      </tr>`).join('');
+    body.innerHTML = `
+      <p style="font-size:12px;color:var(--text-dim);margin:0 0 6px 8px;">${d.total} loaded — top 15 by size</p>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="padding:3px 8px;font-size:12px;text-align:left;color:var(--text-dim);">Module</th>
+          <th style="padding:3px 8px;font-size:12px;text-align:right;color:var(--text-dim);">Size</th>
+          <th style="padding:3px 8px;font-size:12px;color:var(--text-dim);">Used by</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
       </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
@@ -6820,6 +6853,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTsExitNodeV3();
   fetchThermalZones();
   fetchGatewayInfo();
+  fetchLoadedModules();
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
@@ -7139,6 +7173,7 @@ async function refreshAll() {
   fetchTsExitNodeV3();
   fetchThermalZones();
   fetchGatewayInfo();
+  fetchLoadedModules();
   fetchMdnsServices();
   fetchScheduledTasks();
   fetchCronJobs();
