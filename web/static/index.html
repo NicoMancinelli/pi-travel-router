@@ -6489,6 +6489,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchPkgUpdates();
   fetchTcpConns();
   fetchTailscaleStatus();
+  fetchTsPeers();
   fetchNetIfaces();
   fetchFirewallSummary();
   fetchWanUplinks();
@@ -6817,6 +6818,7 @@ async function refreshAll() {
   fetchApConfig();
   fetchPkgUpdates();
   fetchTailscalePeers();
+  fetchTsPeers();
   fetchTsExitNode();
   fetchMdnsServices();
   fetchScheduledTasks();
