@@ -1691,6 +1691,9 @@
   <!-- SSH Keys -->
   <div class="card" id="card-ssh-keys-v3">
     <div class="card-header" onclick="toggleCard('card-ssh-keys-v3')">
+  <!-- SSH Keys -->
+  <div class="card" id="card-ssh-keys">
+    <div class="card-header" onclick="toggleCard('card-ssh-keys')">
       <span>&#x1F511; SSH Keys</span>
       <span class="badge" id="ssh-keys-badge">&#x2026;</span>
     </div>
@@ -5924,6 +5927,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSwapDetail();
   fetchMdnsServicesV2();
   fetchArpTableV3();
+  fetchSshKeysV3();
 });
 
 async function fetchJournal() {
@@ -6247,6 +6251,7 @@ async function refreshAll() {
   fetchSwapDetail();
   fetchMdnsServicesV2();
   fetchArpTableV3();
+  fetchSshKeysV3();
 }
 
 async function init() {
@@ -8983,12 +8988,38 @@ async function fetchArpTableV3() {
       html += `<td style="padding:4px 8px;font-family:monospace;">${escHtml(e.ip)}</td>`;
       html += `<td style="padding:4px 8px;font-family:monospace;">${escHtml(e.mac)}</td>`;
       html += `<td style="padding:4px 8px;">${escHtml(e.iface)}</td>`;
+// ── SSH Keys (v3) ─────────────────────────────────────────────────────────────
+
+async function fetchSshKeysV3() {
+  const body = document.getElementById('ssh-keys-body');
+  const badge = document.getElementById('ssh-keys-badge');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/ssh-keys');
+    if (badge) badge.textContent = d.count + ' key' + (d.count !== 1 ? 's' : '');
+    if (!d.keys || d.keys.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No authorized keys found.</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:5px 8px;">User</th><th style="padding:5px 8px;">Key Type</th><th style="padding:5px 8px;">Comment</th><th style="padding:5px 8px;font-family:monospace;">Preview</th>';
+    html += '</tr></thead><tbody>';
+    for (const k of d.keys) {
+      const tc = k.type.includes('ed25519') ? '#22c55e' : k.type === 'ssh-rsa' ? '#f97316' : '#6366f1';
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(k.user)}</td>`;
+      html += `<td style="padding:5px 8px;"><span style="color:${tc};font-weight:600;font-size:11px;">${escHtml(k.type)}</span></td>`;
+      html += `<td style="padding:5px 8px;color:var(--text-dim);">${k.comment ? escHtml(k.comment) : '<em>no comment</em>'}</td>`;
+      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(k.preview)}&hellip;</td>`;
       html += '</tr>';
     }
     html += '</tbody></table>';
     body.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading ARP table</span>';
+    if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading SSH keys</span>';
   }
 }
 
