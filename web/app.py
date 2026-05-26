@@ -8574,64 +8574,54 @@ def api_system_disk_partitions():
 
 # ── Kernel Log (dmesg) ────────────────────────────────────────────────────────
 
-@app.route("/api/system/dmesg")
+@app.route("/api/system/dmesg", methods=["GET"])
 @require_auth
-def api_dmesg():
-    try:
-        lines_param = request.args.get("lines", 30)
-        try:
-            lines_count = int(lines_param)
-        except (ValueError, TypeError):
-            lines_count = 30
-        lines_count = max(1, min(lines_count, 100))
+def api_system_dmesg():
+    import re as _re
+    out, rc = _run(["dmesg", "--time-format", "iso", "-l", "err,warn,crit,alert,emerg", "-T"])
+    if rc != 0:
+        out, rc = _run(["dmesg", "-T"])
+    if rc != 0:
+        return jsonify({"entries": [], "count": 0, "has_errors": False})
 
-        out, rc = _run(
-            ["dmesg", "--time-format", "iso", "-l", "warn,err,crit,alert,emerg",
-             "-n", str(lines_count)],
-            timeout=10,
-        )
-        if rc != 0:
-            out, rc = _run(
-                ["dmesg", "-T"],
-                timeout=10,
-            )
-            if rc != 0:
-                return jsonify({"messages": [], "count": 0, "error": "dmesg unavailable"})
-            raw_lines = out.splitlines()[-lines_count:]
+    raw_lines = out.splitlines()
+    if not any(lv in " ".join(raw_lines[:5]) for lv in ["err", "warn", "crit"]):
+        # fallback produced all lines; just take last 50
+        raw_lines = raw_lines[-50:]
+
+    entries = []
+    for line in raw_lines:
+        line = line.strip()
+        if not line:
+            continue
+        timestamp = ""
+        message = line
+        # ISO timestamp from --time-format iso: 2026-01-01T12:00:00+00:00
+        m = _re.match(r'^(\d{4}-\d{2}-\d{2}T[\d:.+-]+)\s+(.*)', line)
+        if m:
+            timestamp = m.group(1)
+            message = m.group(2)
         else:
-            raw_lines = [l for l in out.splitlines() if l.strip()]
+            # bracketed seconds-since-boot: [   12.345678] or -T human format
+            m2 = _re.match(r'^\[.*?\]\s+(.*)', line)
+            if m2:
+                message = m2.group(1)
 
-        messages = []
-        for line in raw_lines:
-            line = line.strip()
-            if not line:
-                continue
-            ts = ""
-            msg = line
-            # ISO timestamp: starts with digit or [
-            m = re.match(r'^(\[?\d{4}-\d{2}-\d{2}T[\d:.+-]+\]?)\s+(.*)', line)
-            if m:
-                ts = m.group(1).strip("[]")
-                msg = m.group(2)
-            else:
-                # bracketed seconds-since-boot: [   12.345678]
-                m2 = re.match(r'^\[\s*[\d.]+\]\s+(.*)', line)
-                if m2:
-                    msg = m2.group(1)
+        lower = message.lower()
+        if any(kw in lower for kw in ("crit", "alert", "emerg")):
+            level = "crit"
+        elif "err" in lower:
+            level = "err"
+        elif "warn" in lower:
+            level = "warn"
+        else:
+            level = "info"
 
-            lower = msg.lower()
-            if "error" in lower or "err:" in lower:
-                level = "err"
-            elif "warn" in lower:
-                level = "warn"
-            else:
-                level = "info"
+        entries.append({"level": level, "timestamp": timestamp, "message": message})
 
-            messages.append({"ts": ts, "level": level, "msg": msg})
-
-        return jsonify({"messages": messages, "count": len(messages), "error": None})
-    except Exception as exc:  # pylint: disable=broad-except
-        return jsonify({"messages": [], "count": 0, "error": str(exc)})
+    entries = entries[-20:]
+    has_errors = any(e["level"] in ("err", "crit", "alert", "emerg") for e in entries)
+    return jsonify({"entries": entries, "count": len(entries), "has_errors": has_errors})
 
 
 @app.route("/api/network/sockstat")
