@@ -16195,6 +16195,7 @@ def api_network_gateway_info():
         "mac": mac,
         "ping_ms": ping_ms,
         "reachable": reachable,
+    })
 # ── Loaded kernel modules ─────────────────────────────────────────────────────
 
 @app.route("/api/system/loaded-modules", methods=["GET"])
