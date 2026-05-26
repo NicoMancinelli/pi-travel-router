@@ -2253,6 +2253,11 @@
   <div class="card-header"><span class="card-icon">📄</span>Hugepages</div>
   <div class="card-body" id="hugepages-body"><span class="loading">Loading…</span></div>
 </div>
+<!-- NUMA Info -->
+<div class="card" id="numa-info-card">
+  <div class="card-header"><span class="card-icon">🧩</span>NUMA Topology</div>
+  <div class="card-body" id="numa-info-body"><span class="loading">Loading…</span></div>
+</div>
 <!-- Tailscale Status -->
 <!-- Neighbor Table -->
 <div class="card" id="neighbor-table-card">
@@ -6685,6 +6690,20 @@ async function loadOpenFiles() {
   } catch(e) { document.getElementById('open-files-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadOpenFiles();
+// ── NUMA Info ──
+async function loadNumaInfo() {
+  try {
+    const r = await fetch('/api/system/numa-info');
+    const d = await r.json();
+    if (d.error) { document.getElementById('numa-info-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const rows = d.nodes.map(n =>
+      `<div class="stat-row"><span class="stat-label">${n.node} CPUs: ${n.cpulist}</span><span class="stat-value">${n.mem_total_mb} MB</span></div>`
+    ).join('');
+    document.getElementById('numa-info-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">NUMA nodes</span><span class="stat-value">${d.count}${d.numa_available ? '' : ' (UMA)'}</span></div>` + rows;
+  } catch(e) { document.getElementById('numa-info-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadNumaInfo();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────

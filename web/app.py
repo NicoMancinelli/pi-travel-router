@@ -18110,6 +18110,50 @@ def api_system_open_files():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ── NUMA Info ──────────────────────────────────────────────────────────────────
+@app.route("/api/system/numa-info")
+@require_auth
+def api_system_numa_info():
+    """Return NUMA topology info."""
+    try:
+        import glob
+        nodes = []
+        node_dirs = sorted(glob.glob("/sys/devices/system/node/node[0-9]*"))
+        for node_dir in node_dirs:
+            node_id = node_dir.split("/")[-1]
+            mem_total_kb = mem_free_kb = 0
+            try:
+                with open(f"{node_dir}/meminfo") as fh:
+                    for line in fh:
+                        parts = line.split()
+                        if "MemTotal:" in line and len(parts) >= 4:
+                            mem_total_kb = int(parts[3])
+                        elif "MemFree:" in line and len(parts) >= 4:
+                            mem_free_kb = int(parts[3])
+            except OSError:
+                pass
+            cpulist = ""
+            try:
+                with open(f"{node_dir}/cpulist") as fh:
+                    cpulist = fh.read().strip()
+            except OSError:
+                pass
+            nodes.append({
+                "node": node_id,
+                "cpulist": cpulist,
+                "mem_total_mb": round(mem_total_kb / 1024, 1),
+                "mem_free_mb": round(mem_free_kb / 1024, 1),
+            })
+        if not nodes:
+            nodes.append({"node": "node0", "cpulist": "0", "mem_total_mb": 0, "mem_free_mb": 0})
+        return jsonify({
+            "nodes": nodes,
+            "count": len(nodes),
+            "numa_available": len(nodes) > 1,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
