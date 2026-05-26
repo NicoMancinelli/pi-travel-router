@@ -1717,6 +1717,24 @@
     <div class="card-body" id="ping-check-body"></div>
   </div>
 
+  <!-- Open Ports -->
+  <div class="card" id="card-open-ports">
+    <div class="card-header" onclick="toggleCard('card-open-ports')">
+      <span>🔓 Open Ports</span>
+      <span class="badge" id="open-ports-badge">…</span>
+    </div>
+    <div class="card-body" id="open-ports-body"></div>
+  </div>
+
+  <!-- Package Updates -->
+  <div class="card" id="card-pkg-updates">
+    <div class="card-header" onclick="toggleCard('card-pkg-updates')">
+      <span>📦 Package Updates</span>
+      <span class="badge" id="pkg-updates-badge">…</span>
+    </div>
+    <div class="card-body" id="pkg-updates-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5847,6 +5865,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKmod();
   fetchDnsStats();
   fetchDiskstats();
+  fetchPkgUpdates();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
@@ -6315,6 +6334,7 @@ async function refreshAll() {
   fetchArpTableV3();
   fetchSshKeysV3();
   fetchPingCheck();
+  fetchOpenPorts();
 }
 
 async function init() {
@@ -9147,6 +9167,102 @@ async function fetchPingCheck() {
     body.innerHTML = html;
   } catch(e) {
     if (e.message !== 'Unauthorized') body.innerHTML = `<span class="dim">Error: ${e.message}</span>`;
+  }
+}
+
+// ── Open Ports ────────────────────────────────────────────────────────────────
+async function fetchOpenPorts() {
+  const body = document.getElementById('open-ports-body');
+  const badge = document.getElementById('open-ports-badge');
+  if (!body) return;
+  try {
+    const d = await apiFetch('/api/network/open-ports');
+    badge.textContent = d.count + ' ports (' + d.tcp_count + ' tcp / ' + d.udp_count + ' udp)';
+    if (!d.ports || d.ports.length === 0) {
+      body.innerHTML = '<span class="dim">No listening ports found</span>';
+      return;
+    }
+    let html = '<div style="max-height:260px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:3px 8px;">Proto</th>';
+    html += '<th style="text-align:left;padding:3px 8px;">Address</th>';
+    html += '<th style="text-align:right;padding:3px 8px;">Port</th>';
+    html += '<th style="text-align:left;padding:3px 8px;">Process</th>';
+    html += '</tr></thead><tbody>';
+    for (const p of d.ports) {
+      const protoColor = p.proto === 'tcp' ? 'var(--blue,#3b82f6)' : 'var(--yellow,#ca8a04)';
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:3px 8px;font-family:monospace;color:${protoColor};">${p.proto}</td>
+        <td style="padding:3px 8px;font-family:monospace;font-size:12px;">${p.local_addr}</td>
+        <td style="padding:3px 8px;text-align:right;font-family:monospace;font-weight:600;">${p.port}</td>
+        <td style="padding:3px 8px;font-size:12px;color:var(--text-dim);">${p.process || '—'}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') body.innerHTML = `<span class="dim">Error: ${e.message}</span>`;
+  }
+}
+
+// ── Package Updates ───────────────────────────────────────────────────────────
+
+async function fetchPkgUpdates() {
+  const badge = document.getElementById('pkg-updates-badge');
+  const body = document.getElementById('pkg-updates-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/package-updates');
+    if (!d.available) {
+      if (badge) { badge.textContent = 'n/a'; badge.style.background = ''; }
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">apt not available on this system.</p>';
+      return;
+    }
+    const count = d.count || 0;
+    const secCount = d.security_updates || 0;
+    if (badge) {
+      if (count === 0) {
+        badge.textContent = 'up to date';
+        badge.style.background = '#16a34a';
+      } else if (secCount > 0) {
+        badge.textContent = `${count} updates (${secCount} security)`;
+        badge.style.background = '#dc2626';
+      } else {
+        badge.textContent = `${count} updates`;
+        badge.style.background = '#f59e0b';
+      }
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
+    }
+    let html = '';
+    if (count === 0) {
+      html = '<p style="color:var(--success,#16a34a);font-size:13px;">&#x2713; System is up to date.</p>';
+    } else {
+      html += '<div style="max-height:240px;overflow-y:auto;">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">';
+      html += '<th style="text-align:left;padding:3px 6px;">Name</th>';
+      html += '<th style="text-align:left;padding:3px 6px;">Current</th>';
+      html += '<th style="text-align:left;padding:3px 6px;">Available</th>';
+      html += '<th style="text-align:left;padding:3px 6px;">Arch</th>';
+      html += '</tr></thead><tbody>';
+      for (const p of (d.updates || [])) {
+        const secBadge = p.security ? ' <span style="font-size:9px;background:#dc2626;color:#fff;border-radius:3px;padding:1px 4px;">SEC</span>' : '';
+        html += `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:3px 6px;font-family:monospace;font-weight:500;">${p.name}${secBadge}</td>
+          <td style="padding:3px 6px;font-family:monospace;font-size:11px;color:var(--text-dim);">${p.current || '&#x2014;'}</td>
+          <td style="padding:3px 6px;font-family:monospace;font-size:11px;">${p.available || '&#x2014;'}</td>
+          <td style="padding:3px 6px;font-size:11px;color:var(--text-dim);">${p.arch || ''}</td>
+        </tr>`;
+      }
+      html += '</tbody></table></div>';
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    if (body && e.message !== 'Unauthorized') body.innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
   }
 }
 

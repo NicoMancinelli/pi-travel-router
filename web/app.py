@@ -7932,158 +7932,6 @@ def api_system_swap():
     return jsonify(result)
 
 
-# ── WiFi Network Scan ─────────────────────────────────────────────────────────
-@app.route("/api/network/wifi-scan", methods=["GET"])
-@require_auth
-def api_network_wifi_scan():
-    """Return nearby WiFi networks via iw or iwlist scan."""
-    import re
-
-    iface = "wlan0"
-    networks = []
-
-    def parse_iw(output):
-        results = []
-        current = {}
-        for line in output.splitlines():
-            line = line.strip()
-            m = re.match(r"^BSS ([0-9a-f:]{17})", line, re.IGNORECASE)
-            if m:
-                if current:
-                    results.append(current)
-                current = {"bssid": m.group(1).lower(), "ssid": "", "channel": None,
-                           "frequency_mhz": None, "signal_dbm": None,
-                           "quality": None, "encryption": "Open"}
-                continue
-            if not current:
-                continue
-            m = re.match(r"SSID: (.+)", line)
-            if m:
-                current["ssid"] = m.group(1).strip()
-                continue
-            m = re.match(r"freq: (\d+)", line)
-            if m:
-                freq = int(m.group(1))
-                current["frequency_mhz"] = freq
-                # Derive channel from frequency
-                if 2412 <= freq <= 2484:
-                    current["channel"] = (freq - 2407) // 5 if freq != 2484 else 14
-                elif 5180 <= freq <= 5825:
-                    current["channel"] = (freq - 5000) // 5
-                continue
-            m = re.match(r"signal: ([-\d.]+) dBm", line)
-            if m:
-                try:
-                    current["signal_dbm"] = int(float(m.group(1)))
-                except ValueError:
-                    pass
-                continue
-            if re.search(r"capability:.*Privacy", line, re.IGNORECASE):
-                current["encryption"] = "Encrypted"
-                continue
-            if re.match(r"RSN:", line) or re.match(r"\* Version:", line):
-                if current.get("encryption") != "WPA2":
-                    current["encryption"] = "WPA2"
-                continue
-            if re.match(r"WPA:", line):
-                if current.get("encryption") not in ("WPA2",):
-                    current["encryption"] = "WPA"
-                continue
-        if current:
-            results.append(current)
-        return results
-
-    def parse_iwlist(output):
-        results = []
-        current = {}
-        for line in output.splitlines():
-            line = line.strip()
-            m = re.match(r"Cell \d+ - Address: ([0-9A-Fa-f:]{17})", line)
-            if m:
-                if current:
-                    results.append(current)
-                current = {"bssid": m.group(1).lower(), "ssid": "", "channel": None,
-                           "frequency_mhz": None, "signal_dbm": None,
-                           "quality": None, "encryption": "Open"}
-                continue
-            if not current:
-                continue
-            m = re.match(r'ESSID:"(.*)"', line)
-            if m:
-                current["ssid"] = m.group(1)
-                continue
-            m = re.match(r"Channel:(\d+)", line)
-            if m:
-                current["channel"] = int(m.group(1))
-                continue
-            m = re.match(r"Frequency:([\d.]+) GHz", line)
-            if m:
-                try:
-                    current["frequency_mhz"] = int(float(m.group(1)) * 1000)
-                except ValueError:
-                    pass
-                continue
-            m = re.search(r"Signal level=([-\d]+)\s*dBm", line)
-            if m:
-                try:
-                    current["signal_dbm"] = int(m.group(1))
-                except ValueError:
-                    pass
-                continue
-            m = re.search(r"Quality=([\d]+)/([\d]+)", line)
-            if m:
-                current["quality"] = f"{m.group(1)}/{m.group(2)}"
-                if current["signal_dbm"] is None:
-                    # Some iwlist outputs quality only without dBm
-                    try:
-                        q = int(m.group(1))
-                        t = int(m.group(2))
-                        current["signal_dbm"] = -100 + int((q / t) * 50)
-                    except (ValueError, ZeroDivisionError):
-                        pass
-                continue
-            if re.match(r"Encryption key:on", line, re.IGNORECASE):
-                current["encryption"] = "Encrypted"
-                continue
-            if re.search(r"IE:.*WPA2", line, re.IGNORECASE):
-                current["encryption"] = "WPA2"
-                continue
-            if re.search(r"IE:.*WPA ", line, re.IGNORECASE):
-                if current.get("encryption") != "WPA2":
-                    current["encryption"] = "WPA"
-                continue
-        if current:
-            results.append(current)
-        return results
-
-    # Try iw first
-    out, rc = _run(["iw", "dev", iface, "scan"], timeout=15)
-    if rc == 0 and out.strip():
-        networks = parse_iw(out)
-    else:
-        # Fallback to iwlist
-        out2, rc2 = _run(["iwlist", iface, "scan"], timeout=15)
-        if rc2 == 0 and out2.strip():
-            networks = parse_iwlist(out2)
-        else:
-            return jsonify({"networks": [], "count": 0, "iface": iface,
-                            "error": "scan unavailable"})
-
-    # Add quality string for iw results that don't have it yet
-    for net in networks:
-        if net.get("quality") is None and net.get("signal_dbm") is not None:
-            sig = net["signal_dbm"]
-            # Map -100..0 dBm to 0..100
-            q = max(0, min(100, 2 * (sig + 100)))
-            net["quality"] = f"{q}/100"
-
-    # Sort by signal descending (strongest first), treat None as -999
-    networks.sort(key=lambda n: n.get("signal_dbm") or -999, reverse=True)
-    networks = networks[:20]
-
-    return jsonify({"networks": networks, "count": len(networks), "iface": iface})
-
-
 # ── Network Interface Counters (/proc/net/dev) ────────────────────────────────
 @app.route("/api/network/netdev", methods=["GET"])
 @require_auth
@@ -10069,85 +9917,48 @@ def api_network_wifi_clients():
 @app.route("/api/system/package-updates")
 @require_auth
 def api_system_package_updates():
-    """Return list of available package updates using apt-get dry-run."""
-    def _parse_inst_lines(text, security_set):
-        pkgs = []
-        for line in text.splitlines():
-            if not line.startswith("Inst "):
-                continue
-            # Inst PACKAGE [OLD] (NEW ...) or Inst PACKAGE (NEW ...)
-            m = re.match(
-                r"^Inst (\S+)"
-                r"(?: \[([^\]]+)\])?"
-                r"(?: \((\S+))?",
-                line,
-            )
-            if not m:
-                continue
-            name = m.group(1)
-            old_ver = m.group(2)
-            new_ver = m.group(3)
-            pkgs.append({
-                "name": name,
-                "old_version": old_ver,
-                "new_version": new_ver,
-                "is_security": name in security_set,
-            })
-        return pkgs
+    """Return list of available package updates via apt list --upgradable (read-only)."""
+    import re as _re
 
-    error = None
-    packages = []
-    security_count = 0
-    dist_upgrade_count = 0
-    last_update = None
+    # Check apt is available
+    _, rc_which = _run(["which", "apt"], timeout=5)
+    if rc_which != 0:
+        return jsonify({"available": False, "updates": [], "count": 0, "security_updates": 0})
 
-    try:
-        out_upg, rc1 = _run(
-            ["bash", "-c", "apt-get -s upgrade 2>/dev/null | grep '^Inst '"],
-            timeout=30,
+    out, _rc = _run(["apt", "list", "--upgradable"], timeout=30)
+
+    updates = []
+    for line in out.splitlines():
+        # Skip header line "Listing..."
+        if line.startswith("Listing") or not line.strip():
+            continue
+        # Format: package/suite version arch [upgradable from: old_version]
+        m = _re.match(
+            r"^([^/]+)/(\S+)\s+(\S+)\s+(\S+)"
+            r"(?:\s+\[upgradable from:\s+(\S+)\])?",
+            line,
         )
-        out_sec, _rc2 = _run(
-            ["bash", "-c",
-             "apt-get -s upgrade 2>/dev/null | grep -i security | grep '^Inst '"],
-            timeout=30,
-        )
-        out_dist, _rc3 = _run(
-            ["bash", "-c", "apt-get -s dist-upgrade 2>/dev/null | grep '^Inst '"],
-            timeout=30,
-        )
+        if not m:
+            continue
+        pkg_name = m.group(1).split(":")[0]  # strip arch suffix from name
+        suite = m.group(2)
+        available_ver = m.group(3)
+        arch = m.group(4)
+        current_ver = m.group(5) or ""
+        updates.append({
+            "name": pkg_name,
+            "current": current_ver,
+            "available": available_ver,
+            "arch": arch,
+            "security": "security" in suite,
+        })
 
-        security_names = {
-            line.split()[1]
-            for line in out_sec.splitlines()
-            if line.startswith("Inst ")
-        }
-
-        packages = _parse_inst_lines(out_upg, security_names)
-        security_count = sum(1 for p in packages if p["is_security"])
-
-        dist_pkgs = _parse_inst_lines(out_dist, security_names)
-        dist_upgrade_count = len(dist_pkgs)
-
-        if rc1 != 0 and not packages:
-            error = "apt-get not available or failed"
-    except Exception as exc:  # pylint: disable=broad-except
-        error = str(exc)
-
-    try:
-        apt_lists = Path("/var/lib/apt/lists/")
-        if apt_lists.exists():
-            mtime = apt_lists.stat().st_mtime
-            last_update = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
-    except Exception:  # pylint: disable=broad-except
-        pass
-
+    security_updates = sum(1 for p in updates if p["security"])
     return jsonify({
-        "upgradable": packages,
-        "count": len(packages),
-        "security_count": security_count,
-        "dist_upgrade_count": dist_upgrade_count,
-        "last_update": last_update,
-        "error": error,
+        "updates": updates,
+        "count": len(updates),
+        "security_updates": security_updates,
+        "available": True,
     })
 
 
@@ -15023,6 +14834,283 @@ def api_network_ping_check():
         "results": results,
         "reachable_count": reachable_count,
         "all_reachable": reachable_count == len(_PING_HOSTS),
+    })
+
+
+def _parse_ss_output(output, proto):
+    """Parse ss -tlnp / ss -ulnp output into a list of port dicts."""
+    ports = []
+    for line in output.splitlines():
+        line = line.strip()
+        if not line or line.startswith("Netid") or line.startswith("State"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        # TCP lines: State Recv-Q Send-Q Local Peer [users]
+        # UDP lines: Netid  Recv-Q  Send-Q  Local  Peer  [users]
+        # Both have the same structure when already filtered by proto
+        if proto == "tcp":
+            if len(parts) < 5:
+                continue
+            state = parts[0]
+            local = parts[3]
+        else:
+            # UDP ss -ulnp: first col is "udp", then Recv-Q, Send-Q, local, peer
+            if parts[0].lower() in ("udp", "udp6"):
+                # unfiltered multi-proto output
+                if len(parts) < 5:
+                    continue
+                state = ""
+                local = parts[3]
+            else:
+                # Already filtered; layout: Recv-Q Send-Q Local Peer
+                if len(parts) < 4:
+                    continue
+                state = ""
+                local = parts[2]
+
+        # Split local address on last colon to get addr + port
+        last_colon = local.rfind(":")
+        if last_colon == -1:
+            continue
+        addr = local[:last_colon]
+        port_str = local[last_colon + 1:]
+        try:
+            port = int(port_str)
+        except ValueError:
+            continue
+
+        # Remove brackets from IPv6 addresses like [::1]
+        if addr.startswith("[") and addr.endswith("]"):
+            addr = addr[1:-1]
+
+        # Extract process name from users:(("name",...))
+        process = ""
+        m = re.search(r'users:\(\("([^"]+)"', line)
+        if m:
+            process = m.group(1)
+
+        ports.append({
+            "proto": proto,
+            "local_addr": addr,
+            "port": port,
+            "state": state,
+            "process": process,
+        })
+    return ports
+
+
+@app.route("/api/network/open-ports", methods=["GET"])
+@require_auth
+def api_network_open_ports():
+    """List currently listening TCP and UDP ports using ss."""
+    tcp_out, _ = _run("ss -tlnp")
+    udp_out, _ = _run("ss -ulnp")
+
+    tcp_ports = _parse_ss_output(tcp_out, "tcp")
+    udp_ports = _parse_ss_output(udp_out, "udp")
+
+    all_ports = sorted(tcp_ports + udp_ports, key=lambda x: x["port"])
+
+    return jsonify({
+        "ports": all_ports,
+        "count": len(all_ports),
+        "tcp_count": len(tcp_ports),
+        "udp_count": len(udp_ports),
+    })
+
+
+# ── WiFi Network Scan ─────────────────────────────────────────────────────────
+@app.route("/api/network/wifi-scan", methods=["GET"])
+@require_auth
+def api_network_wifi_scan():
+    """Return nearby WiFi networks via iw or iwlist scan, sorted by signal strength."""
+    import re
+    import time
+
+    t_start = time.time()
+
+    # ── Auto-detect wireless interface ───────────────────────────────────────
+    iface = "wlan0"
+    iw_dev_out, iw_dev_rc = _run(["iw", "dev"], timeout=5)
+    if iw_dev_rc == 0:
+        m = re.search(r"Interface\s+(\S+)", iw_dev_out)
+        if m:
+            iface = m.group(1)
+    else:
+        iwconfig_out, iwconfig_rc = _run(["iwconfig"], timeout=5)
+        if iwconfig_rc == 0:
+            m = re.search(r"^(\S+)\s+IEEE", iwconfig_out, re.MULTILINE)
+            if m:
+                iface = m.group(1)
+
+    # ── Parsers ───────────────────────────────────────────────────────────────
+    def parse_iw(output):
+        results = []
+        current = {}
+        for line in output.splitlines():
+            line = line.strip()
+            bss_m = re.match(r"^BSS ([0-9a-f:]{17})", line, re.IGNORECASE)
+            if bss_m:
+                if current:
+                    results.append(current)
+                current = {
+                    "bssid": bss_m.group(1).lower(),
+                    "ssid": "",
+                    "channel": None,
+                    "freq_mhz": None,
+                    "signal_dbm": None,
+                    "quality": None,
+                    "encryption": "Open",
+                }
+                continue
+            if not current:
+                continue
+            m = re.match(r"SSID: (.+)", line)
+            if m:
+                current["ssid"] = m.group(1).strip()
+                continue
+            m = re.match(r"freq: (\d+)", line)
+            if m:
+                freq = int(m.group(1))
+                current["freq_mhz"] = freq
+                if 2412 <= freq <= 2484:
+                    current["channel"] = (freq - 2407) // 5 if freq != 2484 else 14
+                elif 5180 <= freq <= 5825:
+                    current["channel"] = (freq - 5000) // 5
+                continue
+            m = re.match(r"signal: ([-\d.]+) dBm", line)
+            if m:
+                try:
+                    current["signal_dbm"] = int(float(m.group(1)))
+                except ValueError:
+                    pass
+                continue
+            if re.search(r"capability:.*Privacy", line, re.IGNORECASE):
+                current["encryption"] = "Encrypted"
+                continue
+            if re.match(r"RSN:", line) or re.match(r"\* Version:", line):
+                if current.get("encryption") != "WPA2":
+                    current["encryption"] = "WPA2"
+                continue
+            if re.match(r"WPA:", line):
+                if current.get("encryption") not in ("WPA2",):
+                    current["encryption"] = "WPA"
+                continue
+        if current:
+            results.append(current)
+        return results
+
+    def parse_iwlist(output):
+        results = []
+        current = {}
+        for line in output.splitlines():
+            line = line.strip()
+            m = re.match(r"Cell \d+ - Address: ([0-9A-Fa-f:]{17})", line)
+            if m:
+                if current:
+                    results.append(current)
+                current = {
+                    "bssid": m.group(1).lower(),
+                    "ssid": "",
+                    "channel": None,
+                    "freq_mhz": None,
+                    "signal_dbm": None,
+                    "quality": None,
+                    "encryption": "Open",
+                }
+                continue
+            if not current:
+                continue
+            m = re.match(r'ESSID:"(.*)"', line)
+            if m:
+                current["ssid"] = m.group(1)
+                continue
+            m = re.match(r"Channel:(\d+)", line)
+            if m:
+                current["channel"] = int(m.group(1))
+                continue
+            m = re.match(r"Frequency:([\d.]+) GHz", line)
+            if m:
+                try:
+                    current["freq_mhz"] = int(float(m.group(1)) * 1000)
+                except ValueError:
+                    pass
+                continue
+            m = re.search(r"Signal level=([-\d]+)\s*dBm", line)
+            if m:
+                try:
+                    current["signal_dbm"] = int(m.group(1))
+                except ValueError:
+                    pass
+                continue
+            m = re.search(r"Quality=([\d]+)/([\d]+)", line)
+            if m:
+                current["quality"] = f"{m.group(1)}/{m.group(2)}"
+                if current["signal_dbm"] is None:
+                    try:
+                        q = int(m.group(1))
+                        t = int(m.group(2))
+                        current["signal_dbm"] = -100 + int((q / t) * 50)
+                    except (ValueError, ZeroDivisionError):
+                        pass
+                continue
+            if re.match(r"Encryption key:on", line, re.IGNORECASE):
+                current["encryption"] = "Encrypted"
+                continue
+            if re.search(r"IE:.*WPA2", line, re.IGNORECASE):
+                current["encryption"] = "WPA2"
+                continue
+            if re.search(r"IE:.*WPA ", line, re.IGNORECASE):
+                if current.get("encryption") != "WPA2":
+                    current["encryption"] = "WPA"
+                continue
+        if current:
+            results.append(current)
+        return results
+
+    # ── Run scan ──────────────────────────────────────────────────────────────
+    networks = []
+    error_msg = None
+    try:
+        out, rc = _run(["iw", "dev", iface, "scan"], timeout=15)
+        if rc == 0 and out.strip():
+            networks = parse_iw(out)
+        else:
+            out2, rc2 = _run(["iwlist", iface, "scan"], timeout=15)
+            if rc2 == 0 and out2.strip():
+                networks = parse_iwlist(out2)
+            else:
+                error_msg = "scan unavailable"
+    except PermissionError:
+        return jsonify({"networks": [], "count": 0, "available": False,
+                        "error": "permission denied — scan requires root"})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"networks": [], "count": 0, "available": False,
+                        "error": str(exc)})
+
+    if error_msg and not networks:
+        return jsonify({"networks": [], "count": 0, "iface": iface,
+                        "available": False, "error": error_msg})
+
+    # Derive quality for iw results
+    for net in networks:
+        if net.get("quality") is None and net.get("signal_dbm") is not None:
+            sig = net["signal_dbm"]
+            q = max(0, min(100, 2 * (sig + 100)))
+            net["quality"] = q
+
+    # Sort strongest first
+    networks.sort(key=lambda n: n.get("signal_dbm") or -999, reverse=True)
+    networks = networks[:20]
+
+    scan_time_ms = int((time.time() - t_start) * 1000)
+    return jsonify({
+        "networks": networks,
+        "count": len(networks),
+        "iface": iface,
+        "scan_time_ms": scan_time_ms,
     })
 
 
