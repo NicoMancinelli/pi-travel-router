@@ -1997,6 +1997,13 @@
       <span class="badge" id="lease-summary-badge">…</span>
     </div>
     <div class="card-body" id="lease-summary-body"></div>
+  <!-- Load Average -->
+  <div class="card" id="card-load-avg">
+    <div class="card-header" onclick="toggleCard('card-load-avg')">
+      <span>📈 Load Average</span>
+      <span class="badge" id="load-avg-badge">…</span>
+    </div>
+    <div class="card-body" id="load-avg-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -7068,6 +7075,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSockStat();
   fetchOsInfo();
   fetchLoadAvg();
+  fetchLoadAvgLegacy();
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();
@@ -7416,6 +7424,7 @@ async function refreshAll() {
   fetchSockStat();
   fetchOsInfo();
   fetchLoadAvg();
+  fetchLoadAvgLegacy();
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();
@@ -10805,6 +10814,31 @@ async function fetchLeaseSummary() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+// ── Load Average ──
+async function fetchLoadAvg() {
+  const badge = document.getElementById('load-avg-badge');
+  const body = document.getElementById('load-avg-body');
+  try {
+    const d = await apiFetch('/api/system/load-avg');
+    const statusColors = {'idle':'#22c55e','normal':'#3b82f6','high':'#f59e0b','overloaded':'#ef4444'};
+    const color = statusColors[d.status] || '#6b7280';
+    badge.textContent = `${d.load_1m} / ${d.load_5m} / ${d.load_15m}`;
+    badge.style.background = color;
+    const barMax = d.cpu_count * 2;
+    const barPct = Math.min((d.load_1m / barMax) * 100, 100);
+    body.innerHTML = `
+      <div style="margin:6px 8px 10px;">
+        <div style="background:var(--bg2);border-radius:4px;height:6px;overflow:hidden;">
+          <div style="width:${barPct}%;height:100%;background:${color};"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">${d.status} — ${d.cpu_count} CPU${d.cpu_count > 1 ? 's' : ''}</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">1 min</td><td style="padding:2px 8px;font-size:13px;">${d.load_1m}</td></tr>
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">5 min</td><td style="padding:2px 8px;font-size:13px;">${d.load_5m}</td></tr>
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">15 min</td><td style="padding:2px 8px;font-size:13px;">${d.load_15m}</td></tr>
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Processes</td><td style="padding:2px 8px;font-size:13px;">${d.running_processes} running / ${d.total_processes} total</td></tr>
+      </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
     if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
@@ -13194,9 +13228,9 @@ async function fetchOsInfo() {
   }
 }
 
-// ── System Load Average ───────────────────────────────────────────────────────
+// ── System Load Average (legacy card) ────────────────────────────────────────
 
-async function fetchLoadAvg() {
+async function fetchLoadAvgLegacy() {
   const el = document.getElementById('loadavg-content');
   if (!el) return;
   try {

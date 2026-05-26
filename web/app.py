@@ -16576,6 +16576,52 @@ def api_network_lease_summary():
     return jsonify({"leases": leases, "total": len(leases)})
 
 
+# ── Load average ──────────────────────────────────────────────────────────────
+
+@app.route("/api/system/load-avg", methods=["GET"])
+@require_auth
+def api_system_load_avg():
+    """Return system load averages from /proc/loadavg."""
+    import os
+    try:
+        with open("/proc/loadavg") as f:
+            parts = f.read().split()
+        load_1m = float(parts[0])
+        load_5m = float(parts[1])
+        load_15m = float(parts[2])
+        proc_parts = parts[3].split("/")
+        running_processes = int(proc_parts[0])
+        total_processes = int(proc_parts[1])
+        last_pid = int(parts[4])
+    except Exception:
+        return jsonify({"error": "Could not read /proc/loadavg"}), 500
+
+    try:
+        cpu_count = os.cpu_count() or 1
+    except Exception:
+        cpu_count = 1
+
+    if load_1m < 0.5 * cpu_count:
+        status = "idle"
+    elif load_1m < cpu_count:
+        status = "normal"
+    elif load_1m < 2 * cpu_count:
+        status = "high"
+    else:
+        status = "overloaded"
+
+    return jsonify({
+        "load_1m": load_1m,
+        "load_5m": load_5m,
+        "load_15m": load_15m,
+        "running_processes": running_processes,
+        "total_processes": total_processes,
+        "last_pid": last_pid,
+        "cpu_count": cpu_count,
+        "status": status,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
