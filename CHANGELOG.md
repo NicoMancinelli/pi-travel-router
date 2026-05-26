@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-05-26
+
+### Added
+- `GET /api/system/login-history` — recent logins via `last -n 20 -F`; returns `logins[]` with user/tty/from/login_time/duration/still_logged_in; dashboard card 🔓 Login History with active-session highlight
+- `GET /api/system/pi-hardware` — Raspberry Pi model/revision/serial/hardware from `/proc/cpuinfo`; serial shown as last 8 chars; dashboard card 🍓 Pi Hardware key-value grid
+- `GET /api/network/bandwidth-live` — live throughput by double-sampling `/proc/net/dev` 1s apart; returns rx/tx bps and Mbps per interface; dashboard card 📡 Live Bandwidth with colour bars (~1s response noted)
+
 ## [3.4.0] - 2026-05-26
 
 ### Added
