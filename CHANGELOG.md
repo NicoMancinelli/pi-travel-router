@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.15.0] - 2026-05-26
+
+### Added
+- `GET /api/system/journal-boot` — last 50 boot log lines via journalctl with error/fail detection and dashboard card 📋 Journal Boot
+- `GET /api/network/multicast-groups` — IGMP multicast group memberships from /proc/net/igmp with interface association and dashboard card 📡 Multicast Groups
+- `GET /api/system/kernel-cmdline` — parsed /proc/cmdline into key=value params and bare flags with dashboard card ⚙️ Kernel Cmdline
+
 ## [Unreleased]
 
 ## [3.14.0] - 2026-05-26
