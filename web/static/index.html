@@ -1778,14 +1778,11 @@
     <div class="card-body" id="disk-usage-body"></div>
   </div>
 
-  <!-- IRQ Stats -->
-  <div class="card" id="card-irq-stats">
-    <div class="card-header" onclick="toggleCard('card-irq-stats')">
-      <span>&#x26A1; IRQ Stats</span>
-      <span class="badge" id="irq-stats-badge">&#x2026;</span>
-    </div>
-    <div class="card-body" id="irq-stats-body"></div>
-  </div>
+<!-- IRQ Stats -->
+<div class="card" id="irq-stats-card">
+  <div class="card-header"><span class="card-icon">⚡</span>IRQ Stats</div>
+  <div class="card-body" id="irq-stats-body"><span class="loading">Loading…</span></div>
+</div>
 
   <!-- Network Interfaces -->
   <div class="card" id="card-net-ifaces">
@@ -5674,49 +5671,20 @@ async function fetchFirewallSummary() {
   }
 }
 
-// ── IRQ Stats ─────────────────────────────────────────────────────────────────
-
-async function fetchIrqStats() {
-  const badge = document.getElementById('irq-stats-badge');
-  const body = document.getElementById('irq-stats-body');
-  if (!body) return;
-  body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+// ── IRQ Stats ──
+async function loadIrqStats() {
   try {
-    const r = await apiFetch('/api/system/irq-stats');
+    const r = await fetch('/api/system/irq-stats');
     const d = await r.json();
-    const irqs = (d.irqs || []).slice(0, 15);
-    if (badge) badge.textContent = irqs.length + ' IRQs';
-    if (d.error && irqs.length === 0) {
-      body.innerHTML = `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
-      return;
-    }
-    if (irqs.length === 0) {
-      body.innerHTML = '<div style="font-size:13px;color:var(--text-dim);">No interrupts found.</div>';
-      return;
-    }
-    let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">' +
-      '<th style="text-align:left;padding:4px 6px;">IRQ#</th>' +
-      '<th style="text-align:left;padding:4px 6px;">Type</th>' +
-      '<th style="text-align:left;padding:4px 6px;">Devices</th>' +
-      '<th style="text-align:right;padding:4px 6px;">Count</th>' +
-      '</tr></thead><tbody>';
-    for (const irq of irqs) {
-      const devs = irq.devices && irq.devices.length ? irq.devices.join(', ') : '&#x2014;';
-      html += `<tr style="border-bottom:1px solid var(--border-color,#222);">` +
-        `<td style="padding:3px 6px;font-weight:bold;">${irq.irq}</td>` +
-        `<td style="padding:3px 6px;">${irq.type || '&#x2014;'}</td>` +
-        `<td style="padding:3px 6px;">${devs}</td>` +
-        `<td style="text-align:right;padding:3px 6px;">${irq.total.toLocaleString()}</td>` +
-        '</tr>';
-    }
-    html += '</tbody></table></div>';
-    body.innerHTML = html;
-  } catch (e) {
-    if (badge) badge.textContent = 'error';
-    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
-  }
+    if (d.error) { document.getElementById('irq-stats-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const rows = d.top.slice(0, 5).map(irq =>
+      `<div class="stat-row"><span class="stat-label">${irq.irq}: ${irq.action.slice(0,20)}</span><span class="stat-value">${irq.total.toLocaleString()}</span></div>`
+    ).join('');
+    document.getElementById('irq-stats-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Total IRQs</span><span class="stat-value">${d.total_irqs}</span></div>` + rows;
+  } catch(e) { document.getElementById('irq-stats-body').innerHTML = `<span class="error">${e}</span>`; }
 }
+loadIrqStats();
 
 // ── CPU Frequency v3 ──────────────────────────────────────────────────────────
 

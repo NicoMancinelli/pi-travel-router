@@ -15333,52 +15333,45 @@ def api_system_disk_usage():
     })
 
 
-@app.route("/api/system/irq-stats", methods=["GET"])
+@app.route("/api/system/irq-stats")
 @require_auth
 def api_system_irq_stats():
-    """Return top IRQs by total count with per-CPU breakdown and device names."""
+    """Return top IRQ consumers from /proc/interrupts."""
     try:
-        lines = Path("/proc/interrupts").read_text().splitlines()
-    except OSError as exc:
-        return jsonify({"cpu_count": 0, "total_interrupts": 0, "irqs": [], "error": str(exc)})
-
-    if not lines:
-        return jsonify({"cpu_count": 0, "total_interrupts": 0, "irqs": [], "error": "empty file"})
-
-    # First line: CPU0 CPU1 ... — count CPUs
-    cpu_count = len(lines[0].split())
-
-    results = []
-    for line in lines[1:]:
-        parts = line.split()
-        if not parts:
-            continue
-        irq = parts[0].rstrip(":")
-        # Skip non-numeric IRQs (ERR, MIS, etc.)
-        if not irq.isdigit():
-            continue
+        irqs = []
         try:
-            per_cpu = [int(parts[i + 1]) for i in range(cpu_count)]
-        except (IndexError, ValueError):
-            continue
-        total = sum(per_cpu)
-        if total == 0:
-            continue
-        remainder = parts[1 + cpu_count:]
-        irq_type = remainder[0] if remainder else None
-        devices = remainder[1:] if len(remainder) > 1 else []
-        results.append({
-            "irq": irq,
-            "total": total,
-            "type": irq_type,
-            "devices": devices,
-            "per_cpu": per_cpu,
+            with open("/proc/interrupts") as fh:
+                lines_data = fh.readlines()
+            # First line is CPU header
+            cpu_count = len(lines_data[0].split())
+            for line in lines_data[1:]:
+                parts = line.split()
+                if not parts:
+                    continue
+                irq_num = parts[0].rstrip(":")
+                try:
+                    counts = [int(p) for p in parts[1:cpu_count + 1]]
+                except ValueError:
+                    continue
+                total = sum(counts)
+                rest = parts[cpu_count + 1:]
+                chip = rest[0] if rest else ""
+                action = " ".join(rest[2:]) if len(rest) > 2 else (rest[1] if len(rest) > 1 else "")
+                irqs.append({
+                    "irq": irq_num,
+                    "total": total,
+                    "chip": chip,
+                    "action": action,
+                })
+        except OSError:
+            pass
+        top = sorted(irqs, key=lambda x: x["total"], reverse=True)[:10]
+        return jsonify({
+            "top": top,
+            "total_irqs": len(irqs),
         })
-
-    results.sort(key=lambda x: x["total"], reverse=True)
-    top = results[:20]
-    total_interrupts = sum(r["total"] for r in results)
-    return jsonify({"cpu_count": cpu_count, "total_interrupts": total_interrupts, "irqs": top})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/vpn/wireguard/peer-health", methods=["GET"])
