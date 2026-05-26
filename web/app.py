@@ -7041,68 +7041,28 @@ def api_proctop():
 
 # ── System Entropy ────────────────────────────────────────────────────────────
 
-@app.route("/api/system/entropy")
+@app.route("/api/system/entropy", methods=["GET"])
 @require_auth
 def api_system_entropy():
-    """Return kernel entropy pool stats and RNG health."""
+    """Return kernel entropy pool stats."""
     try:
-        entropy_avail = int(Path("/proc/sys/kernel/random/entropy_avail").read_text().strip())
-        pool_size = int(Path("/proc/sys/kernel/random/poolsize").read_text().strip())
-
+        avail = int(open("/proc/sys/kernel/random/entropy_avail").read().strip())
+        pool_size = int(open("/proc/sys/kernel/random/poolsize").read().strip())
         try:
-            read_threshold = int(
-                Path("/proc/sys/kernel/random/read_wakeup_threshold").read_text().strip()
+            read_wakeup_threshold = int(
+                open("/proc/sys/kernel/random/read_wakeup_threshold").read().strip()
             )
         except (OSError, ValueError):
-            read_threshold = None
-
-        try:
-            write_threshold = int(
-                Path("/proc/sys/kernel/random/write_wakeup_threshold").read_text().strip()
-            )
-        except (OSError, ValueError):
-            write_threshold = None
-
-        try:
-            hw_rng = Path("/sys/class/misc/hw_random/rng_current").read_text().strip()
-        except (OSError, ValueError):
-            hw_rng = None
-
-        try:
-            hw_rng_available = (
-                Path("/sys/class/misc/hw_random/rng_available").read_text().strip().split()
-            )
-        except (OSError, ValueError):
-            hw_rng_available = []
-
-        try:
-            import subprocess as _sp
-            uuid_raw = _sp.check_output(
-                ["cat", "/proc/sys/kernel/random/uuid"],
-                stderr=_sp.DEVNULL,
-                timeout=2,
-            ).decode().strip()
-            uuid_ok = len(uuid_raw) == 36
-        except Exception:
-            uuid_ok = False
-
-        pct = round(
-            min(max(entropy_avail / pool_size * 100, 0), 100), 2
-        ) if pool_size else 0.0
-
+            read_wakeup_threshold = None
+        fill_pct = round(min(max(avail / pool_size * 100, 0), 100), 1) if pool_size else 0.0
         return jsonify({
-            "entropy_avail": entropy_avail,
+            "entropy_avail": avail,
             "pool_size": pool_size,
-            "pct": pct,
-            "read_threshold": read_threshold,
-            "write_threshold": write_threshold,
-            "hw_rng": hw_rng,
-            "hw_rng_available": hw_rng_available,
-            "uuid_ok": uuid_ok,
-            "error": None,
+            "fill_pct": fill_pct,
+            "read_wakeup_threshold": read_wakeup_threshold,
         })
     except Exception as exc:
-        return jsonify({"error": str(exc), "entropy_avail": 0, "pool_size": 4096})
+        return jsonify({"error": str(exc)}), 500
 
 
 # ── USB Device Inventory ──────────────────────────────────────────────────────
