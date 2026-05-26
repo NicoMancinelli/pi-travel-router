@@ -16851,6 +16851,47 @@ def api_network_route_summary():
     })
 
 
+# ── Service health ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/service-health", methods=["GET"])
+@require_auth
+def api_system_service_health():
+    """Return health status of key travel-router services."""
+    import subprocess as sp
+    SERVICES = [
+        "wg-quick@wg0", "dnsmasq", "hostapd", "fail2ban",
+        "tailscaled", "nftables", "adguardhome", "chrony",
+        "systemd-timesyncd", "ssh",
+    ]
+    services = []
+    active_count = 0
+    inactive_count = 0
+    failed_count = 0
+    for svc in SERVICES:
+        try:
+            res = sp.run(
+                ["systemctl", "is-active", svc],
+                capture_output=True, text=True, timeout=3
+            )
+            status = res.stdout.strip()
+        except Exception:
+            status = "unknown"
+        if status == "active":
+            active_count += 1
+        elif status in ("failed", "error"):
+            failed_count += 1
+        else:
+            inactive_count += 1
+        services.append({"name": svc, "status": status})
+    return jsonify({
+        "services": services,
+        "active": active_count,
+        "inactive": inactive_count,
+        "failed": failed_count,
+        "total": len(SERVICES),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

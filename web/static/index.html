@@ -2056,6 +2056,13 @@
     <span class="badge" id="route-summary-badge">…</span>
   </div>
   <div class="card-body" id="route-summary-body"></div>
+<!-- Service Health -->
+<div class="card" id="card-service-health">
+  <div class="card-header" onclick="toggleCard('card-service-health')">
+    <span>🏥 Service Health</span>
+    <span class="badge" id="service-health-badge">…</span>
+  </div>
+  <div class="card-body" id="service-health-body"></div>
 </div>
 
   <!-- Tailscale Status -->
@@ -6116,6 +6123,21 @@ async function fetchProcessStates() {
           <td style="padding:2px 8px;font-size:13px;font-weight:600;text-align:right;">${d.total}</td>
         </tr>
       </table>`;
+// ── Service Health ──
+async function fetchServiceHealth() {
+  const badge = document.getElementById('service-health-badge');
+  const body = document.getElementById('service-health-body');
+  try {
+    const d = await apiFetch('/api/system/service-health');
+    const healthColor = d.failed > 0 ? '#ef4444' : d.inactive > 3 ? '#f59e0b' : '#22c55e';
+    badge.textContent = `${d.active}/${d.total} active`;
+    badge.style.background = healthColor;
+    const statusColors = {'active':'#22c55e','inactive':'#6b7280','failed':'#ef4444','unknown':'#94a3b8'};
+    const rows = d.services.map(s => `<tr>
+      <td style="padding:2px 8px;font-size:13px;font-family:monospace;">${s.name}</td>
+      <td style="padding:2px 8px;font-size:12px;color:${statusColors[s.status]||'#ccc'};">${s.status}</td>
+    </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">${rows}</table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
     if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
@@ -7735,6 +7757,7 @@ async function refreshAll() {
   fetchActiveUsers();
   fetchProcessStates();
   fetchRouteSummary();
+  fetchServiceHealth();
 }
 
 async function init() {
@@ -7755,6 +7778,7 @@ async function init() {
   setInterval(fetchActiveUsers, 30000);
   setInterval(fetchProcessStates, 30000);
   setInterval(fetchRouteSummary, 60000);
+  setInterval(fetchServiceHealth, 30000);
   // Connect SSE event stream
   initEventStream();
 }
