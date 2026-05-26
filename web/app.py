@@ -17815,6 +17815,28 @@ def api_system_login_history():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Dmesg Errors ─────────────────────────────────────────────────────────────
+@app.route("/api/system/dmesg-errors")
+@require_auth
+def api_system_dmesg_errors():
+    """Return recent kernel error and warning messages from dmesg."""
+    try:
+        result = _run(["dmesg", "--level=err,warn", "--notime", "-T"], timeout=10)
+        lines = [l.strip() for l in result.stdout.splitlines() if l.strip()]
+        errors = [l for l in lines if "err" in l.lower() or "error" in l.lower() or "fault" in l.lower()]
+        warnings = [l for l in lines if "warn" in l.lower() and l not in errors]
+        return jsonify({
+            "errors": errors[-20:],
+            "warnings": warnings[-20:],
+            "error_count": len(errors),
+            "warning_count": len(warnings),
+            "total": len(lines),
+            "healthy": len(errors) == 0,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

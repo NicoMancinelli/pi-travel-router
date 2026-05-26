@@ -2207,6 +2207,10 @@
 <div class="card" id="card-nftables-counters">
   <div class="card-header"><span>🔢 Nftables Counters</span><button class="refresh-btn" onclick="fetchNftablesCounters()">↻</button></div>
   <div class="card-body" id="nftables-counters-body">
+<!-- Dmesg Errors -->
+<div class="card" id="card-dmesg-errors">
+  <div class="card-header"><span>🚨 Dmesg Errors</span><button class="refresh-btn" onclick="fetchDmesgErrors()">↻</button></div>
+  <div class="card-body" id="dmesg-errors-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -6549,6 +6553,24 @@ async function fetchMemoryZones() {
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
+// ── Dmesg Errors ──
+async function fetchDmesgErrors() {
+  const el = document.getElementById('dmesg-errors-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/dmesg-errors');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (d.healthy) { el.innerHTML = '<div class="ok-msg">✓ No kernel errors</div>'; return; }
+    const errRows = d.errors.slice(0, 5).map(e => `<div class="log-line warn">${e}</div>`).join('');
+    el.innerHTML = `
+      <div class="stat-row"><span>Errors</span><span class="val warn">${d.error_count}</span></div>
+      <div class="stat-row"><span>Warnings</span><span class="val">${d.warning_count}</span></div>
+      ${errRows}
+    `;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -7686,6 +7708,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
+  fetchDmesgErrors();
   fetchSockStat();
   fetchOsInfo();
   fetchLoadAvg();
@@ -8042,6 +8065,7 @@ async function refreshAll() {
   fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
+  fetchDmesgErrors();
   fetchSockStat();
   fetchOsInfo();
   fetchLoadAvg();
