@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.91.0] - 2026-05-25
+
+### Added
+- `GET /api/network/iface-stats` — per-interface byte/packet/error counters from `/proc/net/dev`; skips `lo`; returns `rx_bytes/packets/errors/dropped`, `tx_bytes/packets/errors/dropped` per interface; dashboard card 📊 Interface Stats with compact RX/TX/Err table
+- `GET /api/system/top-procs` — top 10 processes by CPU from `ps aux --sort=-%cpu`; returns `user`, `pid`, `cpu_pct`, `mem_pct`, `vsz`, `rss`, `stat`, `command`; dashboard card 🔧 Top Processes with color-coded CPU% (green/orange/red)
+- `GET /api/system/kmod` — loaded kernel modules from `lsmod`; returns `name`, `size`, `used_by_count`, `used_by[]`; dashboard card 🧩 Kernel Modules showing top 15 by size with KB/MB formatting
+
 ## [2.90.0] - 2026-05-25
 
 ### Added
