@@ -17328,6 +17328,35 @@ def api_network_network_errors():
             "interfaces": ifaces,
             "total_errors": total_errors,
             "errored_ifaces": [i for i in ifaces if i["total_errors"] > 0],
+# ── I/O Scheduler ────────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/system/io-scheduler")
+@require_auth
+def api_system_io_scheduler():
+    """Return I/O scheduler for each block device."""
+    try:
+        import glob
+        import re
+        devices = []
+        for path in sorted(glob.glob("/sys/block/*/queue/scheduler")):
+            dev = path.split("/")[3]
+            try:
+                with open(path) as f:
+                    raw = f.read().strip()
+                m = re.search(r"\[([^\]]+)\]", raw)
+                active = m.group(1) if m else raw
+                available = re.sub(r"[\[\]]", "", raw).split()
+            except OSError:
+                active = "unknown"
+                available = []
+            devices.append({"device": dev, "active": active, "available": available})
+        return jsonify({
+            "devices": devices,
+            "total": len(devices),
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
