@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.93.0] - 2026-05-25
+
+### Added
+- `GET /api/system/timesync` — NTP time sync status via `timedatectl show`; returns `synchronized`, `timezone`, `ntp_service`, `time_usec`; dashboard card 🕐 Time Sync with green/red sync indicator
+- `GET /api/system/diskstats` — block device I/O from `/proc/diskstats`; skips loop/ram/sr devices; returns per-device `reads/writes_completed`, `kb_read/written`, `io_in_progress`; dashboard card 💽 Disk I/O with read/write/active-IO table
+- `GET /api/network/wifi-signal` (updated) — WiFi signal via `iw dev <iface> link`; returns `signal_dbm`, `signal_quality` (dBm→0-100), `ssid`, `bssid`, `freq_mhz`, `rx/tx_bitrate`; dashboard card 📶 WiFi Signal with per-interface signal bar
+
 ## [2.92.0] - 2026-05-25
 
 ### Added
