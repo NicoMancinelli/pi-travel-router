@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.16.0] - 2026-05-26
+
+### Added
+- `GET /api/system/swap-usage` — swap memory stats from /proc/meminfo (total/used/free/cached, fill%) with dashboard card 💾 Swap Usage
+- `GET /api/system/entropy-pool` — kernel entropy pool status from /proc/sys/kernel/random with fill% and thresholds, dashboard card 🎲 Entropy Pool
+- `GET /api/network/arp-table` — ARP cache entries from /proc/net/arp with reachability count, dashboard card 🗂️ ARP Table
+
 ## [3.15.0] - 2026-05-26
 
 ### Added
