@@ -2195,6 +2195,10 @@
 <div class="card" id="card-vpn-latency">
   <div class="card-header"><span>🏓 VPN Latency</span><button class="refresh-btn" onclick="fetchVpnLatency()">↻</button></div>
   <div class="card-body" id="vpn-latency-body">
+<!-- Disk Temp -->
+<div class="card" id="card-disk-temp">
+  <div class="card-header"><span>🌡️ Disk Temp</span><button class="refresh-btn" onclick="fetchDiskTemp()">↻</button></div>
+  <div class="card-body" id="disk-temp-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -8130,6 +8134,7 @@ async function refreshAll() {
   fetchDnsCacheStats();
   fetchPciDevices();
   fetchVpnLatency();
+  fetchDiskTemp();
 }
 
 async function init() {
@@ -11613,6 +11618,22 @@ async function fetchSysctlSecurity() {
       return `<div class="stat-row ${warn ? 'warn' : ''}"><span>${short}</span><span class="val">${v ?? 'N/A'}</span></div>`;
     }).join('');
     el.innerHTML = `<div class="${statusCls}">${statusTxt}</div>${rows}`;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
+// ── Disk Temp ──
+async function fetchDiskTemp() {
+  const el = document.getElementById('disk-temp-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/disk-temp');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No disk temperature data</div>'; return; }
+    const rows = d.disks.map(disk =>
+      `<div class="stat-row ${d.hot_disks.some(h=>h.device===disk.device)?'warn':''}"><span>${disk.device}</span><span class="val">${disk.temp_c}°C</span></div>`
+    ).join('');
+    el.innerHTML = rows;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 

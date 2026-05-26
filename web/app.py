@@ -17542,6 +17542,55 @@ def api_network_dns_cache_stats():
             "hits": stats["hits"],
             "misses": stats["misses"],
             "hit_rate_pct": hit_rate,
+# ── Disk Temperature ─────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/system/disk-temp")
+@require_auth
+def api_system_disk_temp():
+    """Return disk temperatures via smartctl or hwmon."""
+    try:
+        import glob
+        import re
+        disks = []
+        # Try smartctl for each block device
+        for dev in sorted(glob.glob("/dev/sd?") + glob.glob("/dev/nvme?")):
+            try:
+                result = _run(["smartctl", "-A", dev], timeout=8)
+                temp = None
+                for line in result.stdout.splitlines():
+                    if "Temperature_Celsius" in line or "Temperature:" in line:
+                        m = re.search(r"(\d+)\s*$", line.split()[-1] if "Temperature:" in line else line)
+                        if not m:
+                            parts = line.split()
+                            temp = int(parts[-1]) if parts[-1].isdigit() else None
+                        else:
+                            temp = int(m.group(1))
+                        break
+                if temp is not None:
+                    disks.append({"device": dev, "temp_c": temp, "source": "smartctl"})
+            except Exception:
+                pass
+        # Fallback: hwmon thermal zones named "drivetemp"
+        for path in glob.glob("/sys/class/hwmon/hwmon*/name"):
+            try:
+                with open(path) as f:
+                    if "drivetemp" not in f.read():
+                        continue
+                base = path.rsplit("/", 1)[0]
+                for tp in glob.glob(f"{base}/temp*_input"):
+                    with open(tp) as f:
+                        temp_mc = int(f.read().strip())
+                    disks.append({"device": base.split("/")[-1], "temp_c": round(temp_mc / 1000, 1), "source": "hwmon"})
+            except Exception:
+                pass
+        return jsonify({
+            "disks": disks,
+            "total": len(disks),
+            "hot_disks": [d for d in disks if isinstance(d["temp_c"], (int, float)) and d["temp_c"] > 50],
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
