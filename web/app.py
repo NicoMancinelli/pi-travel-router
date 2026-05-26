@@ -8669,7 +8669,15 @@ def api_system_usb_devices():
                 "description": m.group(5).strip(),
             })
 
-    return jsonify({"devices": devices, "count": len(devices)})
+    hubs = [d for d in devices if "hub" in d["description"].lower()]
+    non_hubs = [d for d in devices if "hub" not in d["description"].lower()]
+    return jsonify({
+        "devices": devices,
+        "non_hub_devices": non_hubs,
+        "total": len(devices),
+        "hubs": len(hubs),
+        "count": len(devices),
+    })
 
 
 @app.route("/api/system/cpu-temp", methods=["GET"])
