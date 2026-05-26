@@ -16147,6 +16147,53 @@ def api_system_thermal_zones():
         "zones": zones,
         "max_temp": max_temp,
         "hottest_zone": hottest_zone,
+# ── Gateway info ──────────────────────────────────────────────────────────────
+
+@app.route("/api/network/gateway-info", methods=["GET"])
+@require_auth
+def api_network_gateway_info():
+    """Return default gateway IP, interface, MAC and ping RTT."""
+    import re, subprocess as sp
+    gateway_ip = None
+    interface = None
+    mac = None
+    ping_ms = None
+    reachable = False
+    try:
+        out, _ = _run(["ip", "route", "show", "default"])
+        # e.g. "default via 192.168.1.1 dev eth0 ..."
+        m = re.search(r"default via (\S+) dev (\S+)", out)
+        if m:
+            gateway_ip = m.group(1)
+            interface = m.group(2)
+    except Exception:
+        pass
+    if gateway_ip:
+        try:
+            res = sp.run(
+                ["ping", "-c", "1", "-W", "2", gateway_ip],
+                capture_output=True, text=True, timeout=5
+            )
+            if res.returncode == 0:
+                reachable = True
+                m2 = re.search(r"time=(\d+(?:\.\d+)?)", res.stdout)
+                if m2:
+                    ping_ms = float(m2.group(1))
+        except Exception:
+            pass
+        try:
+            arp_out, _ = _run(["ip", "neigh", "show", gateway_ip])
+            m3 = re.search(r"lladdr\s+([0-9a-f:]{17})", arp_out)
+            if m3:
+                mac = m3.group(1)
+        except Exception:
+            pass
+    return jsonify({
+        "gateway_ip": gateway_ip,
+        "interface": interface,
+        "mac": mac,
+        "ping_ms": ping_ms,
+        "reachable": reachable,
     })
 
 

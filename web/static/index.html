@@ -1901,6 +1901,13 @@
       <span class="badge" id="thermal-zones-badge">…</span>
     </div>
     <div class="card-body" id="thermal-zones-body"></div>
+  <!-- Gateway Info -->
+  <div class="card" id="card-gateway-info">
+    <div class="card-header" onclick="toggleCard('card-gateway-info')">
+      <span>🌐 Gateway</span>
+      <span class="badge" id="gateway-info-badge">…</span>
+    </div>
+    <div class="card-body" id="gateway-info-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -5680,6 +5687,35 @@ async function fetchClientMap() {
   }
 }
 
+// ── Gateway Info ──
+async function fetchGatewayInfo() {
+  const badge = document.getElementById('gateway-info-badge');
+  const body = document.getElementById('gateway-info-body');
+  try {
+    const d = await apiFetch('/api/network/gateway-info');
+    if (!d.gateway_ip) {
+      badge.textContent = 'n/a';
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No default gateway found.</p>';
+      return;
+    }
+    const reachColor = d.reachable ? '#22c55e' : '#ef4444';
+    const reachText = d.reachable ? '✓ reachable' : '✗ unreachable';
+    badge.textContent = d.gateway_ip;
+    badge.style.background = reachColor;
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">IP</td><td style="padding:3px 8px;font-size:13px;">${d.gateway_ip}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Interface</td><td style="padding:3px 8px;font-size:13px;">${d.interface || 'n/a'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">MAC</td><td style="padding:3px 8px;font-size:13px;">${d.mac || 'n/a'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Ping</td><td style="padding:3px 8px;font-size:13px;">${d.ping_ms !== null ? d.ping_ms + ' ms' : 'n/a'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Status</td><td style="padding:3px 8px;font-size:13px;color:${reachColor};">${reachText}</td></tr>
+      </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -6783,6 +6819,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTsExitNode();
   fetchTsExitNodeV3();
   fetchThermalZones();
+  fetchGatewayInfo();
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
@@ -7101,6 +7138,7 @@ async function refreshAll() {
   fetchTsExitNode();
   fetchTsExitNodeV3();
   fetchThermalZones();
+  fetchGatewayInfo();
   fetchMdnsServices();
   fetchScheduledTasks();
   fetchCronJobs();
