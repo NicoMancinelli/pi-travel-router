@@ -8675,24 +8675,49 @@ def api_system_usb_devices():
 @app.route("/api/system/cpu-temp", methods=["GET"])
 @require_auth
 def api_system_cpu_temp():
-    """Return CPU thermal zone temperatures from /sys/class/thermal."""
+    """Return CPU temperature."""
+    temp_c = None
+    source = None
+
+    # Primary: /sys/class/thermal/thermal_zone0/temp
     try:
-        zones = []
-        thermal_base = Path("/sys/class/thermal")
-        for zone_path in sorted(thermal_base.glob("thermal_zone*")):
-            try:
-                zone_type = (zone_path / "type").read_text().strip()
-                temp_raw = (zone_path / "temp").read_text().strip()
-                temp_c = round(int(temp_raw) / 1000.0, 1)
-                if "acpi" in zone_type.lower() and temp_c == 0.0:
-                    continue
-                zones.append({"zone": zone_type, "temp_c": temp_c})
-            except (OSError, ValueError):
-                continue
-        max_temp = max((z["temp_c"] for z in zones), default=None)
-        return jsonify({"zones": zones, "max_temp_c": max_temp})
-    except Exception as exc:  # pylint: disable=broad-except
-        return jsonify({"zones": [], "max_temp_c": None, "error": str(exc)}), 500
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            temp_c = round(int(f.read().strip()) / 1000.0, 1)
+            source = "thermal_zone"
+    except Exception:
+        pass
+
+    # Fallback: vcgencmd (Raspberry Pi)
+    if temp_c is None:
+        try:
+            out, _ = _run(["vcgencmd", "measure_temp"])
+            import re
+            m = re.search(r"temp=([\d.]+)", out)
+            if m:
+                temp_c = float(m.group(1))
+                source = "vcgencmd"
+        except Exception:
+            pass
+
+    if temp_c is None:
+        return jsonify({"error": "Temperature not available"}), 503
+
+    temp_f = round(temp_c * 9 / 5 + 32, 1)
+    if temp_c < 40:
+        status = "cool"
+    elif temp_c < 65:
+        status = "normal"
+    elif temp_c < 75:
+        status = "warm"
+    else:
+        status = "hot"
+
+    return jsonify({
+        "temp_celsius": temp_c,
+        "temp_fahrenheit": temp_f,
+        "status": status,
+        "source": source,
+    })
 
 
 # ── Kernel Modules (v2) ───────────────────────────────────────────────────────

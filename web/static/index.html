@@ -1972,6 +1972,15 @@
     <div class="card-body" id="disk-io-body"></div>
   </div>
 
+  <!-- CPU Temp -->
+  <div class="card" id="card-cpu-temp">
+    <div class="card-header" onclick="toggleCard('card-cpu-temp')">
+      <span>🌡️ CPU Temp</span>
+      <span class="badge" id="cpu-temp-badge">…</span>
+    </div>
+    <div class="card-body" id="cpu-temp-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -2237,10 +2246,6 @@
 
   <div class="card full-width" id="card-firewall-stats">
     <div id="firewall-stats-content">Loading&hellip;</div>
-  </div>
-
-  <div class="card" id="card-cpu-temp">
-    <div id="cpu-temp-content">Loading&hellip;</div>
   </div>
 
   <div class="card" id="card-logged-in-users">
@@ -7003,6 +7008,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKernelModules();
   fetchDiskIO();
   fetchDiskIo();
+  fetchCpuTemp();
   fetchNetworkPing();
   fetchMemInfo();
   fetchNtpStatus();
@@ -7028,7 +7034,6 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchInterrupts();
   fetchIrqStats();
   fetchFirewallStats();
-  fetchCpuTemp();
   fetchCpuTempCard();
   fetchLoggedInUsers();
   fetchWho();
@@ -7349,6 +7354,7 @@ async function refreshAll() {
   fetchSystemTemps();
   fetchDiskIO();
   fetchDiskIo();
+  fetchCpuTemp();
   fetchNetworkPing();
   fetchMemInfo();
   fetchNtpStatus();
@@ -7373,7 +7379,6 @@ async function refreshAll() {
   fetchInterrupts();
   fetchIrqStats();
   fetchFirewallStats();
-  fetchCpuTemp();
   fetchKernelModules();
   fetchLoggedInUsers();
   fetchCpuStats();
@@ -13210,46 +13215,25 @@ async function fetchFirewallStats() {
   }
 }
 
-// ── CPU Temperature ───────────────────────────────────────────────────────────
-
+// ── CPU Temp ──
 async function fetchCpuTemp() {
-  const el = document.getElementById('cpu-temp-content');
-  if (!el) return;
+  const badge = document.getElementById('cpu-temp-badge');
+  const body = document.getElementById('cpu-temp-body');
   try {
-    const res = await fetch('/api/system/cpu-temp');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const d = await res.json();
-    if (d.error) {
-      el.innerHTML = `<div class="card-title">&#x1F321; CPU Temperature</div><span style="color:var(--danger)">${d.error}</span>`;
-      return;
-    }
-    const zones = d.zones || [];
-    const maxTemp = d.max_temp_c;
-    const tempColour = (t) => {
-      if (t === null) return 'var(--muted)';
-      if (t < 50) return 'var(--info,#4fa3e0)';
-      if (t < 65) return 'var(--success)';
-      if (t < 80) return 'var(--warning)';
-      return 'var(--danger)';
-    };
-    const badge = (t) => {
-      if (t === null) return '<span style="color:var(--muted)">N/A</span>';
-      const c = tempColour(t);
-      return `<span style="background:${c};color:#fff;border-radius:4px;padding:1px 7px;font-size:0.82em;font-weight:600;">${t.toFixed(1)}&thinsp;&deg;C</span>`;
-    };
-    const maxDisplay = maxTemp !== null
-      ? `<span style="font-size:1.6em;font-weight:600;color:${tempColour(maxTemp)};">${maxTemp.toFixed(1)}&thinsp;&deg;C</span>`
-      : '<span style="color:var(--muted)">N/A</span>';
-    const zoneRows = zones.length
-      ? zones.map(z => `<div style="display:flex;justify-content:space-between;align-items:center;padding:2px 0;font-size:0.88em;">
-          <span style="color:var(--text);">${z.zone}</span>${badge(z.temp_c)}</div>`).join('')
-      : '<div style="color:var(--muted);font-size:0.88em;">No thermal zones found</div>';
-    el.innerHTML = `
-      <div class="card-title">&#x1F321; CPU Temperature</div>
-      <div style="margin:6px 0 10px;">Max: ${maxDisplay}</div>
-      <div>${zoneRows}</div>`;
-  } catch (e) {
-    if (el) el.innerHTML = `<div class="card-title">&#x1F321; CPU Temperature</div><span style="color:var(--danger)">Failed: ${e}</span>`;
+    const d = await apiFetch('/api/system/cpu-temp');
+    const statusColors = {'cool':'#22c55e','normal':'#3b82f6','warm':'#f59e0b','hot':'#ef4444'};
+    const color = statusColors[d.status] || '#6b7280';
+    badge.textContent = `${d.temp_celsius}°C`;
+    badge.style.background = color;
+    body.innerHTML = `
+      <div style="text-align:center;padding:12px 8px;">
+        <div style="font-size:36px;font-weight:700;color:${color};">${d.temp_celsius}°C</div>
+        <div style="font-size:14px;color:var(--text-dim);margin-top:4px;">${d.temp_fahrenheit}°F · ${d.status}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">source: ${d.source}</div>
+      </div>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
   }
 }
 
