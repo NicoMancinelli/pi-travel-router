@@ -1663,6 +1663,13 @@
       <span class="badge" id="mdns-services-badge">&#x2026;</span>
     </div>
     <div class="card-body" id="mdns-services-body"></div>
+  <!-- USB Devices -->
+  <div class="card" id="card-usb-devices">
+    <div class="card-header" onclick="toggleCard('card-usb-devices')">
+      <span>🔌 USB Devices</span>
+      <span class="badge" id="usb-devices-badge">…</span>
+    </div>
+    <div class="card-body" id="usb-devices-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -5736,6 +5743,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
+  fetchUsbDevicesV2();
   fetchProcTop();
   fetchSystemTemps();
   fetchWgConfigQr();
@@ -6059,6 +6067,7 @@ async function refreshAll() {
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
+  fetchUsbDevicesV2();
   fetchProcTop();
   fetchSystemTemps();
   fetchDiskIO();
@@ -8847,6 +8856,40 @@ async function fetchFailedUnits() {
       if (body) body.innerHTML = '<span style="color:var(--text-dim)">Error loading failed units</span>';
       if (legacyEl) legacyEl.innerHTML = `<p class="error">${e}</p>`;
     }
+  }
+}
+
+// ── USB Devices (v2) ──────────────────────────────────────────────────────────
+
+async function fetchUsbDevicesV2() {
+  const badge = document.getElementById('usb-devices-badge');
+  const body  = document.getElementById('usb-devices-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/usb-devices');
+    const data = await resp.json();
+    if (data.available === false) {
+      if (badge) badge.textContent = 'N/A';
+      body.innerHTML = '<span style="color:var(--text-dim)">lsusb not available.</span>';
+      return;
+    }
+    if (badge) badge.textContent = (data.count ?? 0) + ' devices';
+    if (!data.devices || data.devices.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim)">No USB devices found.</span>';
+      return;
+    }
+    let html = '<div style="font-size:13px;">';
+    for (const d of data.devices) {
+      const id   = (d.vendor_id && d.product_id) ? d.vendor_id + ':' + d.product_id : '';
+      const desc = d.description || '';
+      html += '<div style="margin-bottom:4px;"><span style="font-family:monospace;color:var(--accent);">' +
+              id + '</span> ' + desc + '</div>';
+    }
+    html += '</div>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (body) body.textContent = 'Error: ' + e;
   }
 }
 

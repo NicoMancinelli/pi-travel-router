@@ -8804,21 +8804,30 @@ def api_network_firewall_stats():
 
 # ── USB Devices ──────────────────────────────────────────────────────────────
 
-@app.route("/api/system/usb-devices")
+@app.route("/api/system/usb-devices", methods=["GET"])
 @require_auth
 def api_system_usb_devices():
+    """Return connected USB devices parsed from lsusb output."""
+    out, rc = _run(["lsusb"], timeout=5)
+    if rc != 0 or not out.strip():
+        return jsonify({"devices": [], "count": 0, "available": False})
+
     devices = []
-    out, rc = _run("lsusb")
-    if rc != 0:
-        err = out.strip() if out.strip() else "lsusb failed or not found"
-        return jsonify({"error": err, "devices": [], "count": 0})
     for line in out.splitlines():
-        # Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
-        m = re.match(r'Bus (\d+) Device (\d+): ID ([0-9a-f:]+)\s+(.*)', line)
+        m = re.match(
+            r"Bus (\d+) Device (\d+): ID ([0-9a-f]{4}):([0-9a-f]{4})\s+(.*)",
+            line,
+        )
         if m:
-            devices.append({"bus": m.group(1), "device": m.group(2),
-                             "id": m.group(3), "description": m.group(4).strip()})
-    return jsonify({"devices": devices, "count": len(devices), "source": "lsusb"})
+            devices.append({
+                "bus": m.group(1),
+                "device": m.group(2),
+                "vendor_id": m.group(3),
+                "product_id": m.group(4),
+                "description": m.group(5).strip(),
+            })
+
+    return jsonify({"devices": devices, "count": len(devices)})
 
 
 @app.route("/api/system/cpu-temp", methods=["GET"])
