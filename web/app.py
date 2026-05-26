@@ -17400,6 +17400,47 @@ def api_network_tcp_stats():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Sysctl Security ──────────────────────────────────────────────────────────
+@app.route("/api/system/sysctl-security")
+@require_auth
+def api_system_sysctl_security():
+    """Return security-relevant sysctl values."""
+    try:
+        keys = [
+            "net.ipv4.ip_forward",
+            "net.ipv4.conf.all.rp_filter",
+            "net.ipv4.conf.all.accept_redirects",
+            "net.ipv4.conf.all.send_redirects",
+            "net.ipv4.tcp_syncookies",
+            "kernel.randomize_va_space",
+            "kernel.dmesg_restrict",
+            "kernel.kptr_restrict",
+            "net.ipv6.conf.all.forwarding",
+        ]
+        values = {}
+        for key in keys:
+            path = "/proc/sys/" + key.replace(".", "/")
+            try:
+                with open(path) as f:
+                    values[key] = f.read().strip()
+            except (FileNotFoundError, PermissionError):
+                values[key] = None
+        expected = {
+            "net.ipv4.tcp_syncookies": "1",
+            "kernel.randomize_va_space": "2",
+            "net.ipv4.conf.all.accept_redirects": "0",
+            "net.ipv4.conf.all.send_redirects": "0",
+        }
+        issues = [k for k, v in expected.items() if values.get(k) != v]
+        return jsonify({
+            "values": values,
+            "issues": issues,
+            "secure": len(issues) == 0,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

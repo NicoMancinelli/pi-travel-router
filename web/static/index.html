@@ -2148,6 +2148,14 @@
   </div>
 </div>
 
+<!-- Sysctl Security -->
+<div class="card" id="card-sysctl-security">
+  <div class="card-header"><span>🔐 Sysctl Security</span><button class="refresh-btn" onclick="fetchSysctlSecurity()">↻</button></div>
+  <div class="card-body" id="sysctl-security-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -11423,6 +11431,22 @@ async function fetchNetworkErrors() {
       `<div class="stat-row warn"><span>${i.iface}</span><span class="val">rx_err:${i.rx_errors} tx_err:${i.tx_errors} drop:${i.rx_dropped+i.tx_dropped}</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Total errors</span><span class="val warn">${d.total_errors}</span></div>${rows}`;
+// ── Sysctl Security ──
+async function fetchSysctlSecurity() {
+  const el = document.getElementById('sysctl-security-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/sysctl-security');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    const statusCls = d.secure ? 'ok-msg' : 'warn';
+    const statusTxt = d.secure ? '✓ All security checks pass' : `⚠ ${d.issues.length} issue(s)`;
+    const rows = Object.entries(d.values).map(([k, v]) => {
+      const short = k.split('.').slice(-1)[0];
+      const warn = d.issues.includes(k);
+      return `<div class="stat-row ${warn ? 'warn' : ''}"><span>${short}</span><span class="val">${v ?? 'N/A'}</span></div>`;
+    }).join('');
+    el.innerHTML = `<div class="${statusCls}">${statusTxt}</div>${rows}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
@@ -12830,24 +12854,8 @@ async function fetchInotifyStats() {
   } catch(e) { document.getElementById('inotify-content').innerHTML = `<p class="error">${e}</p>`; }
 }
 
-// ── Sysctl Security ───────────────────────────────────────────────────────────
-async function fetchSysctlSecurity() {
-  try {
-    const r = await fetch('/api/system/sysctl-security');
-    const d = await r.json();
-    const el = document.getElementById('sysctl-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    let html = '<table class="table"><thead><tr><th>Parameter</th><th>Value</th><th>Recommended</th><th>Status</th></tr></thead><tbody>';
-    for (const p of (d.params || [])) {
-      const ok = p.recommended === null || p.value === p.recommended;
-      const statusColor = ok ? 'color:var(--green)' : 'color:var(--amber)';
-      const statusText = ok ? '✓' : '⚠';
-      html += `<tr><td title="${p.key}">${p.description}</td><td><code>${p.value}</code></td><td><code>${p.recommended ?? '-'}</code></td><td style="${statusColor}">${statusText}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  } catch(e) { document.getElementById('sysctl-content').innerHTML = `<p class="error">${e}</p>`; }
-}
+// ── Sysctl Security (legacy card stub) ───────────────────────────────────────
+// fetchSysctlSecurity is defined earlier and targets #sysctl-security-body
 
 // ── Battery / UPS ─────────────────────────────────────────────────────────────
 async function fetchBattery() {
