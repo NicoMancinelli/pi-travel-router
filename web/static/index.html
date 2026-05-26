@@ -2280,6 +2280,10 @@
 <div class="card" id="cpu-steal-card">
   <div class="card-header"><span class="card-icon">📊</span>CPU Breakdown</div>
   <div class="card-body" id="cpu-steal-body"><span class="loading">Loading…</span></div>
+<!-- Meminfo Detail -->
+<div class="card" id="meminfo-detail-card">
+  <div class="card-header"><span class="card-icon">🧠</span>Memory Detail</div>
+  <div class="card-body" id="meminfo-detail-body"><span class="loading">Loading…</span></div>
 </div>
 <!-- Tailscale Status -->
 <!-- Neighbor Table -->
@@ -6770,6 +6774,19 @@ async function loadCpuSteal() {
   } catch(e) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadCpuSteal();
+// ── Meminfo Detail ──
+async function loadMeminfoDetail() {
+  try {
+    const r = await fetch('/api/system/meminfo-detail');
+    const d = await r.json();
+    if (d.error) { document.getElementById('meminfo-detail-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    document.getElementById('meminfo-detail-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Used / Total</span><span class="stat-value">${d.used_mb} / ${d.MemTotal} MB (${d.used_pct}%)</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Cached / Buffers</span><span class="stat-value">${d.Cached} / ${d.Buffers} MB</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Dirty / Slab</span><span class="stat-value">${d.Dirty} / ${d.Slab} MB</span></div>`;
+  } catch(e) { document.getElementById('meminfo-detail-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadMeminfoDetail();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 // ── Kernel Version ──
 async function loadKernelVersion() {

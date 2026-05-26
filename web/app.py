@@ -18372,6 +18372,41 @@ def api_system_cpu_steal():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ── Meminfo Detail ─────────────────────────────────────────────────────────────
+@app.route("/api/system/meminfo-detail")
+@require_auth
+def api_system_meminfo_detail():
+    """Return extended memory info from /proc/meminfo."""
+    try:
+        KEYS = [
+            "MemTotal", "MemFree", "MemAvailable", "Buffers", "Cached",
+            "SwapCached", "Active", "Inactive", "Active(anon)", "Inactive(anon)",
+            "Active(file)", "Inactive(file)", "Dirty", "Writeback", "AnonPages",
+            "Mapped", "Slab", "SReclaimable", "SUnreclaim", "VmallocUsed",
+            "SwapTotal", "SwapFree",
+        ]
+        raw = {}
+        try:
+            with open("/proc/meminfo") as fh:
+                for line in fh:
+                    for key in KEYS:
+                        if line.startswith(key + ":"):
+                            parts = line.split()
+                            raw[key] = int(parts[1])
+                            break
+        except OSError:
+            pass
+        result = {k.replace("(", "_").replace(")", ""): round(v / 1024, 1) for k, v in raw.items()}
+        total = raw.get("MemTotal", 0)
+        free = raw.get("MemFree", 0)
+        available = raw.get("MemAvailable", 0)
+        result["used_mb"] = round((total - available) / 1024, 1) if total else 0
+        result["used_pct"] = round((total - available) / total * 100, 1) if total else 0
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
