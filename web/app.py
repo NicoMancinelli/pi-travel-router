@@ -17362,6 +17362,44 @@ def api_system_io_scheduler():
         return jsonify({"error": str(e)}), 500
 
 
+# ── TCP Stats ────────────────────────────────────────────────────────────────
+@app.route("/api/network/tcp-stats")
+@require_auth
+def api_network_tcp_stats():
+    """Return TCP connection state counts from /proc/net/tcp."""
+    try:
+        state_names = {
+            "01": "ESTABLISHED", "02": "SYN_SENT", "03": "SYN_RECV",
+            "04": "FIN_WAIT1", "05": "FIN_WAIT2", "06": "TIME_WAIT",
+            "07": "CLOSE", "08": "CLOSE_WAIT", "09": "LAST_ACK",
+            "0A": "LISTEN", "0B": "CLOSING",
+        }
+        counts = {v: 0 for v in state_names.values()}
+        for path in ("/proc/net/tcp", "/proc/net/tcp6"):
+            try:
+                with open(path) as f:
+                    next(f)
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) >= 4:
+                            state = parts[3].upper()
+                            name = state_names.get(state)
+                            if name:
+                                counts[name] += 1
+            except FileNotFoundError:
+                pass
+        return jsonify({
+            "states": {k: v for k, v in counts.items() if v > 0},
+            "established": counts["ESTABLISHED"],
+            "listen": counts["LISTEN"],
+            "time_wait": counts["TIME_WAIT"],
+            "close_wait": counts["CLOSE_WAIT"],
+            "total": sum(counts.values()),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

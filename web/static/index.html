@@ -2140,6 +2140,14 @@
   </div>
 </div>
 
+<!-- TCP Stats -->
+<div class="card" id="card-tcp-stats">
+  <div class="card-header"><span>🔗 TCP Stats</span><button class="refresh-btn" onclick="fetchTcpStats()">↻</button></div>
+  <div class="card-body" id="tcp-stats-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6300,6 +6308,23 @@ async function fetchIoScheduler() {
       `<div class="stat-row"><span>${dev.device}</span><span class="val">${dev.active}</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Devices</span><span class="val">${d.total}</span></div>${rows}`;
+// ── TCP Stats ──
+async function fetchTcpStats() {
+  const el = document.getElementById('tcp-stats-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/network/tcp-stats');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    const stateRows = Object.entries(d.states).map(([s, n]) =>
+      `<div class="stat-row"><span>${s}</span><span class="val">${n}</span></div>`
+    ).join('');
+    el.innerHTML = `
+      <div class="stat-row"><span>Established</span><span class="val">${d.established}</span></div>
+      <div class="stat-row"><span>Listen</span><span class="val">${d.listen}</span></div>
+      <div class="stat-row"><span>Time Wait</span><span class="val">${d.time_wait}</span></div>
+      <div class="stat-row"><span>Close Wait</span><span class="val">${d.close_wait}</span></div>
+    `;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
@@ -7930,6 +7955,7 @@ async function refreshAll() {
   fetchEntropyPool();
   fetchNetworkErrors();
   fetchIoScheduler();
+  fetchTcpStats();
 }
 
 async function init() {
