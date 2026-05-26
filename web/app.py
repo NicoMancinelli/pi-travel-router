@@ -16892,6 +16892,45 @@ def api_system_service_health():
     })
 
 
+# ── Top memory processes ──────────────────────────────────────────────────────
+
+@app.route("/api/system/top-memory", methods=["GET"])
+@require_auth
+def api_system_top_memory():
+    """Return top 10 processes by RSS memory from /proc/*/status."""
+    import glob, re
+    processes = []
+    for status_file in glob.glob("/proc/*/status"):
+        try:
+            pid = int(status_file.split("/")[2])
+        except (ValueError, IndexError):
+            continue
+        name = None
+        rss_kb = 0
+        swap_kb = 0
+        try:
+            with open(status_file) as f:
+                for line in f:
+                    if line.startswith("Name:"):
+                        name = line.split()[1]
+                    elif line.startswith("VmRSS:"):
+                        rss_kb = int(line.split()[1])
+                    elif line.startswith("VmSwap:"):
+                        swap_kb = int(line.split()[1])
+        except (IOError, OSError):
+            continue
+        if name and rss_kb > 0:
+            processes.append({
+                "pid": pid,
+                "name": name,
+                "rss_mb": round(rss_kb / 1024, 1),
+                "swap_mb": round(swap_kb / 1024, 1),
+            })
+    processes.sort(key=lambda p: p["rss_mb"], reverse=True)
+    top = processes[:10]
+    return jsonify({"processes": top, "total_shown": len(top)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

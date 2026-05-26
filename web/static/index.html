@@ -2063,6 +2063,13 @@
     <span class="badge" id="service-health-badge">…</span>
   </div>
   <div class="card-body" id="service-health-body"></div>
+<!-- Top Memory -->
+<div class="card" id="card-top-memory">
+  <div class="card-header" onclick="toggleCard('card-top-memory')">
+    <span>🧬 Top Memory</span>
+    <span class="badge" id="top-memory-badge">…</span>
+  </div>
+  <div class="card-body" id="top-memory-body"></div>
 </div>
 
   <!-- Tailscale Status -->
@@ -7758,6 +7765,7 @@ async function refreshAll() {
   fetchProcessStates();
   fetchRouteSummary();
   fetchServiceHealth();
+  fetchTopMemory();
 }
 
 async function init() {
@@ -7779,6 +7787,7 @@ async function init() {
   setInterval(fetchProcessStates, 30000);
   setInterval(fetchRouteSummary, 60000);
   setInterval(fetchServiceHealth, 30000);
+  setInterval(fetchTopMemory, 30000);
   // Connect SSE event stream
   initEventStream();
 }
@@ -11095,6 +11104,27 @@ async function fetchRouteSummary() {
         <td style="padding:2px 8px;font-size:13px;font-weight:600;">Total</td>
         <td style="padding:2px 8px;font-size:13px;font-weight:600;text-align:right;">${d.total_routes}</td>
       </tr>
+// ── Top Memory ──
+async function fetchTopMemory() {
+  const badge = document.getElementById('top-memory-badge');
+  const body = document.getElementById('top-memory-body');
+  try {
+    const d = await apiFetch('/api/system/top-memory');
+    badge.textContent = `top ${d.total_shown}`;
+    const rows = d.processes.map(p => `<tr>
+      <td style="padding:2px 8px;font-size:12px;color:var(--text-dim);text-align:right;">${p.pid}</td>
+      <td style="padding:2px 8px;font-size:13px;font-family:monospace;">${p.name}</td>
+      <td style="padding:2px 8px;font-size:13px;text-align:right;">${p.rss_mb} MB</td>
+      <td style="padding:2px 8px;font-size:12px;text-align:right;color:var(--text-dim);">${p.swap_mb > 0 ? p.swap_mb + ' MB' : '—'}</td>
+    </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">PID</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Name</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">RSS</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Swap</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
     </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
