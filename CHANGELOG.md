@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-05-26
+
+### Added
+- `GET /api/system/memory-map` — memory breakdown from `/proc/meminfo`; calculates `used = total - available`; returns `total_mb`, `used_mb`, `available_mb`, `cached_mb`, `buffers_mb`, `swap_*`, `percent_used`; dashboard card 🧠 Memory Map with fill bar
+- `GET /api/network/connection-stats` — TCP state counts + UDP totals from `/proc/net/tcp*` and `/proc/net/udp*`; returns `tcp{}`, `tcp_total`, `udp_total`, `udp6_total`; dashboard card 🔗 Connections with colour-coded state rows
+- `GET /api/vpn/split-tunnel-status` — split tunnel detection via `ip rule show` + `ip route show table 100`; returns `active`, `mode` (split/vpn/direct), `split_routes[]`, `route_count`, `default_interface`; dashboard card 🔀 Split Tunnel with subnet chips
+
 ## [3.8.0] - 2026-05-26
 
 ### Added
