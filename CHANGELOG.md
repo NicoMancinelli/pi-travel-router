@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.22.0] - 2026-05-26
+
+### Added
+- `GET /api/system/kernel-modules` — top 50 loaded kernel modules by size from /proc/modules, dashboard card 🧩 Kernel Modules
+- `GET /api/vpn/vpn-latency` — ping WireGuard peer endpoint and Tailscale with avg latency ms, dashboard card 🏓 VPN Latency
+- `GET /api/system/disk-temp` — disk temperatures via smartctl or hwmon drivetemp, dashboard card 🌡️ Disk Temp
+
 ## [3.21.0] - 2026-05-26
 
 ### Added
