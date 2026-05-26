@@ -5631,6 +5631,46 @@ async function fetchTsExitNodeV3() {
   }
 }
 
+// ── Connected Clients (client-map) ────────────────────────────────────────────
+async function fetchClientMap() {
+  const badge = document.getElementById('client-map-badge');
+  const body = document.getElementById('client-map-body');
+  if (!badge || !body) return;
+  try {
+    const resp = await apiFetch('/api/network/connected-clients');
+    if (!resp.ok) { badge.textContent = 'error'; return; }
+    const d = await resp.json();
+    const clients = d.clients || [];
+    badge.textContent = `${d.count || 0} clients (${d.wired || 0} wired, ${d.wireless || 0} wifi)`;
+    if (clients.length === 0) {
+      body.innerHTML = '<div style="font-size:12px;color:var(--text-dim);">No clients found.</div>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    html += '<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);text-align:left;">';
+    html += '<th style="padding:3px 6px;">IP</th>';
+    html += '<th style="padding:3px 6px;">MAC</th>';
+    html += '<th style="padding:3px 6px;">Hostname</th>';
+    html += '<th style="padding:3px 6px;">Interface</th>';
+    html += '<th style="padding:3px 6px;">Source</th>';
+    html += '</tr></thead><tbody>';
+    for (const c of clients) {
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:3px 6px;font-family:monospace;font-size:10px;">${escHtml(c.ip || '—')}</td>`;
+      html += `<td style="padding:3px 6px;font-family:monospace;font-size:10px;">${escHtml(c.mac)}</td>`;
+      html += `<td style="padding:3px 6px;">${escHtml(c.hostname || '—')}</td>`;
+      html += `<td style="padding:3px 6px;font-size:10px;">${escHtml(c.iface || '—')}</td>`;
+      html += `<td style="padding:3px 6px;font-size:10px;color:var(--text-dim);">${escHtml(c.source || '—')}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--danger);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -6721,6 +6761,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchMemPressure();
   fetchDnsResolvers();
   fetchConnectedClients();
+  fetchClientMap();
   fetchKillSwitchStatus();
   fetchLogSummary();
   fetchLogSummaryExport();
@@ -7064,6 +7105,7 @@ async function refreshAll() {
   fetchLoginHistory();
   fetchLoginHistoryV4();
   fetchConnectedClients();
+  fetchClientMap();
   fetchWifiClients();
   fetchWanUplinks();
   fetchSystemResources();
