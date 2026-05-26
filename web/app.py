@@ -15193,6 +15193,226 @@ def api_network_bandwidth_history():
     })
 
 
+# ── Memory Pressure ───────────────────────────────────────────────────────────
+
+@app.route("/api/system/memory-pressure")
+@require_auth
+def api_memory_pressure():
+    """Return detailed memory stats and a pressure score from /proc/meminfo."""
+    meminfo_path = Path("/proc/meminfo")
+    if not meminfo_path.exists():
+        return jsonify({"error": "unavailable"}), 503
+
+    stats = {}
+    for line in meminfo_path.read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            key = parts[0].rstrip(":")
+            try:
+                stats[key] = int(parts[1])
+            except ValueError:
+                pass
+
+    total_kb     = stats.get("MemTotal", 0)
+    free_kb      = stats.get("MemFree", 0)
+    available_kb = stats.get("MemAvailable", 0)
+    cached_kb    = stats.get("Cached", 0)
+    buffers_kb   = stats.get("Buffers", 0)
+    shmem_kb     = stats.get("Shmem", 0)
+    slab_kb      = stats.get("Slab", 0)
+
+    used_kb = total_kb - free_kb - cached_kb - buffers_kb
+    if used_kb < 0:
+        used_kb = total_kb - free_kb
+
+    used_pct      = round(used_kb / total_kb * 100, 1) if total_kb else 0.0
+    available_pct = round(available_kb / total_kb * 100, 1) if total_kb else 0.0
+
+    if used_pct < 50:
+        pressure = "low"
+    elif used_pct < 75:
+        pressure = "moderate"
+    elif used_pct < 90:
+        pressure = "high"
+    else:
+        pressure = "critical"
+
+    return jsonify({
+        "total_kb":     total_kb,
+        "free_kb":      free_kb,
+        "available_kb": available_kb,
+        "used_kb":      used_kb,
+        "cached_kb":    cached_kb,
+        "buffers_kb":   buffers_kb,
+        "shmem_kb":     shmem_kb,
+        "slab_kb":      slab_kb,
+        "used_pct":     used_pct,
+        "available_pct": available_pct,
+        "pressure":     pressure,
+    })
+
+
+# ── Firewall Summary ──────────────────────────────────────────────────────────
+
+
+@app.route("/api/system/firewall-summary")
+@require_auth
+def api_system_firewall_summary():
+    """Return a summary of active iptables/nftables rules."""
+
+    def _parse_iptables_output(output, table):
+        chains = []
+        current_chain = None
+        current_policy = "ACCEPT"
+        rule_count = 0
+
+        for line in output.splitlines():
+            chain_match = re.match(r"^Chain\s+(\S+)\s+\(policy\s+(\w+)", line)
+            ref_match = re.match(r"^Chain\s+(\S+)\s+\(\d+ references\)", line)
+
+            if chain_match or ref_match:
+                if current_chain is not None:
+                    chains.append({
+                        "table": table,
+                        "chain": current_chain,
+                        "policy": current_policy,
+                        "rules": rule_count,
+                    })
+                if chain_match:
+                    current_chain = chain_match.group(1)
+                    current_policy = chain_match.group(2)
+                else:
+                    current_chain = ref_match.group(1)
+                    current_policy = "ACCEPT"
+                rule_count = 0
+            elif current_chain is not None:
+                stripped = line.strip()
+                if stripped and not stripped.startswith("target") and not stripped.startswith("pkts"):
+                    rule_count += 1
+
+        if current_chain is not None:
+            chains.append({
+                "table": table,
+                "chain": current_chain,
+                "policy": current_policy,
+                "rules": rule_count,
+            })
+        return chains
+
+    all_chains = []
+    backend = "none"
+
+    ipt_out, ipt_rc = _run("iptables -L -n --line-numbers 2>/dev/null", timeout=5)
+    if ipt_rc == 0 and ipt_out.strip():
+        backend = "iptables"
+        all_chains.extend(_parse_iptables_output(ipt_out, "filter"))
+
+        for tbl in ("nat", "mangle"):
+            tbl_out, tbl_rc = _run(
+                f"iptables -t {tbl} -L -n --line-numbers 2>/dev/null", timeout=5
+            )
+            if tbl_rc == 0 and tbl_out.strip():
+                all_chains.extend(_parse_iptables_output(tbl_out, tbl))
+    else:
+        nft_out, nft_rc = _run("nft list ruleset 2>/dev/null", timeout=5)
+        if nft_rc == 0 and nft_out.strip():
+            backend = "nftables"
+            rule_count = 0
+            for line in nft_out.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("type ") or "accept" in stripped or "drop" in stripped:
+                    rule_count += 1
+            if rule_count:
+                all_chains.append({
+                    "table": "nftables",
+                    "chain": "ruleset",
+                    "policy": "UNKNOWN",
+                    "rules": rule_count,
+                })
+
+    total_rules = sum(ch["rules"] for ch in all_chains)
+    has_nat = any(ch["table"] == "nat" for ch in all_chains)
+    forward_policy = next(
+        (ch["policy"] for ch in all_chains if ch["chain"] == "FORWARD"), None
+    )
+
+    return jsonify({
+        "backend": backend,
+        "chains": all_chains,
+        "total_rules": total_rules,
+        "has_nat": has_nat,
+        "forward_policy": forward_policy,
+    })
+
+
+# ── Disk Usage Breakdown ──────────────────────────────────────────────────────
+
+_PSEUDO_FS = {"tmpfs", "devtmpfs", "proc", "sysfs", "cgroup", "cgroup2", "udev",
+              "devpts", "securityfs", "pstore", "efivarfs", "debugfs", "tracefs",
+              "configfs", "fusectl", "hugetlbfs", "mqueue", "bpf", "ramfs"}
+
+
+@app.route("/api/system/disk-usage", methods=["GET"])
+@require_auth
+def api_system_disk_usage():
+    """Report filesystem usage and top-5 largest directories under /var and /home."""
+    filesystems = []
+
+    out, rc = _run(
+        ["df", "-h", "--output=source,fstype,size,used,avail,pcent,target"],
+        timeout=10,
+    )
+    if rc == 0:
+        lines = out.strip().splitlines()
+        for line in lines[1:]:  # skip header
+            parts = line.split()
+            if len(parts) < 7:
+                continue
+            source, fstype, size, used, avail, pcent, mount = (
+                parts[0], parts[1], parts[2], parts[3], parts[4], parts[5],
+                " ".join(parts[6:]),
+            )
+            if fstype in _PSEUDO_FS:
+                continue
+            try:
+                use_pct = int(pcent.rstrip("%"))
+            except ValueError:
+                use_pct = 0
+            filesystems.append({
+                "source": source,
+                "fstype": fstype,
+                "size": size,
+                "used": used,
+                "avail": avail,
+                "use_pct": use_pct,
+                "mount": mount,
+            })
+
+    # Top-5 largest directories under /var and /home
+    top_dirs = []
+    du_out, _ = _run(
+        "du -sh /var/* /home/* 2>/dev/null | sort -rh | head -5",
+        timeout=15,
+    )
+    for line in du_out.strip().splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            top_dirs.append({"size": parts[0], "path": parts[1]})
+
+    # Root partition use_pct
+    root_use_pct = 0
+    for fs in filesystems:
+        if fs["mount"] == "/":
+            root_use_pct = fs["use_pct"]
+            break
+
+    return jsonify({
+        "filesystems": filesystems,
+        "top_dirs": top_dirs,
+        "root_use_pct": root_use_pct,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

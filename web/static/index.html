@@ -1275,15 +1275,7 @@
     </div>
   </div>
 
-  <!-- Disk Usage -->
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">🗂️ Disk Usage</span>
-    </div>
-    <div class="card-body" id="disk-usage-content">
-      <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
-    </div>
-  </div>
+  <!-- Disk Usage (legacy placeholder removed — see card-disk-usage below) -->
 
   <!-- Firewall Rules -->
   <div class="card">
@@ -1769,6 +1761,33 @@
       <span class="badge" id="dhcp-leases-badge">…</span>
     </div>
     <div class="card-body" id="dhcp-leases-body"></div>
+  </div>
+
+  <!-- Memory Pressure -->
+  <div class="card" id="card-mem-pressure">
+    <div class="card-header" onclick="toggleCard('card-mem-pressure')">
+      <span>🧠 Memory</span>
+      <span class="badge" id="mem-pressure-badge">…</span>
+    </div>
+    <div class="card-body" id="mem-pressure-body"></div>
+  </div>
+
+  <!-- Firewall Summary -->
+  <div class="card" id="card-firewall-summary">
+    <div class="card-header" onclick="toggleCard('card-firewall-summary')">
+      <span>🛡️ Firewall</span>
+      <span class="badge" id="firewall-summary-badge">…</span>
+    </div>
+    <div class="card-body" id="firewall-summary-body"></div>
+  </div>
+
+  <!-- Disk Usage -->
+  <div class="card" id="card-disk-usage">
+    <div class="card-header" onclick="toggleCard('card-disk-usage')">
+      <span>💿 Disk Usage</span>
+      <span class="badge" id="disk-usage-badge">…</span>
+    </div>
+    <div class="card-body" id="disk-usage-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -5047,6 +5066,132 @@ async function fetchDhcpLeases() {
   }
 }
 
+// ── Memory Pressure ───────────────────────────────────────────────────────────
+async function fetchMemPressure() {
+  const badge = document.getElementById('mem-pressure-badge');
+  const body = document.getElementById('mem-pressure-body');
+  if (!body) return;
+  if (badge) badge.textContent = '…';
+  body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/memory-pressure');
+    const d = await resp.json();
+
+    // Badge: "X% used" coloured by pressure level
+    const pressureColor = {
+      low:      'var(--success,#4caf50)',
+      moderate: 'var(--warning,#ff9800)',
+      high:     '#f44336',
+      critical: '#b71c1c',
+    };
+    const badgeColor = pressureColor[d.pressure] || 'var(--text-dim)';
+    if (badge) {
+      badge.textContent = d.used_pct + '% used';
+      badge.style.color = badgeColor;
+    }
+
+    // Stacked bar
+    const usedPct  = d.total_kb ? d.used_kb      / d.total_kb * 100 : 0;
+    const cachPct  = d.total_kb ? d.cached_kb     / d.total_kb * 100 : 0;
+    const bufPct   = d.total_kb ? d.buffers_kb    / d.total_kb * 100 : 0;
+    const freePct  = Math.max(0, 100 - usedPct - cachPct - bufPct);
+
+    function fmtKb(kb) {
+      if (kb >= 1048576) return (kb / 1048576).toFixed(1) + ' GB';
+      if (kb >= 1024)    return (kb / 1024).toFixed(0) + ' MB';
+      return kb + ' KB';
+    }
+
+    let html = '';
+    html += '<div style="width:100%;height:18px;border-radius:4px;overflow:hidden;display:flex;margin-bottom:10px;" title="Used / Cached / Buffers / Free">';
+    html += `<div style="width:${usedPct.toFixed(2)}%;background:#f44336;" title="Used: ${fmtKb(d.used_kb)}"></div>`;
+    html += `<div style="width:${cachPct.toFixed(2)}%;background:#ff9800;" title="Cached: ${fmtKb(d.cached_kb)}"></div>`;
+    html += `<div style="width:${bufPct.toFixed(2)}%;background:#2196f3;" title="Buffers: ${fmtKb(d.buffers_kb)}"></div>`;
+    html += `<div style="width:${freePct.toFixed(2)}%;background:var(--border,#333);" title="Free: ${fmtKb(d.free_kb)}"></div>`;
+    html += '</div>';
+
+    // Legend
+    html += '<div style="display:flex;gap:12px;font-size:11px;color:var(--text-dim);margin-bottom:10px;">';
+    html += '<span><span style="display:inline-block;width:10px;height:10px;background:#f44336;border-radius:2px;margin-right:3px;"></span>Used</span>';
+    html += '<span><span style="display:inline-block;width:10px;height:10px;background:#ff9800;border-radius:2px;margin-right:3px;"></span>Cached</span>';
+    html += '<span><span style="display:inline-block;width:10px;height:10px;background:#2196f3;border-radius:2px;margin-right:3px;"></span>Buffers</span>';
+    html += '<span><span style="display:inline-block;width:10px;height:10px;background:var(--border,#333);border-radius:2px;margin-right:3px;"></span>Free</span>';
+    html += '</div>';
+
+    // Key-value grid
+    const rows = [
+      ['Total',     fmtKb(d.total_kb)],
+      ['Available', fmtKb(d.available_kb) + ' (' + d.available_pct + '%)'],
+      ['Cached',    fmtKb(d.cached_kb)],
+      ['Buffers',   fmtKb(d.buffers_kb)],
+      ['Slab',      fmtKb(d.slab_kb)],
+    ];
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;font-size:12px;">';
+    for (const [k, v] of rows) {
+      html += `<span style="color:var(--text-dim)">${k}</span><span style="font-family:monospace">${v}</span>`;
+    }
+    html += '</div>';
+
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
+// ── Firewall Summary ──────────────────────────────────────────────────────────
+async function fetchFirewallSummary() {
+  const badge = document.getElementById('firewall-summary-badge');
+  const body = document.getElementById('firewall-summary-body');
+  try {
+    const d = await apiFetch('/api/system/firewall-summary');
+    const total = d.total_rules || 0;
+    const backend = d.backend || 'none';
+    if (badge) badge.textContent = `${total} rules · ${backend}`;
+
+    if (!d.chains || d.chains.length === 0) {
+      if (body) body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No firewall rules found.</div>';
+      return;
+    }
+
+    let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr>';
+    html += '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Table</th>';
+    html += '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Chain</th>';
+    html += '<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);">Policy</th>';
+    html += '<th style="text-align:right;padding:4px 8px;border-bottom:1px solid var(--border);">Rules</th>';
+    html += '</tr></thead><tbody>';
+
+    for (const ch of d.chains) {
+      const pol = ch.policy || '';
+      const polColor = (pol === 'DROP' || pol === 'REJECT') ? 'var(--red,#e74c3c)' : (pol === 'ACCEPT' ? 'var(--green,#2ecc71)' : 'var(--text-dim)');
+      html += `<tr>`;
+      html += `<td style="padding:4px 8px;">${ch.table}</td>`;
+      html += `<td style="padding:4px 8px;font-weight:600;">${ch.chain}</td>`;
+      html += `<td style="padding:4px 8px;color:${polColor};font-weight:600;">${pol}</td>`;
+      html += `<td style="padding:4px 8px;text-align:right;">${ch.rules}</td>`;
+      html += `</tr>`;
+    }
+
+    html += '</tbody></table></div>';
+
+    const extras = [];
+    if (d.has_nat) extras.push('<span style="color:var(--green,#2ecc71);">NAT active</span>');
+    if (d.forward_policy) {
+      const fc = (d.forward_policy === 'DROP' || d.forward_policy === 'REJECT') ? 'var(--red,#e74c3c)' : 'var(--green,#2ecc71)';
+      extras.push(`FORWARD policy: <span style="color:${fc};font-weight:600;">${d.forward_policy}</span>`);
+    }
+    if (extras.length) {
+      html += `<div style="margin-top:8px;font-size:12px;color:var(--text-dim);">${extras.join(' &nbsp;|&nbsp; ')}</div>`;
+    }
+
+    if (body) body.innerHTML = html;
+  } catch(e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -6089,9 +6234,11 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchPkgUpdates();
   fetchTcpConns();
   fetchTailscaleStatus();
+  fetchFirewallSummary();
   fetchWanUplinks();
   fetchTempHistory();
   fetchBandwidthHistory();
+  fetchMemPressure();
   fetchDnsResolvers();
   fetchConnectedClients();
   fetchKillSwitchStatus();
@@ -6561,6 +6708,8 @@ async function refreshAll() {
   fetchOpenPorts();
   fetchWifiScan();
   fetchBwHistory();
+  fetchMemPressure();
+  fetchFirewallSummary();
 }
 
 async function init() {
