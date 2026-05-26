@@ -12964,88 +12964,44 @@ def api_network_wifi_survey():
 
 
 @app.route("/api/network/dhcp-leases")
+@require_auth
 def api_network_dhcp_leases():
-    """Active DHCP leases from dnsmasq or dhcpd lease files."""
-    leases = []
-    source = None
-    error = None
-
-    # Try dnsmasq leases first
-    dnsmasq_paths = [
+    """Active DHCP leases from dnsmasq lease file (v2)."""
+    lease_paths = [
         "/var/lib/misc/dnsmasq.leases",
-        "/var/lib/dnsmasq/dnsmasq.leases",
         "/tmp/dnsmasq.leases",
+        "/var/lib/dnsmasq/dnsmasq.leases",
     ]
-    for path in dnsmasq_paths:
+    for path in lease_paths:
+        p = Path(path)
         try:
-            content = Path(path).read_text()
-            source = path
-            for line in content.strip().splitlines():
-                parts = line.split()
-                if len(parts) >= 4:
-                    expires_ts = int(parts[0]) if parts[0].isdigit() else 0
-                    mac = parts[1]
-                    ip = parts[2]
-                    hostname = parts[3] if parts[3] != "*" else ""
-                    # Time remaining
-                    now = int(time.time())
-                    remaining = expires_ts - now if expires_ts > 0 else None
-                    if remaining is not None and remaining < 0:
-                        continue  # expired
-                    if remaining is not None:
-                        h = remaining // 3600
-                        m = (remaining % 3600) // 60
-                        expires_human = f"{h}h {m}m" if h > 0 else f"{m}m"
-                    else:
-                        expires_human = "permanent"
-                    leases.append({
-                        "expires_ts": expires_ts,
-                        "expires_human": expires_human,
-                        "mac": mac,
-                        "ip": ip,
-                        "hostname": hostname,
-                    })
-            break
+            content = p.read_text()
         except (FileNotFoundError, PermissionError):
             continue
-        except Exception as e:
-            error = str(e)
-
-    # Try isc-dhcp-server as fallback
-    if not leases and not source:
-        dhcpd_paths = ["/var/lib/dhcp/dhcpd.leases", "/var/lib/dhcpd/dhcpd.leases"]
-        for path in dhcpd_paths:
-            try:
-                content = Path(path).read_text()
-                source = path
-                current = {}
-                for line in content.splitlines():
-                    line = line.strip()
-                    if line.startswith("lease "):
-                        current = {"ip": line.split()[1]}
-                    elif "hardware ethernet" in line:
-                        current["mac"] = line.split()[-1].rstrip(";")
-                    elif "client-hostname" in line:
-                        current["hostname"] = line.split('"')[1] if '"' in line else ""
-                    elif line.startswith("ends "):
-                        # ends 1 2024/01/15 12:00:00;
-                        current["expires_human"] = " ".join(line.split()[1:]).rstrip(";")
-                    elif line == "}" and "ip" in current:
-                        leases.append(current.copy())
-                        current = {}
-                break
-            except (FileNotFoundError, PermissionError):
+        leases = []
+        for line in content.strip().splitlines():
+            parts = line.split()
+            if len(parts) < 5:
                 continue
-            except Exception as e:
-                error = str(e)
-
-    leases.sort(key=lambda x: x.get("ip", ""))
-    result = {"leases": leases, "count": len(leases), "source": source}
-    if error:
-        result["error"] = error
-    if not source:
-        result["error"] = "No DHCP lease file found (checked dnsmasq and dhcpd paths)"
-    return jsonify(result)
+            try:
+                expires_ts = int(parts[0])
+            except ValueError:
+                expires_ts = 0
+            leases.append({
+                "expires_ts": expires_ts,
+                "mac": parts[1],
+                "ip": parts[2],
+                "hostname": parts[3] if parts[3] != "*" else "",
+                "client_id": parts[4],
+            })
+        leases.sort(key=lambda x: x["expires_ts"], reverse=True)
+        return jsonify({
+            "leases": leases,
+            "count": len(leases),
+            "lease_file": path,
+            "available": True,
+        })
+    return jsonify({"leases": [], "count": 0, "available": False})
 
 
 @app.route("/api/system/processes")
@@ -15111,6 +15067,129 @@ def api_network_wifi_scan():
         "count": len(networks),
         "iface": iface,
         "scan_time_ms": scan_time_ms,
+    })
+
+
+# ── TCP Established Connections ───────────────────────────────────────────────
+
+@app.route("/api/network/tcp-connections", methods=["GET"])
+@require_auth
+def api_network_tcp_connections():
+    """List established TCP connections using ss -tnp state established."""
+    import re
+    import collections
+
+    out, rc = _run(["ss", "-tnp", "state", "established"], timeout=5)
+    connections = []
+    if rc == 0 and out:
+        proc_re = re.compile(r'users:\(\("([^"]+)"')
+        for line in out.splitlines():
+            line = line.strip()
+            if not line or line.startswith("Recv-Q") or line.startswith("State"):
+                continue
+            parts = line.split()
+            # Expected: State Recv-Q Send-Q Local Remote [users:...]
+            # When called with "state established", State column may be absent
+            # Parts can be 4 or 5+ tokens
+            if len(parts) < 4:
+                continue
+            # Determine if first token is a state word or Recv-Q number
+            if parts[0].isdigit():
+                # No state column — ss omitted it
+                recv_q, send_q, local_str, remote_str = parts[0], parts[1], parts[2], parts[3]
+                state = "ESTABLISHED"
+                rest = " ".join(parts[4:])
+            else:
+                state = parts[0]
+                if len(parts) < 5:
+                    continue
+                recv_q, send_q, local_str, remote_str = parts[1], parts[2], parts[3], parts[4]
+                rest = " ".join(parts[5:])
+
+            # Split addr:port on the last colon
+            def split_addr_port(s):
+                idx = s.rfind(":")
+                if idx == -1:
+                    return s, 0
+                try:
+                    return s[:idx], int(s[idx + 1:])
+                except ValueError:
+                    return s[:idx], 0
+
+            local_addr, local_port = split_addr_port(local_str)
+            remote_addr, remote_port = split_addr_port(remote_str)
+
+            # Extract process name from users:(("name",...))
+            proc_match = proc_re.search(rest)
+            process = proc_match.group(1) if proc_match else ""
+
+            connections.append({
+                "local_addr": local_addr,
+                "local_port": local_port,
+                "remote_addr": remote_addr,
+                "remote_port": remote_port,
+                "process": process,
+                "state": state,
+            })
+
+    connections = connections[:50]
+
+    by_remote_port = collections.Counter(str(c["remote_port"]) for c in connections)
+    unique_remotes = len({c["remote_addr"] for c in connections})
+
+    return jsonify({
+        "connections": connections,
+        "count": len(connections),
+        "by_remote_port": dict(by_remote_port),
+        "unique_remotes": unique_remotes,
+    })
+
+
+
+# ── Network Bandwidth History ─────────────────────────────────────────────────
+
+@app.route("/api/network/bandwidth-history")
+@require_auth
+def api_network_bandwidth_history():
+    out, rc = _run("vnstat --json -h 24", timeout=15)
+    if rc != 0 or not out.strip():
+        return jsonify({"available": False, "hours": []})
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        return jsonify({"available": False, "hours": []})
+
+    interfaces = data.get("interfaces", [])
+    if not interfaces:
+        return jsonify({"available": False, "hours": []})
+
+    iface_data = interfaces[0]
+    iface = iface_data.get("name", "")
+    hour_entries = iface_data.get("traffic", {}).get("hour", [])
+
+    hours = []
+    total_rx = 0
+    total_tx = 0
+    for entry in hour_entries:
+        d = entry.get("date", {})
+        t = entry.get("time", {})
+        rx = entry.get("rx", 0)
+        tx = entry.get("tx", 0)
+        year = d.get("year", 0)
+        month = d.get("month", 0)
+        day = d.get("day", 0)
+        hour = t.get("hour", 0)
+        time_str = f"{year:04d}-{month:02d}-{day:02d} {hour:02d}:00"
+        hours.append({"time": time_str, "rx_bytes": rx, "tx_bytes": tx})
+        total_rx += rx
+        total_tx += tx
+
+    return jsonify({
+        "hours": hours,
+        "total_rx_bytes": total_rx,
+        "total_tx_bytes": total_tx,
+        "iface": iface,
+        "available": True,
     })
 
 

@@ -754,8 +754,8 @@
     </div>
   </div>
 
-  <!-- DHCP Leases -->
-  <div class="card full-width" id="card-dhcp-leases">
+  <!-- DHCP Leases (legacy) -->
+  <div class="card full-width" id="card-dhcp-leases-v1">
     <div class="card-title">
       &#x1F4CB; DHCP Leases (<span id="dhcp-leases-count">0</span>)
       <button class="btn btn-sm" onclick="fetchDhcpLeases()" style="margin-left:8px;">&#x27F3; Refresh</button>
@@ -1295,12 +1295,12 @@
     </div>
   </div>
 
-  <!-- DHCP Leases -->
+  <!-- DHCP Leases (legacy-2) -->
   <div class="card">
     <div class="card-header">
       <span class="card-title">&#x1F4CB; DHCP Leases</span>
     </div>
-    <div class="card-body" id="dhcp-leases-content">
+    <div class="card-body" id="dhcp-leases-content-v2">
       <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>
     </div>
   </div>
@@ -1742,6 +1742,33 @@
       <span class="badge" id="wifi-scan-badge">…</span>
     </div>
     <div class="card-body" id="wifi-scan-body"></div>
+  </div>
+
+  <!-- TCP Connections -->
+  <div class="card" id="card-tcp-conns">
+    <div class="card-header" onclick="toggleCard('card-tcp-conns')">
+      <span>🔗 TCP Connections</span>
+      <span class="badge" id="tcp-conns-badge">…</span>
+    </div>
+    <div class="card-body" id="tcp-conns-body"></div>
+  </div>
+
+  <!-- Bandwidth History -->
+  <div class="card" id="card-bw-history">
+    <div class="card-header" onclick="toggleCard('card-bw-history')">
+      <span>&#x1F4C8; Bandwidth (24h)</span>
+      <span class="badge" id="bw-history-badge">&#x2026;</span>
+    </div>
+    <div class="card-body" id="bw-history-body"></div>
+  </div>
+
+  <!-- DHCP Leases -->
+  <div class="card" id="card-dhcp-leases">
+    <div class="card-header" onclick="toggleCard('card-dhcp-leases')">
+      <span>🏠 DHCP Leases</span>
+      <span class="badge" id="dhcp-leases-badge">…</span>
+    </div>
+    <div class="card-body" id="dhcp-leases-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -4916,6 +4943,60 @@ async function fetchWifiScan() {
   }
 }
 
+// ── TCP Connections ────────────────────────────────────────────────────────────
+
+async function fetchTcpConns() {
+  const badge = document.getElementById('tcp-conns-badge');
+  const body  = document.getElementById('tcp-conns-body');
+  if (!body) return;
+  try {
+    const r = await apiFetch('/api/network/tcp-connections');
+    const d = await r.json();
+    const conns = d.connections || [];
+
+    if (badge) badge.textContent = conns.length + ' connections';
+
+    let html = '';
+
+    // Port pills
+    const byPort = d.by_remote_port || {};
+    const ports = Object.entries(byPort).sort((a, b) => b[1] - a[1]);
+    if (ports.length) {
+      html += '<div style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:4px;">';
+      for (const [port, cnt] of ports) {
+        html += `<span style="background:var(--accent,#007bff);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;">${port}: ${cnt}</span>`;
+      }
+      html += '</div>';
+    }
+
+    html += `<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">${d.unique_remotes || 0} unique remote hosts</div>`;
+
+    if (conns.length === 0) {
+      html += '<div style="font-size:13px;color:var(--text-dim);">No established connections.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="border-bottom:1px solid var(--border,#333);">';
+      html += '<th style="text-align:left;padding:3px 6px;">Local</th>';
+      html += '<th style="text-align:left;padding:3px 6px;">Remote</th>';
+      html += '<th style="text-align:left;padding:3px 6px;">Process</th>';
+      html += '</tr></thead><tbody>';
+      for (const c of conns) {
+        html += '<tr style="border-bottom:1px solid var(--border,#222);">';
+        html += `<td style="padding:3px 6px;font-family:monospace;">${c.local_addr}:${c.local_port}</td>`;
+        html += `<td style="padding:3px 6px;font-family:monospace;">${c.remote_addr}:${c.remote_port}</td>`;
+        html += `<td style="padding:3px 6px;">${c.process || '—'}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+    }
+
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -5956,6 +6037,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDnsStats();
   fetchDiskstats();
   fetchPkgUpdates();
+  fetchTcpConns();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
@@ -6320,6 +6402,7 @@ async function refreshAll() {
   fetchSwapStats();
   fetchNetdev();
   fetchTcpConnections();
+  fetchTcpConns();
   fetchProcMem();
   fetchDiskPartitions();
   fetchDmesg();
@@ -9354,6 +9437,58 @@ async function fetchPkgUpdates() {
     }
     body.innerHTML = html;
   } catch (e) {
+    if (body && e.message !== 'Unauthorized') body.innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
+  }
+}
+
+// ── Bandwidth History Sparkline ───────────────────────────────────────────────
+
+async function fetchBwHistory() {
+  const badge = document.getElementById('bw-history-badge');
+  const body = document.getElementById('bw-history-body');
+  if (!body) return;
+  try {
+    const resp = await apiFetch('/api/network/bandwidth-history');
+    const d = await resp.json();
+    if (!d.available || !d.hours || d.hours.length === 0) {
+      if (badge) badge.textContent = 'n/a';
+      body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">vnstat not available</span>';
+      return;
+    }
+    const rxVals = d.hours.map(h => h.rx_bytes);
+    const txVals = d.hours.map(h => h.tx_bytes);
+    const maxVal = Math.max(...rxVals, ...txVals, 1);
+    const W = 120, H = 30, n = rxVals.length;
+    function sparkPoints(vals) {
+      return vals.map((v, i) => {
+        const x = (i / Math.max(n - 1, 1)) * W;
+        const y = H - (v / maxVal) * (H - 2) - 1;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(' ');
+    }
+    const rxMB = (d.total_rx_bytes / 1048576).toFixed(1);
+    const txMB = (d.total_tx_bytes / 1048576).toFixed(1);
+    if (badge) badge.textContent = `↓${rxMB}m ↑${txMB}m`;
+    body.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div>
+          <svg width="${W}" height="${H}" style="display:block;background:var(--card-bg,#1e2230);border-radius:3px;">
+            <polyline points="${sparkPoints(rxVals)}" fill="none" stroke="#3b82f6" stroke-width="1.5"/>
+            <polyline points="${sparkPoints(txVals)}" fill="none" stroke="#f97316" stroke-width="1.5"/>
+          </svg>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:2px;">
+            <span style="color:#3b82f6;">&#x2015;</span> RX &nbsp;
+            <span style="color:#f97316;">&#x2015;</span> TX
+          </div>
+        </div>
+        <div style="font-size:13px;">
+          <div style="color:#3b82f6;">↓ ${fmtBytes(d.total_rx_bytes)}</div>
+          <div style="color:#f97316;">↑ ${fmtBytes(d.total_tx_bytes)}</div>
+          <div style="color:var(--text-dim);font-size:11px;">${d.iface} &middot; last 24h</div>
+        </div>
+      </div>`;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
     if (body && e.message !== 'Unauthorized') body.innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
   }
 }
