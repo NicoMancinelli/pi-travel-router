@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-05-26
+
+### Added
+- `POST /api/network/speedtest` — on-demand speed test via `speedtest-cli --json` with curl-CDN fallback; returns download_mbps, upload_mbps, ping_ms; dashboard card 🚀 Speed Test with user-triggered "▶ Run" button (not auto-refreshed)
+- `GET /api/system/timers` — systemd timers via `systemctl list-timers --all`; fixed-column parser handles 4-token date fields; returns `timers[]`, `next_timer`; dashboard card ⏱️ Timers with soonest timer highlighted
+- `GET /api/system/boot-analysis` — boot time breakdown via `systemd-analyze` + `systemd-analyze blame`; returns firmware/loader/kernel/userspace_s; dashboard card 🚀 Boot Time with 4-colour proportional bar and slowest-services table
+
 ## [3.2.0] - 2026-05-26
 
 ### Added
