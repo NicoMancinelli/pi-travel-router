@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.24.0] — 2026-05-26
+
+### Added
+- `GET /api/system/dmesg-errors` — dmesg kernel error/warning extraction with healthy flag
+- `GET /api/network/interface-stats` — per-interface TX/RX bytes/packets from /proc/net/dev sorted by traffic
+- `GET /api/network/resolved-dns` — active DNS server list via resolvectl with /etc/resolv.conf fallback
+
 ## [3.23.0] - 2026-05-26
 
 ### Added
