@@ -4990,6 +4990,56 @@ async function fetchTcpConns() {
       html += '</tbody></table></div>';
     }
 
+// ── DHCP Leases ───────────────────────────────────────────────────────────────
+async function fetchDhcpLeases() {
+  const badge = document.getElementById('dhcp-leases-badge');
+  const body = document.getElementById('dhcp-leases-body');
+  if (!body) return;
+  if (badge) badge.textContent = '…';
+  body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/network/dhcp-leases');
+    const data = await d.json();
+    if (!data.available) {
+      if (badge) badge.textContent = '—';
+      body.innerHTML = '<p class="muted" style="font-size:13px;">No dnsmasq lease file found.</p>';
+      return;
+    }
+    const leases = data.leases || [];
+    if (badge) badge.textContent = leases.length + ' lease' + (leases.length !== 1 ? 's' : '');
+    if (leases.length === 0) {
+      body.innerHTML = '<p class="muted" style="font-size:13px;">No active DHCP leases.</p>';
+      return;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    function fmtExpiry(ts) {
+      if (!ts) return '—';
+      const rem = ts - now;
+      if (rem <= 0) return '<span style="color:var(--danger)">expired</span>';
+      const h = Math.floor(rem / 3600);
+      const m = Math.floor((rem % 3600) / 60);
+      return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+    }
+    let html = '<div style="max-height:260px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">';
+    html += '<th style="text-align:left;padding:3px 8px;">IP</th>';
+    html += '<th style="text-align:left;padding:3px 8px;">MAC</th>';
+    html += '<th style="text-align:left;padding:3px 8px;">Hostname</th>';
+    html += '<th style="text-align:right;padding:3px 8px;">Expires</th>';
+    html += '</tr></thead><tbody>';
+    for (const l of leases) {
+      const host = l.hostname ? escHtml(l.hostname) : '<span style="color:var(--text-dim)">—</span>';
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:3px 8px;font-family:monospace;font-weight:500">${escHtml(l.ip)}</td>`;
+      html += `<td style="padding:3px 8px;font-family:monospace;font-size:11px;color:var(--text-dim)">${escHtml(l.mac)}</td>`;
+      html += `<td style="padding:3px 8px">${host}</td>`;
+      html += `<td style="padding:3px 8px;text-align:right;color:var(--text-dim)">${fmtExpiry(l.expires_ts)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    if (data.lease_file) {
+      html += `<div style="margin-top:6px;font-size:11px;color:var(--text-dim);">Source: <code>${escHtml(data.lease_file)}</code></div>`;
+    }
     body.innerHTML = html;
   } catch (e) {
     if (badge) badge.textContent = 'error';
@@ -7221,59 +7271,6 @@ async function restartService(unit, btn) {
     toast('Error: ' + e, 'err');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↺ Restart'; }
-  }
-}
-
-// ── DHCP Leases ───────────────────────────────────────────────────────────────
-
-async function fetchDhcpLeases() {
-  const el = document.getElementById('dhcp-leases-content');
-  const countEl = document.getElementById('dhcp-leases-count');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const resp = await apiFetch('/api/network/dhcp/leases');
-    const data = await resp.json();
-    countEl.textContent = data.count || 0;
-    if (data.error) {
-      el.innerHTML = `<span style="color:var(--danger)">Error: ${escHtml(data.error)}</span>`;
-      return;
-    }
-    if (!data.leases_file) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No dnsmasq leases file found. Is dnsmasq running?</span>';
-      return;
-    }
-    if (!data.leases || data.leases.length === 0) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No active DHCP leases.</span>';
-      return;
-    }
-    function ttlColor(ttl_label) {
-      if (ttl_label === 'expired') return '#ef4444';
-      if (ttl_label === 'static') return '#6366f1';
-      return 'var(--text)';
-    }
-    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
-    html += '<th style="padding:5px 8px;">IP</th>';
-    html += '<th style="padding:5px 8px;">MAC</th>';
-    html += '<th style="padding:5px 8px;">Hostname</th>';
-    html += '<th style="padding:5px 8px;">Expires</th>';
-    html += '</tr></thead><tbody>';
-    for (const l of data.leases) {
-      html += '<tr style="border-bottom:1px solid var(--border);">';
-      html += `<td style="padding:5px 8px;font-family:monospace;">${escHtml(l.ip)}</td>`;
-      html += `<td style="padding:5px 8px;font-family:monospace;font-size:11px;">${escHtml(l.mac)}</td>`;
-      html += `<td style="padding:5px 8px;">${l.hostname ? escHtml(l.hostname) : '<span style="color:var(--text-dim)">—</span>'}</td>`;
-      html += `<td style="padding:5px 8px;color:${ttlColor(l.ttl_label)};">${escHtml(l.ttl_label)}</td>`;
-      html += '</tr>';
-    }
-    html += '</tbody></table>';
-    if (data.leases_file) {
-      html += `<div style="margin-top:6px;font-size:11px;color:var(--text-dim);">Source: ${escHtml(data.leases_file)}</div>`;
-    }
-    el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load DHCP leases</span>';
   }
 }
 
@@ -13819,47 +13816,4 @@ async function runLanScan() {
   }
 }
 
-// ── DHCP Leases ───────────────────────────────────────────────────────────────
-async function fetchDhcpLeases() {
-  const el = document.getElementById('dhcp-leases-content');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const r = await fetch('/api/network/dhcp-leases');
-    const d = await r.json();
-    if (d.error && (!d.leases || d.leases.length === 0)) {
-      el.innerHTML = `<p class="muted">${d.error}</p>`;
-      return;
-    }
-    const leases = d.leases || [];
-    if (leases.length === 0) {
-      el.innerHTML = '<p class="muted">No active DHCP leases.</p>';
-      return;
-    }
-    const srcNote = d.source ? `<div style="color:var(--text-dim);font-size:11px;margin-bottom:8px;">Source: <code>${d.source}</code></div>` : '';
-    let html = srcNote;
-    html += `<div style="color:var(--text-dim);font-size:11px;margin-bottom:6px;">${leases.length} active lease${leases.length !== 1 ? 's' : ''}</div>`;
-    html += '<div style="max-height:260px;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;">';
-    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
-      <th style="text-align:left;padding:3px 8px;">IP</th>
-      <th style="text-align:left;padding:3px 8px;">Hostname</th>
-      <th style="text-align:left;padding:3px 8px;">MAC</th>
-      <th style="text-align:right;padding:3px 8px;">Expires</th>
-    </tr></thead><tbody>`;
-    for (const l of leases) {
-      const host = l.hostname || '<span style="color:var(--text-dim)">—</span>';
-      html += `<tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:3px 8px;font-family:monospace;font-weight:500">${l.ip}</td>
-        <td style="padding:3px 8px">${host}</td>
-        <td style="padding:3px 8px;font-family:monospace;font-size:11px;color:var(--text-dim)">${l.mac || '—'}</td>
-        <td style="padding:3px 8px;text-align:right;color:var(--text-dim)">${l.expires_human || '—'}</td>
-      </tr>`;
-    }
-    html += '</tbody></table></div>';
-    el.innerHTML = html;
-  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
-}
-
-</script>
-</body>
-</html>
+<
