@@ -2116,6 +2116,14 @@
   </div>
 </div>
 
+<!-- CPU Governors -->
+<div class="card" id="card-cpu-governors">
+  <div class="card-header"><span>⚡ CPU Governors</span><button class="refresh-btn" onclick="fetchCpuGovernors()">↻</button></div>
+  <div class="card-body" id="cpu-governors-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6234,6 +6242,19 @@ async function fetchEntropyPool() {
       <div class="stat-row"><span>Pool size</span><span class="val">${d.pool_size} bits</span></div>
       <div class="stat-row"><span>Read wakeup</span><span class="val">${d.read_wakeup_threshold}</span></div>
     `;
+// ── CPU Governors ──
+async function fetchCpuGovernors() {
+  const el = document.getElementById('cpu-governors-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/cpu-governors');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total_cores) { el.innerHTML = '<div class="ok-msg">No CPU freq scaling info</div>'; return; }
+    const rows = d.cores.map(c =>
+      `<div class="stat-row"><span>${c.cpu}</span><span class="val">${c.governor} @ ${c.freq_mhz} MHz</span></div>`
+    ).join('');
+    el.innerHTML = `<div class="stat-row"><span>Cores</span><span class="val">${d.total_cores} (${d.governors.join(', ')})</span></div>${rows}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 

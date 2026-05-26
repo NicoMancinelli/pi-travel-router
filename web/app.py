@@ -9244,6 +9244,11 @@ def api_system_cpu_governors():
             except OSError:
                 pass
         if len(info) > 1:
+            # Add computed freq_mhz and governor aliases for dashboard compatibility
+            gov = info.get("scaling_governor", "unknown")
+            cur_khz = info.get("scaling_cur_freq", 0) or 0
+            info["governor"] = gov
+            info["freq_mhz"] = round(cur_khz / 1000, 1)
             cores.append(info)
 
     # available governors (same for all cores — read from cpu0)
@@ -9253,7 +9258,14 @@ def api_system_cpu_governors():
     except OSError:
         pass
 
-    return jsonify({"cores": cores, "available_governors": avail})
+    governors = list({c.get("governor", "unknown") for c in cores})
+    return jsonify({
+        "cores": cores,
+        "available_governors": avail,
+        "total_cores": len(cores),
+        "governors": governors,
+        "uniform": len(governors) == 1,
+    })
 @app.route("/api/system/timers", methods=["GET"])
 @require_auth
 def api_system_timers():
