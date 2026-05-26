@@ -15922,6 +15922,62 @@ def api_system_pi_hardware_v3():
     return jsonify(info)
 
 
+# ── Live Bandwidth ────────────────────────────────────────────────────────────
+
+
+def _read_net_dev():
+    """Parse /proc/net/dev and return {iface: (rx_bytes, tx_bytes)}."""
+    result = {}
+    lines = Path("/proc/net/dev").read_text().splitlines()
+    for line in lines[2:]:  # skip header rows
+        parts = line.split(":")
+        if len(parts) != 2:
+            continue
+        iface = parts[0].strip()
+        if iface == "lo":
+            continue
+        fields = parts[1].split()
+        if len(fields) < 9:
+            continue
+        rx_bytes = int(fields[0])
+        tx_bytes = int(fields[8])
+        result[iface] = (rx_bytes, tx_bytes)
+    return result
+
+
+@app.route("/api/network/bandwidth-live")
+@require_auth
+def network_bandwidth_live():
+    t0 = time.monotonic()
+    snap0 = _read_net_dev()
+    time.sleep(1)
+    snap1 = _read_net_dev()
+    elapsed = time.monotonic() - t0
+
+    interfaces = []
+    for iface, (rx1, tx1) in snap1.items():
+        if iface not in snap0:
+            continue
+        rx0, tx0 = snap0[iface]
+        rx_bps = max(0, (rx1 - rx0) / elapsed)
+        tx_bps = max(0, (tx1 - tx0) / elapsed)
+        interfaces.append({
+            "name": iface,
+            "rx_bps": round(rx_bps),
+            "tx_bps": round(tx_bps),
+            "rx_mbps": round(rx_bps * 8 / 1_000_000, 3),
+            "tx_mbps": round(tx_bps * 8 / 1_000_000, 3),
+        })
+
+    interfaces.sort(key=lambda x: x["name"])
+
+    return jsonify({
+        "interfaces": interfaces,
+        "sample_ms": round(elapsed * 1000),
+        "timestamp": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

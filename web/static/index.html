@@ -1867,6 +1867,15 @@
     <div class="card-body" id="pi-hw-body"></div>
   </div>
 
+  <!-- Live Bandwidth -->
+  <div class="card" id="card-bw-live">
+    <div class="card-header" onclick="toggleCard('card-bw-live')">
+      <span>&#x1F4E1; Live Bandwidth</span>
+      <span class="badge" id="bw-live-badge">&#x2026;</span>
+    </div>
+    <div class="card-body" id="bw-live-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5447,6 +5456,52 @@ async function fetchPiHw() {
   }
 }
 
+// ── Live Bandwidth ────────────────────────────────────────────────────────────
+async function fetchBwLive() {
+  const badge = document.getElementById('bw-live-badge');
+  const body = document.getElementById('bw-live-body');
+  if (badge) badge.textContent = '…';
+  try {
+    const d = await apiFetch('/api/network/bandwidth-live');
+    if (!d || !d.interfaces) throw new Error('no data');
+
+    const totalRx = d.interfaces.reduce((s, i) => s + i.rx_mbps, 0);
+    const totalTx = d.interfaces.reduce((s, i) => s + i.tx_mbps, 0);
+    if (badge) badge.textContent = `↓${totalRx.toFixed(2)} ↑${totalTx.toFixed(2)} Mbps`;
+
+    if (!body) return;
+    if (d.interfaces.length === 0) {
+      body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No interfaces found.</div>';
+      return;
+    }
+
+    const maxMbps = Math.max(1, ...d.interfaces.map(i => Math.max(i.rx_mbps, i.tx_mbps)));
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="color:var(--text-dim);font-size:11px;">';
+    html += '<th style="text-align:left;padding:2px 6px;">Interface</th>';
+    html += '<th style="text-align:left;padding:2px 6px;">RX</th>';
+    html += '<th style="text-align:left;padding:2px 6px;">TX</th>';
+    html += '</tr></thead><tbody>';
+    for (const iface of d.interfaces) {
+      const rxPct = Math.min(100, (iface.rx_mbps / maxMbps) * 100);
+      const txPct = Math.min(100, (iface.tx_mbps / maxMbps) * 100);
+      const rxBar = `<div style="display:inline-block;width:${rxPct.toFixed(1)}%;min-width:2px;height:8px;background:var(--ok);border-radius:2px;transition:width 0.5s;"></div>`;
+      const txBar = `<div style="display:inline-block;width:${txPct.toFixed(1)}%;min-width:2px;height:8px;background:var(--warn);border-radius:2px;transition:width 0.5s;"></div>`;
+      html += `<tr style="border-top:1px solid var(--border);">`;
+      html += `<td style="padding:4px 6px;font-weight:600;">${escHtml(iface.name)}</td>`;
+      html += `<td style="padding:4px 6px;min-width:120px;">${rxBar}<span style="margin-left:6px;color:var(--ok);">${iface.rx_mbps.toFixed(3)} Mbps</span></td>`;
+      html += `<td style="padding:4px 6px;min-width:120px;">${txBar}<span style="margin-left:6px;color:var(--warn);">${iface.tx_mbps.toFixed(3)} Mbps</span></td>`;
+      html += `</tr>`;
+    }
+    html += '</tbody></table>';
+    html += `<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">Sampled over ${d.sample_ms} ms &mdash; responses take ~1 s &bull; ${d.timestamp}</div>`;
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -6675,6 +6730,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchMdnsServicesV2();
   fetchArpTableV3();
   fetchSshKeysV3();
+  fetchBwLive();
 });
 
 async function fetchJournal() {
@@ -7020,6 +7076,7 @@ async function refreshAll() {
   fetchNetIfaces();
   fetchSysTimers();
   fetchEntropy();
+  fetchBwLive();
 }
 
 async function init() {
