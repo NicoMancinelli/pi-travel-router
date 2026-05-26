@@ -9129,46 +9129,82 @@ def api_network_ping():
 @app.route("/api/system/cron-jobs")
 @require_auth
 def api_system_cron_jobs():
-    """Return scheduled cron jobs from system crontabs and user crontab."""
-    import glob
+    """Return parsed cron jobs from /etc/crontab, /etc/cron.d/*, and root crontab."""
+    import glob as _glob
+
+    _SPECIAL = {"@reboot", "@daily", "@weekly", "@monthly", "@hourly", "@yearly", "@annually", "@midnight"}
     jobs = []
 
-    def _parse_crontab_lines(lines, source):
+    def _parse_system_lines(lines, source):
+        """Parse /etc/crontab and /etc/cron.d/* format: schedule user command."""
         for line in lines:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            # Skip env var assignments (VAR=value)
+            eq_pos = line.find("=")
+            space_pos = line.find(" ")
+            if eq_pos != -1 and (space_pos == -1 or eq_pos < space_pos):
+                continue
+            if line.startswith("@"):
+                # @special user command
+                parts = line.split(None, 2)
+                if len(parts) >= 2:
+                    schedule = parts[0]
+                    user = parts[1] if len(parts) >= 3 else "root"
+                    command = parts[2] if len(parts) >= 3 else ""
+                    jobs.append({"schedule": schedule, "user": user, "command": command, "source": source})
+            else:
+                # min hour dom mon dow user command
+                parts = line.split(None, 6)
+                if len(parts) >= 7:
+                    schedule = " ".join(parts[:5])
+                    user = parts[5]
+                    command = parts[6]
+                    jobs.append({"schedule": schedule, "user": user, "command": command, "source": source})
+
+    def _parse_user_lines(lines, source, user="root"):
+        """Parse crontab -l format: schedule command (no user field)."""
+        for line in lines:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            # Skip env var assignments
+            eq_pos = line.find("=")
+            space_pos = line.find(" ")
+            if eq_pos != -1 and (space_pos == -1 or eq_pos < space_pos):
+                continue
             if line.startswith("@"):
                 parts = line.split(None, 1)
-                jobs.append({"schedule": parts[0], "command": parts[1] if len(parts) > 1 else "", "source": source})
+                schedule = parts[0]
+                command = parts[1] if len(parts) > 1 else ""
+                jobs.append({"schedule": schedule, "user": user, "command": command, "source": source})
             else:
                 parts = line.split(None, 5)
                 if len(parts) >= 6:
                     schedule = " ".join(parts[:5])
-                    jobs.append({"schedule": schedule, "command": parts[5], "source": source})
-                elif len(parts) >= 5:
-                    schedule = " ".join(parts[:5])
-                    jobs.append({"schedule": schedule, "command": "", "source": source})
+                    command = parts[5]
+                    jobs.append({"schedule": schedule, "user": user, "command": command, "source": source})
 
     # /etc/crontab
     try:
         content = Path("/etc/crontab").read_text()
-        _parse_crontab_lines(content.splitlines(), "/etc/crontab")
+        _parse_system_lines(content.splitlines(), "/etc/crontab")
     except OSError:
         pass
 
     # /etc/cron.d/*
-    for path in sorted(glob.glob("/etc/cron.d/*")):
+    for path in sorted(_glob.glob("/etc/cron.d/*")):
         try:
             content = Path(path).read_text()
-            _parse_crontab_lines(content.splitlines(), path)
+            _parse_system_lines(content.splitlines(), path)
         except OSError:
             pass
 
     # root crontab
-    out, rc = _run(["crontab", "-l", "-u", "root"])
+    out, rc = _run(["crontab", "-l"])
     if rc == 0:
-        _parse_crontab_lines(out.splitlines(), "crontab(root)")
+        _parse_user_lines(out.splitlines(), "crontab(root)", user="root")
 
     return jsonify({"jobs": jobs, "count": len(jobs)})
 
@@ -9950,17 +9986,47 @@ def api_network_ip_rules():
 @app.route("/api/system/log-summary")
 @require_auth
 def api_system_log_summary():
-    out, rc = _run(["journalctl", "-n", "100", "--no-pager", "-o", "short"])
-    if rc != 0:
-        return jsonify({"error": "journalctl failed", "total": 0, "errors": 0, "warnings": 0, "recent_errors": []})
-    lines = out.splitlines()
-    errors = [l for l in lines if ": err" in l.lower() or " error" in l.lower() or "[error]" in l.lower()]
-    warnings = [l for l in lines if "warning" in l.lower() or "warn" in l.lower()]
+    """Return error summary from journald: counts by service and last 5 error lines."""
+    period = request.args.get("period", "1h")
+    since = "1 hour ago" if period == "1h" else "24 hours ago"
+
+    out, rc = _run(
+        ["journalctl", "-p", "err", "--since", since, "--no-pager", "-o", "short"],
+        timeout=15,
+    )
+    if rc != 0 or not shutil.which("journalctl"):
+        return jsonify({"available": False, "total_errors": 0, "period": period})
+
+    # journalctl unavailable returns empty output even with rc=0 on non-systemd hosts
+    if out is None:
+        return jsonify({"available": False, "total_errors": 0, "period": period})
+
+    lines = [l for l in out.splitlines() if l.strip() and not l.startswith("--")]
+
+    # Parse: "MMM DD HH:MM:SS hostname service[pid]: message"
+    service_counts: dict = {}
+    recent_errors = []
+    _svc_re = re.compile(r"^\w{3}\s+\d+\s+(\d{2}:\d{2}:\d{2})\s+\S+\s+(\S+?)(?:\[\d+\])?:\s*(.*)")
+
+    for line in lines:
+        m = _svc_re.match(line)
+        if m:
+            ts, svc, msg = m.group(1), m.group(2), m.group(3)
+            # Strip trailing colon from service name if present
+            svc = svc.rstrip(":")
+            service_counts[svc] = service_counts.get(svc, 0) + 1
+            recent_errors.append({"time": ts, "service": svc, "message": msg[:200]})
+
+    # Top 10 services by count
+    top_services = sorted(service_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+    error_services = [{"service": s, "count": c} for s, c in top_services]
+
     return jsonify({
-        "total": len(lines),
-        "errors": len(errors),
-        "warnings": len(warnings),
-        "recent_errors": errors[-5:],
+        "period": period,
+        "total_errors": len(lines),
+        "error_services": error_services,
+        "recent_errors": recent_errors[-5:],
+        "available": True,
     })
 
 

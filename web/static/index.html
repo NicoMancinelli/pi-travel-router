@@ -713,7 +713,7 @@
   <div class="card full-width" id="card-cron" style="margin-top:16px;">
     <div class="card-title" style="justify-content:space-between;">
       <span>&#x23F2; Scheduled Tasks</span>
-      <button class="btn btn-sm" onclick="fetchCronJobs()">&#x21BB; Refresh</button>
+      <button class="btn btn-sm" onclick="fetchScheduledTasks()">&#x21BB; Refresh</button>
     </div>
     <div id="cron-content">
       <span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span></span>
@@ -1701,6 +1701,15 @@
     <div class="card-body" id="sys-env-body"></div>
   </div>
 
+  <!-- Log Summary -->
+  <div class="card" id="card-log-summary">
+    <div class="card-header" onclick="toggleCard('card-log-summary')">
+      <span>📜 Log Errors (1h)</span>
+      <span class="badge" id="log-summary-badge">…</span>
+    </div>
+    <div class="card-body" id="log-summary-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -1790,7 +1799,7 @@
   <div class="card full-width" id="card-log-export">
     <div class="card-title">
       &#x1F4CB; Log Summary
-      <button class="btn btn-sm" onclick="fetchLogSummary()" style="margin-left:8px;">&#x27F3; Refresh</button>
+      <button class="btn btn-sm" onclick="fetchLogSummaryExport()" style="margin-left:8px;">&#x27F3; Refresh</button>
       <a id="log-export-btn" href="/api/logs/export" class="btn btn-sm" style="margin-left:8px;text-decoration:none;">&#x2B07; Export All Logs</a>
     </div>
     <div id="log-summary-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
@@ -2014,8 +2023,11 @@
 
         <!-- Cron Jobs -->
         <div class="card" id="card-cron-jobs">
-          <h2>⏰ Cron Jobs</h2>
-          <div id="cron-jobs-content"><em>Loading…</em></div>
+          <div class="card-header" onclick="toggleCard('card-cron-jobs')">
+            <span>⏰ Cron Jobs</span>
+            <span class="badge" id="cron-jobs-badge">…</span>
+          </div>
+          <div class="card-body" id="cron-jobs-body"></div>
         </div>
 
         <!-- Mount Info -->
@@ -2118,12 +2130,6 @@
   <div class="card" id="card-ip-rules">
     <h2>&#x1F4CB; IP Rules</h2>
     <div id="ip-rules-content"><em>Loading&hellip;</em></div>
-  </div>
-
-  <!-- Log Summary -->
-  <div class="card" id="card-log-summary">
-    <h2>&#x1F4C4; Log Summary</h2>
-    <div id="log-summary-journal-content"><em>Loading&hellip;</em></div>
   </div>
 
   <!-- Package Updates -->
@@ -4744,6 +4750,57 @@ async function fetchSysEnv() {
   }
 }
 
+// ── Log Summary ───────────────────────────────────────────────────────────────
+async function fetchLogSummary() {
+  const body = document.getElementById('log-summary-body');
+  const badge = document.getElementById('log-summary-badge');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/log-summary');
+    if (!d.available) {
+      badge.textContent = 'N/A';
+      badge.style.background = 'var(--text-dim)';
+      body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">journald unavailable</span>';
+      return;
+    }
+    const n = d.total_errors || 0;
+    badge.textContent = n + ' error' + (n !== 1 ? 's' : '');
+    badge.style.background = n > 0 ? '#ef4444' : '#22c55e';
+
+    let html = '';
+    if (d.error_services && d.error_services.length > 0) {
+      const maxCount = d.error_services[0].count || 1;
+      html += '<div style="margin-bottom:10px;">';
+      for (const svc of d.error_services) {
+        const pct = Math.round((svc.count / maxCount) * 100);
+        html += `<div style="margin-bottom:4px;font-size:12px;">`;
+        html += `<div style="display:flex;justify-content:space-between;margin-bottom:2px;">`;
+        html += `<code style="font-size:11px;">${escHtml(svc.service)}</code>`;
+        html += `<span style="color:var(--text-dim);font-size:11px;">${svc.count}</span>`;
+        html += `</div>`;
+        html += `<div style="background:var(--bg2);border-radius:2px;height:6px;">`;
+        html += `<div style="background:#ef4444;width:${pct}%;height:6px;border-radius:2px;"></div>`;
+        html += `</div></div>`;
+      }
+      html += '</div>';
+    }
+
+    if (d.recent_errors && d.recent_errors.length > 0) {
+      html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">Recent errors:</div>';
+      html += '<pre style="font-size:11px;line-height:1.5;background:var(--bg2);border-radius:4px;padding:8px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0;">';
+      html += d.recent_errors.map(e => `${escHtml(e.time)}  ${escHtml(e.service)}: ${escHtml(e.message)}`).join('\n');
+      html += '</pre>';
+    } else {
+      html += '<div style="font-size:12px;color:#22c55e;">&#x2705; No errors in the last hour.</div>';
+    }
+
+    body.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--danger);font-size:13px;">Error loading log summary</span>';
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -5791,6 +5848,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchConnectedClients();
   fetchKillSwitchStatus();
   fetchLogSummary();
+  fetchLogSummaryExport();
   fetchVnstatDataCap();
   fetchLoginHistory();
   fetchIfaceStats();
@@ -5838,6 +5896,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSysctl();
   fetchSysctlNet();
   fetchMemoryBreakdown();
+  fetchScheduledTasks();
   fetchCronJobs();
   fetchMountInfo();
   fetchTopProcesses();
@@ -6103,6 +6162,7 @@ async function refreshAll() {
   fetchTailscalePeers();
   fetchTsExitNode();
   fetchMdnsServices();
+  fetchScheduledTasks();
   fetchCronJobs();
   fetchDnsHosts();
   fetchDhcpReservations();
@@ -6158,6 +6218,7 @@ async function refreshAll() {
   fetchCpuStats();
   fetchSysctl();
   fetchMemoryBreakdown();
+  fetchScheduledTasks();
   fetchCronJobs();
   fetchMountInfo();
   fetchTopProcesses();
@@ -6742,7 +6803,7 @@ async function fetchMdnsServices() {
 
 // ── Scheduled Tasks (Cron) ───────────────────────────────────────────────────
 
-async function fetchCronJobs() {
+async function fetchScheduledTasks() {
   const el = document.getElementById('cron-content');
   try {
     const r = await apiFetch('/api/cron/jobs');
@@ -9015,6 +9076,44 @@ async function fetchSshKeysV3() {
   }
 }
 
+// ── Cron Jobs ─────────────────────────────────────────────────────────────────
+
+async function fetchCronJobs() {
+  const badge = document.getElementById('cron-jobs-badge');
+  const body = document.getElementById('cron-jobs-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/cron-jobs');
+    const d = await resp.json();
+    if (badge) badge.textContent = (d.count || 0) + ' jobs';
+    if (!d.jobs || d.jobs.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No cron jobs found.</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+    html += '<th style="padding:4px 8px;">Schedule</th>';
+    html += '<th style="padding:4px 8px;">User</th>';
+    html += '<th style="padding:4px 8px;">Command</th>';
+    html += '<th style="padding:4px 8px;">Source</th>';
+    html += '</tr></thead><tbody>';
+    for (const job of d.jobs) {
+      const cmd = job.command && job.command.length > 40 ? job.command.slice(0, 40) + '…' : (job.command || '');
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;white-space:nowrap;color:#60a5fa;">${escHtml(job.schedule)}</td>`;
+      html += `<td style="padding:4px 8px;font-size:11px;color:var(--text-dim);">${escHtml(job.user || '')}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;" title="${escHtml(job.command || '')}">${escHtml(cmd)}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;color:var(--text-dim);">${escHtml(job.source || '')}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--danger)">Failed to load cron jobs</span>';
+  }
+}
+
 // ── Tailscale Status ──────────────────────────────────────────────────────────
 
 async function fetchTailscaleStatus() {
@@ -9513,7 +9612,7 @@ async function fetchKillSwitchStatus() {
 
 // ── Log Summary & Export ──────────────────────────────────────────────────────
 
-async function fetchLogSummary() {
+async function fetchLogSummaryExport() {
   const el = document.getElementById('log-summary-content');
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
