@@ -2100,6 +2100,10 @@
 <div class="card" id="card-kernel-cmdline">
   <div class="card-header"><span>⚙️ Kernel Cmdline</span><button class="refresh-btn" onclick="fetchKernelCmdline()">↻</button></div>
   <div class="card-body" id="kernel-cmdline-body">
+<!-- Swap Usage -->
+<div class="card" id="card-swap-usage">
+  <div class="card-header"><span>💾 Swap Usage</span><button class="refresh-btn" onclick="fetchSwapUsage()">↻</button></div>
+  <div class="card-body" id="swap-usage-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -7830,6 +7834,7 @@ async function refreshAll() {
   fetchFirewallRules();
   fetchMulticastGroups();
   fetchKernelCmdline();
+  fetchSwapUsage();
 }
 
 async function init() {
@@ -11263,6 +11268,19 @@ async function fetchJournalBoot() {
       <div class="stat-row"><span>Lines</span><span class="val">${d.total}</span></div>
       <div class="stat-row"><span>Errors/Fails</span><span class="val ${d.error_count > 0 ? 'warn' : ''}">${d.error_count}</span></div>
       ${d.errors.length ? '<div class="sub-label">Recent errors:</div>' + d.errors.map(l => `<div class="log-line">${l}</div>`).join('') : '<div class="ok-msg">No errors in boot log</div>'}
+// ── Swap Usage ──
+async function fetchSwapUsage() {
+  const el = document.getElementById('swap-usage-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/swap-usage');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.swap_enabled) { el.innerHTML = '<div class="ok-msg">Swap not enabled</div>'; return; }
+    el.innerHTML = `
+      <div class="stat-row"><span>Used</span><span class="val ${d.used_pct > 80 ? 'warn' : ''}">${d.used_pct}%</span></div>
+      <div class="stat-row"><span>Used / Total</span><span class="val">${Math.round(d.used_kb/1024)} / ${Math.round(d.total_kb/1024)} MB</span></div>
+      <div class="stat-row"><span>Cached</span><span class="val">${Math.round(d.cached_kb/1024)} MB</span></div>
     `;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }

@@ -17129,6 +17129,38 @@ def api_system_kernel_cmdline():
             "params": parsed,
             "flags": flags,
             "total": len(params),
+# ── Swap Usage ────────────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/system/swap-usage")
+@require_auth
+def api_system_swap_usage():
+    """Return swap usage from /proc/meminfo."""
+    try:
+        info = {}
+        try:
+            with open("/proc/meminfo") as f:
+                for line in f:
+                    if line.startswith(("SwapTotal", "SwapFree", "SwapCached")):
+                        k, v = line.split(":", 1)
+                        info[k.strip()] = int(v.split()[0])
+        except FileNotFoundError:
+            pass
+        total = info.get("SwapTotal", 0)
+        free = info.get("SwapFree", 0)
+        cached = info.get("SwapCached", 0)
+        used = total - free
+        pct = round(used / total * 100, 1) if total else 0
+        return jsonify({
+            "total_kb": total,
+            "used_kb": used,
+            "free_kb": free,
+            "cached_kb": cached,
+            "used_pct": pct,
+            "swap_enabled": total > 0,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
