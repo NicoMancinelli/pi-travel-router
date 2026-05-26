@@ -5882,94 +5882,62 @@ def api_vpn_wireguard_peers():
         })
     return jsonify({"peers": peers, "count": len(peers), "wg_available": True})
 
-
-# ── Network Interfaces Overview ───────────────────────────────────────────────
+# ── Network Interfaces Detail ─────────────────────────────────────────────────
 
 @app.route("/api/network/interfaces", methods=["GET"])
 @require_auth
 def api_network_interfaces():
-    """Return all network interfaces with addresses and traffic stats via ip."""
+    """Return detailed info for all network interfaces via `ip -j addr show`."""
+    out, rc = _run(["ip", "-j", "addr", "show"], timeout=5)
+    if rc != 0 or not out.strip():
+        return jsonify({"error": "ip command failed", "interfaces": [], "count": 0, "up_count": 0}), 500
+
+    try:
+        raw = json.loads(out)
+    except ValueError:
+        return jsonify({"error": "failed to parse ip output", "interfaces": [], "count": 0, "up_count": 0}), 500
+
     interfaces = []
-
-    # Get address info (JSON output)
-    addr_out, addr_rc = _run(["ip", "-j", "addr"])
-    if addr_rc == 0:
-        try:
-            addr_data = json.loads(addr_out)
-        except ValueError:
-            addr_data = []
-    else:
-        addr_data = []
-
-    # Get stats info (JSON output)
-    stats_out, stats_rc = _run(["ip", "-j", "-s", "link"])
-    stats_map = {}
-    if stats_rc == 0:
-        try:
-            stats_data = json.loads(stats_out)
-            for iface in stats_data:
-                name = iface.get("ifname", "")
-                stats = iface.get("stats64") or iface.get("stats") or {}
-                rx = stats.get("rx", {})
-                tx = stats.get("tx", {})
-                stats_map[name] = {
-                    "rx_bytes": rx.get("bytes", 0),
-                    "tx_bytes": tx.get("bytes", 0),
-                    "rx_errors": rx.get("errors", 0),
-                    "tx_errors": tx.get("errors", 0),
-                }
-        except ValueError:
-            pass
-
-    def fmt_bytes(b):
-        b = int(b)
-        if b < 1024:
-            return f"{b} B"
-        elif b < 1024 * 1024:
-            return f"{b / 1024:.1f} KB"
-        elif b < 1024 * 1024 * 1024:
-            return f"{b / (1024*1024):.1f} MB"
-        else:
-            return f"{b / (1024*1024*1024):.2f} GB"
-
-    for iface in addr_data:
+    for iface in raw:
         name = iface.get("ifname", "")
-        flags = iface.get("flags", [])
-        operstate = iface.get("operstate", "UNKNOWN").lower()
-        link_type = iface.get("link_type", "")
+        if name == "lo":
+            continue
+
+        state = iface.get("operstate", "UNKNOWN").upper()
         mac = iface.get("address", "")
+        mtu = iface.get("mtu", 0)
+        flags = [f.upper() for f in iface.get("flags", [])]
 
-        # Collect IP addresses
-        addrs = []
-        for addr_info in iface.get("addr_info", []):
-            family = addr_info.get("family", "")
-            local = addr_info.get("local", "")
-            prefixlen = addr_info.get("prefixlen", "")
-            if local:
-                addrs.append({"family": family, "address": f"{local}/{prefixlen}"})
-
-        # Traffic stats
-        stats = stats_map.get(name, {})
-        rx_bytes = stats.get("rx_bytes", 0)
-        tx_bytes = stats.get("tx_bytes", 0)
+        addresses = []
+        for addr in iface.get("addr_info", []):
+            family = addr.get("family", "")
+            entry = {
+                "family": family,
+                "addr": addr.get("local", ""),
+                "prefix": addr.get("prefixlen", 0),
+            }
+            if family == "inet" and "broadcast" in addr:
+                entry["broadcast"] = addr["broadcast"]
+            if family == "inet6":
+                entry["scope"] = addr.get("scope", "")
+            addresses.append(entry)
 
         interfaces.append({
             "name": name,
-            "operstate": operstate,
-            "flags": flags,
-            "link_type": link_type,
+            "state": state,
             "mac": mac,
-            "addresses": addrs,
-            "rx_bytes": rx_bytes,
-            "rx_label": fmt_bytes(rx_bytes),
-            "tx_bytes": tx_bytes,
-            "tx_label": fmt_bytes(tx_bytes),
+            "mtu": mtu,
+            "flags": flags,
+            "addresses": addresses,
         })
 
-    # Sort: up interfaces first, then by name
-    interfaces.sort(key=lambda x: (0 if x["operstate"] == "up" else 1, x["name"]))
+    up_count = sum(1 for i in interfaces if i["state"] == "UP")
+    return jsonify({
+        "interfaces": interfaces,
+        "count": len(interfaces),
+        "up_count": up_count,
+    })
 
-    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
 # ── AdGuard Home Stats ────────────────────────────────────────────────────────
@@ -10261,62 +10229,6 @@ def api_system_kernel_messages():
         return jsonify({"messages": messages, "count": len(messages)})
 
     return jsonify({"messages": [], "count": 0, "error": "dmesg unavailable"})
-
-
-# ── Network Interfaces ─────────────────────────────────────────────────────────
-
-@app.route("/api/network/interfaces")
-@require_auth
-def api_network_interfaces():
-    def _parse_text(output):
-        interfaces = []
-        current = None
-        _iface_re = re.compile(r"^\d+:\s+(\S+?)(?:@\S+)?:\s+<([^>]*)>\s+mtu\s+(\d+)")
-        _link_re = re.compile(r"^\s+link/\S+\s+([0-9a-fA-F:]{17})")
-        _addr_re = re.compile(r"^\s+(inet6?)\s+([0-9a-fA-F:.]+)/(\d+)")
-        for line in output.splitlines():
-            m = _iface_re.match(line)
-            if m:
-                if current is not None:
-                    interfaces.append(current)
-                flags = [f.strip() for f in m.group(2).split(",") if f.strip()]
-                current = {"name": m.group(1), "flags": flags, "mtu": int(m.group(3)),
-                           "mac": None, "addresses": []}
-                continue
-            if current is None:
-                continue
-            m = _link_re.match(line)
-            if m:
-                current["mac"] = m.group(1)
-                continue
-            m = _addr_re.match(line)
-            if m:
-                current["addresses"].append(
-                    {"family": m.group(1), "addr": m.group(2), "prefix_len": int(m.group(3))})
-        if current is not None:
-            interfaces.append(current)
-        return interfaces
-
-    def _from_json(data):
-        interfaces = []
-        for iface in data:
-            addresses = [{"family": ai.get("family", ""), "addr": ai.get("local", ""),
-                          "prefix_len": ai.get("prefixlen", 0)}
-                         for ai in (iface.get("addr_info") or [])]
-            interfaces.append({"name": iface.get("ifname", ""), "flags": iface.get("flags") or [],
-                                "mtu": iface.get("mtu", 0), "mac": iface.get("address"),
-                                "addresses": addresses})
-        return interfaces
-
-    out, rc = _run(["ip", "-j", "addr", "show"])
-    if rc == 0:
-        try:
-            return jsonify({"interfaces": _from_json(json.loads(out)), "count": len(json.loads(out))})
-        except (ValueError, KeyError):
-            pass
-    out, rc = _run(["ip", "addr", "show"])
-    interfaces = _parse_text(out) if rc == 0 else []
-    return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
 # ── Open Sockets Summary ──────────────────────────────────────────────────────
@@ -15459,63 +15371,6 @@ def api_system_irq_stats():
     top = results[:20]
     total_interrupts = sum(r["total"] for r in results)
     return jsonify({"cpu_count": cpu_count, "total_interrupts": total_interrupts, "irqs": top})
-
-
-# ── Network Interfaces Detail ─────────────────────────────────────────────────
-
-@app.route("/api/network/interfaces", methods=["GET"])
-@require_auth
-def api_network_interfaces():
-    """Return detailed info for all network interfaces via `ip -j addr show`."""
-    out, rc = _run(["ip", "-j", "addr", "show"], timeout=5)
-    if rc != 0 or not out.strip():
-        return jsonify({"error": "ip command failed", "interfaces": [], "count": 0, "up_count": 0}), 500
-
-    try:
-        raw = json.loads(out)
-    except ValueError:
-        return jsonify({"error": "failed to parse ip output", "interfaces": [], "count": 0, "up_count": 0}), 500
-
-    interfaces = []
-    for iface in raw:
-        name = iface.get("ifname", "")
-        if name == "lo":
-            continue
-
-        state = iface.get("operstate", "UNKNOWN").upper()
-        mac = iface.get("address", "")
-        mtu = iface.get("mtu", 0)
-        flags = [f.upper() for f in iface.get("flags", [])]
-
-        addresses = []
-        for addr in iface.get("addr_info", []):
-            family = addr.get("family", "")
-            entry = {
-                "family": family,
-                "addr": addr.get("local", ""),
-                "prefix": addr.get("prefixlen", 0),
-            }
-            if family == "inet" and "broadcast" in addr:
-                entry["broadcast"] = addr["broadcast"]
-            if family == "inet6":
-                entry["scope"] = addr.get("scope", "")
-            addresses.append(entry)
-
-        interfaces.append({
-            "name": name,
-            "state": state,
-            "mac": mac,
-            "mtu": mtu,
-            "flags": flags,
-            "addresses": addresses,
-        })
-
-    up_count = sum(1 for i in interfaces if i["state"] == "UP")
-    return jsonify({
-        "interfaces": interfaces,
-        "count": len(interfaces),
-        "up_count": up_count,
-    })
 
 
 @app.route("/api/vpn/wireguard/peer-health", methods=["GET"])
