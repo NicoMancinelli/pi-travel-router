@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-05-25
+
+### Added
+- `GET /api/system/memory-pressure` — detailed memory breakdown from `/proc/meminfo`; returns used/free/available/cached/buffers/shmem/slab with `pressure` level (low/moderate/high/critical); dashboard card 🧠 Memory with 4-segment stacked bar
+- `GET /api/system/disk-usage` — filesystem usage via `df` + top-5 dirs via `du -sh`; colour-coded bars (green/orange/red); dashboard card 💿 Disk Usage with per-mount progress bars
+- `GET /api/system/firewall-summary` — iptables/nftables rule counts per chain; returns `chains[]`, `total_rules`, `forward_policy`, `has_nat`; dashboard card 🛡️ Firewall with DROP/REJECT highlighted red
+
 ## [3.0.0] - 2026-05-25
 
 ### Added
