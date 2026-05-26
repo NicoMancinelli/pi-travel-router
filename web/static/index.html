@@ -2031,6 +2031,15 @@
   <div class="card-body" id="uptime-detail-body"></div>
 </div>
 
+<!-- Active Users -->
+<div class="card" id="card-active-users">
+  <div class="card-header" onclick="toggleCard('card-active-users')">
+    <span>👤 Active Users</span>
+    <span class="badge" id="active-users-badge">…</span>
+  </div>
+  <div class="card-body" id="active-users-body"></div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6034,6 +6043,32 @@ async function fetchUptimeDetail() {
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Idle</td><td style="padding:3px 8px;font-size:13px;">${d.idle_pct}%</td></tr>
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Uptime (s)</td><td style="padding:3px 8px;font-size:13px;">${d.uptime_seconds.toLocaleString()}</td></tr>
       </table>`;
+// ── Active Users ──
+async function fetchActiveUsers() {
+  const badge = document.getElementById('active-users-badge');
+  const body = document.getElementById('active-users-body');
+  try {
+    const d = await apiFetch('/api/system/active-users');
+    badge.textContent = `${d.count} user${d.count !== 1 ? 's' : ''}`;
+    if (d.count === 0) {
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No users logged in.</p>';
+      return;
+    }
+    const rows = d.users.map(u => `<tr>
+      <td style="padding:3px 8px;font-size:13px;">${u.user}</td>
+      <td style="padding:3px 8px;font-size:12px;color:var(--text-dim);font-family:monospace;">${u.tty}</td>
+      <td style="padding:3px 8px;font-size:12px;color:var(--text-dim);">${u.login_time}</td>
+      <td style="padding:3px 8px;font-size:12px;color:var(--text-dim);">${u.from || '—'}</td>
+    </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">User</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">TTY</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Since</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">From</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
     if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
@@ -7650,6 +7685,7 @@ async function refreshAll() {
   fetchOtaStatus();
   fetchMemoryMap();
   fetchSplitTunnelStatus();
+  fetchActiveUsers();
 }
 
 async function init() {
@@ -7667,6 +7703,7 @@ async function init() {
   setInterval(fetchResourceStats, 30000);
   setInterval(fetchMemoryMap, 30000);
   setInterval(fetchSplitTunnelStatus, 30000);
+  setInterval(fetchActiveUsers, 30000);
   // Connect SSE event stream
   initEventStream();
 }

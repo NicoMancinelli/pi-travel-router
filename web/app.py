@@ -16746,6 +16746,41 @@ def api_system_uptime_detail():
         "idle_pct": idle_pct,
         "boot_timestamp": boot_timestamp,
     })
+# ── Active users ──────────────────────────────────────────────────────────────
+
+@app.route("/api/system/active-users", methods=["GET"])
+@require_auth
+def api_system_active_users():
+    """Return currently logged-in users from who."""
+    import re
+    users = []
+    try:
+        out, _ = _run(["who"])
+        for line in out.splitlines():
+            # Format: user tty date time [from]
+            # e.g.: pi       pts/0        2026-05-26 01:23 (192.168.4.10)
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            user = parts[0]
+            tty = parts[1]
+            login_time = parts[2] + " " + parts[3]
+            from_host = None
+            if len(parts) > 4:
+                # Could be (host) or host
+                from_str = parts[4]
+                from_host = from_str.strip("()")
+                if not from_host or from_host == ":0":
+                    from_host = None
+            users.append({
+                "user": user,
+                "tty": tty,
+                "login_time": login_time,
+                "from": from_host,
+            })
+    except Exception:
+        pass
+    return jsonify({"users": users, "count": len(users)})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
