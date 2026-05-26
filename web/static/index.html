@@ -10816,12 +10816,12 @@ async function fetchRouteTableCard() {
       '<th style="padding:3px 6px;text-align:right;">Metric</th>' +
       '</tr></thead><tbody>';
     for (const r of d.routes) {
-      const isDefault = r.dest === 'default';
+      const isDefault = r.dst === 'default' || r.dst === '0.0.0.0/0';
       const rowStyle = isDefault
         ? 'background:rgba(59,130,246,0.08);font-weight:600;'
         : '';
       html += `<tr style="${rowStyle}">` +
-        `<td style="padding:3px 6px;font-family:monospace;">${escHtml(r.dest)}${isDefault ? ' <span style="font-size:10px;color:#3b82f6;">[default]</span>' : ''}</td>` +
+        `<td style="padding:3px 6px;font-family:monospace;">${escHtml(r.dst)}${isDefault ? ' <span style="font-size:10px;color:#3b82f6;">[default]</span>' : ''}</td>` +
         `<td style="padding:3px 6px;font-family:monospace;">${r.gateway ? escHtml(r.gateway) : '<span style="color:var(--text-dim)">—</span>'}</td>` +
         `<td style="padding:3px 6px;">${escHtml(r.dev)}</td>` +
         `<td style="padding:3px 6px;text-align:right;">${r.metric}</td>` +

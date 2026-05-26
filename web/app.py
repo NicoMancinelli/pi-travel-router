@@ -14350,85 +14350,53 @@ def api_network_nat_connections():
     })
 
 
-# ── IP Route Table ────────────────────────────────────────────────────────────
-
-@app.route("/api/network/route-table", methods=["GET"])
+# ── Route Table ─────────────────────────────────────────────────────────────
+@app.route("/api/network/route-table")
 @require_auth
 def api_network_route_table():
-    """Return the IPv4 routing table parsed from `ip route show` text output."""
-    out, rc = _run("ip route show 2>/dev/null", timeout=5)
-    if rc != 0 or not out.strip():
-        return jsonify({"routes": [], "count": 0, "default_gw": None, "default_dev": None,
-                        "error": out.strip() or "ip route show failed"})
-
-    routes = []
-    default_gw = None
-    default_dev = None
-
-    for line in out.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split()
-        if not parts:
-            continue
-
-        dest = parts[0]  # "default" or CIDR like "192.168.1.0/24"
-        gateway = ""
-        dev = ""
-        metric = 0
-        proto = ""
-        scope = ""
-
-        i = 1
-        while i < len(parts):
-            token = parts[i]
-            if token == "via" and i + 1 < len(parts):
-                gateway = parts[i + 1]
-                i += 2
-            elif token == "dev" and i + 1 < len(parts):
-                dev = parts[i + 1]
-                i += 2
-            elif token == "metric" and i + 1 < len(parts):
-                try:
-                    metric = int(parts[i + 1])
-                except ValueError:
-                    metric = 0
-                i += 2
-            elif token == "proto" and i + 1 < len(parts):
-                proto = parts[i + 1]
-                i += 2
-            elif token == "scope" and i + 1 < len(parts):
-                scope = parts[i + 1]
-                i += 2
-            else:
-                i += 1
-
-        routes.append({
-            "dest": dest,
-            "gateway": gateway,
-            "dev": dev,
-            "metric": metric,
-            "proto": proto,
-            "scope": scope,
+    """Return kernel routing table."""
+    try:
+        import subprocess, json as _json
+        routes = []
+        try:
+            out = subprocess.check_output(["ip", "-j", "route", "show"], text=True, stderr=subprocess.DEVNULL)
+            raw = _json.loads(out)
+            for r in raw:
+                routes.append({
+                    "dst": r.get("dst", ""),
+                    "gateway": r.get("gateway", ""),
+                    "dev": r.get("dev", ""),
+                    "proto": r.get("protocol", ""),
+                    "scope": r.get("scope", ""),
+                    "metric": r.get("metric", 0),
+                    "prefsrc": r.get("prefsrc", ""),
+                })
+        except Exception:
+            out = subprocess.check_output(["ip", "route", "show"], text=True)
+            for line in out.strip().splitlines():
+                parts = line.split()
+                entry = {"dst": parts[0] if parts else "", "gateway": "", "dev": "", "proto": "", "scope": "", "metric": 0, "prefsrc": ""}
+                for i, p in enumerate(parts):
+                    if p == "via" and i + 1 < len(parts): entry["gateway"] = parts[i + 1]
+                    if p == "dev" and i + 1 < len(parts): entry["dev"] = parts[i + 1]
+                    if p == "metric" and i + 1 < len(parts): entry["metric"] = int(parts[i + 1])
+                    if p == "src" and i + 1 < len(parts): entry["prefsrc"] = parts[i + 1]
+                routes.append(entry)
+        default_routes = [r for r in routes if r["dst"] in ("default", "0.0.0.0/0")]
+        return jsonify({
+            "routes": routes,
+            "count": len(routes),
+            "default_routes": default_routes,
         })
 
-        if dest == "default" and gateway and default_gw is None:
-            default_gw = gateway
-            default_dev = dev
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
-    return jsonify({
-        "routes": routes,
-        "count": len(routes),
-        "default_gw": default_gw,
-        "default_dev": default_dev,
-    })
 @app.route("/api/system/swap-detail", methods=["GET"])
 @require_auth
 def api_system_swap_detail():
     """Return per-device swap stats from /proc/swaps plus meminfo cross-check."""
     devices = []
-
     # Parse /proc/swaps (header: Filename Type Size Used Priority)
     try:
         swaps_raw = Path("/proc/swaps").read_text()
