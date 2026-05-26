@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.89.0] - 2026-05-25
+
+### Added
+- `GET /api/system/usb` — USB device list from `lsusb`; parses bus/device/id/description; dashboard card 🔌 USB Devices with device ID in monospace and count badge
+- `GET /api/system/swap` — swap usage from `/proc/swaps`; aggregated total/used/free; dashboard card 💾 Swap Usage with progress bar and color-coded badge (green/yellow/red by threshold)
+- `GET /api/system/entropy` — entropy pool fill from `/proc/sys/kernel/random/entropy_avail` + `poolsize`; returns `entropy_avail`, `pool_size`, `fill_pct`, `read_wakeup_threshold`; dashboard card 🎲 Entropy Pool with fill % progress bar and low-entropy warning
+
 ## [2.88.0] - 2026-05-25
 
 ### Added
