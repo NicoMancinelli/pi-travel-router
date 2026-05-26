@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-05-26
+
+### Added
+- `GET /api/system/ntp-sync` — NTP sync status from `timedatectl show` + optional `chronyc tracking`; returns `synchronized`, `ntp_active`, `ntp_server`, `offset_ms`, `timezone`; dashboard card 🕐 NTP Sync with colour-coded sync badge
+- `GET /api/system/hostname-info` — hostname/OS details from `hostnamectl show`; returns `hostname`, `static_hostname`, `pretty_hostname`, `chassis`, `machine_id`, `os_pretty_name`, `kernel`; dashboard card 🏷️ Hostname
+- `GET /api/system/recent-errors` — last 30 error+ journal entries from `journalctl -p err`; returns `errors[]` with timestamp/unit/message, `count`; dashboard card 🚨 Recent Errors with red badge when errors present
+
 ## [3.7.0] - 2026-05-26
 
 ### Added
