@@ -13718,6 +13718,108 @@ def api_network_firewall():
     })
 
 
+@app.route("/api/network/ap-clients", methods=["GET"])
+@require_auth
+def api_network_ap_clients():
+    """Return list of stations connected to the AP (hostapd_cli / iw fallback)."""
+    iface = "wlan0"
+
+    def _parse_hostapd(output):
+        clients = []
+        current = {}
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                if current.get("mac"):
+                    clients.append(current)
+                current = {}
+                continue
+            if re.match(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$", line, re.I):
+                if current.get("mac"):
+                    clients.append(current)
+                current = {"mac": line.lower(), "signal_dbm": None, "rx_bytes": 0,
+                           "tx_bytes": 0, "inactive_s": None}
+            elif "=" in line:
+                key, _, val = line.partition("=")
+                key = key.strip()
+                val = val.strip()
+                if key == "signal" and current:
+                    m = re.search(r"([-\d]+)", val)
+                    if m:
+                        current["signal_dbm"] = int(m.group(1))
+                elif key == "rx_bytes" and current:
+                    try:
+                        current["rx_bytes"] = int(val)
+                    except ValueError:
+                        pass
+                elif key == "tx_bytes" and current:
+                    try:
+                        current["tx_bytes"] = int(val)
+                    except ValueError:
+                        pass
+                elif key == "inactive_msec" and current:
+                    try:
+                        current["inactive_s"] = round(int(val) / 1000.0, 1)
+                    except ValueError:
+                        pass
+                elif key == "connected_time" and current:
+                    try:
+                        current["connected_time_s"] = int(val)
+                    except ValueError:
+                        pass
+        if current.get("mac"):
+            clients.append(current)
+        return clients
+
+    def _parse_iw(output):
+        clients = []
+        current = {}
+        for line in output.splitlines():
+            line = line.strip()
+            if line.startswith("Station"):
+                if current.get("mac"):
+                    clients.append(current)
+                parts = line.split()
+                current = {"mac": parts[1].lower() if len(parts) > 1 else "?",
+                           "signal_dbm": None, "rx_bytes": 0, "tx_bytes": 0,
+                           "inactive_s": None}
+            elif current.get("mac"):
+                m = re.search(r"signal:\s*([-\d]+)", line)
+                if m:
+                    current["signal_dbm"] = int(m.group(1))
+                m = re.search(r"rx bytes:\s*(\d+)", line)
+                if m:
+                    current["rx_bytes"] = int(m.group(1))
+                m = re.search(r"tx bytes:\s*(\d+)", line)
+                if m:
+                    current["tx_bytes"] = int(m.group(1))
+                m = re.search(r"inactive time:\s*(\d+)\s*ms", line)
+                if m:
+                    current["inactive_s"] = round(int(m.group(1)) / 1000.0, 1)
+                m = re.search(r"connected time:\s*(\d+)\s*seconds", line)
+                if m:
+                    current["connected_time_s"] = int(m.group(1))
+        if current.get("mac"):
+            clients.append(current)
+        return clients
+
+    # Try hostapd_cli first
+    out, rc = _run("hostapd_cli all_sta 2>/dev/null", timeout=5)
+    if rc == 0 and out.strip():
+        clients = _parse_hostapd(out)
+    else:
+        # Fallback: iw
+        out, rc = _run(f"iw dev {iface} station dump 2>/dev/null", timeout=5)
+        if rc != 0:
+            # Try uap0 as well
+            out, rc = _run("iw dev uap0 station dump 2>/dev/null", timeout=5)
+            if rc == 0:
+                iface = "uap0"
+        clients = _parse_iw(out) if rc == 0 else []
+
+    return jsonify({"clients": clients, "count": len(clients), "interface": iface})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
