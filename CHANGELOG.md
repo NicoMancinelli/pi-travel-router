@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.25.0] — 2026-05-26
+
+### Added
+- `GET /api/system/cpu-frequency` — per-core CPU MHz from sysfs with /proc/cpuinfo fallback
+- `GET /api/network/route-table` — kernel routing table via ip -j route with default route summary
+- `GET /api/system/shared-memory` — IPC shm segments via ipcs -m plus kernel Shmem from /proc/meminfo
+
 ## [3.24.0] — 2026-05-26
 
 ### Added
