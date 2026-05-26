@@ -16808,6 +16808,45 @@ def api_system_process_states():
         "total": total,
         "zombies": zombies,
         "has_zombies": zombies > 0,
+# ── Route summary ─────────────────────────────────────────────────────────────
+
+@app.route("/api/network/route-summary", methods=["GET"])
+@require_auth
+def api_network_route_summary():
+    """Return routing table summary from ip route show."""
+    import re
+    total_routes = 0
+    default_routes = []
+    by_protocol = {}
+    try:
+        out, _ = _run(["ip", "route", "show"])
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            total_routes += 1
+            # Extract protocol
+            proto_m = re.search(r"\bproto\s+(\S+)", line)
+            proto = proto_m.group(1) if proto_m else "static"
+            by_protocol[proto] = by_protocol.get(proto, 0) + 1
+            # Check for default route
+            if line.startswith("default"):
+                gw_m = re.search(r"via\s+(\S+)", line)
+                dev_m = re.search(r"dev\s+(\S+)", line)
+                metric_m = re.search(r"metric\s+(\d+)", line)
+                default_routes.append({
+                    "gateway": gw_m.group(1) if gw_m else None,
+                    "dev": dev_m.group(1) if dev_m else None,
+                    "metric": int(metric_m.group(1)) if metric_m else None,
+                    "proto": proto,
+                })
+    except Exception:
+        pass
+    return jsonify({
+        "total_routes": total_routes,
+        "default_routes": default_routes,
+        "by_protocol": by_protocol,
+        "default_count": len(default_routes),
     })
 
 

@@ -2049,6 +2049,15 @@
   <div class="card-body" id="process-states-body"></div>
 </div>
 
+<!-- Route Summary -->
+<div class="card" id="card-route-summary">
+  <div class="card-header" onclick="toggleCard('card-route-summary')">
+    <span>🗺️ Routes</span>
+    <span class="badge" id="route-summary-badge">…</span>
+  </div>
+  <div class="card-body" id="route-summary-body"></div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -7725,6 +7734,7 @@ async function refreshAll() {
   fetchSplitTunnelStatus();
   fetchActiveUsers();
   fetchProcessStates();
+  fetchRouteSummary();
 }
 
 async function init() {
@@ -7744,6 +7754,7 @@ async function init() {
   setInterval(fetchSplitTunnelStatus, 30000);
   setInterval(fetchActiveUsers, 30000);
   setInterval(fetchProcessStates, 30000);
+  setInterval(fetchRouteSummary, 60000);
   // Connect SSE event stream
   initEventStream();
 }
@@ -11026,6 +11037,41 @@ async function fetchLoadAvg() {
         <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">15 min</td><td style="padding:2px 8px;font-size:13px;">${d.load_15m}</td></tr>
         <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Processes</td><td style="padding:2px 8px;font-size:13px;">${d.running_processes} running / ${d.total_processes} total</td></tr>
       </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
+// ── Route Summary ──
+async function fetchRouteSummary() {
+  const badge = document.getElementById('route-summary-badge');
+  const body = document.getElementById('route-summary-body');
+  try {
+    const d = await apiFetch('/api/network/route-summary');
+    badge.textContent = `${d.total_routes} routes`;
+    const defRows = d.default_routes.map(r => `
+      <tr style="background:var(--bg2);">
+        <td style="padding:2px 8px;font-size:13px;" colspan="2">
+          default via <strong>${r.gateway || 'n/a'}</strong> dev ${r.dev || 'n/a'}
+          ${r.metric !== null ? ' metric ' + r.metric : ''}
+          <span style="font-size:11px;color:var(--text-dim);">(${r.proto})</span>
+        </td>
+      </tr>`).join('');
+    const protoRows = Object.entries(d.by_protocol)
+      .sort(([,a],[,b]) => b-a)
+      .map(([p, n]) => `<tr>
+        <td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">${p}</td>
+        <td style="padding:2px 8px;font-size:13px;text-align:right;">${n}</td>
+      </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      ${defRows}
+      ${protoRows}
+      <tr style="border-top:1px solid var(--border);">
+        <td style="padding:2px 8px;font-size:13px;font-weight:600;">Total</td>
+        <td style="padding:2px 8px;font-size:13px;font-weight:600;text-align:right;">${d.total_routes}</td>
+      </tr>
+    </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
     if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
