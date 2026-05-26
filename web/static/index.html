@@ -5923,7 +5923,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchBlockDevices();
   fetchDnsConfig();
   fetchIpRules();
-  fetchLogSummaryJournal();
+  fetchLogSummary();
+  fetchLogSummaryExport();
   fetchActiveConnections();
   fetchWifiClients();
   fetchPackageUpdates();
@@ -6244,7 +6245,8 @@ async function refreshAll() {
   fetchBlockDevices();
   fetchDnsConfig();
   fetchIpRules();
-  fetchLogSummaryJournal();
+  fetchLogSummary();
+  fetchLogSummaryExport();
   fetchSshKeys();
   fetchActiveConnections();
   fetchPackageUpdates();
