@@ -2124,6 +2124,14 @@
   </div>
 </div>
 
+<!-- Open Ports -->
+<div class="card" id="card-open-ports">
+  <div class="card-header"><span>🔌 Open Ports</span><button class="refresh-btn" onclick="fetchOpenPorts()">↻</button></div>
+  <div class="card-body" id="open-ports-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6255,6 +6263,19 @@ async function fetchCpuGovernors() {
       `<div class="stat-row"><span>${c.cpu}</span><span class="val">${c.governor} @ ${c.freq_mhz} MHz</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Cores</span><span class="val">${d.total_cores} (${d.governors.join(', ')})</span></div>${rows}`;
+// ── Open Ports ──
+async function fetchOpenPorts() {
+  const el = document.getElementById('open-ports-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/network/open-ports');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No listening ports</div>'; return; }
+    const rows = d.ports.slice(0, 12).map(p =>
+      `<div class="stat-row"><span>:${p.port}</span><span class="val">${p.proto}</span></div>`
+    ).join('');
+    el.innerHTML = `<div class="stat-row"><span>Listening</span><span class="val">${d.total} (TCP ${d.tcp_count} · UDP ${d.udp_count})</span></div>${rows}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 

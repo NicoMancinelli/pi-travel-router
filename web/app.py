@@ -17240,6 +17240,53 @@ def api_network_arp_table():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Open Ports ───────────────────────────────────────────────────────────────
+@app.route("/api/network/open-ports")
+@require_auth
+def api_network_open_ports():
+    """Return listening TCP/UDP ports from /proc/net/tcp and udp."""
+    try:
+        def parse_proc_net(path, proto):
+            ports = []
+            try:
+                with open(path) as f:
+                    next(f)
+                    for line in f:
+                        parts = line.split()
+                        if len(parts) < 4:
+                            continue
+                        state = parts[3]
+                        if state not in ("0A", "07"):  # LISTEN or CLOSE
+                            continue
+                        local = parts[1]
+                        port_hex = local.split(":")[1]
+                        port = int(port_hex, 16)
+                        if port and state == "0A":
+                            ports.append({"port": port, "proto": proto})
+            except FileNotFoundError:
+                pass
+            return ports
+        tcp = parse_proc_net("/proc/net/tcp", "tcp")
+        tcp6 = parse_proc_net("/proc/net/tcp6", "tcp6")
+        udp = parse_proc_net("/proc/net/udp", "udp")
+        all_ports = sorted(tcp + tcp6 + udp, key=lambda x: x["port"])
+        seen = set()
+        unique = []
+        for p in all_ports:
+            key = (p["port"], p["proto"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(p)
+        return jsonify({
+            "ports": unique,
+            "total": len(unique),
+            "tcp_count": len(tcp) + len(tcp6),
+            "udp_count": len(udp),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
