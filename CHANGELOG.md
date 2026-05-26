@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-05-26
+
+### Added
+- `GET /api/system/disk-io` — disk I/O stats from `/proc/diskstats` for physical devices (sd*, mmcblk*, nvme*); returns `reads_completed`, `writes_completed`, `kb_read`, `kb_written`; dashboard card 💾 Disk I/O with formatted size table
+- `GET /api/system/cpu-temp` — CPU temperature from `/sys/class/thermal/thermal_zone0/temp` with `vcgencmd` fallback; classifies cool/normal/warm/hot; dashboard card 🌡️ CPU Temp with large colour-coded readout
+- `GET /api/system/resource-limits` — kernel resource limits from `/proc/sys/`; returns `file_max`, `pid_max`, `threads_max`, `open_files_current`, `open_files_pct`; dashboard card 📊 Resource Limits
+
 ## [3.9.0] - 2026-05-26
 
 ### Added
