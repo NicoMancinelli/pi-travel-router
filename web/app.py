@@ -16378,6 +16378,7 @@ def api_system_memory_map():
         "swap_total_mb": kb_to_mb("SwapTotal"),
         "swap_used_mb": round(kb_to_mb("SwapTotal") - kb_to_mb("SwapFree"), 1),
         "percent_used": percent_used,
+    })
 # ── Network connection stats ──────────────────────────────────────────────────
 
 @app.route("/api/network/connection-stats", methods=["GET"])
