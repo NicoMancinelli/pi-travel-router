@@ -8777,47 +8777,40 @@ def api_system_logged_in_users():
         return jsonify({"users": [], "count": 0, "error": str(exc)}), 500
 
 
-# ── Disk I/O Stats (spec-aligned) ────────────────────────────────────────────
+# ── Disk I/O stats ────────────────────────────────────────────────────────────
 
 @app.route("/api/system/disk-io", methods=["GET"])
 @require_auth
 def api_system_disk_io():
-    """Parse /proc/diskstats for block devices (exclude loop/ram devices)."""
-    import re as _re
+    """Return disk I/O stats from /proc/diskstats."""
+    import re
     devices = []
     try:
-        with open("/proc/diskstats", "r") as fh:
-            for line in fh:
-                cols = line.split()
-                if len(cols) < 14:
+        with open("/proc/diskstats") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) < 14:
                     continue
-                name = cols[2]
-                if _re.search(r"^(loop|ram)\d+", name):
+                name = parts[2]
+                # Only include physical devices, skip partitions
+                if not re.match(r"^(sd[a-z]|mmcblk\d+|nvme\d+n\d+|vd[a-z])$", name):
                     continue
-                try:
-                    reads_completed  = int(cols[3])
-                    reads_merged     = int(cols[4])
-                    sectors_read     = int(cols[5])
-                    time_reading_ms  = int(cols[6])
-                    writes_completed = int(cols[7])
-                    writes_merged    = int(cols[8])
-                    sectors_written  = int(cols[9])
-                    time_writing_ms  = int(cols[10])
-                except (ValueError, IndexError):
-                    continue
+                reads_completed = int(parts[3])
+                sectors_read = int(parts[5])
+                writes_completed = int(parts[7])
+                sectors_written = int(parts[9])
+                # sectors are typically 512 bytes → convert to KB
+                kb_read = sectors_read * 512 // 1024
+                kb_written = sectors_written * 512 // 1024
                 devices.append({
-                    "name":             name,
-                    "reads_completed":  reads_completed,
-                    "reads_merged":     reads_merged,
-                    "read_bytes":       sectors_read * 512,
-                    "time_reading_ms":  time_reading_ms,
+                    "name": name,
+                    "reads_completed": reads_completed,
                     "writes_completed": writes_completed,
-                    "writes_merged":    writes_merged,
-                    "written_bytes":    sectors_written * 512,
-                    "time_writing_ms":  time_writing_ms,
+                    "kb_read": kb_read,
+                    "kb_written": kb_written,
                 })
-    except Exception as exc:  # pylint: disable=broad-except
-        return jsonify({"devices": [], "error": str(exc)})
+    except Exception:
+        pass
     return jsonify({"devices": devices})
 
 

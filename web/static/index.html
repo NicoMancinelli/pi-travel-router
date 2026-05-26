@@ -1963,6 +1963,13 @@
       <span class="badge" id="split-tunnel-badge">…</span>
     </div>
     <div class="card-body" id="split-tunnel-body"></div>
+  <!-- Disk IO -->
+  <div class="card" id="card-disk-io-v2">
+    <div class="card-header" onclick="toggleCard('card-disk-io-v2')">
+      <span>💾 Disk I/O</span>
+      <span class="badge" id="disk-io-badge">…</span>
+    </div>
+    <div class="card-body" id="disk-io-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -13297,46 +13304,40 @@ async function fetchLoggedInUsers() {
   }
 }
 
+// ── Disk IO ──
 async function fetchDiskIo() {
-  const el = document.getElementById('disk-io-content');
-  if (!el) return;
+  const badge = document.getElementById('disk-io-badge');
+  const body = document.getElementById('disk-io-body');
   try {
-    const r = await fetch('/api/system/disk-io');
-    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
-    const d = await r.json();
-    if (d.error) { el.textContent = d.error; return; }
+    const d = await apiFetch('/api/system/disk-io');
     if (!d.devices || d.devices.length === 0) {
-      el.textContent = 'No block devices found';
+      badge.textContent = 'n/a';
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No block devices found.</p>';
       return;
     }
-    const fmtBytes = b => b >= 1073741824
-      ? (b / 1073741824).toFixed(2) + ' GB'
-      : b >= 1048576
-        ? (b / 1048576).toFixed(1) + ' MB'
-        : b >= 1024
-          ? (b / 1024).toFixed(0) + ' KB'
-          : b + ' B';
-    let html = '<table style="width:100%;border-collapse:collapse;">';
-    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
-      <th style="text-align:left;padding:3px 8px;">Device</th>
-      <th style="text-align:right;padding:3px 8px;">Reads</th>
-      <th style="text-align:right;padding:3px 8px;">Read Bytes</th>
-      <th style="text-align:right;padding:3px 8px;">Writes</th>
-      <th style="text-align:right;padding:3px 8px;">Written Bytes</th>
-    </tr></thead><tbody>`;
-    for (const dev of d.devices) {
-      html += `<tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:3px 8px;font-family:monospace;"><strong>${dev.name}</strong></td>
-        <td style="padding:3px 8px;text-align:right;">${dev.reads_completed.toLocaleString()}</td>
-        <td style="padding:3px 8px;text-align:right;">${fmtBytes(dev.read_bytes)}</td>
-        <td style="padding:3px 8px;text-align:right;">${dev.writes_completed.toLocaleString()}</td>
-        <td style="padding:3px 8px;text-align:right;">${fmtBytes(dev.written_bytes)}</td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  } catch (e) {
-    if (el) el.textContent = 'Failed: ' + e;
+    badge.textContent = `${d.devices.length} dev`;
+    const fmt = n => n >= 1048576 ? (n/1048576).toFixed(1)+'GB' : n >= 1024 ? (n/1024).toFixed(1)+'MB' : n+'KB';
+    const rows = d.devices.map(dev => `
+      <tr>
+        <td style="padding:3px 8px;font-size:13px;font-family:monospace;">${dev.name}</td>
+        <td style="padding:3px 8px;font-size:12px;text-align:right;">${dev.reads_completed.toLocaleString()}</td>
+        <td style="padding:3px 8px;font-size:12px;text-align:right;">${dev.writes_completed.toLocaleString()}</td>
+        <td style="padding:3px 8px;font-size:12px;text-align:right;">${fmt(dev.kb_read)}</td>
+        <td style="padding:3px 8px;font-size:12px;text-align:right;">${fmt(dev.kb_written)}</td>
+      </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Device</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Reads</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Writes</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Read</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Written</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
   }
 }
 
