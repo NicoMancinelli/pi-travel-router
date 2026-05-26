@@ -1640,6 +1640,13 @@
       <span class="badge" id="route-table-badge">…</span>
     </div>
     <div class="card-body" id="route-table-body"></div>
+  <!-- Failed Units -->
+  <div class="card" id="card-failed-units">
+    <div class="card-header" onclick="toggleCard('card-failed-units')">
+      <span>🚨 Failed Units</span>
+      <span class="badge" id="failed-units-badge">…</span>
+    </div>
+    <div class="card-body" id="failed-units-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -8668,6 +8675,47 @@ async function fetchRouteTableCard() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading route table</span>';
+// ── Failed Units ─────────────────────────────────────────────────────────────
+
+async function fetchFailedUnits() {
+  const badge = document.getElementById('failed-units-badge');
+  const body  = document.getElementById('failed-units-body');
+  // legacy card support
+  const legacyEl = document.getElementById('failed-units-content');
+  if (body) body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/failed-units');
+    const d = await r.json();
+    if (d.healthy) {
+      if (badge) { badge.textContent = '✓ healthy'; badge.style.background = 'var(--green,#22c55e)'; badge.style.color = '#fff'; }
+      const msg = '<span style="color:var(--green,#22c55e)">✓ All units healthy</span>';
+      if (body) body.innerHTML = msg;
+      if (legacyEl) legacyEl.innerHTML = '<p style="color:var(--green)">✓ All systemd units healthy</p>';
+      return;
+    }
+    if (badge) { badge.textContent = d.count + ' failed'; badge.style.background = 'var(--red,#ef4444)'; badge.style.color = '#fff'; }
+    let html = '<ul style="margin:0;padding-left:16px;font-size:13px;">';
+    for (const u of d.units) {
+      html += `<li style="margin-bottom:4px;"><strong style="color:var(--red,#ef4444);">${escHtml(u.name || u.unit)}</strong>`;
+      if (u.description) html += ` — <span style="color:var(--text-dim);">${escHtml(u.description)}</span>`;
+      html += '</li>';
+    }
+    html += '</ul>';
+    if (body) body.innerHTML = html;
+    if (legacyEl) {
+      let legHtml = `<p style="color:var(--red);margin-bottom:6px">⚠ ${d.count} failed unit${d.count !== 1 ? 's' : ''}</p>`;
+      legHtml += '<table class="table"><thead><tr><th>Unit</th><th>Load</th><th>Active</th><th>Sub</th><th>Description</th></tr></thead><tbody>';
+      for (const u of d.units) {
+        legHtml += `<tr><td><code>${u.unit}</code></td><td>${u.load}</td><td style="color:var(--red)">${u.active}</td><td>${u.sub}</td><td>${u.description}</td></tr>`;
+      }
+      legHtml += '</tbody></table>';
+      legacyEl.innerHTML = legHtml;
+    }
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      if (body) body.innerHTML = '<span style="color:var(--text-dim)">Error loading failed units</span>';
+      if (legacyEl) legacyEl.innerHTML = `<p class="error">${e}</p>`;
+    }
   }
 }
 

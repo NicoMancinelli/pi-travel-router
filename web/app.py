@@ -11713,7 +11713,11 @@ def api_system_failed_units():
             active = parts[2]
             sub = parts[3]
             description = parts[4] if len(parts) > 4 else ""
+            dot = unit.rfind(".")
+            utype = unit[dot + 1:] if dot != -1 else "unknown"
             units.append({
+                "name": unit,
+                "type": utype,
                 "unit": unit,
                 "load": load,
                 "active": active,
