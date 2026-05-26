@@ -16342,6 +16342,45 @@ def api_system_recent_errors():
     return jsonify({"errors": errors, "count": len(errors)})
 
 
+# ── Memory map ────────────────────────────────────────────────────────────────
+
+@app.route("/api/system/memory-map", methods=["GET"])
+@require_auth
+def api_system_memory_map():
+    """Return memory breakdown from /proc/meminfo."""
+    mem = {}
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    key = parts[0].rstrip(":")
+                    val_kb = int(parts[1])
+                    mem[key] = val_kb
+    except Exception:
+        return jsonify({"error": "Could not read /proc/meminfo"}), 500
+
+    def kb_to_mb(k):
+        return round(mem.get(k, 0) / 1024, 1)
+
+    total_mb = kb_to_mb("MemTotal")
+    available_mb = kb_to_mb("MemAvailable")
+    used_mb = round(total_mb - available_mb, 1)
+    percent_used = round(used_mb / total_mb * 100, 1) if total_mb else 0
+
+    return jsonify({
+        "total_mb": total_mb,
+        "used_mb": used_mb,
+        "free_mb": kb_to_mb("MemFree"),
+        "available_mb": available_mb,
+        "cached_mb": kb_to_mb("Cached"),
+        "buffers_mb": kb_to_mb("Buffers"),
+        "swap_total_mb": kb_to_mb("SwapTotal"),
+        "swap_used_mb": round(kb_to_mb("SwapTotal") - kb_to_mb("SwapFree"), 1),
+        "percent_used": percent_used,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -1942,6 +1942,15 @@
     <div class="card-body" id="recent-errors-body"></div>
   </div>
 
+  <!-- Memory Map -->
+  <div class="card" id="card-memory-map">
+    <div class="card-header" onclick="toggleCard('card-memory-map')">
+      <span>🧠 Memory Map</span>
+      <span class="badge" id="memory-map-badge">…</span>
+    </div>
+    <div class="card-body" id="memory-map-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -7418,6 +7427,7 @@ async function refreshAll() {
   fetchEntropy();
   fetchBwLive();
   fetchOtaStatus();
+  fetchMemoryMap();
 }
 
 async function init() {
@@ -7433,6 +7443,7 @@ async function init() {
   _autoLogInterval = setInterval(fetchLogs, 5000);
   // Auto-refresh system resources every 30s
   setInterval(fetchResourceStats, 30000);
+  setInterval(fetchMemoryMap, 30000);
   // Connect SSE event stream
   initEventStream();
 }
@@ -10604,6 +10615,36 @@ async function fetchNtpSync() {
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Offset</td><td style="padding:3px 8px;font-size:13px;">${d.offset_ms !== null ? d.offset_ms + ' ms' : 'n/a'}</td></tr>
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Timezone</td><td style="padding:3px 8px;font-size:13px;">${d.timezone || 'n/a'}</td></tr>
         <tr><td style="padding:3px 8px;font-size:12px;color:var(--text-dim);">Source</td><td style="padding:3px 8px;font-size:12px;color:var(--text-dim);">${d.source}</td></tr>
+      </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
+// ── Memory Map ──
+async function fetchMemoryMap() {
+  const badge = document.getElementById('memory-map-badge');
+  const body = document.getElementById('memory-map-body');
+  try {
+    const d = await apiFetch('/api/system/memory-map');
+    const pct = d.percent_used;
+    const barColor = pct > 85 ? '#ef4444' : pct > 65 ? '#f59e0b' : '#22c55e';
+    badge.textContent = `${pct}%`;
+    badge.style.background = barColor;
+    const barWidth = Math.min(pct, 100);
+    body.innerHTML = `
+      <div style="margin:6px 8px 10px;">
+        <div style="background:var(--bg2);border-radius:4px;height:8px;overflow:hidden;">
+          <div style="width:${barWidth}%;height:100%;background:${barColor};transition:width 0.3s;"></div>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:3px;">${d.used_mb} MB used of ${d.total_mb} MB</div>
+      </div>
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Available</td><td style="padding:2px 8px;font-size:13px;">${d.available_mb} MB</td></tr>
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Cached</td><td style="padding:2px 8px;font-size:13px;">${d.cached_mb} MB</td></tr>
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Buffers</td><td style="padding:2px 8px;font-size:13px;">${d.buffers_mb} MB</td></tr>
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Swap Used</td><td style="padding:2px 8px;font-size:13px;">${d.swap_used_mb} / ${d.swap_total_mb} MB</td></tr>
       </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
