@@ -1590,6 +1590,17 @@
     </div>
   </div>
 
+  <!-- Time Sync -->
+  <div class="card" id="card-timesync">
+    <div class="card-header">
+      <span>🕐 Time Sync</span>
+      <span class="card-badge" id="timesync-badge">—</span>
+    </div>
+    <div class="card-body" id="timesync-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4363,6 +4374,40 @@ async function fetchKmod() {
   }
 }
 
+// ── Time Sync ─────────────────────────────────────────────────────────────────
+async function fetchTimesync() {
+  const el = document.getElementById('timesync-body');
+  const badge = document.getElementById('timesync-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/timesync');
+    if (!d.available) {
+      if (badge) badge.textContent = 'N/A';
+      el.innerHTML = '<span style="color:var(--text-dim)">timedatectl not available</span>';
+      return;
+    }
+    const synced = d.synchronized;
+    if (badge) {
+      badge.textContent = synced ? 'Synced' : 'Not synced';
+      badge.style.background = synced ? '#16a34a' : '#dc2626';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
+    }
+    let html = '<div style="font-size:12px;">';
+    html += `<div style="margin-bottom:4px;"><span style="color:var(--text-dim);">Status: </span><span style="color:${synced ? '#16a34a' : '#dc2626'};font-weight:600;">${synced ? '✓ Synchronized' : '✗ Not synchronized'}</span></div>`;
+    if (d.timezone) html += `<div style="margin-bottom:4px;"><span style="color:var(--text-dim);">Timezone: </span><span style="font-family:monospace;">${escHtml(d.timezone)}</span></div>`;
+    if (d.ntp_service) html += `<div style="margin-bottom:4px;"><span style="color:var(--text-dim);">NTP: </span><span style="font-family:monospace;">${escHtml(d.ntp_service)}</span></div>`;
+    if (d.time_usec) html += `<div style="margin-bottom:4px;"><span style="color:var(--text-dim);">Time: </span><span style="font-family:monospace;">${escHtml(d.time_usec)}</span></div>`;
+    html += '</div>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading time sync</span>';
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -5528,6 +5573,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchBootParams();
   fetchGeoIp();
   fetchTopProcs();
+  fetchTimesync();
 });
 
 async function fetchJournal() {

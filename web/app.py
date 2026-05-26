@@ -14272,6 +14272,48 @@ def api_system_dns_stats():
             "servers": servers,
             "source": "resolv.conf",
         })
+# ── NTP / Time Sync Status ────────────────────────────────────────────────────
+
+@app.route("/api/system/timesync", methods=["GET"])
+@require_auth
+def api_system_timesync():
+    """Return NTP/time sync status via timedatectl show --no-pager."""
+    try:
+        out, rc = _run(["timedatectl", "show", "--no-pager"], timeout=5)
+        if rc != 0 or not out:
+            return jsonify({"available": False, "synchronized": False})
+
+        kv = {}
+        for line in out.splitlines():
+            if "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            kv[k.strip()] = v.strip()
+
+        synchronized = kv.get("NTPSynchronized", "no") == "yes"
+        timezone = kv.get("Timezone")
+        ntp_service = kv.get("NTPService")
+        local_rtc = kv.get("LocalRTC", "no") == "yes"
+        time_usec = kv.get("TimeUSec")
+
+        # Fallback: try chronyc tracking if timedatectl gave no NTP service info
+        source = "timedatectl"
+        if not ntp_service:
+            out2, rc2 = _run(["chronyc", "tracking"], timeout=5)
+            if rc2 == 0 and out2:
+                source = "chronyc"
+
+        return jsonify({
+            "synchronized": synchronized,
+            "timezone": timezone,
+            "ntp_service": ntp_service,
+            "local_rtc": local_rtc,
+            "time_usec": time_usec,
+            "source": source,
+            "available": True,
+        })
+    except Exception:
+        return jsonify({"available": False, "synchronized": False})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
