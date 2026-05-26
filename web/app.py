@@ -18337,6 +18337,41 @@ def api_network_network_bonds():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ── CPU Steal ──────────────────────────────────────────────────────────────────
+@app.route("/api/system/cpu-steal")
+@require_auth
+def api_system_cpu_steal():
+    """Return CPU time breakdown including steal percentage."""
+    try:
+        import time as _time
+        def read_cpu_stat():
+            with open("/proc/stat") as fh:
+                for line in fh:
+                    if line.startswith("cpu "):
+                        vals = list(map(int, line.split()[1:]))
+                        return vals
+            return None
+        s1 = read_cpu_stat()
+        _time.sleep(0.2)
+        s2 = read_cpu_stat()
+        if s1 is None or s2 is None:
+            return jsonify({"error": "Cannot read /proc/stat"}), 500
+        # Pad to at least 10 fields
+        while len(s1) < 10: s1.append(0)
+        while len(s2) < 10: s2.append(0)
+        delta = [s2[i] - s1[i] for i in range(10)]
+        total = sum(delta)
+        def pct(v):
+            return round(v / total * 100, 2) if total else 0.0
+        fields = ["user", "nice", "system", "idle", "iowait", "irq", "softirq", "steal", "guest", "guest_nice"]
+        breakdown = {fields[i]: pct(delta[i]) for i in range(len(fields))}
+        breakdown["total_active"] = round(100.0 - pct(delta[3]) - pct(delta[4]), 2)
+        breakdown["steal_warning"] = breakdown["steal"] > 5.0
+        return jsonify(breakdown)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

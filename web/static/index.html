@@ -2276,6 +2276,10 @@
 <div class="card" id="network-bonds-card">
   <div class="card-header"><span class="card-icon">🔗</span>Network Bonds</div>
   <div class="card-body" id="network-bonds-body"><span class="loading">Loading…</span></div>
+<!-- CPU Steal -->
+<div class="card" id="cpu-steal-card">
+  <div class="card-header"><span class="card-icon">📊</span>CPU Breakdown</div>
+  <div class="card-body" id="cpu-steal-body"><span class="loading">Loading…</span></div>
 </div>
 <!-- Tailscale Status -->
 <!-- Neighbor Table -->
@@ -2287,7 +2291,12 @@
   <div class="card-header"><span class="card-icon">📂</span>Open Files</div>
   <div class="card-body" id="open-files-body"><span class="loading">Loading…</span></div>
 </div>
-  <!-- Tailscale Status -->
+  <!-- CPU Steal -->
+<div class="card" id="cpu-steal-card">
+  <div class="card-header"><span class="card-icon">📊</span>CPU Breakdown</div>
+  <div class="card-body" id="cpu-steal-body"><span class="loading">Loading…</span></div>
+</div>
+<!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
       &#x1F331; Tailscale (<span id="tailscale-online-count">0</span>/<span id="tailscale-peer-count">0</span> peers online)
@@ -6747,6 +6756,20 @@ async function loadNetworkBonds() {
   } catch(e) { document.getElementById('network-bonds-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadNetworkBonds();
+// ── CPU Steal ──
+async function loadCpuSteal() {
+  try {
+    const r = await fetch('/api/system/cpu-steal');
+    const d = await r.json();
+    if (d.error) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const stealWarn = d.steal_warning ? ' ⚠️' : '';
+    document.getElementById('cpu-steal-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Active / Idle</span><span class="stat-value">${d.total_active}% / ${d.idle}%</span></div>` +
+      `<div class="stat-row"><span class="stat-label">System / IOWait</span><span class="stat-value">${d.system}% / ${d.iowait}%</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Steal</span><span class="stat-value">${d.steal}%${stealWarn}</span></div>`;
+  } catch(e) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadCpuSteal();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 // ── Kernel Version ──
 async function loadKernelVersion() {
@@ -6761,6 +6784,20 @@ async function loadKernelVersion() {
   } catch(e) { document.getElementById('kernel-version-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadKernelVersion();
+// ── CPU Steal ──
+async function loadCpuSteal() {
+  try {
+    const r = await fetch('/api/system/cpu-steal');
+    const d = await r.json();
+    if (d.error) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const stealWarn = d.steal_warning ? ' ⚠️' : '';
+    document.getElementById('cpu-steal-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Active / Idle</span><span class="stat-value">${d.total_active}% / ${d.idle}%</span></div>` +
+      `<div class="stat-row"><span class="stat-label">System / IOWait</span><span class="stat-value">${d.system}% / ${d.iowait}%</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Steal</span><span class="stat-value">${d.steal}%${stealWarn}</span></div>`;
+  } catch(e) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadCpuSteal();
 // ── Tailscale Status ──
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -11935,6 +11972,20 @@ async function fetchInterfaceStats() {
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
+// ── CPU Steal ──
+async function loadCpuSteal() {
+  try {
+    const r = await fetch('/api/system/cpu-steal');
+    const d = await r.json();
+    if (d.error) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const stealWarn = d.steal_warning ? ' ⚠️' : '';
+    document.getElementById('cpu-steal-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Active / Idle</span><span class="stat-value">${d.total_active}% / ${d.idle}%</span></div>` +
+      `<div class="stat-row"><span class="stat-label">System / IOWait</span><span class="stat-value">${d.system}% / ${d.iowait}%</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Steal</span><span class="stat-value">${d.steal}%${stealWarn}</span></div>`;
+  } catch(e) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadCpuSteal();
 // ── Tailscale Status ──────────────────────────────────────────────────────────
 
 async function fetchTailscaleStatus() {
