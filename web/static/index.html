@@ -2005,6 +2005,14 @@
     </div>
     <div class="card-body" id="load-avg-body"></div>
   </div>
+  <!-- Packet Loss -->
+<div class="card" id="card-packet-loss">
+  <div class="card-header" onclick="toggleCard('card-packet-loss')">
+    <span>📡 Packet Loss</span>
+    <span class="badge" id="packet-loss-badge">…</span>
+  </div>
+  <div class="card-body" id="packet-loss-body"></div>
+</div>
 
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
@@ -5936,6 +5944,39 @@ async function fetchResourceLimits() {
   }
 }
 
+// ── Packet Loss ──
+async function fetchPacketLoss() {
+  const badge = document.getElementById('packet-loss-badge');
+  const body = document.getElementById('packet-loss-body');
+  try {
+    const d = await apiFetch('/api/network/packet-loss');
+    const lossColor = d.overall_loss_pct === 0 ? '#22c55e' : d.overall_loss_pct < 10 ? '#f59e0b' : '#ef4444';
+    badge.textContent = `${d.overall_loss_pct}% loss`;
+    badge.style.background = lossColor;
+    const rows = d.targets.map(t => {
+      const c = t.loss_pct === 0 ? '#22c55e' : t.loss_pct < 20 ? '#f59e0b' : '#ef4444';
+      return `<tr>
+        <td style="padding:3px 8px;font-size:13px;font-family:monospace;">${t.host}</td>
+        <td style="padding:3px 8px;font-size:13px;text-align:right;color:${c};">${t.loss_pct}%</td>
+        <td style="padding:3px 8px;font-size:13px;text-align:right;">${t.avg_ms !== null ? t.avg_ms+'ms' : '—'}</td>
+        <td style="padding:3px 8px;font-size:12px;color:${t.reachable?'#22c55e':'#ef4444'};">${t.reachable?'✓':'✗'}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Host</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Loss</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Avg RTT</th>
+        <th style="padding:3px 8px;font-size:11px;color:var(--text-dim);">Up</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -7076,6 +7117,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchOsInfo();
   fetchLoadAvg();
   fetchLoadAvgLegacy();
+  fetchPacketLoss();
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();
@@ -7425,6 +7467,7 @@ async function refreshAll() {
   fetchOsInfo();
   fetchLoadAvg();
   fetchLoadAvgLegacy();
+  fetchPacketLoss();
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();

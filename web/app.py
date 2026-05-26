@@ -16622,6 +16622,51 @@ def api_system_load_avg():
     })
 
 
+# ── Network packet loss ───────────────────────────────────────────────────────
+
+@app.route("/api/network/packet-loss", methods=["GET"])
+@require_auth
+def api_network_packet_loss():
+    """Ping 8.8.8.8 and 1.1.1.1 and report packet loss."""
+    import re, subprocess as sp
+    targets_conf = ["8.8.8.8", "1.1.1.1"]
+    results = []
+    for host in targets_conf:
+        sent = 5
+        received = 0
+        loss_pct = 100.0
+        avg_ms = None
+        try:
+            res = sp.run(
+                ["ping", "-c", "5", "-W", "2", host],
+                capture_output=True, text=True, timeout=15
+            )
+            # Parse "5 packets transmitted, 4 received, 20% packet loss"
+            m_loss = re.search(r"(\d+) packets transmitted, (\d+) received", res.stdout)
+            if m_loss:
+                sent = int(m_loss.group(1))
+                received = int(m_loss.group(2))
+                loss_pct = round((sent - received) / sent * 100, 1) if sent else 100.0
+            # Parse "rtt min/avg/max/mdev = 1.2/12.4/25.6/3.1 ms"
+            m_rtt = re.search(r"rtt .* = [\d.]+/([\d.]+)/", res.stdout)
+            if m_rtt:
+                avg_ms = float(m_rtt.group(1))
+        except Exception:
+            pass
+        results.append({
+            "host": host,
+            "sent": sent,
+            "received": received,
+            "loss_pct": loss_pct,
+            "avg_ms": avg_ms,
+            "reachable": received > 0,
+        })
+    total_sent = sum(r["sent"] for r in results)
+    total_received = sum(r["received"] for r in results)
+    overall_loss = round((total_sent - total_received) / total_sent * 100, 1) if total_sent else 100.0
+    return jsonify({"targets": results, "overall_loss_pct": overall_loss})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
