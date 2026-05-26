@@ -12120,9 +12120,10 @@ def api_system_containers():
 @app.route("/api/system/login-history", methods=["GET"])
 @require_auth
 def api_system_login_history():
-    """Return recent login history from `last` command."""
+    """Return recent login history from `last -n 20 -F`."""
 
     def _parse_last_lines(lines):
+        """Parse output of `last -n 20 -F` into structured records."""
         parsed = []
         for line in lines:
             line = line.rstrip()
@@ -12133,33 +12134,45 @@ def api_system_login_history():
                 continue
             user = parts[0]
             tty = parts[1]
-            # Determine 'from' field: if parts[2] looks like a date/dash, there is no from field
+            # parts[2]: from-host if it doesn't start with a digit or weekday abbrev
+            # With -F, login_time is "DayOfWeek Mon DD HH:MM:SS YYYY" (5 tokens)
             idx = 2
-            from_host = ""
-            if not (parts[2][0].isdigit() or parts[2].startswith("-")):
-                from_host = parts[2]
+            from_field = ""
+            day_abbrevs = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+            if parts[2] not in day_abbrevs and not parts[2][0].isdigit():
+                from_field = parts[2]
                 idx = 3
-            login_time = parts[idx] if idx < len(parts) else ""
+            # login_time: 5 tokens starting at idx (Day Mon DD HH:MM:SS YYYY)
+            if idx + 5 <= len(parts):
+                login_time = " ".join(parts[idx:idx + 5])
+            elif idx < len(parts):
+                login_time = parts[idx]
+            else:
+                login_time = ""
+            rest = " ".join(parts[idx + 5:]) if idx + 5 < len(parts) else ""
             still_logged_in = False
             logout_time = None
             duration = None
-            rest = " ".join(parts[idx + 1:]) if idx + 1 < len(parts) else ""
-            if "still logged in" in rest or "logged in" in rest:
+            if "still logged in" in rest or "still logged in" in line:
                 still_logged_in = True
             else:
                 dash_pos = rest.find(" - ")
                 if dash_pos != -1:
                     after_dash = rest[dash_pos + 3:].strip()
                     after_parts = after_dash.split()
-                    logout_time = after_parts[0] if after_parts else None
-                    paren_start = rest.find("(")
-                    paren_end = rest.find(")")
-                    if paren_start != -1 and paren_end != -1:
-                        duration = rest[paren_start + 1:paren_end]
+                    # logout_time is also 5 tokens with -F
+                    if len(after_parts) >= 5:
+                        logout_time = " ".join(after_parts[:5])
+                    elif after_parts:
+                        logout_time = after_parts[0]
+                paren_start = rest.find("(")
+                paren_end = rest.find(")")
+                if paren_start != -1 and paren_end != -1:
+                    duration = rest[paren_start + 1:paren_end]
             parsed.append({
                 "user": user,
                 "tty": tty,
-                "host": from_host,
+                "from": from_field,
                 "login_time": login_time,
                 "logout_time": logout_time,
                 "duration": duration,
@@ -12167,26 +12180,15 @@ def api_system_login_history():
             })
         return parsed
 
-    logins = []
-    out, rc = _run(["last", "-n", "30", "--time-format", "iso"])
-    if rc == 0:
-        logins = _parse_last_lines(out.splitlines())
+    out, rc = _run(["last", "-n", "20", "-F"])
+    if rc != 0:
+        return jsonify({"available": False, "logins": []})
 
-    failed_attempts = []
-    try:
-        out_b, rc_b = _run(["lastb", "-n", "10", "--time-format", "iso"])
-        if rc_b == 0:
-            failed_attempts = _parse_last_lines(out_b.splitlines())
-    except Exception:
-        pass
-
-    still_logged_in_count = sum(1 for e in logins if e["still_logged_in"])
+    logins = _parse_last_lines(out.splitlines())
     return jsonify({
+        "available": True,
         "logins": logins,
         "count": len(logins),
-        "failed_attempts": failed_attempts,
-        "failed_count": len(failed_attempts),
-        "still_logged_in": still_logged_in_count,
     })
 
 
@@ -15787,6 +15789,78 @@ def api_vpn_tailscale_peers():
         "count": len(peers),
         "online_count": online_count,
         "self": self_info,
+    })
+
+
+# ── Login History v4 ─────────────────────────────────────────────────────────
+
+@app.route("/api/system/login-history-v4", methods=["GET"])
+@require_auth
+def api_system_login_history_v4():
+    """Return recent login history using `last -n 20 -F` (full timestamps)."""
+
+    def _parse_last_lines_v4(lines):
+        parsed = []
+        day_abbrevs = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
+        for line in lines:
+            line = line.rstrip()
+            if not line or line.startswith("wtmp begins") or line.startswith("btmp begins"):
+                continue
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            user = parts[0]
+            tty = parts[1]
+            idx = 2
+            from_field = ""
+            if parts[2] not in day_abbrevs and not parts[2][0].isdigit():
+                from_field = parts[2]
+                idx = 3
+            if idx + 5 <= len(parts):
+                login_time = " ".join(parts[idx:idx + 5])
+            elif idx < len(parts):
+                login_time = parts[idx]
+            else:
+                login_time = ""
+            rest = " ".join(parts[idx + 5:]) if idx + 5 < len(parts) else ""
+            still_logged_in = False
+            logout_time = None
+            duration = None
+            if "still logged in" in rest:
+                still_logged_in = True
+            else:
+                dash_pos = rest.find(" - ")
+                if dash_pos != -1:
+                    after_dash = rest[dash_pos + 3:].strip()
+                    after_parts = after_dash.split()
+                    if len(after_parts) >= 5:
+                        logout_time = " ".join(after_parts[:5])
+                    elif after_parts:
+                        logout_time = after_parts[0]
+                paren_start = rest.find("(")
+                paren_end = rest.find(")")
+                if paren_start != -1 and paren_end != -1:
+                    duration = rest[paren_start + 1:paren_end]
+            parsed.append({
+                "user": user,
+                "tty": tty,
+                "from": from_field,
+                "login_time": login_time,
+                "logout_time": logout_time,
+                "duration": duration,
+                "still_logged_in": still_logged_in,
+            })
+        return parsed
+
+    out, rc = _run(["last", "-n", "20", "-F"])
+    if rc != 0:
+        return jsonify({"available": False, "logins": []})
+
+    logins = _parse_last_lines_v4(out.splitlines())
+    return jsonify({
+        "available": True,
+        "logins": logins,
+        "count": len(logins),
     })
 
 

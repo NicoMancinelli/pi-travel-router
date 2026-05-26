@@ -1851,6 +1851,15 @@
     <div class="card-body" id="ts-peers-body"></div>
   </div>
 
+  <!-- Login History -->
+  <div class="card" id="card-login-history">
+    <div class="card-header" onclick="toggleCard('card-login-history')">
+      <span>🔓 Login History</span>
+      <span class="badge" id="login-history-badge">…</span>
+    </div>
+    <div class="card-body" id="login-history-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6492,6 +6501,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchLogSummaryExport();
   fetchVnstatDataCap();
   fetchLoginHistory();
+  fetchLoginHistoryV4();
   fetchIfaceStats();
   fetchSystemUpdates();
   fetchConnections();
@@ -6822,6 +6832,7 @@ async function refreshAll() {
   fetchIfaceStats();
   fetchNtfyConfig();
   fetchLoginHistory();
+  fetchLoginHistoryV4();
   fetchConnectedClients();
   fetchWifiClients();
   fetchWanUplinks();
@@ -10058,6 +10069,53 @@ async function fetchEntropy() {
   } catch (e) {
     if (badge) badge.textContent = 'error';
     if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
+// ── Login History v4 ─────────────────────────────────────────────────────────
+
+async function fetchLoginHistoryV4() {
+  const badge = document.getElementById('login-history-badge');
+  const body = document.getElementById('login-history-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await fetch('/api/system/login-history-v4');
+    const d = await r.json();
+    if (badge) badge.textContent = d.available === false ? 'unavailable' : `${d.count || 0} logins`;
+    if (d.available === false) {
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">login history unavailable</p>';
+      return;
+    }
+    const logins = d.logins || [];
+    if (logins.length === 0) {
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No login records found.</p>';
+      return;
+    }
+    let html = '<div style="max-height:280px;overflow-y:auto;">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    html += '<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">';
+    html += '<th style="text-align:left;padding:2px 5px;">User</th>';
+    html += '<th style="text-align:left;padding:2px 5px;">From</th>';
+    html += '<th style="text-align:left;padding:2px 5px;">Login Time</th>';
+    html += '<th style="text-align:left;padding:2px 5px;">Duration</th>';
+    html += '</tr></thead><tbody>';
+    for (const l of logins) {
+      const active = l.still_logged_in;
+      const rowStyle = active ? 'background:rgba(22,163,74,0.1);' : '';
+      html += `<tr style="border-bottom:1px solid var(--border);${rowStyle}">`;
+      html += `<td style="padding:2px 5px;font-weight:${active ? '600' : '400'}">${l.user}</td>`;
+      html += `<td style="padding:2px 5px;color:var(--text-dim);font-size:10px">${l.from || 'console'}</td>`;
+      html += `<td style="padding:2px 5px;font-size:10px;color:var(--text-dim)">${l.login_time || '—'}</td>`;
+      html += `<td style="padding:2px 5px;">${active ? '<span style="color:#16a34a;font-size:10px;font-weight:600">● active</span>' : (l.duration || '—')}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    body.innerHTML = html;
+    if (badge) badge.textContent = `${d.count} logins`;
+  } catch (e) {
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+    if (badge) badge.textContent = 'error';
   }
 }
 
