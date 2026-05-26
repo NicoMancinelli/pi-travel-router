@@ -17166,6 +17166,34 @@ def api_system_swap_usage():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Entropy Pool ─────────────────────────────────────────────────────────────
+@app.route("/api/system/entropy-pool")
+@require_auth
+def api_system_entropy_pool():
+    """Return kernel entropy pool status."""
+    try:
+        def read_proc(path):
+            try:
+                with open(path) as f:
+                    return int(f.read().strip())
+            except (FileNotFoundError, ValueError):
+                return None
+        avail = read_proc("/proc/sys/kernel/random/entropy_avail")
+        pool_size = read_proc("/proc/sys/kernel/random/poolsize")
+        read_wakeup = read_proc("/proc/sys/kernel/random/read_wakeup_threshold")
+        write_wakeup = read_proc("/proc/sys/kernel/random/write_wakeup_threshold")
+        pct = round(avail / pool_size * 100, 1) if pool_size and avail is not None else None
+        return jsonify({
+            "entropy_avail": avail,
+            "pool_size": pool_size,
+            "read_wakeup_threshold": read_wakeup,
+            "write_wakeup_threshold": write_wakeup,
+            "fill_pct": pct,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

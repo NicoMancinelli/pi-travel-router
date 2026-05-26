@@ -2108,6 +2108,14 @@
   </div>
 </div>
 
+<!-- Entropy Pool -->
+<div class="card" id="card-entropy-pool">
+  <div class="card-header"><span>🎲 Entropy Pool</span><button class="refresh-btn" onclick="fetchEntropyPool()">↻</button></div>
+  <div class="card-body" id="entropy-pool-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6212,6 +6220,23 @@ async function fetchKernelCmdline() {
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
+// ── Entropy Pool ──
+async function fetchEntropyPool() {
+  const el = document.getElementById('entropy-pool-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/entropy-pool');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    const pct = d.fill_pct !== null ? d.fill_pct : '?';
+    el.innerHTML = `
+      <div class="stat-row"><span>Available</span><span class="val ${d.fill_pct < 20 ? 'warn' : ''}">${d.entropy_avail} bits (${pct}%)</span></div>
+      <div class="stat-row"><span>Pool size</span><span class="val">${d.pool_size} bits</span></div>
+      <div class="stat-row"><span>Read wakeup</span><span class="val">${d.read_wakeup_threshold}</span></div>
+    `;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -7835,6 +7860,7 @@ async function refreshAll() {
   fetchMulticastGroups();
   fetchKernelCmdline();
   fetchSwapUsage();
+  fetchEntropyPool();
 }
 
 async function init() {
