@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.18.0] - 2026-05-26
+
+### Added
+- `GET /api/network/network-errors` — per-interface rx/tx error and drop counters from /proc/net/dev, dashboard card ⚠️ Network Errors
+- `GET /api/system/io-scheduler` — I/O scheduler per block device from /sys/block/*/queue/scheduler, dashboard card 💿 I/O Scheduler
+
 ## [3.17.0] - 2026-05-26
 
 ### Added
