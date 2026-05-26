@@ -16279,6 +16279,42 @@ def api_system_ntp_sync():
     return jsonify(result)
 
 
+# ── Hostname info ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/hostname-info", methods=["GET"])
+@require_auth
+def api_system_hostname_info():
+    """Return hostname and OS details from hostnamectl."""
+    result = {
+        "hostname": None,
+        "static_hostname": None,
+        "pretty_hostname": None,
+        "chassis": None,
+        "machine_id": None,
+        "os_pretty_name": None,
+        "kernel": None,
+    }
+    try:
+        out, _ = _run(["hostnamectl", "show", "--no-pager"])
+        props = {}
+        for line in out.splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                props[k.strip()] = v.strip()
+        result["hostname"] = props.get("Hostname")
+        result["static_hostname"] = props.get("StaticHostname")
+        result["pretty_hostname"] = props.get("PrettyHostname", "")
+        result["chassis"] = props.get("Chassis")
+        result["machine_id"] = props.get("MachineID", "")[:8] + "..."
+        result["os_pretty_name"] = props.get("OperatingSystemPrettyName")
+        result["kernel"] = props.get("KernelName", "") + " " + props.get("KernelRelease", "")
+    except Exception:
+        import socket, platform
+        result["hostname"] = socket.gethostname()
+        result["kernel"] = platform.release()
+    return jsonify(result)
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

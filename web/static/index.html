@@ -1924,6 +1924,15 @@
     <div class="card-body" id="ntp-sync-body"></div>
   </div>
 
+  <!-- Hostname Info -->
+  <div class="card" id="card-hostname-info">
+    <div class="card-header" onclick="toggleCard('card-hostname-info')">
+      <span>🏷️ Hostname</span>
+      <span class="badge" id="hostname-info-badge">…</span>
+    </div>
+    <div class="card-body" id="hostname-info-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5756,6 +5765,32 @@ async function fetchLoadedModules() {
   }
 }
 
+// ── Hostname Info ──
+async function fetchHostnameInfo() {
+  const badge = document.getElementById('hostname-info-badge');
+  const body = document.getElementById('hostname-info-body');
+  try {
+    const d = await apiFetch('/api/system/hostname-info');
+    badge.textContent = d.hostname || 'n/a';
+    const rows = [
+      ['Hostname', d.hostname],
+      ['Static', d.static_hostname],
+      ['Pretty', d.pretty_hostname || '—'],
+      ['Chassis', d.chassis],
+      ['Machine ID', d.machine_id],
+      ['OS', d.os_pretty_name],
+      ['Kernel', d.kernel],
+    ].map(([k,v]) => `<tr>
+      <td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">${k}</td>
+      <td style="padding:3px 8px;font-size:13px;">${v || 'n/a'}</td>
+    </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">${rows}</table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -6861,6 +6896,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchThermalZones();
   fetchGatewayInfo();
   fetchLoadedModules();
+  fetchHostnameInfo();
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
@@ -7182,6 +7218,7 @@ async function refreshAll() {
   fetchThermalZones();
   fetchGatewayInfo();
   fetchLoadedModules();
+  fetchHostnameInfo();
   fetchMdnsServices();
   fetchScheduledTasks();
   fetchCronJobs();
