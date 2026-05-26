@@ -17536,6 +17536,42 @@ def api_network_mtu_info():
             "interfaces": ifaces,
             "non_standard_mtu": non_standard,
             "total": len(ifaces),
+# ── CPU Cache ────────────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/system/cpu-cache")
+@require_auth
+def api_system_cpu_cache():
+    """Return CPU cache sizes from /sys/devices/system/cpu/cpu0/cache."""
+    try:
+        import glob
+        caches = []
+        for idx_path in sorted(glob.glob(
+                "/sys/devices/system/cpu/cpu0/cache/index*")):
+            def read_cache(attr):
+                try:
+                    with open(f"{idx_path}/{attr}") as f:
+                        return f.read().strip()
+                except (FileNotFoundError, OSError):
+                    return None
+            level = read_cache("level")
+            cache_type = read_cache("type")
+            size = read_cache("size")
+            coherency = read_cache("coherency_line_size")
+            if level and cache_type:
+                caches.append({
+                    "level": int(level),
+                    "type": cache_type,
+                    "size": size,
+                    "coherency_line_size": int(coherency) if coherency and coherency.isdigit() else None,
+                })
+        caches.sort(key=lambda x: (x["level"], x["type"]))
+        return jsonify({
+            "caches": caches,
+            "total": len(caches),
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500

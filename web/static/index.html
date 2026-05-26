@@ -2168,6 +2168,10 @@
 <div class="card" id="card-mtu-info">
   <div class="card-header"><span>📏 MTU Info</span><button class="refresh-btn" onclick="fetchMtuInfo()">↻</button></div>
   <div class="card-body" id="mtu-info-body">
+<!-- CPU Cache -->
+<div class="card" id="card-cpu-cache">
+  <div class="card-header"><span>🧮 CPU Cache</span><button class="refresh-btn" onclick="fetchCpuCache()">↻</button></div>
+  <div class="card-body" id="cpu-cache-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -6384,6 +6388,22 @@ async function fetchMtuInfo() {
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
+// ── CPU Cache ──
+async function fetchCpuCache() {
+  const el = document.getElementById('cpu-cache-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/cpu-cache');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No cache info available</div>'; return; }
+    const rows = d.caches.map(c =>
+      `<div class="stat-row"><span>L${c.level} ${c.type}</span><span class="val">${c.size ?? 'N/A'}</span></div>`
+    ).join('');
+    el.innerHTML = rows;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -8015,6 +8035,7 @@ async function refreshAll() {
   fetchTcpStats();
   fetchSystemdFailed();
   fetchMtuInfo();
+  fetchCpuCache();
 }
 
 async function init() {
