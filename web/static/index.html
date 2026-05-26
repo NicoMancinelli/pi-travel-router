@@ -1537,6 +1537,17 @@
     <div id="uptime-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- Active Sessions -->
+  <div class="card" id="card-who">
+    <div class="card-header">
+      <span>&#x1F464; Active Sessions</span>
+      <span class="card-badge" id="who-badge">0</span>
+    </div>
+    <div class="card-body" id="who-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4196,6 +4207,39 @@ function closeQrModal(evt) {
   img.style.display = 'none';
 }
 
+// ── Active Sessions ───────────────────────────────────────────────────────────
+async function fetchWho() {
+  const el = document.getElementById('who-body');
+  const badge = document.getElementById('who-badge');
+  try {
+    const d = await apiFetch('/api/system/who');
+    badge.textContent = d.count;
+    if (!d.sessions || d.sessions.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim);">No active sessions</span>';
+      return;
+    }
+    const rows = d.sessions.map(s =>
+      `<tr>
+        <td style="padding:4px 8px;">${escHtml(s.user)}</td>
+        <td style="padding:4px 8px;font-family:monospace;">${escHtml(s.tty)}</td>
+        <td style="padding:4px 8px;">${escHtml(s.login_time)}</td>
+        <td style="padding:4px 8px;">${escHtml(s.from)}</td>
+      </tr>`
+    ).join('');
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr style="text-align:left;color:var(--text-dim);font-size:11px;">
+        <th style="padding:4px 8px;">User</th>
+        <th style="padding:4px 8px;">TTY</th>
+        <th style="padding:4px 8px;">Login Time</th>
+        <th style="padding:4px 8px;">From</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim);">Error loading sessions</span>';
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -5280,6 +5324,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchFirewallStats();
   fetchCpuTemp();
   fetchLoggedInUsers();
+  fetchWho();
   fetchCpuStats();
   fetchSysctl();
   fetchMemoryBreakdown();

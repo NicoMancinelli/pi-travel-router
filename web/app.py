@@ -14017,6 +14017,31 @@ def api_system_uptime():
     })
 
 
+@app.route("/api/system/who", methods=["GET"])
+@require_auth
+def api_system_who():
+    import re as _re
+    out, rc = _run(["who"])
+    sessions = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Format: user tty YYYY-MM-DD HH:MM (:0 or (host))
+        m = _re.match(
+            r'^(\S+)\s+(\S+)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})(?:\s+\(([^)]*)\))?',
+            line,
+        )
+        if m:
+            sessions.append({
+                "user": m.group(1),
+                "tty": m.group(2),
+                "login_time": m.group(3),
+                "from": m.group(4) or "",
+            })
+    return jsonify({"sessions": sessions, "count": len(sessions)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
