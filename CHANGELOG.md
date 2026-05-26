@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.87.0] - 2026-05-25
+
+### Added
+- `GET /api/network/ap-clients` — WiFi AP client list via `hostapd_cli all_sta` (primary) or `iw dev wlan0 station dump` (fallback); returns MAC, signal_dbm, rx_bytes, tx_bytes, inactive_ms per client; dashboard card 📡 WiFi AP Clients with signal quality bar and per-client table
+- Socket Statistics dashboard card 🧦 — `/api/network/sockstat` endpoint; `/proc/net/sockstat` + `/proc/net/sockstat6` parser; TCP/UDP/RAW/TCP6/UDP6 in-use, orphaned, time-wait, alloc counts; color-coded warnings for high time-wait/orphan counts
+- IRQ Statistics dashboard card ⚡ — `/api/system/interrupts` endpoint; `/proc/interrupts` parser; top-10 IRQs by total count across all CPUs; description field from interrupt name column; total interrupt count badge with fmtCount (K/M/B) formatter
+
 ## [2.86.0] - 2026-05-25
 
 ### Added
