@@ -12647,69 +12647,69 @@ def api_network_bonding():
 
 # ── System Environment ────────────────────────────────────────────────────────
 
-_ENV_SAFE_KEYS = {
-    "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "SHELL", "USER", "HOME",
-    "HOSTNAME", "TZ", "PYTHONPATH", "VIRTUAL_ENV", "DBUS_SESSION_BUS_ADDRESS",
-    "XDG_RUNTIME_DIR", "SYSTEMD_EXEC_PID",
-}
-
-_ENV_SYSTEMD_EXTRA_KEYS = {
-    "INVOCATION_ID", "JOURNAL_STREAM", "SYSTEMD_UNIT_PATH",
-}
-
-_ENV_SECRET_PATTERNS = re.compile(
-    r"PASSWORD|SECRET|TOKEN|KEY|CREDENTIAL|AUTH", re.IGNORECASE
-)
-
-
-def _env_is_safe(key):
-    """Return True if the key is allowed to be exposed."""
-    return not _ENV_SECRET_PATTERNS.search(key)
-
-
 @app.route("/api/system/environment", methods=["GET"])
 @require_auth
 def api_system_environment():
-    """Return a filtered view of process and systemd environment variables."""
-    variables = []
+    """Return key system environment facts: kernel, OS, hostname, arch, boot time."""
+    import platform
+    from datetime import timedelta
 
-    # Source 1: current process environment
-    process_allowed = _ENV_SAFE_KEYS
-    for key, value in os.environ.items():
-        if key in process_allowed and _env_is_safe(key):
-            variables.append({"key": key, "value": value, "source": "process"})
-
-    # Source 2: systemd / init environment from /proc/1/environ
-    systemd_allowed = _ENV_SAFE_KEYS | _ENV_SYSTEMD_EXTRA_KEYS
-    seen_keys = {v["key"] for v in variables}
+    # Hostname
+    hostname = "unknown"
     try:
-        raw = Path("/proc/1/environ").read_bytes()
-        for entry in raw.split(b"\x00"):
-            if b"=" not in entry:
-                continue
-            try:
-                decoded = entry.decode("utf-8", errors="replace")
-            except Exception:
-                continue
-            key, _, value = decoded.partition("=")
-            key = key.strip()
-            if not key:
-                continue
-            if key not in systemd_allowed:
-                continue
-            if not _env_is_safe(key):
-                continue
-            source = "systemd"
-            if key in seen_keys:
-                # already have a process entry — skip duplicate
-                continue
-            variables.append({"key": key, "value": value, "source": source})
-            seen_keys.add(key)
+        hostname = Path("/proc/sys/kernel/hostname").read_text(encoding="utf-8").strip()
+    except OSError:
+        hostname = platform.node()
+
+    # Kernel version (third token of /proc/version: "Linux version <kver> ...")
+    kernel = "unknown"
+    try:
+        version_line = Path("/proc/version").read_text(encoding="utf-8").strip()
+        parts = version_line.split()
+        kernel = parts[2] if len(parts) >= 3 else version_line
+    except OSError:
+        kernel = platform.release()
+
+    # Architecture
+    arch = platform.machine() or "unknown"
+
+    # OS name / version / id from /etc/os-release
+    os_name = "unknown"
+    os_version = "unknown"
+    os_id = "unknown"
+    try:
+        for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("NAME="):
+                os_name = line.split("=", 1)[1].strip("\"'")
+            elif line.startswith("VERSION="):
+                os_version = line.split("=", 1)[1].strip("\"'")
+            elif line.startswith("ID="):
+                os_id = line.split("=", 1)[1].strip("\"'")
     except OSError:
         pass
 
-    variables.sort(key=lambda v: v["key"])
-    return jsonify({"variables": variables, "total": len(variables)})
+    # Boot time and uptime from /proc/uptime
+    boot_time = "unknown"
+    uptime_seconds = 0
+    try:
+        uptime_raw = Path("/proc/uptime").read_text(encoding="utf-8").strip()
+        uptime_seconds = int(float(uptime_raw.split()[0]))
+        boot_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=uptime_seconds)
+        boot_time = boot_dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (OSError, ValueError, IndexError):
+        pass
+
+    return jsonify({
+        "hostname": hostname,
+        "kernel": kernel,
+        "arch": arch,
+        "os_name": os_name,
+        "os_version": os_version,
+        "os_id": os_id,
+        "boot_time": boot_time,
+        "uptime_seconds": uptime_seconds,
+    })
 
 
 # ── Network Socket Stats ──────────────────────────────────────────────────────
