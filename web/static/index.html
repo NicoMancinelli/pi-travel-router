@@ -2079,6 +2079,15 @@
   <div class="card-body" id="dns-test-body"></div>
 </div>
 
+<!-- Firewall Rules -->
+<div class="card" id="card-firewall-rules">
+  <div class="card-header" onclick="toggleCard('card-firewall-rules')">
+    <span>🛡️ Firewall Rules</span>
+    <span class="badge" id="firewall-rules-badge">…</span>
+  </div>
+  <div class="card-body" id="firewall-rules-body"></div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -7774,6 +7783,7 @@ async function refreshAll() {
   fetchServiceHealth();
   fetchTopMemory();
   fetchDnsTest();
+  fetchFirewallRules();
 }
 
 async function init() {
@@ -7797,6 +7807,7 @@ async function init() {
   setInterval(fetchServiceHealth, 30000);
   setInterval(fetchTopMemory, 30000);
   setInterval(fetchDnsTest, 30000);
+  setInterval(fetchFirewallRules, 30000);
   // Connect SSE event stream
   initEventStream();
 }
@@ -11155,6 +11166,39 @@ async function fetchDnsTest() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
+// ── Firewall Rules ──
+async function fetchFirewallRules() {
+  const badge = document.getElementById('firewall-rules-badge');
+  const body = document.getElementById('firewall-rules-body');
+  try {
+    const d = await apiFetch('/api/network/firewall-rules');
+    badge.textContent = `${d.total_rules} rules`;
+    if (d.total_rules === 0) {
+      badge.style.background = '#ef4444';
+    }
+    const rows = d.chains.map(c => `<tr>
+      <td style="padding:2px 8px;font-size:12px;color:var(--text-dim);">${c.table}</td>
+      <td style="padding:2px 8px;font-size:13px;font-family:monospace;">${c.chain}</td>
+      <td style="padding:2px 8px;font-size:12px;color:${c.policy === 'drop' ? '#22c55e' : c.policy === 'accept' ? '#f59e0b' : '#6b7280'};">${c.policy || '—'}</td>
+      <td style="padding:2px 8px;font-size:13px;text-align:right;">${c.rules}</td>
+    </tr>`).join('');
+    body.innerHTML = `
+      <div style="font-size:11px;color:var(--text-dim);margin:4px 8px;">backend: ${d.backend} · ${d.total_chains} chains</div>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead><tr>
+          <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Table</th>
+          <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Chain</th>
+          <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Policy</th>
+          <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Rules</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
     if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;

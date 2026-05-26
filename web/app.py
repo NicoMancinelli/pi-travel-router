@@ -16963,6 +16963,92 @@ def api_network_dns_test():
         "all_passed": passed == len(tests),
         "passed": passed,
         "failed": len(tests) - passed,
+# ── Firewall rules summary ────────────────────────────────────────────────────
+
+@app.route("/api/network/firewall-rules", methods=["GET"])
+@require_auth
+def api_network_firewall_rules():
+    """Return firewall rules summary from nftables or iptables."""
+    import re
+    chains = []
+    backend = "none"
+    total_rules = 0
+
+    # Try nftables first
+    try:
+        out, _ = _run(["nft", "list", "ruleset"])
+        backend = "nftables"
+        current_table = None
+        current_chain = None
+        current_policy = None
+        rule_count = 0
+        for line in out.splitlines():
+            line = line.strip()
+            m_table = re.match(r"^table\s+(\w+\s+\w+)\s*\{", line)
+            if m_table:
+                current_table = m_table.group(1)
+                continue
+            m_chain = re.match(r"^chain\s+(\w+)\s*\{", line)
+            if m_chain:
+                if current_chain and current_table:
+                    chains.append({
+                        "table": current_table,
+                        "chain": current_chain,
+                        "policy": current_policy,
+                        "rules": rule_count,
+                    })
+                    total_rules += rule_count
+                current_chain = m_chain.group(1)
+                current_policy = None
+                rule_count = 0
+                continue
+            m_policy = re.search(r"policy\s+(\w+)", line)
+            if m_policy:
+                current_policy = m_policy.group(1)
+                continue
+            if line and not line.startswith("}") and not line.startswith("type"):
+                rule_count += 1
+        if current_chain and current_table:
+            chains.append({
+                "table": current_table,
+                "chain": current_chain,
+                "policy": current_policy,
+                "rules": rule_count,
+            })
+            total_rules += rule_count
+    except Exception:
+        pass
+
+    # Fallback: iptables
+    if not chains:
+        try:
+            out, _ = _run(["iptables", "-L", "-n", "--line-numbers"])
+            backend = "iptables"
+            current_chain = None
+            rule_count = 0
+            current_policy = None
+            for line in out.splitlines():
+                m_chain = re.match(r"^Chain\s+(\S+)\s+\(policy\s+(\w+)", line)
+                if m_chain:
+                    if current_chain:
+                        chains.append({"table": "filter", "chain": current_chain, "policy": current_policy, "rules": rule_count})
+                        total_rules += rule_count
+                    current_chain = m_chain.group(1)
+                    current_policy = m_chain.group(2).lower()
+                    rule_count = 0
+                elif line and not line.startswith("num") and not line.startswith("target") and current_chain:
+                    rule_count += 1
+            if current_chain:
+                chains.append({"table": "filter", "chain": current_chain, "policy": current_policy, "rules": rule_count})
+                total_rules += rule_count
+        except Exception:
+            pass
+
+    return jsonify({
+        "backend": backend,
+        "chains": chains,
+        "total_rules": total_rules,
+        "total_chains": len(chains),
     })
 
 
