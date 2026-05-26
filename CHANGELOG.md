@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.99.0] - 2026-05-25
+
+### Added
+- `GET /api/network/open-ports` — listening sockets via `ss -tlnp`/`ss -ulnp`; returns `ports[]` with proto, local_addr, port, state, process; sorted by port ascending; dashboard card 🔓 Open Ports with Proto/Address/Port/Process table
+- `GET /api/system/package-updates` — read-only `apt list --upgradable`; flags security updates; returns `updates[]` with name/current/available/arch, `security_updates` count; dashboard card 📦 Package Updates with colour-coded SEC badges
+- `GET /api/network/wifi-scan` — nearby WiFi via `iw dev scan` / `iwlist scan` fallback; auto-detects interface; returns `networks[]` sorted by signal strength; dashboard card 📻 WiFi Scan with signal bar (green/yellow/orange/red thresholds)
+
 ## [2.98.0] - 2026-05-25
 
 ### Added
