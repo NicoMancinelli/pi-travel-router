@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.20.0] - 2026-05-26
+
+### Added
+- `GET /api/system/systemd-failed` — failed systemd units via systemctl list-units --state=failed, dashboard card 🔴 Systemd Failed
+- `GET /api/network/mtu-info` — MTU per interface from /sys/class/net with non-standard MTU flagging, dashboard card 📏 MTU Info
+- `GET /api/system/cpu-cache` — CPU cache levels/sizes from /sys/devices/system/cpu/cpu0/cache, dashboard card 🧮 CPU Cache
+
 ## [3.19.0] - 2026-05-26
 
 ### Added
