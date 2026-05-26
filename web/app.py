@@ -18155,6 +18155,44 @@ def api_system_numa_info():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Kernel Version ─────────────────────────────────────────────────────────────
+@app.route("/api/system/kernel-version")
+@require_auth
+def api_system_kernel_version():
+    """Return kernel and OS version details."""
+    try:
+        import platform, subprocess
+        release = platform.release()
+        machine = platform.machine()
+        version = platform.version()
+        proc_version = ""
+        try:
+            with open("/proc/version") as fh:
+                proc_version = fh.read().strip()
+        except OSError:
+            pass
+        os_pretty = ""
+        try:
+            with open("/etc/os-release") as fh:
+                for line in fh:
+                    if line.startswith("PRETTY_NAME="):
+                        os_pretty = line.split("=", 1)[1].strip().strip('"')
+                        break
+        except OSError:
+            pass
+        is_64bit = machine in ("x86_64", "aarch64", "arm64")
+        return jsonify({
+            "release": release,
+            "version": version,
+            "machine": machine,
+            "is_64bit": is_64bit,
+            "proc_version": proc_version,
+            "os_pretty": os_pretty,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Socket Stats ───────────────────────────────────────────────────────────────
 @app.route("/api/network/socket-stats")
 @require_auth

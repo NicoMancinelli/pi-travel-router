@@ -2261,6 +2261,10 @@
 <div class="card" id="socket-stats-card">
   <div class="card-header"><span class="card-icon">🔌</span>Socket Stats</div>
   <div class="card-body" id="socket-stats-body"><span class="loading">Loading...</span></div>
+<!-- Kernel Version -->
+<div class="card" id="kernel-version-card">
+  <div class="card-header"><span class="card-icon">🐧</span>Kernel Version</div>
+  <div class="card-body" id="kernel-version-body"><span class="loading">Loading…</span></div>
 </div>
 <!-- Tailscale Status -->
 <!-- Neighbor Table -->
@@ -6722,6 +6726,20 @@ async function loadSocketStats() {
 }
 loadSocketStats();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
+// ── Kernel Version ──
+async function loadKernelVersion() {
+  try {
+    const r = await fetch('/api/system/kernel-version');
+    const d = await r.json();
+    if (d.error) { document.getElementById('kernel-version-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    document.getElementById('kernel-version-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Kernel</span><span class="stat-value">${d.release} (${d.machine})</span></div>` +
+      `<div class="stat-row"><span class="stat-label">OS</span><span class="stat-value">${d.os_pretty || '—'}</span></div>` +
+      `<div class="stat-row"><span class="stat-label">64-bit</span><span class="stat-value">${d.is_64bit ? 'Yes' : 'No'}</span></div>`;
+  } catch(e) { document.getElementById('kernel-version-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadKernelVersion();
+// ── Tailscale Status ──
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
 async function fetchNetIfaces() {
