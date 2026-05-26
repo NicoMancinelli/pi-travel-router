@@ -2258,6 +2258,10 @@
 <div class="card" id="neighbor-table-card">
   <div class="card-header"><span class="card-icon">🔗</span>Neighbor Table</div>
   <div class="card-body" id="neighbor-table-body"><span class="loading">Loading...</span></div>
+<!-- Open Files -->
+<div class="card" id="open-files-card">
+  <div class="card-header"><span class="card-icon">📂</span>Open Files</div>
+  <div class="card-body" id="open-files-body"><span class="loading">Loading…</span></div>
 </div>
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
@@ -6669,6 +6673,18 @@ async function loadNeighborTable() {
   } catch(e) { document.getElementById('neighbor-table-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadNeighborTable();
+// ── Open Files ──
+async function loadOpenFiles() {
+  try {
+    const r = await fetch('/api/system/open-files');
+    const d = await r.json();
+    if (d.error) { document.getElementById('open-files-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const top = d.top_processes.map(p => `<div class="stat-row"><span class="stat-label">${p.name}</span><span class="stat-value">${p.fds} fds</span></div>`).join('');
+    document.getElementById('open-files-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Used / Max</span><span class="stat-value">${d.used} / ${d.maximum} (${d.used_pct}%)</span></div>` + top;
+  } catch(e) { document.getElementById('open-files-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadOpenFiles();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────

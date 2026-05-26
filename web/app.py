@@ -18063,6 +18063,53 @@ def api_network_neighbor_table():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ── Open Files ─────────────────────────────────────────────────────────────────
+@app.route("/api/system/open-files")
+@require_auth
+def api_system_open_files():
+    """Return open file descriptor stats."""
+    try:
+        import os, glob
+        allocated = free_fds = maximum = 0
+        try:
+            with open("/proc/sys/fs/file-nr") as fh:
+                parts = fh.read().strip().split()
+                allocated = int(parts[0])
+                free_fds = int(parts[1])
+                maximum = int(parts[2])
+        except OSError:
+            pass
+        top_procs = []
+        try:
+            proc_fds = []
+            for fd_dir in glob.glob("/proc/[0-9]*/fd"):
+                pid = fd_dir.split("/")[2]
+                try:
+                    count = len(os.listdir(fd_dir))
+                    try:
+                        with open(f"/proc/{pid}/comm") as fh:
+                            name = fh.read().strip()
+                    except OSError:
+                        name = pid
+                    proc_fds.append({"pid": pid, "name": name, "fds": count})
+                except (OSError, PermissionError):
+                    pass
+            top_procs = sorted(proc_fds, key=lambda x: x["fds"], reverse=True)[:5]
+        except Exception:
+            pass
+        used = allocated - free_fds
+        return jsonify({
+            "allocated": allocated,
+            "free": free_fds,
+            "used": used,
+            "maximum": maximum,
+            "used_pct": round(allocated / maximum * 100, 1) if maximum else 0,
+            "top_processes": top_procs,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
