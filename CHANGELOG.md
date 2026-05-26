@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.23.0] - 2026-05-26
+
+### Added
+- `GET /api/network/nftables-counters` — nftables named counters with packet/byte counts via nft -j, dashboard card 🔢 Nftables Counters
+- `GET /api/system/memory-zones` — kernel memory zone free/managed MB from /proc/zoneinfo, dashboard card 🗺️ Memory Zones
+- `GET /api/system/login-history` — last 20 login records via the last command, dashboard card 📜 Login History
+
 ## [3.22.0] - 2026-05-26
 
 ### Added
