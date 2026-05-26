@@ -17917,6 +17917,47 @@ def api_network_resolved_dns():
         return jsonify({"error": str(e)}), 500
 
 
+# ── CPU Frequency ──────────────────────────────────────────────────────────────
+@app.route("/api/system/cpu-frequency")
+@require_auth
+def api_system_cpu_frequency():
+    """Return per-core CPU frequency info."""
+    try:
+        import glob
+        cores = []
+        cpu_dirs = sorted(glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq"))
+        for cpu_dir in cpu_dirs:
+            core_id = cpu_dir.split("/")[-2]
+            def read_khz(path):
+                try:
+                    with open(path) as fh:
+                        return int(fh.read().strip())
+                except Exception:
+                    return None
+            cur = read_khz(f"{cpu_dir}/scaling_cur_freq")
+            mn = read_khz(f"{cpu_dir}/scaling_min_freq")
+            mx = read_khz(f"{cpu_dir}/scaling_max_freq")
+            if cur is not None:
+                cores.append({
+                    "core": core_id,
+                    "current_mhz": round(cur / 1000, 1),
+                    "min_mhz": round(mn / 1000, 1) if mn else None,
+                    "max_mhz": round(mx / 1000, 1) if mx else None,
+                })
+        if not cores:
+            import subprocess
+            out = subprocess.check_output(["grep", "-m1", "cpu MHz", "/proc/cpuinfo"], text=True)
+            mhz = float(out.split(":")[1].strip())
+            cores.append({"core": "cpu0", "current_mhz": mhz, "min_mhz": None, "max_mhz": None})
+        avg_mhz = round(sum(c["current_mhz"] for c in cores) / len(cores), 1) if cores else 0
+        return jsonify({
+            "cores": cores,
+            "count": len(cores),
+            "avg_mhz": avg_mhz,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

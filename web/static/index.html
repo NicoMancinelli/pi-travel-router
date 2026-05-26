@@ -2239,6 +2239,11 @@
     </div>
   </div>
 
+  <!-- CPU Frequency -->
+<div class="card" id="cpu-freq-card">
+  <div class="card-header"><span class="card-icon">⚡</span>CPU Frequency</div>
+  <div class="card-body" id="cpu-freq-body"><span class="loading">Loading…</span></div>
+</div>
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6595,6 +6600,20 @@ async function fetchResolvedDns() {
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
+// ── CPU Frequency ──
+async function loadCpuFrequency() {
+  try {
+    const r = await fetch('/api/system/cpu-frequency');
+    const d = await r.json();
+    if (d.error) { document.getElementById('cpu-freq-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const rows = d.cores.map(c => {
+      const pct = c.max_mhz ? Math.round((c.current_mhz / c.max_mhz) * 100) : null;
+      return `<div class="stat-row"><span class="stat-label">${c.core}</span><span class="stat-value">${c.current_mhz} MHz${pct !== null ? ` (${pct}%)` : ''}</span></div>`;
+    }).join('');
+    document.getElementById('cpu-freq-body').innerHTML = `<div class="stat-row"><span class="stat-label">Avg</span><span class="stat-value">${d.avg_mhz} MHz</span></div>${rows}`;
+  } catch(e) { document.getElementById('cpu-freq-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadCpuFrequency();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
