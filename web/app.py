@@ -17837,6 +17837,41 @@ def api_system_dmesg_errors():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Interface Stats ──────────────────────────────────────────────────────────
+@app.route("/api/network/interface-stats")
+@require_auth
+def api_network_interface_stats():
+    """Return per-interface TX/RX bytes and packets from /proc/net/dev."""
+    try:
+        ifaces = []
+        try:
+            with open("/proc/net/dev") as f:
+                lines = f.readlines()[2:]
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 17:
+                    continue
+                iface = parts[0].rstrip(":")
+                ifaces.append({
+                    "iface": iface,
+                    "rx_bytes": int(parts[1]),
+                    "rx_packets": int(parts[2]),
+                    "tx_bytes": int(parts[9]),
+                    "tx_packets": int(parts[10]),
+                    "rx_mb": round(int(parts[1]) / 1024 / 1024, 2),
+                    "tx_mb": round(int(parts[9]) / 1024 / 1024, 2),
+                })
+        except FileNotFoundError:
+            pass
+        ifaces.sort(key=lambda x: x["rx_bytes"] + x["tx_bytes"], reverse=True)
+        return jsonify({
+            "interfaces": ifaces,
+            "total": len(ifaces),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

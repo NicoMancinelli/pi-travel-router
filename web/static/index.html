@@ -2211,6 +2211,10 @@
 <div class="card" id="card-dmesg-errors">
   <div class="card-header"><span>🚨 Dmesg Errors</span><button class="refresh-btn" onclick="fetchDmesgErrors()">↻</button></div>
   <div class="card-body" id="dmesg-errors-body">
+<!-- Interface Stats -->
+<div class="card" id="card-interface-stats">
+  <div class="card-header"><span>📈 Interface Stats</span><button class="refresh-btn" onclick="fetchInterfaceStats()">↻</button></div>
+  <div class="card-body" id="interface-stats-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -8211,6 +8215,7 @@ async function refreshAll() {
   fetchDiskTemp();
   fetchNftablesCounters();
   fetchMemoryZones();
+  fetchInterfaceStats();
 }
 
 async function init() {
@@ -11724,6 +11729,22 @@ async function fetchLoginHistory() {
       `<div class="stat-row"><span>${l.user}@${l.tty}</span><span class="val">${l.from}</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Recent logins</span><span class="val">${d.total}</span></div>${rows}`;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
+// ── Interface Stats ──
+async function fetchInterfaceStats() {
+  const el = document.getElementById('interface-stats-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/network/interface-stats');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No interfaces</div>'; return; }
+    const rows = d.interfaces.filter(i => i.iface !== 'lo').slice(0, 8).map(i =>
+      `<div class="stat-row"><span>${i.iface}</span><span class="val">↓${i.rx_mb} MB ↑${i.tx_mb} MB</span></div>`
+    ).join('');
+    el.innerHTML = rows;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
