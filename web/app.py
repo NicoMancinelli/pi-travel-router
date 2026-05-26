@@ -18017,6 +18017,52 @@ def api_system_hugepages():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ── Neighbor Table ─────────────────────────────────────────────────────────────
+@app.route("/api/network/neighbor-table")
+@require_auth
+def api_network_neighbor_table():
+    """Return ARP/NDP neighbor cache via ip neigh."""
+    try:
+        import subprocess, json as _json
+        entries = []
+        try:
+            out = subprocess.check_output(["ip", "-j", "neigh", "show"], text=True, stderr=subprocess.DEVNULL)
+            raw = _json.loads(out)
+            for n in raw:
+                entries.append({
+                    "dst": n.get("dst", ""),
+                    "dev": n.get("dev", ""),
+                    "lladdr": n.get("lladdr", ""),
+                    "state": n.get("state", []),
+                    "router": n.get("router", False),
+                })
+        except Exception:
+            out = subprocess.check_output(["ip", "neigh", "show"], text=True)
+            for line in out.strip().splitlines():
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                entry = {"dst": parts[0], "dev": "", "lladdr": "", "state": [], "router": False}
+                for i, p in enumerate(parts):
+                    if p == "dev" and i + 1 < len(parts): entry["dev"] = parts[i + 1]
+                    if p == "lladdr" and i + 1 < len(parts): entry["lladdr"] = parts[i + 1]
+                if parts[-1] not in ("dev", "lladdr"):
+                    entry["state"] = [parts[-1]]
+                entries.append(entry)
+        reachable = [e for e in entries if "REACHABLE" in e["state"]]
+        stale = [e for e in entries if "STALE" in e["state"]]
+        failed = [e for e in entries if "FAILED" in e["state"]]
+        return jsonify({
+            "entries": entries,
+            "count": len(entries),
+            "reachable": len(reachable),
+            "stale": len(stale),
+            "failed": len(failed),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

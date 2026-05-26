@@ -2254,6 +2254,12 @@
   <div class="card-body" id="hugepages-body"><span class="loading">Loading…</span></div>
 </div>
 <!-- Tailscale Status -->
+<!-- Neighbor Table -->
+<div class="card" id="neighbor-table-card">
+  <div class="card-header"><span class="card-icon">🔗</span>Neighbor Table</div>
+  <div class="card-body" id="neighbor-table-body"><span class="loading">Loading...</span></div>
+</div>
+  <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
       &#x1F331; Tailscale (<span id="tailscale-online-count">0</span>/<span id="tailscale-peer-count">0</span> peers online)
@@ -6650,6 +6656,19 @@ async function loadHugepages() {
   } catch(e) { document.getElementById('hugepages-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadHugepages();
+// ── Neighbor Table ──
+async function loadNeighborTable() {
+  try {
+    const r = await fetch('/api/network/neighbor-table');
+    const d = await r.json();
+    if (d.error) { document.getElementById('neighbor-table-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    document.getElementById('neighbor-table-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Total entries</span><span class="stat-value">${d.count}</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Reachable</span><span class="stat-value">${d.reachable}</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Stale / Failed</span><span class="stat-value">${d.stale} / ${d.failed}</span></div>`;
+  } catch(e) { document.getElementById('neighbor-table-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadNeighborTable();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
