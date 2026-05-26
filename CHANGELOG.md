@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.26.0] — 2026-05-26
+
+### Added
+- `GET /api/system/hugepages` — huge pages stats from /proc/meminfo plus transparent hugepages mode
+- `GET /api/network/neighbor-table` — ARP/NDP neighbor cache via ip -j neigh with reachable/stale/failed counts
+- `GET /api/system/open-files` — system fd stats from /proc/sys/fs/file-nr with top-5 process consumers
+
 ## [3.25.0] — 2026-05-26
 
 ### Added
