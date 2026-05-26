@@ -5788,7 +5788,6 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchKmod();
   fetchDnsStats();
   fetchDiskstats();
-  fetchSysEnv();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
@@ -5925,7 +5924,6 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSwapDetail();
   fetchMdnsServicesV2();
   fetchArpTableV3();
-  fetchSshKeysV3();
 });
 
 async function fetchJournal() {
@@ -6106,7 +6104,6 @@ async function refreshAll() {
   fetchUplinkScan();
   fetchUplinkHistory();
   fetchApConfig();
-  fetchSysEnv();
   fetchTailscalePeers();
   fetchTsExitNode();
   fetchMdnsServices();
@@ -6250,7 +6247,6 @@ async function refreshAll() {
   fetchSwapDetail();
   fetchMdnsServicesV2();
   fetchArpTableV3();
-  fetchSshKeysV3();
 }
 
 async function init() {
