@@ -15461,62 +15461,6 @@ def api_system_irq_stats():
     return jsonify({"cpu_count": cpu_count, "total_interrupts": total_interrupts, "irqs": top})
 
 
-# ── Network Interfaces Detail ─────────────────────────────────────────────────
-
-@app.route("/api/network/interfaces", methods=["GET"])
-@require_auth
-def api_network_interfaces():
-    """Return detailed info for all network interfaces via `ip -j addr show`."""
-    out, rc = _run(["ip", "-j", "addr", "show"], timeout=5)
-    if rc != 0 or not out.strip():
-        return jsonify({"error": "ip command failed", "interfaces": [], "count": 0, "up_count": 0}), 500
-
-    try:
-        raw = json.loads(out)
-    except ValueError:
-        return jsonify({"error": "failed to parse ip output", "interfaces": [], "count": 0, "up_count": 0}), 500
-
-    interfaces = []
-    for iface in raw:
-        name = iface.get("ifname", "")
-        if name == "lo":
-            continue
-
-        state = iface.get("operstate", "UNKNOWN").upper()
-        mac = iface.get("address", "")
-        mtu = iface.get("mtu", 0)
-        flags = [f.upper() for f in iface.get("flags", [])]
-
-        addresses = []
-        for addr in iface.get("addr_info", []):
-            family = addr.get("family", "")
-            entry = {
-                "family": family,
-                "addr": addr.get("local", ""),
-                "prefix": addr.get("prefixlen", 0),
-            }
-            if family == "inet" and "broadcast" in addr:
-                entry["broadcast"] = addr["broadcast"]
-            if family == "inet6":
-                entry["scope"] = addr.get("scope", "")
-            addresses.append(entry)
-
-        interfaces.append({
-            "name": name,
-            "state": state,
-            "mac": mac,
-            "mtu": mtu,
-            "flags": flags,
-            "addresses": addresses,
-        })
-
-    up_count = sum(1 for i in interfaces if i["state"] == "UP")
-    return jsonify({
-        "interfaces": interfaces,
-        "count": len(interfaces),
-        "up_count": up_count,
-    })
-
 
 @app.route("/api/vpn/wireguard/peer-health", methods=["GET"])
 @require_auth
