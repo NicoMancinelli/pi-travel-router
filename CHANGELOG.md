@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-05-26
+
+### Added
+- `GET /api/network/lease-summary` — DHCP leases from `/var/lib/misc/dnsmasq.leases`; returns `leases[]` with mac/ip/hostname/expires_in_min, `total`; dashboard card 📋 DHCP Leases with expiry countdown
+- `GET /api/system/load-avg` — load averages from `/proc/loadavg`; classifies idle/normal/high/overloaded vs CPU count; returns `load_1m/5m/15m`, `running_processes`, `total_processes`, `cpu_count`, `status`; dashboard card 📈 Load Average with fill bar
+- `GET /api/network/packet-loss` — pings 8.8.8.8 and 1.1.1.1 with 5 packets each; returns per-target `loss_pct`, `avg_ms`, `reachable`, and `overall_loss_pct`; dashboard card 📡 Packet Loss with colour-coded table
+
 ## [3.10.0] - 2026-05-26
 
 ### Added
