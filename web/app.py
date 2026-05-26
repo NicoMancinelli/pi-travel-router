@@ -18289,6 +18289,54 @@ def api_system_process_count():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ── Network Bonds ──────────────────────────────────────────────────────────────
+@app.route("/api/network/network-bonds")
+@require_auth
+def api_network_network_bonds():
+    """Return bonded interface info from /proc/net/bonding/."""
+    try:
+        import glob
+        bonds = []
+        for bond_file in glob.glob("/proc/net/bonding/*"):
+            bond_name = bond_file.split("/")[-1]
+            mode = active_slave = ""
+            slaves = []
+            current_slave = None
+            try:
+                with open(bond_file) as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line.startswith("Bonding Mode:"):
+                            mode = line.split(":", 1)[1].strip()
+                        elif line.startswith("Currently Active Slave:"):
+                            active_slave = line.split(":", 1)[1].strip()
+                        elif line.startswith("Slave Interface:"):
+                            if current_slave:
+                                slaves.append(current_slave)
+                            current_slave = {"interface": line.split(":", 1)[1].strip(), "state": "", "link": ""}
+                        elif current_slave and line.startswith("MII Status:"):
+                            current_slave["link"] = line.split(":", 1)[1].strip()
+                        elif current_slave and line.startswith("Slave queue ID:"):
+                            pass
+                    if current_slave:
+                        slaves.append(current_slave)
+            except OSError:
+                pass
+            bonds.append({
+                "name": bond_name,
+                "mode": mode,
+                "active_slave": active_slave,
+                "slaves": slaves,
+                "slave_count": len(slaves),
+            })
+        return jsonify({
+            "bonds": bonds,
+            "count": len(bonds),
+            "bonding_active": len(bonds) > 0,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

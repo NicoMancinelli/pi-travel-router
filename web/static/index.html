@@ -2272,6 +2272,11 @@
   <div class="card-header"><span class="card-icon">⚙️</span>Processes</div>
   <div class="card-body" id="process-count-body"><span class="loading">Loading…</span></div>
 </div>
+<!-- Network Bonds -->
+<div class="card" id="network-bonds-card">
+  <div class="card-header"><span class="card-icon">🔗</span>Network Bonds</div>
+  <div class="card-body" id="network-bonds-body"><span class="loading">Loading…</span></div>
+</div>
 <!-- Tailscale Status -->
 <!-- Neighbor Table -->
 <div class="card" id="neighbor-table-card">
@@ -6728,6 +6733,20 @@ async function loadProcessCount() {
   } catch(e) { document.getElementById('process-count-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadProcessCount();
+// ── Network Bonds ──
+async function loadNetworkBonds() {
+  try {
+    const r = await fetch('/api/network/network-bonds');
+    const d = await r.json();
+    if (d.error) { document.getElementById('network-bonds-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    if (!d.bonding_active) { document.getElementById('network-bonds-body').innerHTML = '<span class="muted">No bonds configured</span>'; return; }
+    const rows = d.bonds.map(b =>
+      `<div class="stat-row"><span class="stat-label">${b.name} (${b.mode.slice(0,15)})</span><span class="stat-value">active: ${b.active_slave||'—'}</span></div>`
+    ).join('');
+    document.getElementById('network-bonds-body').innerHTML = rows;
+  } catch(e) { document.getElementById('network-bonds-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadNetworkBonds();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 // ── Kernel Version ──
 async function loadKernelVersion() {
