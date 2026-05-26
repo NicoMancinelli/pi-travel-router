@@ -17189,6 +17189,40 @@ def api_system_entropy_pool():
             "read_wakeup_threshold": read_wakeup,
             "write_wakeup_threshold": write_wakeup,
             "fill_pct": pct,
+# ── ARP Table ────────────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/network/arp-table")
+@require_auth
+def api_network_arp_table():
+    """Return ARP cache entries from /proc/net/arp."""
+    try:
+        entries = []
+        try:
+            with open("/proc/net/arp") as f:
+                next(f)  # skip header
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        entries.append({
+                            "ip": parts[0],
+                            "hw_type": parts[1],
+                            "flags": parts[2],
+                            "mac": parts[3],
+                            "mask": parts[4],
+                            "iface": parts[5],
+                        })
+        except FileNotFoundError:
+            pass
+        complete = [e for e in entries if e["mac"] != "00:00:00:00:00:00"]
+        return jsonify({
+            "entries": entries,
+            "complete": complete,
+            "total": len(entries),
+            "reachable": len(complete),
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
