@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.95.0] - 2026-05-25
+
+### Added
+- `GET /api/network/route-table` — IP routing table via `ip route show`; returns `routes[]` with `dest`, `gateway`, `dev`, `metric`, `proto`, `scope`, plus `default_gw`/`default_dev`; dashboard card 🗺️ Route Table with default-route highlighted in blue
+- `GET /api/system/failed-units` — systemd failed units via `systemctl list-units --state=failed`; returns `units[]`, `count`, `healthy`; dashboard card 🚨 Failed Units with green "✓ healthy" or red "N failed" badge
+- `GET /api/system/swap-detail` — per-device swap stats from `/proc/swaps` cross-checked with `/proc/meminfo`; returns `devices[]`, `total_kb`, `used_kb`, `free_kb`, `used_pct`; dashboard card 💾 Swap with colour-coded usage bar and per-device table
+
 ## [2.94.0] - 2026-05-25
 
 ### Added

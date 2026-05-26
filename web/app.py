@@ -14598,6 +14598,7 @@ def api_network_route_table():
         "count": len(routes),
         "default_gw": default_gw,
         "default_dev": default_dev,
+    })
 @app.route("/api/system/swap-detail", methods=["GET"])
 @require_auth
 def api_system_swap_detail():
