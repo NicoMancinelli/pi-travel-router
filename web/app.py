@@ -15614,6 +15614,156 @@ def api_network_speedtest_post():
     return jsonify({"error": "no speedtest method available", "download_mbps": None})
 
 
+# ── CPU Frequency v3 ──────────────────────────────────────────────────────────
+
+@app.route("/api/system/cpu-freq", methods=["GET"])
+@require_auth
+def api_system_cpu_freq_v3():
+    """Return per-core CPU frequency and governor from sysfs cpufreq interface."""
+    cpufreq_base = Path("/sys/devices/system/cpu")
+    cpu_dirs = sorted(
+        cpufreq_base.glob("cpu[0-9]*"),
+        key=lambda p: int(p.name[3:]),
+    )
+    cores = []
+    for cpu_dir in cpu_dirs:
+        freq_dir = cpu_dir / "cpufreq"
+        if not freq_dir.exists():
+            continue
+        def _read(fname, d=freq_dir):
+            try:
+                return (d / fname).read_text().strip()
+            except OSError:
+                return None
+        def _khz_to_mhz(val):
+            try:
+                return int(val) / 1000.0
+            except (TypeError, ValueError):
+                return 0.0
+        core_id = int(cpu_dir.name[3:])
+        cores.append({
+            "core": core_id,
+            "freq_mhz": _khz_to_mhz(_read("scaling_cur_freq")),
+            "min_mhz": _khz_to_mhz(_read("scaling_min_freq")),
+            "max_mhz": _khz_to_mhz(_read("scaling_max_freq")),
+            "governor": _read("scaling_governor") or "",
+        })
+    if not cores:
+        return jsonify({"available": False, "cores": []})
+    avg_freq_mhz = round(sum(c["freq_mhz"] for c in cores) / len(cores), 1)
+    governor = cores[0]["governor"]
+    return jsonify({
+        "cores": cores,
+        "core_count": len(cores),
+        "avg_freq_mhz": avg_freq_mhz,
+        "governor": governor,
+    })
+
+
+# ── Entropy Pool ──────────────────────────────────────────────────────────────
+
+@app.route("/api/system/entropy")
+@require_auth
+def api_system_entropy():
+    """Return kernel entropy pool status from /proc/sys/kernel/random/."""
+    _rnd = Path("/proc/sys/kernel/random")
+
+    def _read_int(name: str) -> int:
+        try:
+            return int((_rnd / name).read_text().strip())
+        except (OSError, ValueError):
+            return 0
+
+    entropy_avail = _read_int("entropy_avail")
+    pool_size = _read_int("pool_size") or 256
+    write_wakeup_threshold = _read_int("write_wakeup_threshold")
+    urandom_min_reseed_secs = _read_int("urandom_min_reseed_secs")
+
+    fill_pct = round(entropy_avail / pool_size * 100, 1) if pool_size else 0.0
+
+    # RNG source detection
+    hw_rng = Path("/sys/class/misc/hw_random/rng_current")
+    if hw_rng.exists():
+        try:
+            rng_source = hw_rng.read_text().strip() or "hardware"
+        except OSError:
+            rng_source = "hardware"
+    elif entropy_avail > 2048:
+        rng_source = "jitter"
+    else:
+        rng_source = "software"
+
+    # Health classification
+    if fill_pct > 50:
+        health = "good"
+    elif fill_pct >= 25:
+        health = "low"
+    else:
+        health = "critical"
+
+    return jsonify({
+        "entropy_avail": entropy_avail,
+        "pool_size": pool_size,
+        "fill_pct": fill_pct,
+        "write_wakeup_threshold": write_wakeup_threshold,
+        "urandom_min_reseed_secs": urandom_min_reseed_secs,
+        "rng_source": rng_source,
+        "health": health,
+    })
+
+
+# ── Tailscale Peers v2 ───────────────────────────────────────────────────────
+
+@app.route("/api/vpn/tailscale/peers", methods=["GET"])
+@require_auth
+def api_vpn_tailscale_peers():
+    """Return Tailscale peers from 'tailscale status --json'."""
+    import json as _json
+
+    out, rc = _run(["tailscale", "status", "--json"], timeout=10)
+    if rc != 0 or not out:
+        return jsonify({"available": False, "peers": [], "count": 0})
+
+    try:
+        data = _json.loads(out)
+    except ValueError:
+        return jsonify({"available": False, "peers": [], "count": 0})
+
+    peers_raw = data.get("Peer") or {}
+    peers = []
+    for _key, peer in peers_raw.items():
+        ips = peer.get("TailscaleIPs") or []
+        peers.append({
+            "hostname": peer.get("HostName", ""),
+            "tailscale_ip": ips[0] if ips else "",
+            "os": peer.get("OS", ""),
+            "online": peer.get("Online", False),
+            "relay": peer.get("Relay", ""),
+            "rx_bytes": peer.get("RxBytes", 0),
+            "tx_bytes": peer.get("TxBytes", 0),
+            "last_seen": peer.get("LastSeen", ""),
+        })
+
+    peers.sort(key=lambda p: (not p["online"], p["hostname"].lower()))
+
+    self_node = data.get("Self") or {}
+    self_ips = self_node.get("TailscaleIPs") or []
+    self_info = {
+        "hostname": self_node.get("HostName", ""),
+        "tailscale_ip": self_ips[0] if self_ips else "",
+    }
+
+    online_count = sum(1 for p in peers if p["online"])
+
+    return jsonify({
+        "available": True,
+        "peers": peers,
+        "count": len(peers),
+        "online_count": online_count,
+        "self": self_info,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

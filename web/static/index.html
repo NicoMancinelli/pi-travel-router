@@ -1835,6 +1835,33 @@
     <div class="card-body" id="sys-timers-body"></div>
   </div>
 
+  <!-- CPU Frequency -->
+  <div class="card" id="card-cpu-freq">
+    <div class="card-header" onclick="toggleCard('card-cpu-freq')">
+      <span>⚙️ CPU Freq</span>
+      <span class="badge" id="cpu-freq-badge">…</span>
+    </div>
+    <div class="card-body" id="cpu-freq-body"></div>
+  </div>
+
+  <!-- Entropy -->
+  <div class="card" id="card-entropy">
+    <div class="card-header" onclick="toggleCard('card-entropy')">
+      <span>🎲 Entropy</span>
+      <span class="badge" id="entropy-badge">…</span>
+    </div>
+    <div class="card-body" id="card-entropy-body"></div>
+  </div>
+
+  <!-- Tailscale Peers -->
+  <div class="card" id="card-ts-peers">
+    <div class="card-header" onclick="toggleCard('card-ts-peers')">
+      <span>🌐 Tailscale Peers</span>
+      <span class="badge" id="ts-peers-badge">…</span>
+    </div>
+    <div class="card-body" id="ts-peers-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5281,6 +5308,106 @@ async function fetchIrqStats() {
   }
 }
 
+// ── CPU Frequency v3 ──────────────────────────────────────────────────────────
+
+async function fetchCpuFreqV3() {
+  const el = document.getElementById('cpu-freq-body');
+  const badge = document.getElementById('cpu-freq-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/cpu-freq');
+    const d = await r.json();
+    if (d.available === false) {
+      if (badge) badge.textContent = 'N/A';
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">cpufreq not available on this system.</span>';
+      return;
+    }
+    const cores = d.cores || [];
+    if (!cores.length) {
+      if (badge) badge.textContent = '—';
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No CPU frequency data.</span>';
+      return;
+    }
+    if (badge) {
+      badge.textContent = `avg ${Math.round(d.avg_freq_mhz)} MHz · ${d.governor || '—'}`;
+    }
+    const govPill = d.governor
+      ? `<span style="display:inline-block;margin-bottom:8px;padding:2px 8px;border-radius:10px;font-size:11px;background:var(--accent);color:#fff;">${d.governor}</span>`
+      : '';
+    let rows = '';
+    for (const core of cores) {
+      const maxMhz = core.max_mhz || 1;
+      const pct = maxMhz > 0 ? Math.min(100, Math.round((core.freq_mhz / maxMhz) * 100)) : 0;
+      const col = pct >= 90 ? 'var(--red)' : pct >= 60 ? 'var(--yellow)' : 'var(--green)';
+      rows += `<tr>
+        <td style="font-size:12px;color:var(--text-dim);white-space:nowrap;">Core ${core.core}</td>
+        <td style="font-size:12px;font-family:monospace;">${Math.round(core.freq_mhz)} MHz</td>
+        <td style="width:120px;padding:0 4px;">
+          <div style="background:var(--border);border-radius:3px;height:10px;overflow:hidden;">
+            <div style="height:10px;width:${pct}%;background:${col};transition:width 0.3s;"></div>
+          </div>
+        </td>
+        <td style="font-size:11px;color:var(--text-dim);">${Math.round(core.min_mhz)}–${Math.round(core.max_mhz)} MHz</td>
+      </tr>`;
+    }
+    el.innerHTML = govPill +
+      `<table class="table" style="width:100%;border-collapse:collapse;"><tbody>${rows}</tbody></table>`;
+  } catch (e) {
+    if (e.message !== 'Unauthorized')
+      el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading CPU frequency.</span>';
+  }
+}
+
+// ── Tailscale Peers ──────────────────────────────────────────────────────────
+
+async function fetchTsPeers() {
+  const badge = document.getElementById('ts-peers-badge');
+  const body = document.getElementById('ts-peers-body');
+  try {
+    const r = await apiFetch('/api/vpn/tailscale/peers');
+    const d = await r.json();
+    if (!d.available) {
+      if (badge) badge.textContent = 'unavailable';
+      if (body) body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">Tailscale not available.</div>';
+      return;
+    }
+    if (badge) badge.textContent = `${d.online_count}/${d.count} online`;
+    if (!body) return;
+    const peers = d.peers || [];
+    if (!peers.length) {
+      body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No peers.</div>';
+      return;
+    }
+    let html = '<div style="overflow-x:auto;"><table style="width:100%;font-size:12px;border-collapse:collapse;">';
+    html += '<thead><tr>';
+    for (const h of ['Hostname', 'IP', 'OS', 'Status', 'Relay']) {
+      html += `<th style="text-align:left;padding:4px 8px;border-bottom:1px solid var(--border);color:var(--text-dim);">${h}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+    for (const p of peers) {
+      const dot = p.online
+        ? '<span style="color:#22c55e;">&#9679;</span>'
+        : '<span style="color:#6b7280;">&#9679;</span>';
+      const status = p.online
+        ? `${dot} <span style="color:#22c55e;">online</span>`
+        : `${dot} <span style="color:#6b7280;">offline</span>`;
+      html += `<tr>
+        <td style="padding:4px 8px;">${escHtml(p.hostname || '—')}</td>
+        <td style="padding:4px 8px;font-family:monospace;">${escHtml(p.tailscale_ip || '—')}</td>
+        <td style="padding:4px 8px;">${escHtml(p.os || '—')}</td>
+        <td style="padding:4px 8px;">${status}</td>
+        <td style="padding:4px 8px;">${escHtml(p.relay || '—')}</td>
+      </tr>`;
+    }
+    html += '</tbody></table></div>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -6394,6 +6521,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
+  fetchCpuFreqV3();
   fetchArpTable();
   fetchRouteTable();
   fetchJournalErrors();
@@ -6725,6 +6853,7 @@ async function refreshAll() {
   fetchNtpStatus();
   fetchOpenFiles();
   fetchCpuFreq();
+  fetchCpuFreqV3();
   fetchRouteTable();
   fetchJournalErrors();
   fetchSwapInfo();
@@ -6845,6 +6974,7 @@ async function refreshAll() {
   fetchFirewallSummary();
   fetchNetIfaces();
   fetchSysTimers();
+  fetchEntropy();
 }
 
 async function init() {
@@ -9924,6 +10054,32 @@ async function fetchSysTimers() {
   } catch (e) {
     if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
     if (badge) badge.textContent = 'error';
+  }
+}
+
+// ── Entropy ───────────────────────────────────────────────────────────────────
+
+async function fetchEntropy() {
+  const badge = document.getElementById('entropy-badge');
+  const body = document.getElementById('card-entropy-body');
+  if (!body) return;
+  try {
+    const d = await apiFetch('/api/system/entropy');
+    if (badge) badge.textContent = `${d.entropy_avail} bits (${d.health})`;
+    const barColor = d.health === 'good' ? 'var(--green)' : d.health === 'low' ? '#e0b252' : 'var(--red, #e05252)';
+    const barPct = Math.min(d.fill_pct, 100);
+    let html = `<div style="background:var(--card-bg,#333);border-radius:4px;height:10px;overflow:hidden;margin-bottom:8px;">`;
+    html += `<div style="width:${barPct}%;height:100%;background:${barColor};transition:width 0.3s;"></div></div>`;
+    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;">`;
+    html += `<div style="color:var(--text-dim);">Available</div><div>${d.entropy_avail} bits</div>`;
+    html += `<div style="color:var(--text-dim);">Pool Size</div><div>${d.pool_size} bits</div>`;
+    html += `<div style="color:var(--text-dim);">Write Threshold</div><div>${d.write_wakeup_threshold} bits</div>`;
+    html += `<div style="color:var(--text-dim);">RNG Source</div><div>${escHtml(d.rng_source)}</div>`;
+    html += `</div>`;
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
   }
 }
 
