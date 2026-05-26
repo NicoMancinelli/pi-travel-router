@@ -1508,6 +1508,15 @@
     </div>
   </div>
 
+  <!-- Swap Usage -->
+  <div class="card" id="card-swap">
+    <div class="card-title">
+      &#x1F4BE; Swap Usage
+      <span id="swap-badge" class="badge badge-green" style="margin-left:6px;">0%</span>
+    </div>
+    <div id="swap-body" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -7852,6 +7861,7 @@ async function fetchInterrupts() {
   }
 }
 
+<<<<<<< HEAD
 // ── CPU Frequency ─────────────────────────────────────────────────────────────
 
 async function fetchCpuFreq() {
@@ -7918,6 +7928,64 @@ async function fetchUsbDevices() {
     body.innerHTML = html;
   } catch (e) {
     if (body) body.textContent = 'Error: ' + e;
+  }
+}
+
+// ── Swap Usage ────────────────────────────────────────────────────────────────
+
+async function fetchSwapUsage() {
+  const body = document.getElementById('swap-body');
+  const badge = document.getElementById('swap-badge');
+  if (!body) return;
+  body.innerHTML = '<span class="spinner"></span> Loading&hellip;';
+  try {
+    const resp = await apiFetch('/api/system/swap');
+    const d = await resp.json();
+
+    // Derive totals from swaps array (existing endpoint shape)
+    let totalKb = 0, usedKb = 0, freeKb = 0;
+    const swaps = d.swaps || [];
+    swaps.forEach(s => {
+      totalKb += s.total_kb || 0;
+      usedKb  += s.used_kb  || 0;
+      freeKb  += s.free_kb  || 0;
+    });
+    const usedPct = totalKb > 0 ? Math.round(usedKb / totalKb * 100) : 0;
+
+    // Badge colour
+    badge.textContent = usedPct + '%';
+    badge.className = 'badge ' + (usedPct >= 80 ? 'badge-red' : usedPct >= 50 ? 'badge-yellow' : 'badge-green');
+
+    const fmt = kb => kb >= 1048576 ? (kb/1048576).toFixed(1)+' GB'
+                    : kb >= 1024    ? (kb/1024).toFixed(0)+' MB'
+                    :                 kb+' KB';
+
+    let html = '';
+    if (totalKb === 0) {
+      html = '<span style="color:var(--text-dim)">No swap configured</span>';
+    } else {
+      // Progress bar
+      const barColour = usedPct >= 80 ? 'var(--red)' : usedPct >= 50 ? 'var(--yellow)' : 'var(--green)';
+      html += `<div class="disk-bar-wrap" style="height:8px;margin-bottom:8px;">
+        <div class="disk-bar" style="width:${usedPct}%;background:${barColour};"></div>
+      </div>`;
+      html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px;">
+        <span>Total: <b>${fmt(totalKb)}</b></span>
+        <span>Used: <b>${fmt(usedKb)}</b></span>
+        <span>Free: <b>${fmt(freeKb)}</b></span>
+      </div>`;
+      if (swaps.length > 0) {
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+        html += '<tr style="color:var(--text-dim);"><th style="text-align:left;padding:2px 6px;">Device</th><th style="text-align:left;padding:2px 6px;">Type</th><th style="text-align:right;padding:2px 6px;">Size</th><th style="text-align:right;padding:2px 6px;">Used</th><th style="text-align:right;padding:2px 6px;">Priority</th></tr>';
+        swaps.forEach(s => {
+          html += `<tr><td style="padding:2px 6px;">${s.filename||'-'}</td><td style="padding:2px 6px;">${s.type||'-'}</td><td style="text-align:right;padding:2px 6px;">${fmt(s.total_kb||0)}</td><td style="text-align:right;padding:2px 6px;">${fmt(s.used_kb||0)}</td><td style="text-align:right;padding:2px 6px;">${s.priority??'-'}</td></tr>`;
+        });
+        html += '</table>';
+      }
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    body.textContent = 'Failed: ' + e;
   }
 }
 
