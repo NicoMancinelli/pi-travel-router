@@ -16542,6 +16542,38 @@ def api_system_resource_limits():
         "open_files_max": file_max,
         "open_files_pct": open_files_pct,
     })
+# ── DHCP lease summary ────────────────────────────────────────────────────────
+
+@app.route("/api/network/lease-summary", methods=["GET"])
+@require_auth
+def api_network_lease_summary():
+    """Return DHCP lease summary from dnsmasq.leases."""
+    import time
+    leases = []
+    lease_file = "/var/lib/misc/dnsmasq.leases"
+    try:
+        with open(lease_file) as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) < 5:
+                    continue
+                try:
+                    expiry = int(parts[0])
+                    expires_in_min = max(0, round((expiry - time.time()) / 60))
+                except ValueError:
+                    expires_in_min = None
+                leases.append({
+                    "expires_in_min": expires_in_min,
+                    "mac": parts[1],
+                    "ip": parts[2],
+                    "hostname": parts[3] if parts[3] != "*" else None,
+                    "client_id": parts[4],
+                })
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return jsonify({"leases": leases, "total": len(leases)})
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

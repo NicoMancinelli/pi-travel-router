@@ -1990,6 +1990,15 @@
     <div class="card-body" id="resource-limits-body"></div>
   </div>
 
+  <!-- Lease Summary -->
+  <div class="card" id="card-lease-summary">
+    <div class="card-header" onclick="toggleCard('card-lease-summary')">
+      <span>📋 DHCP Leases</span>
+      <span class="badge" id="lease-summary-badge">…</span>
+    </div>
+    <div class="card-body" id="lease-summary-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -7066,6 +7075,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchFirewallStats();
   fetchCpuTemp();
   fetchResourceLimits();
+  fetchLeaseSummary();
   fetchCpuTempCard();
   fetchLoggedInUsers();
   fetchWho();
@@ -7413,6 +7423,7 @@ async function refreshAll() {
   fetchFirewallStats();
   fetchCpuTemp();
   fetchResourceLimits();
+  fetchLeaseSummary();
   fetchKernelModules();
   fetchLoggedInUsers();
   fetchCpuStats();
@@ -10757,6 +10768,43 @@ async function fetchSplitTunnelStatus() {
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Default dev</td><td style="padding:3px 8px;font-size:13px;">${d.default_interface || 'n/a'}</td></tr>
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);" valign="top">Routes (${d.route_count})</td><td style="padding:3px 8px;">${routeList}</td></tr>
       </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
+// ── Lease Summary ──
+async function fetchLeaseSummary() {
+  const badge = document.getElementById('lease-summary-badge');
+  const body = document.getElementById('lease-summary-body');
+  try {
+    const d = await apiFetch('/api/network/lease-summary');
+    badge.textContent = `${d.total} leases`;
+    if (d.total === 0) {
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No active DHCP leases.</p>';
+      return;
+    }
+    const rows = d.leases.map(l => {
+      const exp = l.expires_in_min !== null
+        ? (l.expires_in_min > 60 ? `${Math.floor(l.expires_in_min/60)}h ${l.expires_in_min%60}m` : `${l.expires_in_min}m`)
+        : 'n/a';
+      return `<tr>
+        <td style="padding:2px 8px;font-size:13px;">${l.ip}</td>
+        <td style="padding:2px 8px;font-size:12px;color:var(--text-dim);">${l.hostname || '—'}</td>
+        <td style="padding:2px 8px;font-size:11px;color:var(--text-dim);font-family:monospace;">${l.mac}</td>
+        <td style="padding:2px 8px;font-size:12px;text-align:right;color:var(--text-dim);">${exp}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">IP</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Hostname</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">MAC</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Expires</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
     if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
