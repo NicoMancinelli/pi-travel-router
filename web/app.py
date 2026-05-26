@@ -17926,6 +17926,54 @@ def api_system_cpu_frequency():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ── Shared Memory ──────────────────────────────────────────────────────────────
+@app.route("/api/system/shared-memory")
+@require_auth
+def api_system_shared_memory():
+    """Return shared memory segment info."""
+    try:
+        import subprocess
+        segments = []
+        try:
+            out = subprocess.check_output(["ipcs", "-m"], text=True, stderr=subprocess.DEVNULL)
+            for line in out.strip().splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[0].startswith("0x"):
+                    try:
+                        segments.append({
+                            "key": parts[0],
+                            "shmid": parts[1],
+                            "owner": parts[2],
+                            "perms": parts[3],
+                            "bytes": int(parts[4]),
+                        })
+                    except (ValueError, IndexError):
+                        pass
+        except Exception:
+            pass
+        shmem_kb = 0
+        try:
+            with open("/proc/meminfo") as fh:
+                for line in fh:
+                    if line.startswith("Shmem:"):
+                        shmem_kb = int(line.split()[1])
+                        break
+        except Exception:
+            pass
+        total_bytes = sum(s["bytes"] for s in segments)
+        largest = max((s["bytes"] for s in segments), default=0)
+        return jsonify({
+            "segments": segments,
+            "count": len(segments),
+            "total_bytes": total_bytes,
+            "total_mb": round(total_bytes / 1048576, 2),
+            "largest_bytes": largest,
+            "shmem_total_kb": shmem_kb,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

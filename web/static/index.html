@@ -2243,6 +2243,10 @@
 <div class="card" id="cpu-freq-card">
   <div class="card-header"><span class="card-icon">⚡</span>CPU Frequency</div>
   <div class="card-body" id="cpu-freq-body"><span class="loading">Loading…</span></div>
+<!-- Shared Memory -->
+<div class="card" id="shm-card">
+  <div class="card-header"><span class="card-icon">🗄️</span>Shared Memory</div>
+  <div class="card-body" id="shm-body"><span class="loading">Loading…</span></div>
 </div>
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
@@ -6614,6 +6618,20 @@ async function loadCpuFrequency() {
   } catch(e) { document.getElementById('cpu-freq-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadCpuFrequency();
+// ── Shared Memory ──
+async function loadSharedMemory() {
+  try {
+    const r = await fetch('/api/system/shared-memory');
+    const d = await r.json();
+    if (d.error) { document.getElementById('shm-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const shmMb = d.shmem_total_kb ? (d.shmem_total_kb / 1024).toFixed(1) : '—';
+    document.getElementById('shm-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">IPC segments</span><span class="stat-value">${d.count}</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Segments total</span><span class="stat-value">${d.total_mb} MB</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Shmem (kernel)</span><span class="stat-value">${shmMb} MB</span></div>`;
+  } catch(e) { document.getElementById('shm-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadSharedMemory();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
