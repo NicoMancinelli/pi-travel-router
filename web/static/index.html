@@ -861,7 +861,7 @@
   <div class="card full-width" id="card-wg-peer-health">
     <div class="card-title">
       &#x1F512; WireGuard Peers (<span id="wg-peer-health-count">0</span>)
-      <button class="btn btn-sm" onclick="fetchWgPeerHealth()" style="margin-left:8px;">&#x27F3; Refresh</button>
+      <button class="btn btn-sm" onclick="fetchWgPeerHealthLegacy()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
     <div id="wg-peer-health-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
@@ -6328,6 +6328,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchListeningPorts();
   fetchStorage();
   fetchWgPeerHealth();
+  fetchWgPeerHealthLegacy();
   fetchWgPeers();
   fetchWgPeersMgmt();
   fetchDhcpLeases();
@@ -6646,6 +6647,8 @@ async function refreshAll() {
   fetchDohResolver();
   fetchDohResolverNew();
   fetchWgPeers();
+  fetchWgPeerHealth();
+  fetchWgPeerHealthLegacy();
   fetchWgPeersMgmt();
   fetchGuestNetwork();
   fetchWifiQr();
@@ -7980,9 +7983,9 @@ async function runPing(host) {
   }
 }
 
-// ── WireGuard Peer Health ─────────────────────────────────────────────────────
+// ── WireGuard Peer Health (legacy card) ───────────────────────────────────────
 
-async function fetchWgPeerHealth() {
+async function fetchWgPeerHealthLegacy() {
   const el = document.getElementById('wg-peer-health-content');
   const countEl = document.getElementById('wg-peer-health-count');
   if (!el) return;
@@ -9750,6 +9753,73 @@ async function fetchBwHistory() {
   } catch (e) {
     if (badge) badge.textContent = 'error';
     if (body && e.message !== 'Unauthorized') body.innerHTML = `<span style="color:var(--danger)">Error: ${e.message}</span>`;
+  }
+}
+
+// ── WG Peer Health ────────────────────────────────────────────────────────────
+
+async function fetchWgPeerHealth() {
+  const badge = document.getElementById('wg-health-badge');
+  const body = document.getElementById('wg-health-body');
+  if (!body) return;
+  if (badge) badge.textContent = '…';
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/vpn/wireguard/peer-health');
+    const data = await resp.json();
+    if (!data.available) {
+      if (badge) badge.textContent = 'N/A';
+      body.innerHTML = '<span style="color:var(--text-dim)">WireGuard not available.</span>';
+      return;
+    }
+    if (badge) badge.textContent = `${data.healthy_peers}/${data.total_peers} healthy`;
+    if (!data.interfaces || data.interfaces.length === 0 || data.total_peers === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim)">No WireGuard peers configured.</span>';
+      return;
+    }
+    function fmtBytes(b) {
+      if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GiB';
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MiB';
+      if (b >= 1024) return (b / 1024).toFixed(1) + ' KiB';
+      return b + ' B';
+    }
+    function statusDot(status) {
+      const colors = { active: '#22c55e', stale: '#f97316', offline: '#ef4444' };
+      const c = colors[status] || '#6b7280';
+      return `<span title="${escHtml(status)}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c};margin-right:5px;flex-shrink:0;"></span>`;
+    }
+    let html = '';
+    for (const iface of data.interfaces) {
+      html += `<div style="font-size:11px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin:8px 0 4px;">${escHtml(iface.name)}</div>`;
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      html += '<th style="padding:4px 6px;"></th>';
+      html += '<th style="padding:4px 6px;">Peer</th>';
+      html += '<th style="padding:4px 6px;">Endpoint</th>';
+      html += '<th style="padding:4px 6px;">Last handshake</th>';
+      html += '<th style="padding:4px 6px;">RX / TX</th>';
+      html += '</tr></thead><tbody>';
+      for (const p of iface.peers) {
+        const pubkeyShort = escHtml(p.pubkey.substring(0, 12));
+        const endpoint = p.endpoint ? escHtml(p.endpoint) : '<span style="color:var(--text-dim)">—</span>';
+        const hs = p.last_handshake_s !== null && p.last_handshake_s !== 0
+          ? escHtml(p.last_handshake_s + 's ago')
+          : '<span style="color:var(--text-dim)">never</span>';
+        const rxtx = `${fmtBytes(p.rx_bytes || 0)} / ${fmtBytes(p.tx_bytes || 0)}`;
+        html += `<tr style="border-bottom:1px solid var(--border);">`;
+        html += `<td style="padding:4px 6px;">${statusDot(p.status)}</td>`;
+        html += `<td style="padding:4px 6px;font-family:monospace;font-size:11px;">${pubkeyShort}&hellip;</td>`;
+        html += `<td style="padding:4px 6px;font-family:monospace;font-size:11px;">${endpoint}</td>`;
+        html += `<td style="padding:4px 6px;">${hs}</td>`;
+        html += `<td style="padding:4px 6px;font-family:monospace;font-size:11px;">${escHtml(rxtx)}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body && e.message !== 'Unauthorized') body.innerHTML = `<span style="color:var(--danger)">Failed to load WG peer health</span>`;
   }
 }
 
