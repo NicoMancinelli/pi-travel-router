@@ -1876,6 +1876,24 @@
     <div class="card-body" id="bw-live-body"></div>
   </div>
 
+  <!-- OTA Status -->
+  <div class="card" id="card-ota-status">
+    <div class="card-header" onclick="toggleCard('card-ota-status')">
+      <span>🔄 OTA Status</span>
+      <span class="badge" id="ota-status-badge">…</span>
+    </div>
+    <div class="card-body" id="ota-status-body"></div>
+  </div>
+
+  <!-- Tailscale Exit Node -->
+  <div class="card" id="card-ts-exit">
+    <div class="card-header" onclick="toggleCard('card-ts-exit')">
+      <span>🚪 TS Exit Node</span>
+      <span class="badge" id="ts-exit-badge">…</span>
+    </div>
+    <div class="card-body" id="ts-exit-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5502,6 +5520,117 @@ async function fetchBwLive() {
   }
 }
 
+// ── OTA Status ────────────────────────────────────────────────────────────────
+async function fetchOtaStatus() {
+  const badge = document.getElementById('ota-status-badge');
+  const body = document.getElementById('ota-status-body');
+  try {
+    const d = await apiFetch('/api/system/ota-status');
+    if (badge) {
+      badge.textContent = d.ota_enabled ? (d.current_version || 'enabled') : 'disabled';
+    }
+    if (!body) return;
+    if (!d.ota_enabled && !d.current_version) {
+      body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">OTA not configured on this device.</div>';
+      return;
+    }
+    const rows = [
+      ['Current Slot', d.current_slot || '—'],
+      ['Version', d.current_version || '—'],
+      ['Next Slot', d.next_slot || '—'],
+      ['Last Update', d.last_update || '—'],
+      ['OTA Enabled', d.ota_enabled ? 'Yes' : 'No'],
+    ];
+    let html = '<div style="display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px;">';
+    for (const [label, value] of rows) {
+      html += `<span style="color:var(--text-dim);white-space:nowrap;">${escHtml(label)}</span>`;
+      html += `<span>${escHtml(String(value))}</span>`;
+    }
+    html += '</div>';
+    if (d.update_available) {
+      html += '<div style="margin-top:8px;color:var(--warn);font-size:13px;">&#x26A0; Update available</div>';
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
+async function fetchTsExitNodeV3() {
+  const badge = document.getElementById('ts-exit-badge');
+  const body = document.getElementById('ts-exit-body');
+  try {
+    const d = await apiFetch('/api/vpn/tailscale/exit-node');
+    if (!d.available) {
+      if (badge) badge.textContent = 'unavailable';
+      if (body) body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">Tailscale not available</div>';
+      return;
+    }
+
+    // Badge: advertising / using: hostname / off
+    if (badge) {
+      if (d.is_exit_node && d.active_exit_node) {
+        badge.textContent = `using: ${d.active_exit_node}`;
+        badge.style.background = 'var(--ok, #22c55e)';
+        badge.style.color = '#fff';
+      } else if (d.advertising_exit_node) {
+        badge.textContent = 'advertising';
+        badge.style.background = '#60a5fa';
+        badge.style.color = '#fff';
+      } else {
+        badge.textContent = 'off';
+        badge.style.background = '';
+        badge.style.color = '';
+      }
+    }
+
+    if (!body) return;
+    let html = '';
+
+    // Advertising status
+    const advColor = d.advertising_exit_node ? '#22c55e' : '#6b7280';
+    const advLabel = d.advertising_exit_node ? 'advertising' : 'not advertising';
+    html += `<div style="margin-bottom:8px;font-size:13px;">`;
+    html += `Advertising as exit node: <span style="display:inline-block;background:${advColor};color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;">${advLabel}</span>`;
+    html += `</div>`;
+
+    // Active exit node in use
+    if (d.is_exit_node && d.active_exit_node) {
+      html += `<div style="margin-bottom:8px;font-size:13px;">`;
+      html += `Active exit node: <strong>${escHtml(d.active_exit_node)}</strong>`;
+      html += `</div>`;
+    } else {
+      html += `<div style="margin-bottom:8px;font-size:12px;color:var(--text-dim);">No exit node in use — routing directly</div>`;
+    }
+
+    // Available exit node peers
+    if (d.exit_node_peers && d.exit_node_peers.length > 0) {
+      html += `<div style="font-size:11px;font-weight:600;color:var(--text-dim);margin-bottom:4px;">Exit node peers (${d.exit_node_peers.length})</div>`;
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+      html += '<thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--text-dim);">';
+      html += '<th style="padding:4px 8px;">Hostname</th><th style="padding:4px 8px;">Tailscale IP</th><th style="padding:4px 8px;">Status</th>';
+      html += '</tr></thead><tbody>';
+      for (const peer of d.exit_node_peers) {
+        const onlineColor = peer.online ? '#22c55e' : '#6b7280';
+        html += '<tr style="border-bottom:1px solid var(--border);">';
+        html += `<td style="padding:4px 8px;">${escHtml(peer.hostname || '—')}</td>`;
+        html += `<td style="padding:4px 8px;font-family:monospace;font-size:11px;">${escHtml(peer.tailscale_ip || '—')}</td>`;
+        html += `<td style="padding:4px 8px;font-size:11px;color:${onlineColor};">${peer.online ? '● online' : '○ offline'}</td>`;
+        html += '</tr>';
+      }
+      html += '</tbody></table>';
+    } else {
+      html += '<div style="font-size:12px;color:var(--text-dim);">No exit node peers in tailnet</div>';
+    }
+
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--danger);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -6602,6 +6731,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSystemUpdates();
   fetchConnections();
   fetchTsExitNode();
+  fetchTsExitNodeV3();
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
@@ -6731,6 +6861,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchArpTableV3();
   fetchSshKeysV3();
   fetchBwLive();
+  fetchOtaStatus();
 });
 
 async function fetchJournal() {
@@ -6917,6 +7048,7 @@ async function refreshAll() {
   fetchTailscalePeers();
   fetchTsPeers();
   fetchTsExitNode();
+  fetchTsExitNodeV3();
   fetchMdnsServices();
   fetchScheduledTasks();
   fetchCronJobs();
@@ -7077,6 +7209,7 @@ async function refreshAll() {
   fetchSysTimers();
   fetchEntropy();
   fetchBwLive();
+  fetchOtaStatus();
 }
 
 async function init() {

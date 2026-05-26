@@ -15978,6 +15978,136 @@ def network_bandwidth_live():
     })
 
 
+@app.route("/api/system/ota-status", methods=["GET"])
+@require_auth
+def api_system_ota_status():
+    """Return OTA update state from /etc/travel-router/ota-state or fallback sources."""
+    import datetime
+
+    OTA_STATE_FILE = Path("/etc/travel-router/ota-state")
+    VERSION_PATHS = [
+        Path("/opt/travel-router/VERSION"),
+        Path("/usr/local/share/travel-router/VERSION"),
+    ]
+    FALLBACK_VERSION_PATHS = [
+        Path("/etc/travel-router/version"),
+        Path("/etc/travel-router-version"),
+    ]
+
+    def _read_version_file():
+        for p in VERSION_PATHS:
+            try:
+                v = p.read_text().strip()
+                if v:
+                    return v
+            except OSError:
+                pass
+        return None
+
+    def _read_fallback_version():
+        for p in FALLBACK_VERSION_PATHS:
+            try:
+                v = p.read_text().strip()
+                if v:
+                    return v
+            except OSError:
+                pass
+        return None
+
+    project_version = _read_version_file()
+
+    if OTA_STATE_FILE.exists():
+        try:
+            import json as _json
+            raw = OTA_STATE_FILE.read_text()
+            state = _json.loads(raw)
+            current_slot = state.get("current_slot")
+            current_version = state.get("current_version") or project_version
+            next_slot = state.get("next_slot")
+            last_update = state.get("last_update")
+            update_available = bool(state.get("update_available", False))
+            return jsonify({
+                "current_slot": current_slot,
+                "current_version": current_version,
+                "next_slot": next_slot,
+                "last_update": last_update,
+                "update_available": update_available,
+                "ota_enabled": True,
+                "state_file": str(OTA_STATE_FILE),
+            })
+        except Exception:
+            pass
+
+    # Fallback: check version files
+    version = project_version or _read_fallback_version()
+    if version:
+        return jsonify({
+            "current_slot": None,
+            "current_version": version,
+            "next_slot": None,
+            "last_update": None,
+            "update_available": False,
+            "ota_enabled": False,
+            "state_file": None,
+        })
+
+    return jsonify({
+        "ota_enabled": False,
+        "current_version": None,
+        "current_slot": None,
+        "next_slot": None,
+        "last_update": None,
+        "update_available": False,
+        "state_file": None,
+    })
+
+
+@app.route("/api/vpn/tailscale/exit-node", methods=["GET"])
+@require_auth
+def api_vpn_tailscale_exit_node():
+    """Return Tailscale exit node status: advertising, active, and available peers."""
+    import json as _json
+
+    out, rc = _run(["tailscale", "status", "--json"])
+    if rc != 0:
+        return jsonify({"available": False})
+
+    try:
+        data = _json.loads(out)
+    except (ValueError, KeyError):
+        return jsonify({"available": False})
+
+    self_node = data.get("Self", {})
+    advertising_exit_node = bool(self_node.get("ExitNodeOption", False))
+
+    # ExitNode field on a peer means that peer is the active exit node
+    active_exit_node = None
+    is_exit_node = False
+    for peer in data.get("Peer", {}).values():
+        if peer.get("ExitNode", False):
+            is_exit_node = True
+            active_exit_node = peer.get("HostName") or (peer.get("TailscaleIPs") or [None])[0]
+            break
+
+    # Collect peers advertising as exit nodes
+    exit_node_peers = []
+    for peer in data.get("Peer", {}).values():
+        if peer.get("ExitNodeOption", False):
+            exit_node_peers.append({
+                "hostname": peer.get("HostName", ""),
+                "tailscale_ip": (peer.get("TailscaleIPs") or [None])[0],
+                "online": bool(peer.get("Online", False)),
+            })
+
+    return jsonify({
+        "is_exit_node": is_exit_node,
+        "advertising_exit_node": advertising_exit_node,
+        "active_exit_node": active_exit_node,
+        "exit_node_peers": exit_node_peers,
+        "available": True,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
