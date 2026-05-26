@@ -13986,6 +13986,37 @@ def api_network_arp():
     return jsonify({"neighbors": neighbors, "count": len(neighbors), "reachable": reachable})
 
 
+@app.route("/api/system/uptime", methods=["GET"])
+@require_auth
+def api_system_uptime():
+    import datetime as _dt
+    try:
+        raw = open("/proc/uptime").read().split()
+        uptime_sec = float(raw[0])
+        idle_sec = float(raw[1])
+        uptime_human = str(_dt.timedelta(seconds=int(uptime_sec)))
+        result = subprocess.run(
+            ["uptime"], capture_output=True, text=True, timeout=5
+        )
+        uptime_str = result.stdout.strip() if result.returncode == 0 else ""
+        # Parse load averages from /proc/loadavg for reliability
+        loadavg_raw = open("/proc/loadavg").read().split()
+        load_1 = float(loadavg_raw[0])
+        load_5 = float(loadavg_raw[1])
+        load_15 = float(loadavg_raw[2])
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({
+        "uptime_seconds": uptime_sec,
+        "uptime_human": uptime_human,
+        "idle_seconds": idle_sec,
+        "load_1": load_1,
+        "load_5": load_5,
+        "load_15": load_15,
+        "uptime_str": uptime_str,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

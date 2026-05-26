@@ -1528,6 +1528,15 @@
     <div id="swap-body" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
+  <!-- System Uptime -->
+  <div class="card" id="card-uptime">
+    <div class="card-title">
+      &#x23F1;&#xFE0F; System Uptime
+      <span class="badge" id="uptime-badge" style="margin-left:8px;">—</span>
+    </div>
+    <div id="uptime-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -8025,6 +8034,43 @@ async function fetchEntropy() {
     }
     el.innerHTML = html;
   } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+}
+
+// ── System Uptime ─────────────────────────────────────────────────────────────
+
+async function fetchUptimeCard() {
+  const el = document.getElementById('uptime-content');
+  const badge = document.getElementById('uptime-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/uptime');
+    if (badge) badge.textContent = d.uptime_human || '—';
+    // Load average color coding: green <0.7/core, yellow <1.0/core, red >=1.0/core (4 cores)
+    const cores = 4;
+    function loadColor(v) {
+      if (v < cores * 0.7) return '#4caf50';
+      if (v < cores * 1.0) return '#ff9800';
+      return '#f44336';
+    }
+    function loadSpan(v) {
+      return `<span style="color:${loadColor(v)};font-weight:600;">${v.toFixed(2)}</span>`;
+    }
+    let html = `<div style="margin-bottom:10px;">`;
+    html += `<div style="font-size:22px;font-weight:700;font-family:monospace;color:var(--text);">${d.uptime_human || '—'}</div>`;
+    if (d.uptime_str) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-top:2px;font-family:monospace;">${d.uptime_str}</div>`;
+    }
+    html += `</div>`;
+    html += `<div style="display:flex;gap:20px;flex-wrap:wrap;">`;
+    html += `<div><span style="color:var(--text-dim);">Load 1m</span><br>${loadSpan(d.load_1)}</div>`;
+    html += `<div><span style="color:var(--text-dim);">Load 5m</span><br>${loadSpan(d.load_5)}</div>`;
+    html += `<div><span style="color:var(--text-dim);">Load 15m</span><br>${loadSpan(d.load_15)}</div>`;
+    html += `</div>`;
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">Error loading uptime</span>`;
+  }
 }
 
 // ── Tailscale Status ──────────────────────────────────────────────────────────
