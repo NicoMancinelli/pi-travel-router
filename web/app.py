@@ -15413,6 +15413,241 @@ def api_system_disk_usage():
     })
 
 
+@app.route("/api/system/irq-stats", methods=["GET"])
+@require_auth
+def api_system_irq_stats():
+    """Return top IRQs by total count with per-CPU breakdown and device names."""
+    try:
+        lines = Path("/proc/interrupts").read_text().splitlines()
+    except OSError as exc:
+        return jsonify({"cpu_count": 0, "total_interrupts": 0, "irqs": [], "error": str(exc)})
+
+    if not lines:
+        return jsonify({"cpu_count": 0, "total_interrupts": 0, "irqs": [], "error": "empty file"})
+
+    # First line: CPU0 CPU1 ... — count CPUs
+    cpu_count = len(lines[0].split())
+
+    results = []
+    for line in lines[1:]:
+        parts = line.split()
+        if not parts:
+            continue
+        irq = parts[0].rstrip(":")
+        # Skip non-numeric IRQs (ERR, MIS, etc.)
+        if not irq.isdigit():
+            continue
+        try:
+            per_cpu = [int(parts[i + 1]) for i in range(cpu_count)]
+        except (IndexError, ValueError):
+            continue
+        total = sum(per_cpu)
+        if total == 0:
+            continue
+        remainder = parts[1 + cpu_count:]
+        irq_type = remainder[0] if remainder else None
+        devices = remainder[1:] if len(remainder) > 1 else []
+        results.append({
+            "irq": irq,
+            "total": total,
+            "type": irq_type,
+            "devices": devices,
+            "per_cpu": per_cpu,
+        })
+
+    results.sort(key=lambda x: x["total"], reverse=True)
+    top = results[:20]
+    total_interrupts = sum(r["total"] for r in results)
+    return jsonify({"cpu_count": cpu_count, "total_interrupts": total_interrupts, "irqs": top})
+
+
+# ── Network Interfaces Detail ─────────────────────────────────────────────────
+
+@app.route("/api/network/interfaces", methods=["GET"])
+@require_auth
+def api_network_interfaces():
+    """Return detailed info for all network interfaces via `ip -j addr show`."""
+    out, rc = _run(["ip", "-j", "addr", "show"], timeout=5)
+    if rc != 0 or not out.strip():
+        return jsonify({"error": "ip command failed", "interfaces": [], "count": 0, "up_count": 0}), 500
+
+    try:
+        raw = json.loads(out)
+    except ValueError:
+        return jsonify({"error": "failed to parse ip output", "interfaces": [], "count": 0, "up_count": 0}), 500
+
+    interfaces = []
+    for iface in raw:
+        name = iface.get("ifname", "")
+        if name == "lo":
+            continue
+
+        state = iface.get("operstate", "UNKNOWN").upper()
+        mac = iface.get("address", "")
+        mtu = iface.get("mtu", 0)
+        flags = [f.upper() for f in iface.get("flags", [])]
+
+        addresses = []
+        for addr in iface.get("addr_info", []):
+            family = addr.get("family", "")
+            entry = {
+                "family": family,
+                "addr": addr.get("local", ""),
+                "prefix": addr.get("prefixlen", 0),
+            }
+            if family == "inet" and "broadcast" in addr:
+                entry["broadcast"] = addr["broadcast"]
+            if family == "inet6":
+                entry["scope"] = addr.get("scope", "")
+            addresses.append(entry)
+
+        interfaces.append({
+            "name": name,
+            "state": state,
+            "mac": mac,
+            "mtu": mtu,
+            "flags": flags,
+            "addresses": addresses,
+        })
+
+    up_count = sum(1 for i in interfaces if i["state"] == "UP")
+    return jsonify({
+        "interfaces": interfaces,
+        "count": len(interfaces),
+        "up_count": up_count,
+    })
+
+
+@app.route("/api/vpn/wireguard/peer-health", methods=["GET"])
+@require_auth
+def api_vpn_wireguard_peer_health():
+    """Return per-peer health for all WireGuard interfaces using wg show all."""
+    out, rc = _run(["wg", "show", "all"])
+    if rc != 0:
+        return jsonify({"interfaces": [], "total_peers": 0, "healthy_peers": 0, "available": False})
+
+    now = int(time.time())
+    interfaces_map: dict = {}  # name -> {"name": str, "peers": list}
+    current_iface = None
+    current_peer: dict = {}
+
+    def _flush_peer():
+        if current_iface and current_peer and "pubkey" in current_peer:
+            interfaces_map[current_iface]["peers"].append(current_peer.copy())
+
+    for raw_line in out.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        # Interface header: not indented, not a "peer:" line
+        if not raw_line.startswith((" ", "\t")) and not line.startswith("peer:"):
+            _flush_peer()
+            current_peer = {}
+            iface_name = line.rstrip(":")
+            current_iface = iface_name
+            if iface_name not in interfaces_map:
+                interfaces_map[iface_name] = {"name": iface_name, "peers": []}
+        elif line.startswith("peer:"):
+            _flush_peer()
+            current_peer = {
+                "pubkey": line[len("peer:"):].strip(),
+                "endpoint": None,
+                "allowed_ips": [],
+                "last_handshake_s": None,
+                "rx_bytes": 0,
+                "tx_bytes": 0,
+            }
+        elif current_peer:
+            if line.startswith("endpoint:"):
+                current_peer["endpoint"] = line[len("endpoint:"):].strip()
+            elif line.startswith("allowed ips:"):
+                raw_ips = line[len("allowed ips:"):].strip()
+                current_peer["allowed_ips"] = [
+                    ip.strip() for ip in raw_ips.split(",")
+                    if ip.strip() and ip.strip() != "(none)"
+                ]
+            elif line.startswith("latest handshake:"):
+                raw_hs = line[len("latest handshake:"):].strip()
+                try:
+                    current_peer["last_handshake_s"] = int(raw_hs)
+                except ValueError:
+                    import re as _re
+                    total = 0
+                    for val, unit in _re.findall(r"(\d+)\s+(second|minute|hour|day)", raw_hs):
+                        v = int(val)
+                        if unit == "second":
+                            total += v
+                        elif unit == "minute":
+                            total += v * 60
+                        elif unit == "hour":
+                            total += v * 3600
+                        elif unit == "day":
+                            total += v * 86400
+                    current_peer["last_handshake_s"] = total if total else None
+            elif line.startswith("transfer:"):
+                import re as _re
+
+                def _parse_transfer_bytes(s):
+                    s = s.strip()
+                    m = _re.match(r"([\d.]+)\s*(B|KiB|MiB|GiB|TiB)", s)
+                    if not m:
+                        return 0
+                    v = float(m.group(1))
+                    u = m.group(2)
+                    mult = {"B": 1, "KiB": 1024, "MiB": 1048576, "GiB": 1073741824, "TiB": 1099511627776}
+                    return int(v * mult.get(u, 1))
+
+                m_rx_tx = _re.search(r"([\d.]+ \w+) received,\s*([\d.]+ \w+) sent", line)
+                if m_rx_tx:
+                    current_peer["rx_bytes"] = _parse_transfer_bytes(m_rx_tx.group(1))
+                    current_peer["tx_bytes"] = _parse_transfer_bytes(m_rx_tx.group(2))
+
+    _flush_peer()
+    _ = now  # suppress unused warning
+
+    # Build response
+    result_ifaces = []
+    total_peers = 0
+    healthy_peers = 0
+    for iface_data in interfaces_map.values():
+        peers_out = []
+        for p in iface_data["peers"]:
+            hs = p.get("last_handshake_s")
+            if hs is None or hs == 0:
+                healthy = False
+                status = "offline"
+            elif hs < 180:
+                healthy = True
+                status = "active"
+            elif hs < 600:
+                healthy = False
+                status = "stale"
+            else:
+                healthy = False
+                status = "offline"
+            peers_out.append({
+                "pubkey": p["pubkey"],
+                "endpoint": p.get("endpoint"),
+                "allowed_ips": p.get("allowed_ips", []),
+                "last_handshake_s": hs,
+                "rx_bytes": p.get("rx_bytes", 0),
+                "tx_bytes": p.get("tx_bytes", 0),
+                "healthy": healthy,
+                "status": status,
+            })
+            total_peers += 1
+            if healthy:
+                healthy_peers += 1
+        result_ifaces.append({"name": iface_data["name"], "peers": peers_out})
+
+    return jsonify({
+        "interfaces": result_ifaces,
+        "total_peers": total_peers,
+        "healthy_peers": healthy_peers,
+        "available": True,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

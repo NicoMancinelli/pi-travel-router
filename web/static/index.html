@@ -1790,6 +1790,33 @@
     <div class="card-body" id="disk-usage-body"></div>
   </div>
 
+  <!-- IRQ Stats -->
+  <div class="card" id="card-irq-stats">
+    <div class="card-header" onclick="toggleCard('card-irq-stats')">
+      <span>&#x26A1; IRQ Stats</span>
+      <span class="badge" id="irq-stats-badge">&#x2026;</span>
+    </div>
+    <div class="card-body" id="irq-stats-body"></div>
+  </div>
+
+  <!-- Network Interfaces -->
+  <div class="card" id="card-net-ifaces">
+    <div class="card-header" onclick="toggleCard('card-net-ifaces')">
+      <span>🌐 Interfaces</span>
+      <span class="badge" id="net-ifaces-badge">…</span>
+    </div>
+    <div class="card-body" id="net-ifaces-body"></div>
+  </div>
+
+  <!-- WG Peer Health -->
+  <div class="card" id="card-wg-health">
+    <div class="card-header" onclick="toggleCard('card-wg-health')">
+      <span>🔐 WG Peers</span>
+      <span class="badge" id="wg-health-badge">…</span>
+    </div>
+    <div class="card-body" id="wg-health-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5192,7 +5219,89 @@ async function fetchFirewallSummary() {
   }
 }
 
+// ── IRQ Stats ─────────────────────────────────────────────────────────────────
+
+async function fetchIrqStats() {
+  const badge = document.getElementById('irq-stats-badge');
+  const body = document.getElementById('irq-stats-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/irq-stats');
+    const d = await r.json();
+    const irqs = (d.irqs || []).slice(0, 15);
+    if (badge) badge.textContent = irqs.length + ' IRQs';
+    if (d.error && irqs.length === 0) {
+      body.innerHTML = `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
+      return;
+    }
+    if (irqs.length === 0) {
+      body.innerHTML = '<div style="font-size:13px;color:var(--text-dim);">No interrupts found.</div>';
+      return;
+    }
+    let html = '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="border-bottom:1px solid var(--border-color,#333);">' +
+      '<th style="text-align:left;padding:4px 6px;">IRQ#</th>' +
+      '<th style="text-align:left;padding:4px 6px;">Type</th>' +
+      '<th style="text-align:left;padding:4px 6px;">Devices</th>' +
+      '<th style="text-align:right;padding:4px 6px;">Count</th>' +
+      '</tr></thead><tbody>';
+    for (const irq of irqs) {
+      const devs = irq.devices && irq.devices.length ? irq.devices.join(', ') : '&#x2014;';
+      html += `<tr style="border-bottom:1px solid var(--border-color,#222);">` +
+        `<td style="padding:3px 6px;font-weight:bold;">${irq.irq}</td>` +
+        `<td style="padding:3px 6px;">${irq.type || '&#x2014;'}</td>` +
+        `<td style="padding:3px 6px;">${devs}</td>` +
+        `<td style="text-align:right;padding:3px 6px;">${irq.total.toLocaleString()}</td>` +
+        '</tr>';
+    }
+    html += '</tbody></table></div>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
+
+// ── Network Interfaces Detail ─────────────────────────────────────────────────
+async function fetchNetIfaces() {
+  const badge = document.getElementById('net-ifaces-badge');
+  const body = document.getElementById('net-ifaces-body');
+  try {
+    const d = await apiFetch('/api/network/interfaces');
+    if (badge) badge.textContent = `${d.up_count} up / ${d.count} total`;
+    if (!body) return;
+    if (!d.interfaces || d.interfaces.length === 0) {
+      body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No interfaces found.</div>';
+      return;
+    }
+    let html = '';
+    for (const iface of d.interfaces) {
+      const stateColor = iface.state === 'UP' ? 'var(--ok)' : 'var(--warn)';
+      html += `<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);">`;
+      html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">`;
+      html += `<strong style="font-size:13px;">${iface.name}</strong>`;
+      html += `<span style="color:${stateColor};font-size:11px;font-weight:600;">${iface.state}</span>`;
+      html += `<span style="color:var(--text-dim);font-size:11px;">MTU ${iface.mtu}</span>`;
+      html += `</div>`;
+      if (iface.mac) {
+        html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:2px;">MAC: ${iface.mac}</div>`;
+      }
+      for (const addr of iface.addresses) {
+        const cidr = `${addr.addr}/${addr.prefix}`;
+        const extra = addr.broadcast ? ` brd ${addr.broadcast}` : (addr.scope ? ` scope ${addr.scope}` : '');
+        html += `<div style="font-size:11px;font-family:monospace;color:var(--text);">${addr.family}&nbsp;&nbsp;${cidr}${extra}</div>`;
+      }
+      html += `</div>`;
+    }
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
 async function fetchArpTable() {
@@ -6234,6 +6343,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchPkgUpdates();
   fetchTcpConns();
   fetchTailscaleStatus();
+  fetchNetIfaces();
   fetchFirewallSummary();
   fetchWanUplinks();
   fetchTempHistory();
@@ -6282,6 +6392,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();
+  fetchIrqStats();
   fetchFirewallStats();
   fetchCpuTemp();
   fetchCpuTempCard();
@@ -6609,6 +6720,7 @@ async function refreshAll() {
   fetchBatteryStatus();
   fetchBattery();
   fetchInterrupts();
+  fetchIrqStats();
   fetchFirewallStats();
   fetchCpuTemp();
   fetchKernelModules();
@@ -6710,6 +6822,7 @@ async function refreshAll() {
   fetchBwHistory();
   fetchMemPressure();
   fetchFirewallSummary();
+  fetchNetIfaces();
 }
 
 async function init() {
