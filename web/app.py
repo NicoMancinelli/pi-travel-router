@@ -15503,6 +15503,71 @@ def api_vpn_wireguard_peer_health():
     })
 
 
+# ── On-demand Speed Test (POST) ───────────────────────────────────────────────
+
+@app.route("/api/network/speedtest", methods=["POST"])
+@require_auth
+def api_network_speedtest_post():
+    """Run an on-demand speed test. Returns measured speeds."""
+    import json as _json
+    import subprocess as _sp
+    from datetime import datetime as _dt
+
+    timestamp = _dt.utcnow().strftime("%Y-%m-%dT%H:%M:%S")
+
+    # Try speedtest-cli --json
+    try:
+        result = _sp.run(
+            ["speedtest-cli", "--json", "--timeout", "30"],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0:
+            d = _json.loads(result.stdout)
+            dl = round(d.get("download", 0) / 1_000_000, 2)
+            ul = round(d.get("upload", 0) / 1_000_000, 2)
+            ping = round(d.get("ping", 0), 1)
+            srv = d.get("server", {})
+            server_label = "{} ({})".format(
+                srv.get("sponsor", srv.get("name", "Speedtest.net")),
+                srv.get("name", ""),
+            ).strip(" ()")
+            return jsonify({
+                "download_mbps": dl,
+                "upload_mbps": ul,
+                "ping_ms": ping,
+                "server": server_label or "Speedtest.net",
+                "timestamp": timestamp,
+                "method": "speedtest-cli",
+            })
+    except (FileNotFoundError, _sp.TimeoutExpired, ValueError, KeyError):
+        pass
+
+    # Fallback: curl download test against Cloudflare
+    try:
+        result = _sp.run(
+            [
+                "curl", "-o", "/dev/null", "-s", "-w", "%{speed_download}",
+                "https://speed.cloudflare.com/__down?bytes=10000000",
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+        if result.returncode == 0:
+            speed_bps = float(result.stdout.strip())
+            dl = round(speed_bps * 8 / 1_000_000, 2)
+            return jsonify({
+                "download_mbps": dl,
+                "upload_mbps": None,
+                "ping_ms": None,
+                "server": "Cloudflare (speed.cloudflare.com)",
+                "timestamp": timestamp,
+                "method": "curl-fallback",
+            })
+    except (FileNotFoundError, _sp.TimeoutExpired, ValueError):
+        pass
+
+    return jsonify({"error": "no speedtest method available", "download_mbps": None})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

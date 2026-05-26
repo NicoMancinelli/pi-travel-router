@@ -1817,6 +1817,17 @@
     <div class="card-body" id="wg-health-body"></div>
   </div>
 
+  <!-- Speedtest -->
+  <div class="card" id="card-speedtest">
+    <div class="card-header" onclick="toggleCard('card-speedtest')">
+      <span>🚀 Speed Test</span>
+      <span class="badge" id="speedtest-badge">–</span>
+    </div>
+    <div class="card-body" id="speedtest-body">
+      <button class="btn btn-sm" onclick="fetchSpeedtest()">&#x25B6; Run Speed Test</button>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -9820,6 +9831,50 @@ async function fetchWgPeerHealth() {
   } catch (e) {
     if (badge) badge.textContent = 'error';
     if (body && e.message !== 'Unauthorized') body.innerHTML = `<span style="color:var(--danger)">Failed to load WG peer health</span>`;
+  }
+}
+
+// ── Speed Test (on-demand) ────────────────────────────────────────────────────
+
+async function fetchSpeedtest() {
+  const badge = document.getElementById('speedtest-badge');
+  const body = document.getElementById('speedtest-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Testing&hellip;</span>';
+  if (badge) badge.textContent = '…';
+  try {
+    const d = await apiFetch('/api/network/speedtest', { method: 'POST' });
+    if (d.error) {
+      body.innerHTML = `<span style="color:var(--danger)">${d.error}</span>`;
+      if (badge) badge.textContent = 'unavailable';
+      return;
+    }
+    const dl = d.download_mbps != null ? d.download_mbps.toFixed(1) : '–';
+    const ul = d.upload_mbps != null ? d.upload_mbps.toFixed(1) : '–';
+    const ping = d.ping_ms != null ? d.ping_ms.toFixed(0) : '–';
+    if (badge) {
+      badge.textContent = d.upload_mbps != null
+        ? `↓${dl} ↑${ul} Mbps`
+        : `↓${dl} Mbps`;
+    }
+    body.innerHTML = `
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px;">
+        Down ↓ ${dl} Mbps
+        ${d.upload_mbps != null ? `&nbsp;&nbsp; Up ↑ ${ul} Mbps` : ''}
+        ${d.ping_ms != null ? `&nbsp;&nbsp; Ping ${ping} ms` : ''}
+      </div>
+      <div style="font-size:12px;color:var(--text-dim);">
+        ${d.server ? d.server + ' &nbsp;|&nbsp; ' : ''}
+        Method: ${d.method}
+        ${d.timestamp ? ' &nbsp;|&nbsp; ' + d.timestamp : ''}
+      </div>
+      <div style="margin-top:10px;">
+        <button class="btn btn-sm" onclick="fetchSpeedtest()">&#x25B6; Run Again</button>
+      </div>`;
+  } catch (e) {
+    body.innerHTML = `<div style="color:var(--danger)">Failed: ${e}</div>
+      <div style="margin-top:8px;"><button class="btn btn-sm" onclick="fetchSpeedtest()">&#x25B6; Retry</button></div>`;
+    if (badge) badge.textContent = 'error';
   }
 }
 
