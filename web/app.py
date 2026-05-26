@@ -16503,6 +16503,47 @@ def api_vpn_split_tunnel_status():
     })
 
 
+# ── Resource limits ───────────────────────────────────────────────────────────
+
+@app.route("/api/system/resource-limits", methods=["GET"])
+@require_auth
+def api_system_resource_limits():
+    """Return kernel resource limits."""
+    def read_int(path):
+        try:
+            with open(path) as f:
+                return int(f.read().split()[0])
+        except Exception:
+            return None
+
+    file_max = read_int("/proc/sys/fs/file-max")
+    pid_max = read_int("/proc/sys/kernel/pid_max")
+    threads_max = read_int("/proc/sys/kernel/threads-max")
+
+    # file-nr: allocated, unused-but-allocated, max
+    open_files_current = None
+    try:
+        with open("/proc/sys/fs/file-nr") as f:
+            parts = f.read().split()
+            if len(parts) >= 1:
+                open_files_current = int(parts[0])
+    except Exception:
+        pass
+
+    open_files_pct = None
+    if open_files_current is not None and file_max:
+        open_files_pct = round(open_files_current / file_max * 100, 2)
+
+    return jsonify({
+        "file_max": file_max,
+        "pid_max": pid_max,
+        "threads_max": threads_max,
+        "open_files_current": open_files_current,
+        "open_files_max": file_max,
+        "open_files_pct": open_files_pct,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -1981,6 +1981,15 @@
     <div class="card-body" id="cpu-temp-body"></div>
   </div>
 
+  <!-- Resource Limits -->
+  <div class="card" id="card-resource-limits">
+    <div class="card-header" onclick="toggleCard('card-resource-limits')">
+      <span>📊 Resource Limits</span>
+      <span class="badge" id="resource-limits-badge">…</span>
+    </div>
+    <div class="card-body" id="resource-limits-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5890,6 +5899,27 @@ async function fetchConnectionStats() {
   }
 }
 
+// ── Resource Limits ──
+async function fetchResourceLimits() {
+  const badge = document.getElementById('resource-limits-badge');
+  const body = document.getElementById('resource-limits-body');
+  try {
+    const d = await apiFetch('/api/system/resource-limits');
+    badge.textContent = d.open_files_pct !== null ? `${d.open_files_pct}% fds` : 'ok';
+    const fmt = n => n !== null ? n.toLocaleString() : 'n/a';
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Open FDs</td><td style="padding:3px 8px;font-size:13px;">${fmt(d.open_files_current)} / ${fmt(d.open_files_max)} (${d.open_files_pct ?? 'n/a'}%)</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">File Max</td><td style="padding:3px 8px;font-size:13px;">${fmt(d.file_max)}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">PID Max</td><td style="padding:3px 8px;font-size:13px;">${fmt(d.pid_max)}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Threads Max</td><td style="padding:3px 8px;font-size:13px;">${fmt(d.threads_max)}</td></tr>
+      </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -7034,6 +7064,8 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchInterrupts();
   fetchIrqStats();
   fetchFirewallStats();
+  fetchCpuTemp();
+  fetchResourceLimits();
   fetchCpuTempCard();
   fetchLoggedInUsers();
   fetchWho();
@@ -7379,6 +7411,8 @@ async function refreshAll() {
   fetchInterrupts();
   fetchIrqStats();
   fetchFirewallStats();
+  fetchCpuTemp();
+  fetchResourceLimits();
   fetchKernelModules();
   fetchLoggedInUsers();
   fetchCpuStats();
