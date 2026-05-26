@@ -7012,25 +7012,51 @@ def api_proctop():
 @app.route("/api/system/entropy", methods=["GET"])
 @require_auth
 def api_system_entropy():
-    """Return kernel entropy pool stats."""
-    try:
-        avail = int(open("/proc/sys/kernel/random/entropy_avail").read().strip())
-        pool_size = int(open("/proc/sys/kernel/random/poolsize").read().strip())
+    """Return kernel entropy pool status from /proc/sys/kernel/random/."""
+    _rnd = Path("/proc/sys/kernel/random")
+
+    def _read_int(name: str) -> int:
         try:
-            read_wakeup_threshold = int(
-                open("/proc/sys/kernel/random/read_wakeup_threshold").read().strip()
-            )
+            return int((_rnd / name).read_text().strip())
         except (OSError, ValueError):
-            read_wakeup_threshold = None
-        fill_pct = round(min(max(avail / pool_size * 100, 0), 100), 1) if pool_size else 0.0
-        return jsonify({
-            "entropy_avail": avail,
-            "pool_size": pool_size,
-            "fill_pct": fill_pct,
-            "read_wakeup_threshold": read_wakeup_threshold,
-        })
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+            return 0
+
+    entropy_avail = _read_int("entropy_avail")
+    pool_size = _read_int("pool_size") or 256
+    write_wakeup_threshold = _read_int("write_wakeup_threshold")
+    urandom_min_reseed_secs = _read_int("urandom_min_reseed_secs")
+
+    fill_pct = round(entropy_avail / pool_size * 100, 1) if pool_size else 0.0
+
+    # RNG source detection
+    hw_rng = Path("/sys/class/misc/hw_random/rng_current")
+    if hw_rng.exists():
+        try:
+            rng_source = hw_rng.read_text().strip() or "hardware"
+        except OSError:
+            rng_source = "hardware"
+    elif entropy_avail > 2048:
+        rng_source = "jitter"
+    else:
+        rng_source = "software"
+
+    # Health classification
+    if fill_pct > 50:
+        health = "good"
+    elif fill_pct >= 25:
+        health = "low"
+    else:
+        health = "critical"
+
+    return jsonify({
+        "entropy_avail": entropy_avail,
+        "pool_size": pool_size,
+        "fill_pct": fill_pct,
+        "write_wakeup_threshold": write_wakeup_threshold,
+        "urandom_min_reseed_secs": urandom_min_reseed_secs,
+        "rng_source": rng_source,
+        "health": health,
+    })
 
 
 # ── USB Device Inventory ──────────────────────────────────────────────────────
