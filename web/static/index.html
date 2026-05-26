@@ -1362,17 +1362,6 @@
     </div>
   </div>
 
-  <!-- CPU Frequency -->
-  <div class="card" id="cpufreq-card">
-    <div class="card-header">
-      <span>⚡ CPU Frequency</span>
-      <span class="card-badge" id="cpufreq-governor-badge">—</span>
-    </div>
-    <div class="card-body" id="cpufreq-content">
-      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
-    </div>
-  </div>
-
   <!-- TCP Connection States -->
   <div class="card" id="tcp-states-card">
     <div class="card-header">
@@ -1495,6 +1484,17 @@
   <!-- IRQ Stats -->
   <div class="card" id="card-interrupts">
     <div id="interrupts-body">Loading&hellip;</div>
+  </div>
+
+  <!-- CPU Frequency -->
+  <div class="card" id="card-cpufreq">
+    <div class="card-header">
+      <span>&#x2699;&#xFE0F; CPU Frequency</span>
+      <span class="card-badge" id="cpufreq-badge">— MHz</span>
+    </div>
+    <div class="card-body" id="cpufreq-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
   </div>
 
   <!-- Tailscale Status -->
@@ -7787,6 +7787,46 @@ async function fetchInterrupts() {
   }
 }
 
+// ── CPU Frequency ─────────────────────────────────────────────────────────────
+
+async function fetchCpuFreq() {
+  const el = document.getElementById('cpufreq-body');
+  const badge = document.getElementById('cpufreq-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/system/cpufreq');
+    const d = await r.json();
+    if (badge) {
+      badge.textContent = d.avg_mhz != null ? `${Math.round(d.avg_mhz)} MHz` : '— MHz';
+    }
+    const cores = d.cores || [];
+    if (!cores.length) {
+      el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">${d.error || 'No CPU frequency data available.'}</span>`;
+      return;
+    }
+    const maxMhz = Math.max(...cores.map(c => c.max_mhz || c.cur_mhz || 0));
+    let rows = '';
+    for (const core of cores) {
+      const pct = maxMhz > 0 ? Math.round(((core.cur_mhz || 0) / maxMhz) * 100) : 0;
+      const col = pct >= 90 ? 'var(--red)' : pct >= 60 ? 'var(--yellow)' : 'var(--green)';
+      rows += `<tr>
+        <td style="font-size:12px;color:var(--text-dim);">Core ${core.id}</td>
+        <td style="font-size:12px;font-family:monospace;">${core.cur_mhz != null ? Math.round(core.cur_mhz) : '—'} MHz</td>
+        <td style="width:120px;padding:0 4px;">
+          <div style="background:var(--border);border-radius:3px;height:10px;overflow:hidden;">
+            <div style="height:10px;width:${pct}%;background:${col};transition:width 0.3s;"></div>
+          </div>
+        </td>
+      </tr>`;
+    }
+    const govLabel = d.governor ? `<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">Governor: <strong>${d.governor}</strong></div>` : '';
+    el.innerHTML = `<table class="table" style="width:100%;border-collapse:collapse;"><tbody>${rows}</tbody></table>${govLabel}`;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">Error loading CPU frequency</span>`;
+  }
+}
+
 // ── Tailscale Status ──────────────────────────────────────────────────────────
 
 async function fetchTailscaleStatus() {
@@ -9456,54 +9496,9 @@ async function fetchNtpStatus() {
   } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
 }
 
-// ── CPU Frequency ─────────────────────────────────────────────────────────────
-async function fetchCpuFreq() {
-  const el = document.getElementById('cpufreq-content');
-  const badge = document.getElementById('cpufreq-governor-badge');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const r = await fetch('/api/system/cpufreq');
-    const d = await r.json();
-    if (badge && d.governor) {
-      badge.textContent = d.governor;
-      const govColor = {'performance': '#16a34a', 'powersave': '#4a9eff', 'ondemand': '#f59e0b', 'schedutil': '#8b5cf6'}[d.governor] || '#6b7280';
-      badge.style.background = govColor;
-      badge.style.color = '#fff';
-      badge.style.borderRadius = '4px';
-      badge.style.padding = '1px 7px';
-      badge.style.fontSize = '11px';
-    }
-    let html = '';
-    const cpus = d.cpus || [];
-    if (cpus.length > 0) {
-      const maxMhz = d.arm_freq_mhz || Math.max(...cpus.map(c => c.max_mhz || 0));
-      html += '<div style="display:flex;flex-direction:column;gap:5px;margin-bottom:10px;">';
-      for (const cpu of cpus) {
-        const pct = maxMhz > 0 ? Math.round((cpu.cur_mhz / maxMhz) * 100) : 0;
-        const col = pct >= 90 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#16a34a';
-        html += `<div style="display:flex;align-items:center;gap:8px;">
-          <div style="width:40px;font-size:11px;color:var(--text-dim);text-align:right;flex-shrink:0;">CPU${cpu.id}</div>
-          <div style="flex:1;background:var(--border);border-radius:3px;height:14px;position:relative;overflow:hidden;">
-            <div style="position:absolute;left:0;top:0;height:14px;width:${pct}%;background:${col};transition:width 0.3s;"></div>
-          </div>
-          <div style="width:70px;font-size:11px;text-align:right;flex-shrink:0;font-family:monospace;">${cpu.cur_mhz?.toFixed(0)} MHz</div>
-        </div>`;
-      }
-      html += '</div>';
-      if (d.arm_freq_mhz) {
-        html += `<div style="font-size:11px;color:var(--text-dim);">Pi arm_freq max: <strong>${d.arm_freq_mhz} MHz</strong></div>`;
-      }
-    } else if (d.error) {
-      html = `<p class="muted">${d.error}</p>`;
-    } else {
-      html = '<p class="muted">No CPU frequency data available.</p>';
-    }
-    if (d.governors_available?.length > 0) {
-      html += `<div style="margin-top:8px;font-size:11px;color:var(--text-dim);">Available governors: ${d.governors_available.join(', ')}</div>`;
-    }
-    el.innerHTML = html;
-  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
+// ── CPU Frequency (legacy) ────────────────────────────────────────────────────
+async function fetchCpuFreqLegacy() {
+  // Retained for compatibility — new card uses fetchCpuFreq() below
 }
 
 // ── Failed Systemd Units ──────────────────────────────────────────────────────

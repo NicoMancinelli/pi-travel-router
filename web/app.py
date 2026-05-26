@@ -7635,62 +7635,58 @@ def api_system_openfiles():
 @app.route("/api/system/cpufreq", methods=["GET"])
 @require_auth
 def api_system_cpufreq():
-    """Return CPU frequency scaling info from sysfs for all online CPUs."""
+    """Return per-core CPU frequency info from sysfs (or /proc/cpuinfo fallback)."""
     import glob as _glob
-    import subprocess as _sp
-    cpus = []
-    cpu_dirs = sorted(_glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq"))
-    for cpu_dir in cpu_dirs:
-        cpu_id_str = cpu_dir.split("/")[-2]  # e.g. "cpu0"
+
+    def _read_khz(path):
         try:
-            cpu_id = int(cpu_id_str.replace("cpu", ""))
-        except ValueError:
-            cpu_id = 0
-        def _read_khz(fname):
-            try:
-                return int(open(f"{cpu_dir}/{fname}").read().strip()) / 1000.0
-            except (OSError, ValueError):
-                return None
-        cur_mhz = _read_khz("scaling_cur_freq")
-        if cur_mhz is None:
-            cur_mhz = _read_khz("cpuinfo_cur_freq")
-        cpus.append({
-            "id": cpu_id,
-            "cur_mhz": cur_mhz,
-            "min_mhz": _read_khz("scaling_min_freq"),
-            "max_mhz": _read_khz("scaling_max_freq"),
-        })
-    if not cpus:
-        return jsonify({"error": "cpufreq sysfs not available", "cpus": [], "governor": None,
-                        "governors_available": [], "arm_freq_mhz": None})
-    # Read governor and available governors from cpu0
+            return round(int(Path(path).read_text().strip()) / 1000.0, 1)
+        except (OSError, ValueError):
+            return None
+
     def _read_str(path):
         try:
             return Path(path).read_text().strip()
         except OSError:
             return None
+
+    cores = []
+    cpu_dirs = sorted(_glob.glob("/sys/devices/system/cpu/cpu[0-9]*/cpufreq"))
+    for cpu_dir in cpu_dirs:
+        cpu_id_str = cpu_dir.split("/")[-2]
+        try:
+            cpu_id = int(cpu_id_str.replace("cpu", ""))
+        except ValueError:
+            continue
+        cur = _read_khz(f"{cpu_dir}/scaling_cur_freq")
+        if cur is None:
+            cur = _read_khz(f"{cpu_dir}/cpuinfo_cur_freq")
+        cores.append({
+            "id": cpu_id,
+            "cur_mhz": cur,
+            "min_mhz": _read_khz(f"{cpu_dir}/scaling_min_freq"),
+            "max_mhz": _read_khz(f"{cpu_dir}/scaling_max_freq"),
+        })
+
+    # Fallback: parse /proc/cpuinfo if sysfs cpufreq not available
+    if not cores:
+        import re as _re
+        try:
+            text = Path("/proc/cpuinfo").read_text()
+            mhz_vals = [float(m.group(1)) for m in _re.finditer(r"cpu MHz\s*:\s*([\d.]+)", text)]
+            for idx, mhz in enumerate(mhz_vals):
+                cores.append({"id": idx, "cur_mhz": round(mhz, 1), "min_mhz": None, "max_mhz": None})
+        except Exception:
+            pass
+
+    if not cores:
+        return jsonify({"cores": [], "governor": None, "avg_mhz": None,
+                        "error": "cpufreq data not available"})
+
     governor = _read_str("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
-    avail_raw = _read_str("/sys/devices/system/cpu/cpu0/cpufreq/scaling_available_governors")
-    governors_available = avail_raw.split() if avail_raw else []
-    # Pi-specific arm_freq via vcgencmd
-    arm_freq_mhz = None
-    try:
-        out = _sp.check_output(
-            ["vcgencmd", "get_config", "arm_freq"],
-            stderr=_sp.DEVNULL, timeout=2
-        ).decode().strip()
-        # output: "arm_freq=1500"
-        if "=" in out:
-            arm_freq_mhz = int(out.split("=", 1)[1])
-    except Exception:
-        arm_freq_mhz = None
-    return jsonify({
-        "cpus": cpus,
-        "governor": governor,
-        "governors_available": governors_available,
-        "arm_freq_mhz": arm_freq_mhz,
-        "error": None,
-    })
+    cur_vals = [c["cur_mhz"] for c in cores if c["cur_mhz"] is not None]
+    avg_mhz = round(sum(cur_vals) / len(cur_vals), 1) if cur_vals else None
+    return jsonify({"cores": cores, "governor": governor, "avg_mhz": avg_mhz})
 
 
 # ── ARP / Neighbor Table ──────────────────────────────────────────────────────
