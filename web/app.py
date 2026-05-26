@@ -16110,6 +16110,46 @@ def api_vpn_tailscale_exit_node():
     })
 
 
+# ── Thermal zones ─────────────────────────────────────────────────────────────
+
+@app.route("/api/system/thermal-zones", methods=["GET"])
+@require_auth
+def api_system_thermal_zones():
+    """Return per-zone thermal readings from /sys/class/thermal/."""
+    import glob
+    zones = []
+    for temp_path in sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp")):
+        zone_dir = temp_path.rsplit("/", 1)[0]
+        type_path = zone_dir + "/type"
+        try:
+            with open(temp_path) as f:
+                raw = int(f.read().strip())
+            with open(type_path) as f:
+                name = f.read().strip()
+            temp_c = round(raw / 1000.0, 1)
+            if temp_c < 50:
+                status = "cool"
+            elif temp_c < 70:
+                status = "warm"
+            else:
+                status = "hot"
+            zones.append({"name": name, "temp_celsius": temp_c, "status": status})
+        except Exception:
+            continue
+    if zones:
+        hottest = max(zones, key=lambda z: z["temp_celsius"])
+        max_temp = hottest["temp_celsius"]
+        hottest_zone = hottest["name"]
+    else:
+        max_temp = None
+        hottest_zone = None
+    return jsonify({
+        "zones": zones,
+        "max_temp": max_temp,
+        "hottest_zone": hottest_zone,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

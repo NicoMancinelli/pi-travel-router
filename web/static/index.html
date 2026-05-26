@@ -1894,6 +1894,15 @@
     <div class="card-body" id="ts-exit-body"></div>
   </div>
 
+  <!-- Thermal Zones -->
+  <div class="card" id="card-thermal-zones">
+    <div class="card-header" onclick="toggleCard('card-thermal-zones')">
+      <span>🌡️ Thermal Zones</span>
+      <span class="badge" id="thermal-zones-badge">…</span>
+    </div>
+    <div class="card-body" id="thermal-zones-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6773,6 +6782,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchConnections();
   fetchTsExitNode();
   fetchTsExitNodeV3();
+  fetchThermalZones();
   fetchCronJobsSystem();
   fetchEntropy();
   fetchUsbDevices();
@@ -7090,6 +7100,7 @@ async function refreshAll() {
   fetchTsPeers();
   fetchTsExitNode();
   fetchTsExitNodeV3();
+  fetchThermalZones();
   fetchMdnsServices();
   fetchScheduledTasks();
   fetchCronJobs();
@@ -10391,6 +10402,39 @@ async function fetchLoginHistoryV4() {
   } catch (e) {
     if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
     if (badge) badge.textContent = 'error';
+  }
+}
+
+// ── Thermal Zones ──
+async function fetchThermalZones() {
+  const badge = document.getElementById('thermal-zones-badge');
+  const body = document.getElementById('thermal-zones-body');
+  try {
+    const d = await apiFetch('/api/system/thermal-zones');
+    if (!d.zones || d.zones.length === 0) {
+      badge.textContent = 'n/a';
+      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No thermal zones found.</p>';
+      return;
+    }
+    badge.textContent = d.max_temp !== null ? `${d.max_temp}°C` : 'n/a';
+    const statusColor = {'cool': '#22c55e', 'warm': '#f59e0b', 'hot': '#ef4444'};
+    const rows = d.zones.map(z => `
+      <tr>
+        <td style="padding:3px 8px;font-size:13px;">${z.name}</td>
+        <td style="padding:3px 8px;font-size:13px;text-align:right;color:${statusColor[z.status] || '#ccc'};">${z.temp_celsius}°C</td>
+        <td style="padding:3px 8px;font-size:12px;color:${statusColor[z.status] || '#ccc'};">${z.status}</td>
+      </tr>`).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:3px 8px;font-size:12px;text-align:left;color:var(--text-dim);">Zone</th>
+        <th style="padding:3px 8px;font-size:12px;text-align:right;color:var(--text-dim);">Temp</th>
+        <th style="padding:3px 8px;font-size:12px;color:var(--text-dim);">Status</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
   }
 }
 
