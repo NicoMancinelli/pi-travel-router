@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.13.0] - 2026-05-26
+
+### Added
+- `GET /api/system/process-states` — counts processes by state (R/S/D/Z/T/I) from `/proc/*/status`; returns `states{}`, `total`, `zombies`, `has_zombies`; dashboard card ⚙️ Process States with colour-coded state table and red badge on zombies
+- `GET /api/network/route-summary` — routing table summary from `ip route show`; returns `total_routes`, `default_routes[]` with gateway/dev/metric/proto, `by_protocol{}`; dashboard card 🗺️ Routes
+- `GET /api/system/service-health` — checks 10 key travel-router services via `systemctl is-active`; returns `services[]`, `active`, `inactive`, `failed`, `total`; dashboard card 🏥 Service Health with colour-coded status
+
 ## [3.12.0] - 2026-05-26
 
 ### Added
