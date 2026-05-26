@@ -17073,6 +17073,37 @@ def api_system_journal_boot():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Multicast Groups ──────────────────────────────────────────────────────────
+@app.route("/api/network/multicast-groups")
+@require_auth
+def api_network_multicast_groups():
+    """Return multicast group memberships from /proc/net/igmp."""
+    try:
+        import re
+        groups = []
+        iface = None
+        try:
+            with open("/proc/net/igmp") as f:
+                for line in f:
+                    m = re.match(r'^(\w+)\s+', line)
+                    if m:
+                        iface = m.group(1)
+                    mg = re.match(r'^\s+([0-9A-Fa-f]{8})\s+(\d+)', line)
+                    if mg and iface:
+                        raw = mg.group(1)
+                        # Convert little-endian hex to dotted-decimal
+                        addr = ".".join(str(int(raw[i:i+2], 16)) for i in (6, 4, 2, 0))
+                        groups.append({"iface": iface, "group": addr, "users": int(mg.group(2))})
+        except FileNotFoundError:
+            pass
+        return jsonify({
+            "groups": groups,
+            "total": len(groups),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
