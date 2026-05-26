@@ -16231,6 +16231,52 @@ def api_system_loaded_modules():
         "modules": modules[:50],
         "total": len(modules),
     })
+# ── NTP sync status ───────────────────────────────────────────────────────────
+
+@app.route("/api/system/ntp-sync", methods=["GET"])
+@require_auth
+def api_system_ntp_sync():
+    """Return NTP synchronisation status."""
+    import re
+    result = {
+        "synchronized": False,
+        "ntp_active": False,
+        "ntp_server": None,
+        "offset_ms": None,
+        "timezone": None,
+        "source": "timedatectl",
+    }
+    try:
+        out, _ = _run(["timedatectl", "show", "--no-pager"])
+        props = {}
+        for line in out.splitlines():
+            if "=" in line:
+                k, _, v = line.partition("=")
+                props[k.strip()] = v.strip()
+        result["synchronized"] = props.get("NTPSynchronized", "no").lower() == "yes"
+        result["ntp_active"] = props.get("NTP", "no").lower() == "yes"
+        result["timezone"] = props.get("Timezone")
+        server = props.get("ServerName") or props.get("NTPServer")
+        if server:
+            result["ntp_server"] = server
+    except Exception:
+        pass
+    # Try chronyc for offset
+    try:
+        chrony_out, _ = _run(["chronyc", "tracking"])
+        for line in chrony_out.splitlines():
+            if "System time" in line:
+                m = re.search(r"([\d.]+) seconds", line)
+                if m:
+                    result["offset_ms"] = round(float(m.group(1)) * 1000, 3)
+            if "Reference ID" in line:
+                m = re.search(r"\(([^)]+)\)", line)
+                if m and not result["ntp_server"]:
+                    result["ntp_server"] = m.group(1)
+        result["source"] = "chronyc"
+    except Exception:
+        pass
+    return jsonify(result)
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────

@@ -1915,6 +1915,13 @@
       <span class="badge" id="loaded-modules-badge">…</span>
     </div>
     <div class="card-body" id="loaded-modules-body"></div>
+  <!-- NTP Sync -->
+  <div class="card" id="card-ntp-sync">
+    <div class="card-header" onclick="toggleCard('card-ntp-sync')">
+      <span>🕐 NTP Sync</span>
+      <span class="badge" id="ntp-sync-badge">…</span>
+    </div>
+    <div class="card-body" id="ntp-sync-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -6984,6 +6991,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSshKeysV3();
   fetchBwLive();
   fetchOtaStatus();
+  fetchNtpSync();
 });
 
 async function fetchJournal() {
@@ -10505,6 +10513,24 @@ async function fetchThermalZones() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+// ── NTP Sync ──
+async function fetchNtpSync() {
+  const badge = document.getElementById('ntp-sync-badge');
+  const body = document.getElementById('ntp-sync-body');
+  try {
+    const d = await apiFetch('/api/system/ntp-sync');
+    const syncColor = d.synchronized ? '#22c55e' : '#ef4444';
+    badge.textContent = d.synchronized ? 'synced' : 'not synced';
+    badge.style.background = syncColor;
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Synchronized</td><td style="padding:3px 8px;font-size:13px;color:${syncColor};">${d.synchronized ? '✓ Yes' : '✗ No'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">NTP Active</td><td style="padding:3px 8px;font-size:13px;">${d.ntp_active ? 'Yes' : 'No'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Server</td><td style="padding:3px 8px;font-size:13px;">${d.ntp_server || 'n/a'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Offset</td><td style="padding:3px 8px;font-size:13px;">${d.offset_ms !== null ? d.offset_ms + ' ms' : 'n/a'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Timezone</td><td style="padding:3px 8px;font-size:13px;">${d.timezone || 'n/a'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:12px;color:var(--text-dim);">Source</td><td style="padding:3px 8px;font-size:12px;color:var(--text-dim);">${d.source}</td></tr>
+      </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
     if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
