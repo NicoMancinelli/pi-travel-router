@@ -17476,6 +17476,36 @@ def api_system_battery_status():
             "supplies": supplies,
             "total": len(supplies),
             "has_battery": len(supplies) > 0,
+# ── Systemd Failed ───────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/system/systemd-failed")
+@require_auth
+def api_system_systemd_failed():
+    """Return failed systemd units."""
+    try:
+        result = _run(
+            ["systemctl", "list-units", "--state=failed", "--no-legend", "--no-pager"],
+            timeout=10
+        )
+        units = []
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 4:
+                units.append({
+                    "unit": parts[0],
+                    "load": parts[1],
+                    "active": parts[2],
+                    "sub": parts[3],
+                    "description": " ".join(parts[4:]) if len(parts) > 4 else "",
+                })
+        return jsonify({
+            "units": units,
+            "total": len(units),
+            "healthy": len(units) == 0,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
