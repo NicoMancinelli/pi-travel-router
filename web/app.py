@@ -8393,13 +8393,12 @@ def api_system_battery():
 def api_system_interrupts():
     """Return top IRQ interrupt counts from /proc/interrupts."""
     try:
-        with open("/proc/interrupts", "r") as fh:
-            lines = fh.readlines()
+        lines = Path("/proc/interrupts").read_text().splitlines()
     except OSError as exc:
-        return jsonify({"interrupts": [], "count": 0, "error": str(exc)})
+        return jsonify({"cpu_count": 0, "total": 0, "irqs": [], "error": str(exc)})
 
     if not lines:
-        return jsonify({"interrupts": [], "count": 0, "error": "empty file"})
+        return jsonify({"cpu_count": 0, "total": 0, "irqs": [], "error": "empty file"})
 
     # First line: CPU headers — count CPUs
     cpu_count = len(lines[0].split())
@@ -8420,7 +8419,7 @@ def api_system_interrupts():
             continue
         # Remaining fields after the counts: optional type + description
         remainder = parts[1 + cpu_count:]
-        irq_type = remainder[0] if len(remainder) > 0 else ""
+        irq_type = remainder[0] if len(remainder) > 0 else None
         description = " ".join(remainder[1:]) if len(remainder) > 1 else ""
         results.append({
             "irq": irq,
@@ -8430,8 +8429,9 @@ def api_system_interrupts():
         })
 
     results.sort(key=lambda x: x["total"], reverse=True)
-    top = results[:15]
-    return jsonify({"interrupts": top, "cpus": cpu_count, "count": len(top)})
+    top = results[:20]
+    grand_total = sum(r["total"] for r in results)
+    return jsonify({"cpu_count": cpu_count, "total": grand_total, "irqs": top})
 
 
 # ── Top Processes by Memory ───────────────────────────────────────────────────
