@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.14.0] - 2026-05-26
+
+### Added
+- `GET /api/system/top-memory` — top 10 processes by RSS from `/proc/*/status`; returns `processes[]` with pid/name/rss_mb/swap_mb; dashboard card 🧬 Top Memory with sortable table
+- `GET /api/network/dns-test` — resolves google.com/cloudflare.com/github.com via `socket.gethostbyname`; returns `tests[]` with hostname/resolved/latency_ms/success, `passed`, `failed`; dashboard card 🔍 DNS Test
+- `GET /api/network/firewall-rules` — nftables ruleset summary (fallback to iptables); returns `backend`, `chains[]` with table/chain/policy/rules, `total_rules`; dashboard card 🛡️ Firewall Rules
+
 ## [3.13.0] - 2026-05-26
 
 ### Added
