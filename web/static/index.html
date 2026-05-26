@@ -2203,6 +2203,14 @@
   </div>
 </div>
 
+<!-- Nftables Counters -->
+<div class="card" id="card-nftables-counters">
+  <div class="card-header"><span>🔢 Nftables Counters</span><button class="refresh-btn" onclick="fetchNftablesCounters()">↻</button></div>
+  <div class="card-body" id="nftables-counters-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6496,6 +6504,19 @@ async function fetchVpnLatency() {
         : `<div class="stat-row"><span>Tailscale</span><span class="val ${!ts.reachable?'warn':''}">${ts.avg_ms ? ts.avg_ms+'ms' : 'timeout'}</span></div>`;
     }
     el.innerHTML = html || '<div class="ok-msg">No VPN active</div>';
+// ── Nftables Counters ──
+async function fetchNftablesCounters() {
+  const el = document.getElementById('nftables-counters-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/network/nftables-counters');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No named counters</div>'; return; }
+    const rows = d.counters.map(c =>
+      `<div class="stat-row"><span>${c.name}</span><span class="val">${c.packets} pkts / ${Math.round(c.bytes/1024)} KB</span></div>`
+    ).join('');
+    el.innerHTML = `<div class="stat-row"><span>Total packets</span><span class="val">${d.total_packets}</span></div>${rows}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
@@ -8135,6 +8156,7 @@ async function refreshAll() {
   fetchPciDevices();
   fetchVpnLatency();
   fetchDiskTemp();
+  fetchNftablesCounters();
 }
 
 async function init() {

@@ -17705,6 +17705,43 @@ def api_vpn_vpn_latency():
         except Exception:
             results["tailscale"] = {"error": "tailscale not active"}
         return jsonify(results)
+# ── Nftables Counters ────────────────────────────────────────────────────────
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/network/nftables-counters")
+@require_auth
+def api_network_nftables_counters():
+    """Return nftables named counters and rule hit counts."""
+    try:
+        import re
+        result = _run(["nft", "-j", "list", "ruleset"], timeout=10)
+        counters = []
+        try:
+            import json as _json
+            data = _json.loads(result.stdout)
+            for item in data.get("nftables", []):
+                if "counter" in item:
+                    c = item["counter"]
+                    counters.append({
+                        "name": c.get("name"),
+                        "table": c.get("table"),
+                        "packets": c.get("packets", 0),
+                        "bytes": c.get("bytes", 0),
+                    })
+        except Exception:
+            # Fall back to text parse
+            for line in result.stdout.splitlines():
+                m = re.match(r"\s*counter\s+(\S+)\s+packets\s+(\d+)\s+bytes\s+(\d+)", line)
+                if m:
+                    counters.append({"name": m.group(1), "packets": int(m.group(2)), "bytes": int(m.group(3))})
+        total_packets = sum(c["packets"] for c in counters)
+        return jsonify({
+            "counters": counters,
+            "total": len(counters),
+            "total_packets": total_packets,
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
