@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.90.0] - 2026-05-25
+
+### Added
+- `GET /api/system/uptime` — system uptime from `/proc/uptime` + `/proc/loadavg`; returns `uptime_seconds`, `uptime_human`, `idle_seconds`, `load_1/5/15`, `uptime_str`; dashboard card ⏱️ System Uptime with large uptime display and color-coded load average gauges (green/yellow/red per-core thresholds)
+- `GET /api/system/who` — active login sessions from `who`; parses user/tty/login_time/from; dashboard card 👤 Active Sessions with sortable table
+- `GET /api/system/open-fds` (updated) — file descriptors from `/proc/sys/fs/file-nr`; added `used` field; dashboard card 📂 File Descriptors with usage progress bar and allocated/used/max stats
+
 ## [2.89.0] - 2026-05-25
 
 ### Added
