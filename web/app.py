@@ -16428,6 +16428,59 @@ def api_network_connection_stats():
         "tcp_total": tcp_total,
         "udp_total": udp_total,
         "udp6_total": udp6_total,
+# ── VPN split tunnel status ───────────────────────────────────────────────────
+
+@app.route("/api/vpn/split-tunnel-status", methods=["GET"])
+@require_auth
+def api_vpn_split_tunnel_status():
+    """Return split tunnel routing status."""
+    import re
+    split_routes = []
+    active = False
+    default_interface = None
+
+    # Check ip rule for split tunnel marker (table 100 or table main with fwmark)
+    try:
+        rules_out, _ = _run(["ip", "rule", "show"])
+        if "lookup 100" in rules_out or "table 100" in rules_out:
+            active = True
+    except Exception:
+        pass
+
+    # Get routes in table 100
+    try:
+        rt_out, _ = _run(["ip", "route", "show", "table", "100"])
+        for line in rt_out.splitlines():
+            m = re.match(r"^(\S+)", line)
+            if m and m.group(1) not in ("local", "broadcast", "default"):
+                split_routes.append(m.group(1))
+            if "default" in line:
+                dm = re.search(r"dev\s+(\S+)", line)
+                if dm:
+                    default_interface = dm.group(1)
+        if split_routes or active:
+            active = True
+    except Exception:
+        pass
+
+    # Fallback: check main table default route
+    if not default_interface:
+        try:
+            route_out, _ = _run(["ip", "route", "show", "default"])
+            dm = re.search(r"dev\s+(\S+)", route_out)
+            if dm:
+                default_interface = dm.group(1)
+        except Exception:
+            pass
+
+    mode = "split" if split_routes else ("vpn" if active else "direct")
+
+    return jsonify({
+        "active": active,
+        "mode": mode,
+        "split_routes": split_routes,
+        "route_count": len(split_routes),
+        "default_interface": default_interface,
     })
 
 

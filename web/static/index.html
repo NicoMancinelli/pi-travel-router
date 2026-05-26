@@ -1956,6 +1956,13 @@
       <span class="badge" id="connection-stats-badge">…</span>
     </div>
     <div class="card-body" id="connection-stats-body"></div>
+  <!-- Split Tunnel Status -->
+  <div class="card" id="card-split-tunnel">
+    <div class="card-header" onclick="toggleCard('card-split-tunnel')">
+      <span>🔀 Split Tunnel</span>
+      <span class="badge" id="split-tunnel-badge">…</span>
+    </div>
+    <div class="card-body" id="split-tunnel-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -7466,6 +7473,7 @@ async function refreshAll() {
   fetchBwLive();
   fetchOtaStatus();
   fetchMemoryMap();
+  fetchSplitTunnelStatus();
 }
 
 async function init() {
@@ -7482,6 +7490,7 @@ async function init() {
   // Auto-refresh system resources every 30s
   setInterval(fetchResourceStats, 30000);
   setInterval(fetchMemoryMap, 30000);
+  setInterval(fetchSplitTunnelStatus, 30000);
   // Connect SSE event stream
   initEventStream();
 }
@@ -10683,6 +10692,24 @@ async function fetchMemoryMap() {
         <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Cached</td><td style="padding:2px 8px;font-size:13px;">${d.cached_mb} MB</td></tr>
         <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Buffers</td><td style="padding:2px 8px;font-size:13px;">${d.buffers_mb} MB</td></tr>
         <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Swap Used</td><td style="padding:2px 8px;font-size:13px;">${d.swap_used_mb} / ${d.swap_total_mb} MB</td></tr>
+// ── Split Tunnel Status ──
+async function fetchSplitTunnelStatus() {
+  const badge = document.getElementById('split-tunnel-badge');
+  const body = document.getElementById('split-tunnel-body');
+  try {
+    const d = await apiFetch('/api/vpn/split-tunnel-status');
+    const modeColors = {'split': '#3b82f6', 'vpn': '#22c55e', 'direct': '#6b7280'};
+    badge.textContent = d.mode;
+    badge.style.background = modeColors[d.mode] || '#6b7280';
+    const routeList = d.split_routes.length
+      ? d.split_routes.map(r => `<span style="display:inline-block;background:var(--bg2);border-radius:3px;padding:1px 6px;font-size:12px;margin:2px;font-family:monospace;">${r}</span>`).join('')
+      : '<span style="font-size:12px;color:var(--text-dim);">none</span>';
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Mode</td><td style="padding:3px 8px;font-size:13px;">${d.mode}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Active</td><td style="padding:3px 8px;font-size:13px;">${d.active ? '✓ Yes' : '✗ No'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Default dev</td><td style="padding:3px 8px;font-size:13px;">${d.default_interface || 'n/a'}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);" valign="top">Routes (${d.route_count})</td><td style="padding:3px 8px;">${routeList}</td></tr>
       </table>`;
   } catch(e) {
     if (badge) badge.textContent = 'err';
