@@ -14400,6 +14400,50 @@ def api_system_sysctl_net():
         except Exception:
             pass
     return jsonify({"params": params, "count": len(params)})
+@app.route("/api/network/ipv6", methods=["GET"])
+@require_auth
+def api_network_ipv6():
+    """Return IPv6 addresses grouped by interface."""
+    try:
+        out = subprocess.check_output(
+            ["ip", "-6", "addr", "show"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        return jsonify({"interfaces": [], "global_count": 0, "total_count": 0, "error": str(exc)}), 503
+
+    interfaces: list[dict] = []
+    current: dict | None = None
+    global_count = 0
+    total_count = 0
+
+    for line in out.splitlines():
+        # New interface block: "2: eth0: <...>"
+        m_iface = re.match(r"^\d+:\s+(\S+?)(?:@\S+)?:\s+<", line)
+        if m_iface:
+            current = {"name": m_iface.group(1), "addresses": []}
+            continue
+        if current is None:
+            continue
+        # Address line: "    inet6 ADDRESS scope SCOPE ..."
+        m_addr = re.match(r"^\s+inet6\s+(\S+)\s+scope\s+(\S+)", line)
+        if m_addr:
+            address = m_addr.group(1)
+            scope = m_addr.group(2)
+            current["addresses"].append({"address": address, "scope": scope})
+            total_count += 1
+            if scope == "global":
+                global_count += 1
+            # Attach interface to list on first address found
+            if len(current["addresses"]) == 1:
+                interfaces.append(current)
+
+    return jsonify({
+        "interfaces": interfaces,
+        "global_count": global_count,
+        "total_count": total_count,
+    })
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
