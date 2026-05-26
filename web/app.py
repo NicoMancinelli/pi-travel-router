@@ -14978,6 +14978,54 @@ def api_system_ssh_keys_v3():
     return jsonify({"keys": keys, "count": len(keys), "files_checked": files_checked})
 
 
+# ── Ping Connectivity Check ───────────────────────────────────────────────────
+
+_PING_HOSTS = [
+    {"host": "1.1.1.1",  "label": "Cloudflare"},
+    {"host": "8.8.8.8",  "label": "Google"},
+    {"host": "1.0.0.1",  "label": "Cloudflare 2"},
+    {"host": "9.9.9.9",  "label": "Quad9"},
+]
+
+
+def _ping_one(entry):
+    """Ping a single host; return dict with reachable + latency_ms."""
+    import concurrent.futures as _cf  # noqa: F401 — imported for executor below
+    host = entry["host"]
+    label = entry["label"]
+    try:
+        result = subprocess.run(
+            ["ping", "-c", "1", "-W", "2", host],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            m = re.search(r"time=(\d+(?:\.\d+)?)\s*ms", result.stdout)
+            latency = float(m.group(1)) if m else None
+            return {"host": host, "label": label, "reachable": True, "latency_ms": latency}
+    except Exception:
+        pass
+    return {"host": host, "label": label, "reachable": False, "latency_ms": None}
+
+
+@app.route("/api/network/ping-check", methods=["GET"])
+@require_auth
+def api_network_ping_check():
+    """Ping well-known hosts in parallel to verify internet reachability."""
+    import concurrent.futures as _cf
+
+    with _cf.ThreadPoolExecutor(max_workers=len(_PING_HOSTS)) as executor:
+        results = list(executor.map(_ping_one, _PING_HOSTS))
+
+    reachable_count = sum(1 for r in results if r["reachable"])
+    return jsonify({
+        "results": results,
+        "reachable_count": reachable_count,
+        "all_reachable": reachable_count == len(_PING_HOSTS),
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

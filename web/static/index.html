@@ -1708,6 +1708,13 @@
       <span class="badge" id="log-summary-badge">…</span>
     </div>
     <div class="card-body" id="log-summary-body"></div>
+  <!-- Ping Check -->
+  <div class="card" id="card-ping-check">
+    <div class="card-header" onclick="toggleCard('card-ping-check')">
+      <span>&#x1F3D3; Ping Check</span>
+      <span class="badge" id="ping-check-badge">&#x2026;</span>
+    </div>
+    <div class="card-body" id="ping-check-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -6305,6 +6312,7 @@ async function refreshAll() {
   fetchMdnsServicesV2();
   fetchArpTableV3();
   fetchSshKeysV3();
+  fetchPingCheck();
 }
 
 async function init() {
@@ -9111,6 +9119,32 @@ async function fetchCronJobs() {
     body.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--danger)">Failed to load cron jobs</span>';
+// ── Ping Check ────────────────────────────────────────────────────────────────
+
+async function fetchPingCheck() {
+  const body = document.getElementById('ping-check-body');
+  const badge = document.getElementById('ping-check-badge');
+  try {
+    const d = await apiFetch('/api/network/ping-check');
+    badge.textContent = d.reachable_count + '/4 up';
+    badge.style.background = d.all_reachable ? 'var(--green)' : (d.reachable_count === 0 ? 'var(--red)' : 'var(--yellow)');
+    if (!d.results || d.results.length === 0) {
+      body.innerHTML = '<span class="dim">No results</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr><th style="text-align:left;padding:4px 8px;">Host</th><th style="text-align:left;padding:4px 8px;">Label</th><th style="text-align:center;padding:4px 8px;">Reachable</th><th style="text-align:right;padding:4px 8px;">Latency</th></tr></thead><tbody>';
+    for (const r of d.results) {
+      const reach = r.reachable
+        ? '<span style="color:var(--green);">&#x2713;</span>'
+        : '<span style="color:var(--red);">&#x2717;</span>';
+      const lat = r.latency_ms !== null ? r.latency_ms.toFixed(1) + ' ms' : '—';
+      html += `<tr><td style="padding:4px 8px;font-family:monospace;">${r.host}</td><td style="padding:4px 8px;">${r.label}</td><td style="text-align:center;padding:4px 8px;">${reach}</td><td style="text-align:right;padding:4px 8px;">${lat}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  } catch(e) {
+    if (e.message !== 'Unauthorized') body.innerHTML = `<span class="dim">Error: ${e.message}</span>`;
   }
 }
 
