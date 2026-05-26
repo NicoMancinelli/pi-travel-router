@@ -1858,6 +1858,13 @@
       <span class="badge" id="login-history-badge">…</span>
     </div>
     <div class="card-body" id="login-history-body"></div>
+  <!-- Pi Hardware -->
+  <div class="card" id="card-pi-hw">
+    <div class="card-header" onclick="toggleCard('card-pi-hw')">
+      <span>🍓 Pi Hardware</span>
+      <span class="badge" id="pi-hw-badge">…</span>
+    </div>
+    <div class="card-body" id="pi-hw-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -5406,6 +5413,40 @@ async function fetchTsPeers() {
   }
 }
 
+// ── Pi Hardware ───────────────────────────────────────────────────────────────
+async function fetchPiHw() {
+  const badge = document.getElementById('pi-hw-badge');
+  const body  = document.getElementById('pi-hw-body');
+  try {
+    const d = await apiFetch('/api/system/pi-hardware');
+    if (!d.is_pi) {
+      if (badge) badge.textContent = 'not a Pi';
+      if (body)  body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">Not a Raspberry Pi.</div>';
+      return;
+    }
+    if (badge) badge.textContent = d.model ? d.model.replace('Raspberry Pi ', '').substring(0, 28) : 'Pi';
+    if (!body) return;
+    const serial = d.serial ? d.serial.slice(-8) : '—';
+    const rows = [
+      ['Model',    escHtml(d.model    || '—')],
+      ['Revision', escHtml(d.revision || '—')],
+      ['Serial',   escHtml('…' + serial)],
+      ['Hardware', escHtml(d.hardware || '—')],
+      ['Cores',    d.core_count != null ? String(d.core_count) : '—'],
+      ['RAM',      d.ram_mb    != null ? d.ram_mb + ' MB'     : '—'],
+    ];
+    let html = '<div style="display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;font-size:13px;">';
+    for (const [k, v] of rows) {
+      html += `<div style="color:var(--text-dim);">${k}</div><div>${v}</div>`;
+    }
+    html += '</div>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (badge) badge.textContent = 'error';
+    if (body)  body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -6593,6 +6634,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTcpStateCounts();
   fetchTcpStates();
   fetchPiHardware();
+  fetchPiHw();
   fetchDhcpServerStats();
   fetchBootAnalysis();
   fetchLinkStatus();
@@ -6925,6 +6967,7 @@ async function refreshAll() {
   fetchTcpStateCounts();
   fetchTcpStates();
   fetchPiHardware();
+  fetchPiHw();
   fetchDhcpServerStats();
   fetchBootAnalysis();
   fetchLinkStatus();

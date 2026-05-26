@@ -15862,6 +15862,64 @@ def api_system_login_history_v4():
         "logins": logins,
         "count": len(logins),
     })
+@app.route("/api/system/pi-hardware", methods=["GET"])
+@require_auth
+def api_system_pi_hardware_v3():
+    """Return Raspberry Pi hardware info from /proc/cpuinfo and /proc/meminfo."""
+    info: dict = {
+        "model": None,
+        "revision": None,
+        "serial": None,
+        "hardware": None,
+        "processor": None,
+        "core_count": 0,
+        "is_pi": False,
+        "ram_mb": None,
+    }
+
+    try:
+        cpuinfo = Path("/proc/cpuinfo").read_text()
+        for line in cpuinfo.splitlines():
+            if ":" not in line:
+                continue
+            key, _, val = line.partition(":")
+            key_stripped = key.strip()
+            val = val.strip()
+            key_lower = key_stripped.lower()
+            if key_lower == "processor":
+                info["core_count"] += 1
+            elif key_lower == "model name" and info["processor"] is None:
+                info["processor"] = val
+            elif key_lower == "hardware" and info["hardware"] is None:
+                info["hardware"] = val
+            elif key_lower == "revision" and info["revision"] is None:
+                info["revision"] = val
+            elif key_lower == "serial" and info["serial"] is None:
+                info["serial"] = val
+        # "Model" line (capital M) → Pi model string
+        for line in cpuinfo.splitlines():
+            if line.startswith("Model"):
+                _, _, val = line.partition(":")
+                info["model"] = val.strip()
+                if "Raspberry Pi" in val:
+                    info["is_pi"] = True
+                break
+    except OSError:
+        pass
+
+    if not info["is_pi"]:
+        return jsonify({"is_pi": False})
+
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            if line.startswith("MemTotal:"):
+                kb = int(line.split()[1])
+                info["ram_mb"] = round(kb / 1024)
+                break
+    except OSError:
+        pass
+
+    return jsonify(info)
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
