@@ -14598,6 +14598,63 @@ def api_network_route_table():
         "count": len(routes),
         "default_gw": default_gw,
         "default_dev": default_dev,
+@app.route("/api/system/swap-detail", methods=["GET"])
+@require_auth
+def api_system_swap_detail():
+    """Return per-device swap stats from /proc/swaps plus meminfo cross-check."""
+    devices = []
+
+    # Parse /proc/swaps (header: Filename Type Size Used Priority)
+    try:
+        swaps_raw = Path("/proc/swaps").read_text()
+        lines = swaps_raw.splitlines()
+        for line in lines[1:]:  # skip header
+            parts = line.split()
+            if len(parts) < 5:
+                continue
+            try:
+                devices.append({
+                    "filename": parts[0],
+                    "type": parts[1],
+                    "size_kb": int(parts[2]),
+                    "used_kb": int(parts[3]),
+                    "priority": int(parts[4]),
+                })
+            except ValueError:
+                continue
+    except OSError:
+        pass
+
+    # Cross-check totals with /proc/meminfo
+    swap_total_kb = 0
+    swap_free_kb = 0
+    try:
+        meminfo_raw = Path("/proc/meminfo").read_text()
+        for line in meminfo_raw.splitlines():
+            if line.startswith("SwapTotal:"):
+                swap_total_kb = int(line.split()[1])
+            elif line.startswith("SwapFree:"):
+                swap_free_kb = int(line.split()[1])
+    except OSError:
+        pass
+
+    # Fall back to summing /proc/swaps if meminfo unavailable
+    if swap_total_kb == 0 and devices:
+        swap_total_kb = sum(d["size_kb"] for d in devices)
+        swap_used_sum = sum(d["used_kb"] for d in devices)
+        swap_free_kb = swap_total_kb - swap_used_sum
+
+    swap_used_kb = swap_total_kb - swap_free_kb
+    swap_enabled = swap_total_kb > 0
+    used_pct = round(swap_used_kb / swap_total_kb * 100, 1) if swap_total_kb > 0 else 0.0
+
+    return jsonify({
+        "devices": devices,
+        "total_kb": swap_total_kb,
+        "used_kb": swap_used_kb,
+        "free_kb": swap_free_kb,
+        "used_pct": used_pct,
+        "swap_enabled": swap_enabled,
     })
 
 

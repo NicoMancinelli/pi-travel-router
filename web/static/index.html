@@ -1647,6 +1647,13 @@
       <span class="badge" id="failed-units-badge">…</span>
     </div>
     <div class="card-body" id="failed-units-body"></div>
+  <!-- Swap Detail -->
+  <div class="card" id="card-swap-detail">
+    <div class="card-header" onclick="toggleCard('card-swap-detail')">
+      <span>💾 Swap</span>
+      <span class="badge" id="swap-detail-badge">…</span>
+    </div>
+    <div class="card-body" id="swap-detail-body"></div>
   </div>
 
   <!-- Tailscale Status -->
@@ -4553,6 +4560,61 @@ async function fetchIpv6() {
   }
 }
 
+// ── Swap Detail ───────────────────────────────────────────────────────────────
+
+async function fetchSwapDetail() {
+  const badge = document.getElementById('swap-detail-badge');
+  const el    = document.getElementById('swap-detail-body');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/swap-detail');
+    if (!d.swap_enabled) {
+      if (badge) badge.textContent = 'disabled';
+      el.innerHTML = '<span style="color:var(--text-dim)">No swap configured on this system</span>';
+      return;
+    }
+    if (badge) badge.textContent = d.used_pct + '% used';
+    function fmtKb(kb) {
+      if (kb >= 1048576) return (kb / 1048576).toFixed(1) + ' GB';
+      if (kb >= 1024) return (kb / 1024).toFixed(0) + ' MB';
+      return kb + ' KB';
+    }
+    const barColor = d.used_pct >= 80 ? '#ef4444' : d.used_pct >= 50 ? '#f59e0b' : '#10b981';
+    let html = `<div style="margin-bottom:10px;">`;
+    html += `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-dim);margin-bottom:3px;">`;
+    html += `<span>${fmtKb(d.used_kb)} used of ${fmtKb(d.total_kb)}</span>`;
+    html += `<span>${fmtKb(d.free_kb)} free</span>`;
+    html += `</div>`;
+    html += `<div style="background:var(--border,#333);border-radius:4px;height:8px;overflow:hidden;">`;
+    html += `<div style="width:${d.used_pct}%;height:100%;background:${barColor};border-radius:4px;"></div>`;
+    html += `</div></div>`;
+    if (d.devices && d.devices.length > 0) {
+      html += `<table style="width:100%;border-collapse:collapse;font-size:12px;">`;
+      html += `<thead><tr style="color:var(--text-dim);">`;
+      html += `<th style="text-align:left;padding:2px 6px;">Device</th>`;
+      html += `<th style="text-align:left;padding:2px 6px;">Type</th>`;
+      html += `<th style="text-align:right;padding:2px 6px;">Size</th>`;
+      html += `<th style="text-align:right;padding:2px 6px;">Used</th>`;
+      html += `<th style="text-align:right;padding:2px 6px;">Priority</th>`;
+      html += `</tr></thead><tbody>`;
+      for (const dev of d.devices) {
+        html += `<tr>`;
+        html += `<td style="padding:2px 6px;font-family:monospace;color:var(--accent);">${escHtml(dev.filename)}</td>`;
+        html += `<td style="padding:2px 6px;">${escHtml(dev.type)}</td>`;
+        html += `<td style="text-align:right;padding:2px 6px;">${fmtKb(dev.size_kb)}</td>`;
+        html += `<td style="text-align:right;padding:2px 6px;">${fmtKb(dev.used_kb)}</td>`;
+        html += `<td style="text-align:right;padding:2px 6px;color:var(--text-dim);">${dev.priority}</td>`;
+        html += `</tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading swap detail</span>';
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -5724,6 +5786,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchIpv6();
   fetchNatConn();
   fetchRouteTableCard();
+  fetchSwapDetail();
 });
 
 async function fetchJournal() {
@@ -6043,6 +6106,7 @@ async function refreshAll() {
   fetchApClients();
   fetchNatConn();
   fetchRouteTableCard();
+  fetchSwapDetail();
 }
 
 async function init() {
