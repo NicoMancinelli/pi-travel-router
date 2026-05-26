@@ -14179,6 +14179,33 @@ def api_system_kmod():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
+
+@app.route("/api/system/cputemp", methods=["GET"])
+@require_auth
+def api_system_cputemp():
+    """Return CPU thermal zone temperatures from /sys/class/thermal/thermal_zone*/temp."""
+    import glob as _glob
+    try:
+        zones = []
+        for temp_path in sorted(_glob.glob("/sys/class/thermal/thermal_zone*/temp")):
+            try:
+                zone_dir = temp_path.rsplit("/", 1)[0]
+                zone_index = int(zone_dir.rsplit("thermal_zone", 1)[-1])
+                with open(temp_path) as fh:
+                    temp_c = round(int(fh.read().strip()) / 1000.0, 1)
+                try:
+                    with open(zone_dir + "/type") as fh:
+                        zone_type = fh.read().strip()
+                except OSError:
+                    zone_type = "unknown"
+                zones.append({"zone": zone_index, "type": zone_type, "temp_c": temp_c})
+            except (OSError, ValueError):
+                continue
+        max_temp = max((z["temp_c"] for z in zones), default=None)
+        return jsonify({"zones": zones, "max_temp_c": max_temp, "count": len(zones)})
+    except Exception as exc:
+        return jsonify({"zones": [], "max_temp_c": None, "count": 0, "error": str(exc)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

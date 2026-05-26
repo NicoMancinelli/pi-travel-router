@@ -1568,6 +1568,13 @@
       <span class="card-badge" id="kmod-badge">—</span>
     </div>
     <div class="card-body" id="kmod-body">
+  <!-- CPU Temperature -->
+  <div class="card" id="card-cputemp">
+    <div class="card-header">
+      <span>🌡️ CPU Temperature</span>
+      <span class="card-badge" id="cputemp-badge">—</span>
+    </div>
+    <div class="card-body" id="cputemp-body">
       <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
     </div>
   </div>
@@ -5429,6 +5436,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchInterrupts();
   fetchFirewallStats();
   fetchCpuTemp();
+  fetchCpuTempCard();
   fetchLoggedInUsers();
   fetchWho();
   fetchCpuStats();
@@ -8241,6 +8249,44 @@ async function fetchTopProcs() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading processes</span>';
+// ── CPU Temperature ───────────────────────────────────────────────────────────
+async function fetchCpuTempCard() {
+  const el = document.getElementById('cputemp-body');
+  const badge = document.getElementById('cputemp-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/cputemp');
+    const max = d.max_temp_c ?? 0;
+    if (badge) {
+      badge.textContent = max.toFixed(1) + '°C';
+      badge.style.background = max >= 80 ? '#dc2626' : max >= 70 ? '#f59e0b' : '#16a34a';
+      badge.style.color = '#fff';
+      badge.style.borderRadius = '4px';
+      badge.style.padding = '1px 7px';
+      badge.style.fontSize = '11px';
+    }
+    if (!d.zones || d.zones.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No thermal zones found.</span>';
+      return;
+    }
+    let html = '';
+    for (const z of d.zones) {
+      const t = z.temp_c ?? 0;
+      const color = t >= 80 ? '#dc2626' : t >= 70 ? '#f59e0b' : '#16a34a';
+      const pct = Math.min(t / 100 * 100, 100);
+      html += `<div style="margin-bottom:8px;">`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">`;
+      html += `<span style="font-family:monospace;">${escHtml(z.type || 'zone' + z.zone)}</span>`;
+      html += `<span style="color:${color};font-weight:600;">${t.toFixed(1)}°C</span>`;
+      html += `</div>`;
+      html += `<div style="background:var(--border);border-radius:3px;height:6px;">`;
+      html += `<div style="background:${color};width:${pct}%;height:6px;border-radius:3px;transition:width 0.3s;"></div>`;
+      html += `</div></div>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading temperature</span>';
   }
 }
 
