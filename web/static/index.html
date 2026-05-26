@@ -911,15 +911,6 @@
     <div id="open-sockets-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <!-- WiFi Signal -->
-  <div class="card full-width" id="card-wifi-signal">
-    <div class="card-title">
-      &#x1F4F6; WiFi Signal
-      <button class="btn btn-sm" onclick="fetchWifiSignal()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="wifi-signal-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
-
   <!-- Cgroup Stats -->
   <div class="card full-width" id="card-cgroup-stats">
     <div class="card-title">
@@ -1604,6 +1595,13 @@
       <span class="card-badge" id="diskstats-badge">—</span>
     </div>
     <div class="card-body" id="diskstats-body">
+  <!-- WiFi Signal -->
+  <div class="card" id="card-wifi-signal">
+    <div class="card-header">
+      <span>📶 WiFi Signal</span>
+      <span class="card-badge" id="wifi-signal-badge">—</span>
+    </div>
+    <div class="card-body" id="wifi-signal-body">
       <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
     </div>
   </div>
@@ -4412,6 +4410,45 @@ async function fetchTimesync() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading time sync</span>';
+// ── WiFi Signal ───────────────────────────────────────────────────────────────
+async function fetchWifiSignal() {
+  const el = document.getElementById('wifi-signal-body');
+  const badge = document.getElementById('wifi-signal-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/network/wifi-signal');
+    if (badge) badge.textContent = d.count ? d.count + ' iface' : '—';
+    if (!d.interfaces || d.interfaces.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No WiFi interfaces found.</span>';
+      return;
+    }
+    let html = '';
+    for (const iface of d.interfaces) {
+      const q = iface.signal_quality ?? 0;
+      const color = q >= 70 ? '#16a34a' : q >= 40 ? '#f59e0b' : '#dc2626';
+      html += `<div style="margin-bottom:10px;">`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">`;
+      html += `<span style="font-family:monospace;color:var(--accent);">${escHtml(iface.name)}</span>`;
+      if (iface.connected) {
+        html += `<span style="color:${color};font-weight:600;">${iface.signal_dbm} dBm (${q}%)</span>`;
+      } else {
+        html += `<span style="color:var(--text-dim);">not connected</span>`;
+      }
+      html += `</div>`;
+      if (iface.connected) {
+        html += `<div style="background:var(--border);border-radius:3px;height:6px;margin-bottom:6px;">`;
+        html += `<div style="background:${color};width:${q}%;height:6px;border-radius:3px;transition:width 0.3s;"></div>`;
+        html += `</div>`;
+        if (iface.ssid) html += `<div style="font-size:11px;"><span style="color:var(--text-dim);">SSID: </span><strong>${escHtml(iface.ssid)}</strong></div>`;
+        if (iface.freq_mhz) html += `<div style="font-size:11px;"><span style="color:var(--text-dim);">Freq: </span>${iface.freq_mhz} MHz</div>`;
+        if (iface.rx_bitrate) html += `<div style="font-size:11px;"><span style="color:var(--text-dim);">RX: </span>${escHtml(iface.rx_bitrate)}</div>`;
+      }
+      html += `</div>`;
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading WiFi signal</span>';
   }
 }
 
@@ -12150,50 +12187,6 @@ async function fetchOpenSockets() {
   } catch (e) {
     if (e.message !== 'Unauthorized') console.error('fetchOpenSockets error', e);
     el.innerHTML = '<span style="color:var(--danger)">Failed to load sockets</span>';
-  }
-}
-
-// ── WiFi Signal ───────────────────────────────────────────────────────────────
-
-async function fetchWifiSignal() {
-  const el = document.getElementById('wifi-signal-content');
-  if (!el) return;
-  try {
-    const r = await apiFetch('/api/network/wifi-signal');
-    const d = await r.json();
-    const ifaces = d.interfaces || [];
-    if (!ifaces.length) {
-      el.innerHTML = '<span style="color:var(--text-dim)">No wireless interfaces found</span>';
-      return;
-    }
-    let html = '';
-    for (const iface of ifaces) {
-      html += '<div style="margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:4px;">';
-      html += `<div style="font-weight:600;margin-bottom:6px;">${iface.interface}`;
-      if (iface.connected) {
-        html += ' <span style="background:#22c55e;color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:4px;">Connected</span>';
-      } else {
-        html += ' <span style="background:#6b7280;color:#fff;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:4px;">Not connected</span>';
-      }
-      html += '</div>';
-      if (iface.ssid) html += `<div style="font-size:12px;margin-bottom:4px;">SSID: <strong>${iface.ssid}</strong></div>`;
-      if (iface.signal_dbm !== null) {
-        const q = iface.signal_quality || 0;
-        const color = q >= 70 ? '#22c55e' : q >= 40 ? '#f59e0b' : 'var(--danger)';
-        html += `<div style="font-size:12px;margin-bottom:4px;">Signal: <span style="color:${color};font-weight:600;">${iface.signal_dbm} dBm (${q}%)</span></div>`;
-        html += `<div style="height:6px;background:var(--border);border-radius:3px;margin-bottom:6px;"><div style="height:100%;width:${q}%;background:${color};border-radius:3px;transition:width .3s;"></div></div>`;
-      }
-      if (iface.freq_mhz) {
-        const band = iface.freq_mhz >= 5000 ? '5 GHz' : iface.freq_mhz >= 2400 ? '2.4 GHz' : `${iface.freq_mhz} MHz`;
-        html += `<div style="font-size:12px;color:var(--text-dim);">Band: ${band} (${iface.freq_mhz} MHz)</div>`;
-      }
-      if (iface.tx_bitrate) html += `<div style="font-size:12px;color:var(--text-dim);">TX: ${iface.tx_bitrate} &nbsp; RX: ${iface.rx_bitrate || 'n/a'}</div>`;
-      html += '</div>';
-    }
-    el.innerHTML = html;
-  } catch (e) {
-    if (e.message !== 'Unauthorized') console.error('fetchWifiSignal error', e);
-    el.innerHTML = '<span style="color:var(--danger)">Failed to load WiFi signal</span>';
   }
 }
 

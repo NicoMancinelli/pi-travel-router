@@ -10460,7 +10460,7 @@ def api_network_wifi_signal():
 
     results = []
     for iface in wireless:
-        info = {"interface": iface, "connected": False, "ssid": None,
+        info = {"name": iface, "connected": False, "ssid": None,
                 "signal_dbm": None, "signal_quality": None, "freq_mhz": None,
                 "tx_bitrate": None, "rx_bitrate": None, "bssid": None}
 
@@ -10474,8 +10474,8 @@ def api_network_wifi_signal():
                 elif line.startswith("signal:"):
                     try:
                         info["signal_dbm"] = int(line.split()[1])
-                        # Convert dBm to quality percent: quality = 2*(dBm+100), clamped 0-100
-                        q = 2 * (info["signal_dbm"] + 100)
+                        # Convert dBm to quality percent: quality = (dBm+110)*2, clamped 0-100
+                        q = (info["signal_dbm"] + 110) * 2
                         info["signal_quality"] = max(0, min(100, q))
                     except (ValueError, IndexError):
                         pass
@@ -10501,7 +10501,7 @@ def api_network_wifi_signal():
                 line = line.strip()
                 if line.startswith("Interface "):
                     iface = line.split()[1]
-                    results.append({"interface": iface, "connected": False,
+                    results.append({"name": iface, "connected": False,
                                     "ssid": None, "signal_dbm": None,
                                     "signal_quality": None, "freq_mhz": None,
                                     "tx_bitrate": None, "rx_bitrate": None,
