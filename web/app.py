@@ -18154,6 +18154,60 @@ def api_system_numa_info():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# ── Socket Stats ───────────────────────────────────────────────────────────────
+@app.route("/api/network/socket-stats")
+@require_auth
+def api_network_socket_stats():
+    """Return socket statistics summary."""
+    try:
+        import subprocess, re
+        stats = {"total": 0, "tcp_estab": 0, "tcp_closed": 0, "tcp_time_wait": 0, "tcp_syn_recv": 0, "udp": 0, "raw": 0}
+        try:
+            out = subprocess.check_output(["ss", "-s"], text=True, stderr=subprocess.DEVNULL)
+            for line in out.splitlines():
+                m = re.search(r"TCP:\s+(\d+)", line)
+                if m:
+                    stats["total"] = int(m.group(1))
+                m = re.search(r"estab\s+(\d+)", line)
+                if m:
+                    stats["tcp_estab"] = int(m.group(1))
+                m = re.search(r"closed\s+(\d+)", line)
+                if m:
+                    stats["tcp_closed"] = int(m.group(1))
+                m = re.search(r"time-wait\s+(\d+)", line)
+                if m:
+                    stats["tcp_time_wait"] = int(m.group(1))
+                m = re.search(r"syn-recv\s+(\d+)", line)
+                if m:
+                    stats["tcp_syn_recv"] = int(m.group(1))
+                m = re.search(r"UDP:\s+(\d+)", line)
+                if m:
+                    stats["udp"] = int(m.group(1))
+                m = re.search(r"RAW:\s+(\d+)", line)
+                if m:
+                    stats["raw"] = int(m.group(1))
+        except Exception:
+            try:
+                with open("/proc/net/sockstat") as fh:
+                    for line in fh:
+                        parts = line.split()
+                        if line.startswith("TCP:"):
+                            for i, p in enumerate(parts):
+                                if p == "inuse" and i + 1 < len(parts):
+                                    stats["total"] = int(parts[i + 1])
+                                if p == "tw" and i + 1 < len(parts):
+                                    stats["tcp_time_wait"] = int(parts[i + 1])
+                        if line.startswith("UDP:"):
+                            for i, p in enumerate(parts):
+                                if p == "inuse" and i + 1 < len(parts):
+                                    stats["udp"] = int(parts[i + 1])
+            except OSError:
+                pass
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

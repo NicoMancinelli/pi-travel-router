@@ -2257,6 +2257,10 @@
 <div class="card" id="numa-info-card">
   <div class="card-header"><span class="card-icon">🧩</span>NUMA Topology</div>
   <div class="card-body" id="numa-info-body"><span class="loading">Loading…</span></div>
+<!-- Socket Stats -->
+<div class="card" id="socket-stats-card">
+  <div class="card-header"><span class="card-icon">🔌</span>Socket Stats</div>
+  <div class="card-body" id="socket-stats-body"><span class="loading">Loading...</span></div>
 </div>
 <!-- Tailscale Status -->
 <!-- Neighbor Table -->
@@ -6704,6 +6708,19 @@ async function loadNumaInfo() {
   } catch(e) { document.getElementById('numa-info-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadNumaInfo();
+// ── Socket Stats ──
+async function loadSocketStats() {
+  try {
+    const r = await fetch('/api/network/socket-stats');
+    const d = await r.json();
+    if (d.error) { document.getElementById('socket-stats-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    document.getElementById('socket-stats-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">TCP total / estab</span><span class="stat-value">${d.total} / ${d.tcp_estab}</span></div>` +
+      `<div class="stat-row"><span class="stat-label">TIME_WAIT / SYN_RECV</span><span class="stat-value">${d.tcp_time_wait} / ${d.tcp_syn_recv}</span></div>` +
+      `<div class="stat-row"><span class="stat-label">UDP / RAW</span><span class="stat-value">${d.udp} / ${d.raw}</span></div>`;
+  } catch(e) { document.getElementById('socket-stats-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadSocketStats();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
