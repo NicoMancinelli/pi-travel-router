@@ -16147,6 +16147,7 @@ def api_system_thermal_zones():
         "zones": zones,
         "max_temp": max_temp,
         "hottest_zone": hottest_zone,
+    })
 # ── Gateway info ──────────────────────────────────────────────────────────────
 
 @app.route("/api/network/gateway-info", methods=["GET"])
