@@ -14144,6 +14144,41 @@ def api_top_procs():
     return jsonify({"processes": processes, "count": len(processes)})
 
 
+# ── Kernel Modules ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/kmod")
+@require_auth
+def api_system_kmod():
+    try:
+        result = subprocess.run(["lsmod"], capture_output=True, text=True, timeout=10)
+        lines = result.stdout.splitlines()
+        modules = []
+        for line in lines[1:]:  # skip header
+            parts = line.split()
+            if len(parts) < 3:
+                continue
+            name = parts[0]
+            try:
+                size = int(parts[1])
+            except ValueError:
+                size = 0
+            try:
+                used_by_count = int(parts[2])
+            except ValueError:
+                used_by_count = 0
+            used_by = []
+            if len(parts) >= 4:
+                used_by = [m for m in parts[3].split(",") if m]
+            modules.append({
+                "name": name,
+                "size": size,
+                "used_by_count": used_by_count,
+                "used_by": used_by,
+            })
+        return jsonify({"modules": modules, "count": len(modules)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

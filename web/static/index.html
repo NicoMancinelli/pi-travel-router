@@ -1561,6 +1561,17 @@
     </div>
   </div>
 
+  <!-- Kernel Modules -->
+  <div class="card" id="card-kmod">
+    <div class="card-header">
+      <span>🧩 Kernel Modules</span>
+      <span class="card-badge" id="kmod-badge">—</span>
+    </div>
+    <div class="card-body" id="kmod-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4298,6 +4309,42 @@ async function fetchOpenFds() {
   }
 }
 
+// ── Kernel Modules ────────────────────────────────────────────────────────────
+async function fetchKmod() {
+  const el = document.getElementById('kmod-body');
+  const badge = document.getElementById('kmod-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/kmod');
+    if (badge) badge.textContent = d.count ?? '—';
+    if (!d.modules || d.modules.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No modules found.</span>';
+      return;
+    }
+    // Show top 15 by size
+    const top = [...d.modules].sort((a, b) => b.size - a.size).slice(0, 15);
+    function fmtSize(n) {
+      if (n >= 1048576) return (n/1048576).toFixed(1) + ' MB';
+      return (n/1024).toFixed(0) + ' KB';
+    }
+    let html = `<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">${d.count} modules loaded — showing 15 largest</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    html += '<tr style="color:var(--text-dim);"><th style="text-align:left;padding:2px 4px;">Module</th><th style="text-align:right;padding:2px 4px;">Size</th><th style="text-align:right;padding:2px 4px;">Used</th></tr>';
+    for (const m of top) {
+      html += `<tr>
+        <td style="padding:2px 4px;font-family:monospace;color:var(--accent);">${escHtml(m.name)}</td>
+        <td style="text-align:right;padding:2px 4px;">${fmtSize(m.size)}</td>
+        <td style="text-align:right;padding:2px 4px;">${m.used_by_count}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading kernel modules</span>';
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -5334,6 +5381,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchSystemServices();
   fetchServicesStatus();
   fetchArpTable();
+  fetchKmod();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
