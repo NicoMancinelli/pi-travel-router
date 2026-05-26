@@ -1624,6 +1624,15 @@
     </div>
   </div>
 
+  <!-- NAT Connections -->
+  <div class="card" id="card-nat-conn">
+    <div class="card-header" onclick="toggleCard('card-nat-conn')">
+      <span>🔀 NAT Connections</span>
+      <span class="badge" id="nat-conn-badge">…</span>
+    </div>
+    <div class="card-body" id="nat-conn-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5697,6 +5706,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTopProcs();
   fetchTimesync();
   fetchIpv6();
+  fetchNatConn();
 });
 
 async function fetchJournal() {
@@ -6014,6 +6024,7 @@ async function refreshAll() {
   fetchFirewall();
   fetchClockSync();
   fetchApClients();
+  fetchNatConn();
 }
 
 async function init() {
@@ -8548,6 +8559,64 @@ async function fetchDiskstats() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading disk stats</span>';
+  }
+}
+
+// ── NAT Connections ───────────────────────────────────────────────────────────
+
+async function fetchNatConn() {
+  const badge = document.getElementById('nat-conn-badge');
+  const el    = document.getElementById('nat-conn-body');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/network/nat-connections');
+    if (!d.available) {
+      if (badge) badge.textContent = 'N/A';
+      el.innerHTML = '<span style="color:var(--text-dim)">conntrack not available on this system</span>';
+      return;
+    }
+    if (badge) badge.textContent = d.total;
+    let html = `<div style="margin-bottom:8px;font-size:13px;">`;
+    // By-protocol pills
+    const protoColors = { tcp: '#3b82f6', udp: '#10b981', icmp: '#f59e0b' };
+    const protos = Object.entries(d.by_proto || {}).sort((a,b) => b[1]-a[1]);
+    if (protos.length) {
+      html += `<div style="margin-bottom:6px;">`;
+      for (const [proto, cnt] of protos) {
+        const col = protoColors[proto] || '#6b7280';
+        html += `<span style="display:inline-block;background:${col};color:#fff;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;margin-right:4px;">${escHtml(proto)}: ${cnt}</span>`;
+      }
+      html += `</div>`;
+    }
+    // TCP states
+    const states = Object.entries(d.tcp_states || {}).sort((a,b) => b[1]-a[1]);
+    if (states.length) {
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">TCP states: `;
+      html += states.map(([s,c]) => `<strong style="color:var(--text);">${escHtml(s)}</strong> ${c}`).join(' &bull; ');
+      html += `</div>`;
+    }
+    // Top destinations
+    if (d.top_dests && d.top_dests.length) {
+      html += `<table style="width:100%;border-collapse:collapse;margin-top:4px;">`;
+      html += `<thead><tr style="text-align:left;color:var(--text-dim);font-size:11px;">
+        <th style="padding:2px 6px;">Destination</th>
+        <th style="padding:2px 6px;">Proto</th>
+        <th style="padding:2px 6px;text-align:right;">Conns</th>
+      </tr></thead><tbody>`;
+      for (const row of d.top_dests) {
+        html += `<tr>
+          <td style="padding:2px 6px;font-family:monospace;">${escHtml(row.dst)}</td>
+          <td style="padding:2px 6px;">${escHtml(row.proto)}</td>
+          <td style="padding:2px 6px;text-align:right;">${row.count}</td>
+        </tr>`;
+      }
+      html += `</tbody></table>`;
+    }
+    html += `</div>`;
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading NAT connections</span>';
   }
 }
 

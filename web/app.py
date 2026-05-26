@@ -14443,6 +14443,81 @@ def api_network_ipv6():
         "interfaces": interfaces,
         "global_count": global_count,
         "total_count": total_count,
+# ── NAT / Conntrack Connections ───────────────────────────────────────────────
+
+@app.route("/api/network/nat-connections", methods=["GET"])
+@require_auth
+def api_network_nat_connections():
+    """Return active NAT/conntrack connection counts from /proc/net/nf_conntrack."""
+    import collections
+
+    CONNTRACK_PATH = "/proc/net/nf_conntrack"
+
+    def _parse_conntrack(text):
+        by_proto = collections.Counter()
+        tcp_states = collections.Counter()
+        dest_counts = collections.Counter()
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            # Format: "ipv4 2 tcp 6 300 ESTABLISHED ..."
+            # or older: "tcp 6 300 ESTABLISHED ..."
+            # Detect family prefix
+            idx = 0
+            if parts[0] in ("ipv4", "ipv6"):
+                idx = 2  # skip family + family-num
+            proto = parts[idx] if idx < len(parts) else None
+            if not proto:
+                continue
+            by_proto[proto] += 1
+            # TCP state is the first ALL-CAPS token after the timeout
+            if proto == "tcp":
+                for p in parts[idx + 2:]:
+                    if p.isupper() and p.isalpha():
+                        tcp_states[p] += 1
+                        break
+            # destination IP: look for "dst=..."
+            dst = None
+            for p in parts:
+                if p.startswith("dst="):
+                    dst = p[4:]
+                    break
+            if dst:
+                dest_counts[(dst, proto)] += 1
+        return by_proto, tcp_states, dest_counts
+
+    # Try /proc/net/nf_conntrack first
+    raw = None
+    try:
+        with open(CONNTRACK_PATH, "r") as fh:
+            raw = fh.read()
+    except OSError:
+        pass
+
+    # Fallback: conntrack -L
+    if raw is None:
+        out, rc = _run("conntrack -L 2>/dev/null", timeout=5)
+        if rc == 0 and out:
+            raw = out
+
+    if raw is None:
+        return jsonify({"available": False, "total": 0})
+
+    by_proto, tcp_states, dest_counts = _parse_conntrack(raw)
+    total = sum(by_proto.values())
+
+    top_dests = [
+        {"dst": dst, "proto": proto, "count": cnt}
+        for (dst, proto), cnt in dest_counts.most_common(10)
+    ]
+
+    return jsonify({
+        "available": True,
+        "total": total,
+        "by_proto": dict(by_proto),
+        "tcp_states": dict(tcp_states),
+        "top_dests": top_dests,
     })
 
 
