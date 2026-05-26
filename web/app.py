@@ -17503,6 +17503,50 @@ def api_system_cpu_cache():
         return jsonify({"error": str(e)}), 500
 
 
+# ── DNS Cache Stats ──────────────────────────────────────────────────────────
+@app.route("/api/network/dns-cache-stats")
+@require_auth
+def api_network_dns_cache_stats():
+    """Return DNS cache statistics from systemd-resolved or dnsmasq."""
+    try:
+        stats = {"source": None, "cache_size": None, "hits": None, "misses": None}
+        # Try systemd-resolved first
+        try:
+            result = _run(["resolvectl", "statistics"], timeout=5)
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if "Current Cache Size:" in line:
+                    stats["cache_size"] = int(line.split(":")[-1].strip())
+                    stats["source"] = "systemd-resolved"
+                elif "Cache Hits:" in line:
+                    stats["hits"] = int(line.split(":")[-1].strip())
+                elif "Cache Misses:" in line:
+                    stats["misses"] = int(line.split(":")[-1].strip())
+        except Exception:
+            pass
+        # Fall back to dnsmasq stats via SIGUSR1 log check
+        if stats["source"] is None:
+            try:
+                result = _run(["dnsmasq", "--help"], timeout=3)
+                stats["source"] = "dnsmasq"
+                stats["note"] = "dnsmasq stats require SIGUSR1; cache size not available via API"
+            except Exception:
+                pass
+        hit_rate = None
+        if stats["hits"] is not None and stats["misses"] is not None:
+            total = (stats["hits"] or 0) + (stats["misses"] or 0)
+            hit_rate = round(stats["hits"] / total * 100, 1) if total else 0.0
+        return jsonify({
+            "source": stats["source"],
+            "cache_size": stats["cache_size"],
+            "hits": stats["hits"],
+            "misses": stats["misses"],
+            "hit_rate_pct": hit_rate,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

@@ -2175,6 +2175,14 @@
   </div>
 </div>
 
+<!-- DNS Cache Stats -->
+<div class="card" id="card-dns-cache-stats">
+  <div class="card-header"><span>🗄️ DNS Cache</span><button class="refresh-btn" onclick="fetchDnsCacheStats()">↻</button></div>
+  <div class="card-body" id="dns-cache-stats-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6400,6 +6408,21 @@ async function fetchCpuCache() {
       `<div class="stat-row"><span>L${c.level} ${c.type}</span><span class="val">${c.size ?? 'N/A'}</span></div>`
     ).join('');
     el.innerHTML = rows;
+// ── DNS Cache Stats ──
+async function fetchDnsCacheStats() {
+  const el = document.getElementById('dns-cache-stats-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/network/dns-cache-stats');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.source) { el.innerHTML = '<div class="ok-msg">No DNS cache service detected</div>'; return; }
+    el.innerHTML = `
+      <div class="stat-row"><span>Source</span><span class="val">${d.source}</span></div>
+      ${d.cache_size !== null ? `<div class="stat-row"><span>Cache size</span><span class="val">${d.cache_size}</span></div>` : ''}
+      ${d.hits !== null ? `<div class="stat-row"><span>Hits / Misses</span><span class="val">${d.hits} / ${d.misses}</span></div>` : ''}
+      ${d.hit_rate_pct !== null ? `<div class="stat-row"><span>Hit rate</span><span class="val">${d.hit_rate_pct}%</span></div>` : ''}
+    `;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
@@ -8035,6 +8058,7 @@ async function refreshAll() {
   fetchSystemdFailed();
   fetchMtuInfo();
   fetchCpuCache();
+  fetchDnsCacheStats();
 }
 
 async function init() {
