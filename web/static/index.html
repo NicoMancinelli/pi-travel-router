@@ -2263,6 +2263,11 @@
   <div class="card-header"><span class="card-icon">🐧</span>Kernel Version</div>
   <div class="card-body" id="kernel-version-body"><span class="loading">Loading…</span></div>
 </div>
+<!-- Disk Partitions -->
+<div class="card" id="disk-partitions-card">
+  <div class="card-header"><span class="card-icon">💾</span>Disk Partitions</div>
+  <div class="card-body" id="disk-partitions-body"><span class="loading">Loading…</span></div>
+</div>
 <!-- Tailscale Status -->
 <!-- Neighbor Table -->
 <div class="card" id="neighbor-table-card">
@@ -6693,6 +6698,19 @@ async function loadSocketStats() {
   } catch(e) { document.getElementById('socket-stats-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadSocketStats();
+// ── Disk Partitions ──
+async function loadDiskPartitions() {
+  try {
+    const r = await fetch('/api/system/disk-partitions');
+    const d = await r.json();
+    if (d.error) { document.getElementById('disk-partitions-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    const rows = d.partitions.map(p =>
+      `<div class="stat-row"><span class="stat-label">${p.mountpoint}</span><span class="stat-value">${p.used_gb}/${p.total_gb} GB (${p.use_pct}%)</span></div>`
+    ).join('');
+    document.getElementById('disk-partitions-body').innerHTML = rows || '<span class="muted">No partitions found</span>';
+  } catch(e) { document.getElementById('disk-partitions-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadDiskPartitions();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 // ── Kernel Version ──
 async function loadKernelVersion() {
