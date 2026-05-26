@@ -1579,6 +1579,17 @@
     </div>
   </div>
 
+  <!-- DNS Stats -->
+  <div class="card" id="card-dns-stats">
+    <div class="card-header">
+      <span>🔍 DNS Stats</span>
+      <span class="card-badge" id="dns-stats-badge">—</span>
+    </div>
+    <div class="card-body" id="dns-stats-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5389,6 +5400,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchServicesStatus();
   fetchArpTable();
   fetchKmod();
+  fetchDnsStats();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
@@ -8287,6 +8299,49 @@ async function fetchCpuTempCard() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading temperature</span>';
+  }
+}
+
+// ── DNS Stats ─────────────────────────────────────────────────────────────────
+async function fetchDnsStats() {
+  const el = document.getElementById('dns-stats-body');
+  const badge = document.getElementById('dns-stats-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/dns-stats');
+    if (badge) badge.textContent = d.current_server || (d.servers && d.servers[0]) || '—';
+    if (!d.available) {
+      let html = `<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">resolvectl not available</div>`;
+      if (d.servers && d.servers.length > 0) {
+        html += `<div style="font-size:12px;">Nameservers: ${d.servers.map(s => `<span style="font-family:monospace;">${escHtml(s)}</span>`).join(', ')}</div>`;
+      }
+      el.innerHTML = html;
+      return;
+    }
+    let html = '';
+    if (d.current_server) {
+      html += `<div style="margin-bottom:6px;font-size:12px;">Server: <span style="font-family:monospace;color:var(--accent);">${escHtml(d.current_server)}</span></div>`;
+    }
+    if (d.total_queries != null) {
+      const hitRate = d.total_queries > 0 ? Math.round(d.cache_hits / d.total_queries * 100) : 0;
+      const color = hitRate >= 70 ? '#16a34a' : hitRate >= 40 ? '#f59e0b' : '#dc2626';
+      html += `<div style="margin-bottom:6px;">`;
+      html += `<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;"><span style="color:var(--text-dim);">Cache hit rate</span><span style="color:${color};font-weight:600;">${hitRate}%</span></div>`;
+      html += `<div style="background:var(--border);border-radius:3px;height:6px;"><div style="background:${color};width:${hitRate}%;height:6px;border-radius:3px;"></div></div>`;
+      html += `</div>`;
+      html += `<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px;">`;
+      html += `<div><span style="color:var(--text-dim);">Queries</span><br><strong>${(d.total_queries||0).toLocaleString()}</strong></div>`;
+      html += `<div><span style="color:var(--text-dim);">Hits</span><br><strong>${(d.cache_hits||0).toLocaleString()}</strong></div>`;
+      html += `<div><span style="color:var(--text-dim);">Misses</span><br><strong>${(d.cache_misses||0).toLocaleString()}</strong></div>`;
+      if (d.dnssec_failures) {
+        html += `<div><span style="color:#f59e0b;">DNSSEC fail</span><br><strong style="color:#f59e0b;">${d.dnssec_failures}</strong></div>`;
+      }
+      html += `</div>`;
+    }
+    el.innerHTML = html || '<span style="color:var(--text-dim)">No stats available</span>';
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading DNS stats</span>';
   }
 }
 

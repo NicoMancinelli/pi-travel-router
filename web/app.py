@@ -14205,6 +14205,74 @@ def api_system_cputemp():
         return jsonify({"zones": zones, "max_temp_c": max_temp, "count": len(zones)})
     except Exception as exc:
         return jsonify({"zones": [], "max_temp_c": None, "count": 0, "error": str(exc)}), 500
+# ── DNS Stats ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/system/dns-stats")
+@require_auth
+def api_system_dns_stats():
+    try:
+        result = subprocess.run(
+            ["resolvectl", "statistics"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            raise FileNotFoundError("resolvectl unavailable")
+        output = result.stdout
+
+        def _extract(label, text):
+            for line in text.splitlines():
+                if label in line:
+                    parts = line.split(":", 1)
+                    if len(parts) == 2:
+                        return parts[1].strip()
+            return None
+
+        current_server = _extract("Current DNS Server", output)
+        servers_raw = _extract("DNS Servers", output)
+        servers = [s.strip() for s in servers_raw.split()] if servers_raw else []
+
+        def _int(val):
+            if val is None:
+                return None
+            try:
+                return int(val.replace(",", "").split()[0])
+            except (ValueError, IndexError):
+                return None
+
+        total_queries = _int(_extract("Total Queries", output))
+        cache_hits = _int(_extract("Cache Hits", output))
+        cache_misses = _int(_extract("Cache Misses", output))
+        dnssec_failures = _int(_extract("DNSSEC Failures", output))
+
+        return jsonify({
+            "current_server": current_server,
+            "servers": servers,
+            "total_queries": total_queries,
+            "cache_hits": cache_hits,
+            "cache_misses": cache_misses,
+            "dnssec_failures": dnssec_failures,
+            "source": "resolvectl",
+            "available": True,
+        })
+    except Exception:
+        # Fall back to /etc/resolv.conf
+        servers = []
+        try:
+            with open("/etc/resolv.conf") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("nameserver"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            servers.append(parts[1])
+        except Exception:
+            pass
+        return jsonify({
+            "available": False,
+            "servers": servers,
+            "source": "resolv.conf",
+        })
+
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
