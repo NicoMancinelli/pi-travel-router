@@ -2040,6 +2040,15 @@
   <div class="card-body" id="active-users-body"></div>
 </div>
 
+<!-- Process States -->
+<div class="card" id="card-process-states">
+  <div class="card-header" onclick="toggleCard('card-process-states')">
+    <span>⚙️ Process States</span>
+    <span class="badge" id="process-states-badge">…</span>
+  </div>
+  <div class="card-body" id="process-states-body"></div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -6075,6 +6084,35 @@ async function fetchActiveUsers() {
   }
 }
 
+// ── Process States ──
+async function fetchProcessStates() {
+  const badge = document.getElementById('process-states-badge');
+  const body = document.getElementById('process-states-body');
+  try {
+    const d = await apiFetch('/api/system/process-states');
+    badge.textContent = `${d.total} procs`;
+    if (d.has_zombies) badge.style.background = '#ef4444';
+    const stateLabels = {'R':'Running','S':'Sleeping','D':'Disk wait','Z':'Zombie','T':'Stopped','I':'Idle'};
+    const stateColors = {'R':'#22c55e','S':'#3b82f6','D':'#f59e0b','Z':'#ef4444','T':'#6b7280','I':'#94a3b8'};
+    const rows = Object.entries(d.states)
+      .sort(([,a],[,b]) => b - a)
+      .map(([s, n]) => `<tr>
+        <td style="padding:2px 8px;font-size:13px;color:${stateColors[s]||'var(--text)'};">${stateLabels[s] || s}</td>
+        <td style="padding:2px 8px;font-size:13px;font-family:monospace;color:${stateColors[s]||'var(--text)'};text-align:right;">${n}</td>
+      </tr>`).join('');
+    body.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;">${rows}
+        <tr style="border-top:1px solid var(--border);">
+          <td style="padding:2px 8px;font-size:13px;font-weight:600;">Total</td>
+          <td style="padding:2px 8px;font-size:13px;font-weight:600;text-align:right;">${d.total}</td>
+        </tr>
+      </table>`;
+  } catch(e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -7686,6 +7724,7 @@ async function refreshAll() {
   fetchMemoryMap();
   fetchSplitTunnelStatus();
   fetchActiveUsers();
+  fetchProcessStates();
 }
 
 async function init() {
@@ -7704,6 +7743,7 @@ async function init() {
   setInterval(fetchMemoryMap, 30000);
   setInterval(fetchSplitTunnelStatus, 30000);
   setInterval(fetchActiveUsers, 30000);
+  setInterval(fetchProcessStates, 30000);
   // Connect SSE event stream
   initEventStream();
 }

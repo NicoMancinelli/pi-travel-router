@@ -16781,6 +16781,34 @@ def api_system_active_users():
     except Exception:
         pass
     return jsonify({"users": users, "count": len(users)})
+# ── Process states ────────────────────────────────────────────────────────────
+
+@app.route("/api/system/process-states", methods=["GET"])
+@require_auth
+def api_system_process_states():
+    """Count processes by state from /proc/*/status."""
+    import glob, re
+    state_counts = {}
+    for status_file in glob.glob("/proc/*/status"):
+        try:
+            with open(status_file) as f:
+                for line in f:
+                    if line.startswith("State:"):
+                        m = re.match(r"State:\s+(\S)", line)
+                        if m:
+                            state = m.group(1)
+                            state_counts[state] = state_counts.get(state, 0) + 1
+                        break
+        except (IOError, OSError):
+            continue
+    total = sum(state_counts.values())
+    zombies = state_counts.get("Z", 0)
+    return jsonify({
+        "states": state_counts,
+        "total": total,
+        "zombies": zombies,
+        "has_zombies": zombies > 0,
+    })
 
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
