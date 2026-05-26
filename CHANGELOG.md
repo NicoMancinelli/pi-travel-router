@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.88.0] - 2026-05-25
+
+### Added
+- `GET /api/system/cpufreq` — per-core CPU frequency from `/sys/devices/system/cpu/*/cpufreq/scaling_cur_freq` with `/proc/cpuinfo` fallback; returns `cores[{id, cur_mhz, min_mhz, max_mhz}]`, `governor`, `avg_mhz`; dashboard card ⚙️ CPU Frequency with frequency bar proportional to max
+- `GET /api/network/arp` — ARP/neighbor cache from `ip neigh show`; filters FAILED entries; returns `neighbors[{ip, dev, mac, state}]`, `count`, `reachable`; dashboard card 🔗 ARP Table with state color-coding (green/yellow/gray)
+- `GET /api/system/dmesg` — kernel log errors/warnings via `dmesg --time-format iso -l err,warn,crit,alert,emerg` with `dmesg -T` fallback; last 20 entries with level/timestamp/message; dashboard card 🔔 Kernel Log with error count badge (red/gray)
+
 ## [2.87.0] - 2026-05-25
 
 ### Added
