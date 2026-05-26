@@ -2128,6 +2128,10 @@
 <div class="card" id="card-open-ports">
   <div class="card-header"><span>🔌 Open Ports</span><button class="refresh-btn" onclick="fetchOpenPorts()">↻</button></div>
   <div class="card-body" id="open-ports-body">
+<!-- Network Errors -->
+<div class="card" id="card-network-errors">
+  <div class="card-header"><span>⚠️ Network Errors</span><button class="refresh-btn" onclick="fetchNetworkErrors()">↻</button></div>
+  <div class="card-body" id="network-errors-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -7903,6 +7907,7 @@ async function refreshAll() {
   fetchKernelCmdline();
   fetchSwapUsage();
   fetchEntropyPool();
+  fetchNetworkErrors();
 }
 
 async function init() {
@@ -11354,6 +11359,22 @@ async function fetchSwapUsage() {
       <div class="stat-row"><span>Used / Total</span><span class="val">${Math.round(d.used_kb/1024)} / ${Math.round(d.total_kb/1024)} MB</span></div>
       <div class="stat-row"><span>Cached</span><span class="val">${Math.round(d.cached_kb/1024)} MB</span></div>
     `;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
+// ── Network Errors ──
+async function fetchNetworkErrors() {
+  const el = document.getElementById('network-errors-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/network/network-errors');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total_errors) { el.innerHTML = '<div class="ok-msg">No interface errors</div>'; return; }
+    const rows = d.errored_ifaces.map(i =>
+      `<div class="stat-row warn"><span>${i.iface}</span><span class="val">rx_err:${i.rx_errors} tx_err:${i.tx_errors} drop:${i.rx_dropped+i.tx_dropped}</span></div>`
+    ).join('');
+    el.innerHTML = `<div class="stat-row"><span>Total errors</span><span class="val warn">${d.total_errors}</span></div>${rows}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 

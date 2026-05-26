@@ -17290,6 +17290,44 @@ def api_network_open_ports():
             "total": len(unique),
             "tcp_count": len(tcp) + len(tcp6),
             "udp_count": len(udp),
+# ── Network Errors ───────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/network/network-errors")
+@require_auth
+def api_network_network_errors():
+    """Return per-interface error and drop counters from /proc/net/dev."""
+    try:
+        ifaces = []
+        try:
+            with open("/proc/net/dev") as f:
+                lines = f.readlines()[2:]  # skip headers
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 17:
+                    continue
+                iface = parts[0].rstrip(":")
+                ifaces.append({
+                    "iface": iface,
+                    "rx_errors": int(parts[3]),
+                    "rx_dropped": int(parts[4]),
+                    "rx_overruns": int(parts[5]),
+                    "tx_errors": int(parts[11]),
+                    "tx_dropped": int(parts[12]),
+                    "tx_overruns": int(parts[13]),
+                    "total_errors": int(parts[3]) + int(parts[4]) + int(parts[11]) + int(parts[12]),
+                })
+        except FileNotFoundError:
+            pass
+        ifaces.sort(key=lambda x: x["total_errors"], reverse=True)
+        total_errors = sum(i["total_errors"] for i in ifaces)
+        return jsonify({
+            "interfaces": ifaces,
+            "total_errors": total_errors,
+            "errored_ifaces": [i for i in ifaces if i["total_errors"] > 0],
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
