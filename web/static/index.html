@@ -1679,6 +1679,33 @@
     <div class="card-body" id="process-tree-body"></div>
   </div>
 
+  <!-- ARP Table -->
+  <div class="card" id="card-arp-table">
+    <div class="card-header" onclick="toggleCard('card-arp-table')">
+      <span>&#x1F4CB; ARP Table</span>
+      <span class="badge" id="arp-table-badge">…</span>
+    </div>
+    <div class="card-body" id="arp-table-body"></div>
+  </div>
+
+  <!-- SSH Keys -->
+  <div class="card" id="card-ssh-keys-v3">
+    <div class="card-header" onclick="toggleCard('card-ssh-keys-v3')">
+      <span>&#x1F511; SSH Keys</span>
+      <span class="badge" id="ssh-keys-badge">&#x2026;</span>
+    </div>
+    <div class="card-body" id="ssh-keys-body"></div>
+  </div>
+
+  <!-- System Environment -->
+  <div class="card" id="card-sys-env">
+    <div class="card-header" onclick="toggleCard('card-sys-env')">
+      <span>🖥️ System Info</span>
+      <span class="badge" id="sys-env-badge">…</span>
+    </div>
+    <div class="card-body" id="sys-env-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -4688,6 +4715,40 @@ async function fetchMdnsServicesV2() {
   }
 }
 
+// ── System Environment ────────────────────────────────────────────────────────
+
+async function fetchSysEnv() {
+  const badge = document.getElementById('sys-env-badge');
+  const body = document.getElementById('sys-env-body');
+  if (!body) return;
+  try {
+    const resp = await apiFetch('/api/system/environment');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const d = await resp.json();
+    if (badge) badge.textContent = d.hostname || '…';
+    const rows = [
+      ['Hostname', d.hostname],
+      ['Kernel',   d.kernel],
+      ['Arch',     d.arch],
+      ['OS',       (d.os_name || '') + (d.os_version ? ' ' + d.os_version : '')],
+      ['Boot time', d.boot_time],
+    ];
+    body.innerHTML = '<table style="border-collapse:collapse;font-size:0.88em;width:100%;">' +
+      rows.map(([k, v]) =>
+        `<tr>
+          <td style="color:var(--text-dim);padding:3px 14px 3px 0;white-space:nowrap;">${k}</td>
+          <td style="word-break:break-all;">${v || '—'}</td>
+        </tr>`
+      ).join('') +
+      '</table>';
+  } catch (e) {
+    if (e.message !== 'Unauthorized') {
+      if (badge) badge.textContent = 'err';
+      body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading system environment</span>';
+    }
+  }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
@@ -5862,6 +5923,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRouteTableCard();
   fetchSwapDetail();
   fetchMdnsServicesV2();
+  fetchArpTableV3();
 });
 
 async function fetchJournal() {
@@ -6184,6 +6246,7 @@ async function refreshAll() {
   fetchRouteTableCard();
   fetchSwapDetail();
   fetchMdnsServicesV2();
+  fetchArpTableV3();
 }
 
 async function init() {
@@ -8891,6 +8954,41 @@ async function fetchUsbDevicesV2() {
     body.innerHTML = html;
   } catch (e) {
     if (body) body.textContent = 'Error: ' + e;
+  }
+}
+
+// ── ARP Table V3 ─────────────────────────────────────────────────────────────
+
+async function fetchArpTableV3() {
+  const body = document.getElementById('arp-table-body');
+  const badge = document.getElementById('arp-table-badge');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const r = await apiFetch('/api/network/arp-table');
+    const d = await r.json();
+    if (badge) badge.textContent = d.count + ' entr' + (d.count === 1 ? 'y' : 'ies');
+    if (!d.entries || d.entries.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No ARP entries found</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<thead><tr style="text-align:left;color:var(--text-dim);font-size:11px;">';
+    html += '<th style="padding:4px 8px;">IP</th>';
+    html += '<th style="padding:4px 8px;">MAC</th>';
+    html += '<th style="padding:4px 8px;">Interface</th>';
+    html += '</tr></thead><tbody>';
+    for (const e of d.entries) {
+      html += '<tr style="border-bottom:1px solid var(--border);">';
+      html += `<td style="padding:4px 8px;font-family:monospace;">${escHtml(e.ip)}</td>`;
+      html += `<td style="padding:4px 8px;font-family:monospace;">${escHtml(e.mac)}</td>`;
+      html += `<td style="padding:4px 8px;">${escHtml(e.iface)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading ARP table</span>';
   }
 }
 

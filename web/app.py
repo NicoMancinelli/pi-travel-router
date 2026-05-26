@@ -14757,6 +14757,161 @@ def api_network_mdns_services():
     })
 
 
+# ── ARP Table ─────────────────────────────────────────────────────────────────
+
+@app.route("/api/network/arp-table", methods=["GET"])
+@require_auth
+def api_network_arp_table():
+    """Return ARP cache entries from /proc/net/arp."""
+    try:
+        text = Path("/proc/net/arp").read_text()
+    except OSError:
+        return jsonify({"entries": [], "count": 0})
+
+    entries = []
+    lines = text.splitlines()
+    # Skip header line: "IP address  HW type  Flags  HW address  Mask  Device"
+    for line in lines[1:]:
+        parts = line.split()
+        if len(parts) < 6:
+            continue
+        ip, hw_type, flags, mac, _mask, iface = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
+        # Skip incomplete entries (null MAC)
+        if mac == "00:00:00:00:00:00":
+            continue
+        entries.append({
+            "ip": ip,
+            "mac": mac,
+            "iface": iface,
+            "flags": flags,
+            "type": "ether" if hw_type == "0x1" else hw_type,
+        })
+
+    return jsonify({"entries": entries, "count": len(entries)})
+
+
+# ── System Environment ────────────────────────────────────────────────────────
+
+@app.route("/api/system/environment", methods=["GET"])
+@require_auth
+def api_system_environment():
+    """Return key system environment facts: kernel, OS, hostname, arch, boot time."""
+    import platform
+
+    # Hostname
+    hostname = "unknown"
+    try:
+        hostname = Path("/proc/sys/kernel/hostname").read_text(encoding="utf-8").strip()
+    except OSError:
+        hostname = platform.node()
+
+    # Kernel version (first token of /proc/version)
+    kernel = "unknown"
+    try:
+        version_line = Path("/proc/version").read_text(encoding="utf-8").strip()
+        # Format: "Linux version 6.1.21-v8+ (user@host) ..."
+        parts = version_line.split()
+        kernel = parts[2] if len(parts) >= 3 else version_line
+    except OSError:
+        kernel = platform.release()
+
+    # Architecture
+    arch = platform.machine() or "unknown"
+
+    # OS name / version / id from /etc/os-release
+    os_name = "unknown"
+    os_version = "unknown"
+    os_id = "unknown"
+    try:
+        os_release = Path("/etc/os-release").read_text(encoding="utf-8")
+        for line in os_release.splitlines():
+            line = line.strip()
+            if line.startswith("NAME="):
+                os_name = line.split("=", 1)[1].strip('"\'')
+            elif line.startswith("VERSION="):
+                os_version = line.split("=", 1)[1].strip('"\'')
+            elif line.startswith("ID="):
+                os_id = line.split("=", 1)[1].strip('"\'')
+    except OSError:
+        pass
+
+    # Boot time and uptime from /proc/uptime
+    boot_time = "unknown"
+    uptime_seconds = 0
+    try:
+        uptime_raw = Path("/proc/uptime").read_text(encoding="utf-8").strip()
+        from datetime import timedelta
+        uptime_seconds = int(float(uptime_raw.split()[0]))
+        boot_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=uptime_seconds)
+        boot_time = boot_dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (OSError, ValueError, IndexError):
+        pass
+
+    return jsonify({
+        "hostname": hostname,
+        "kernel": kernel,
+        "arch": arch,
+        "os_name": os_name,
+        "os_version": os_version,
+        "os_id": os_id,
+        "boot_time": boot_time,
+        "uptime_seconds": uptime_seconds,
+    })
+
+
+# ── SSH Authorized Keys (v3) ──────────────────────────────────────────────────
+
+@app.route("/api/system/ssh-keys", methods=["GET"])
+@require_auth
+def api_system_ssh_keys_v3():
+    """Return parsed SSH authorized_keys for root and all home users (glob)."""
+    import glob as _glob
+
+    _KEY_TYPES = {
+        "ssh-rsa", "ssh-dss", "ssh-ed25519",
+        "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521",
+        "sk-ssh-ed25519@openssh.com", "sk-ecdsa-sha2-nistp256@openssh.com",
+    }
+
+    candidate_paths = ["/root/.ssh/authorized_keys"] + \
+        _glob.glob("/home/*/.ssh/authorized_keys")
+    files_checked = []
+    keys = []
+
+    for path in candidate_paths:
+        try:
+            with open(path) as _f:
+                content = _f.read()
+        except OSError:
+            continue
+        files_checked.append(path)
+        parts = path.split("/")
+        user = "root" if parts[1] == "root" else (parts[2] if len(parts) > 2 else "unknown")
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            tokens = line.split()
+            if len(tokens) < 2:
+                continue
+            if tokens[0] in _KEY_TYPES:
+                key_type, key_data = tokens[0], tokens[1]
+                comment = " ".join(tokens[2:]) if len(tokens) > 2 else ""
+            elif len(tokens) >= 3 and tokens[1] in _KEY_TYPES:
+                key_type, key_data = tokens[1], tokens[2]
+                comment = " ".join(tokens[3:]) if len(tokens) > 3 else ""
+            else:
+                continue
+            keys.append({
+                "user": user,
+                "type": key_type,
+                "comment": comment,
+                "preview": key_data[:20],
+            })
+
+    return jsonify({"keys": keys, "count": len(keys), "files_checked": files_checked})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
