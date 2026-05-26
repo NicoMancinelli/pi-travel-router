@@ -1550,6 +1550,17 @@
     </div>
   </div>
 
+  <!-- Top Processes -->
+  <div class="card" id="card-top-procs">
+    <div class="card-header">
+      <span>🔧 Top Processes</span>
+      <span class="card-badge" id="top-procs-badge">—</span>
+    </div>
+    <div class="card-body" id="top-procs-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5448,6 +5459,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDiskUsage();
   fetchBootParams();
   fetchGeoIp();
+  fetchTopProcs();
 });
 
 async function fetchJournal() {
@@ -8150,6 +8162,37 @@ async function fetchUptimeCard() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">Error loading uptime</span>`;
+  }
+}
+
+// ── Top Processes ─────────────────────────────────────────────────────────────
+async function fetchTopProcs() {
+  const el = document.getElementById('top-procs-body');
+  const badge = document.getElementById('top-procs-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/top-procs');
+    if (badge) badge.textContent = d.count ?? '—';
+    if (!d.processes || d.processes.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No processes found.</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
+    html += '<tr style="color:var(--text-dim);"><th style="text-align:right;padding:2px 4px;">PID</th><th style="text-align:right;padding:2px 4px;">CPU%</th><th style="text-align:right;padding:2px 4px;">MEM%</th><th style="text-align:left;padding:2px 4px;">Command</th></tr>';
+    for (const p of d.processes) {
+      const cpuColor = p.cpu_pct >= 50 ? '#f44336' : p.cpu_pct >= 10 ? '#ff9800' : 'inherit';
+      html += `<tr>
+        <td style="text-align:right;padding:2px 4px;font-family:monospace;">${p.pid}</td>
+        <td style="text-align:right;padding:2px 4px;color:${cpuColor};font-weight:600;">${p.cpu_pct.toFixed(1)}</td>
+        <td style="text-align:right;padding:2px 4px;">${p.mem_pct.toFixed(1)}</td>
+        <td style="padding:2px 4px;font-family:monospace;overflow:hidden;max-width:200px;white-space:nowrap;text-overflow:ellipsis;">${escHtml(p.command)}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading processes</span>';
   }
 }
 

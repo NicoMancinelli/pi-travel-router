@@ -14105,6 +14105,45 @@ def api_network_iface_stats():
     return jsonify({"interfaces": interfaces, "count": len(interfaces)})
 
 
+@app.route("/api/system/top-procs")
+@require_auth
+def api_top_procs():
+    """Return top 10 processes by CPU usage."""
+    try:
+        out = subprocess.check_output(
+            ["ps", "aux", "--sort=-%cpu"],
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        ).decode("utf-8", errors="replace")
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    processes = []
+    lines = out.splitlines()
+    for line in lines[1:]:  # skip header
+        parts = line.split(None, 10)
+        if len(parts) < 11:
+            continue
+        try:
+            proc = {
+                "user": parts[0],
+                "pid": int(parts[1]),
+                "cpu_pct": float(parts[2]),
+                "mem_pct": float(parts[3]),
+                "vsz": int(parts[4]),
+                "rss": int(parts[5]),
+                "stat": parts[7],
+                "command": parts[10][:60],
+            }
+        except (ValueError, IndexError):
+            continue
+        processes.append(proc)
+        if len(processes) >= 10:
+            break
+
+    return jsonify({"processes": processes, "count": len(processes)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
