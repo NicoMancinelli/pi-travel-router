@@ -1633,6 +1633,15 @@
     <div class="card-body" id="nat-conn-body"></div>
   </div>
 
+  <!-- Route Table -->
+  <div class="card" id="card-route-table">
+    <div class="card-header" onclick="toggleCard('card-route-table')">
+      <span>🗺️ Route Table</span>
+      <span class="badge" id="route-table-badge">…</span>
+    </div>
+    <div class="card-body" id="route-table-body"></div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -5707,6 +5716,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchTimesync();
   fetchIpv6();
   fetchNatConn();
+  fetchRouteTableCard();
 });
 
 async function fetchJournal() {
@@ -6025,6 +6035,7 @@ async function refreshAll() {
   fetchClockSync();
   fetchApClients();
   fetchNatConn();
+  fetchRouteTableCard();
 }
 
 async function init() {
@@ -8617,6 +8628,46 @@ async function fetchNatConn() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading NAT connections</span>';
+  }
+}
+
+// ── Route Table ───────────────────────────────────────────────────────────────
+
+async function fetchRouteTableCard() {
+  const badge = document.getElementById('route-table-badge');
+  const el    = document.getElementById('route-table-body');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/network/route-table');
+    if (badge) badge.textContent = d.count;
+    if (!d.routes || d.routes.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No routes found</span>';
+      return;
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<thead><tr style="text-align:left;color:var(--text-dim);font-size:11px;">' +
+      '<th style="padding:3px 6px;">Destination</th>' +
+      '<th style="padding:3px 6px;">Gateway</th>' +
+      '<th style="padding:3px 6px;">Interface</th>' +
+      '<th style="padding:3px 6px;text-align:right;">Metric</th>' +
+      '</tr></thead><tbody>';
+    for (const r of d.routes) {
+      const isDefault = r.dest === 'default';
+      const rowStyle = isDefault
+        ? 'background:rgba(59,130,246,0.08);font-weight:600;'
+        : '';
+      html += `<tr style="${rowStyle}">` +
+        `<td style="padding:3px 6px;font-family:monospace;">${escHtml(r.dest)}${isDefault ? ' <span style="font-size:10px;color:#3b82f6;">[default]</span>' : ''}</td>` +
+        `<td style="padding:3px 6px;font-family:monospace;">${r.gateway ? escHtml(r.gateway) : '<span style="color:var(--text-dim)">—</span>'}</td>` +
+        `<td style="padding:3px 6px;">${escHtml(r.dev)}</td>` +
+        `<td style="padding:3px 6px;text-align:right;">${r.metric}</td>` +
+        '</tr>';
+    }
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading route table</span>';
   }
 }
 

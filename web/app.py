@@ -14522,6 +14522,81 @@ def api_network_nat_connections():
     })
 
 
+# ── IP Route Table ────────────────────────────────────────────────────────────
+
+@app.route("/api/network/route-table", methods=["GET"])
+@require_auth
+def api_network_route_table():
+    """Return the IPv4 routing table parsed from `ip route show` text output."""
+    out, rc = _run("ip route show 2>/dev/null", timeout=5)
+    if rc != 0 or not out.strip():
+        return jsonify({"routes": [], "count": 0, "default_gw": None, "default_dev": None,
+                        "error": out.strip() or "ip route show failed"})
+
+    routes = []
+    default_gw = None
+    default_dev = None
+
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if not parts:
+            continue
+
+        dest = parts[0]  # "default" or CIDR like "192.168.1.0/24"
+        gateway = ""
+        dev = ""
+        metric = 0
+        proto = ""
+        scope = ""
+
+        i = 1
+        while i < len(parts):
+            token = parts[i]
+            if token == "via" and i + 1 < len(parts):
+                gateway = parts[i + 1]
+                i += 2
+            elif token == "dev" and i + 1 < len(parts):
+                dev = parts[i + 1]
+                i += 2
+            elif token == "metric" and i + 1 < len(parts):
+                try:
+                    metric = int(parts[i + 1])
+                except ValueError:
+                    metric = 0
+                i += 2
+            elif token == "proto" and i + 1 < len(parts):
+                proto = parts[i + 1]
+                i += 2
+            elif token == "scope" and i + 1 < len(parts):
+                scope = parts[i + 1]
+                i += 2
+            else:
+                i += 1
+
+        routes.append({
+            "dest": dest,
+            "gateway": gateway,
+            "dev": dev,
+            "metric": metric,
+            "proto": proto,
+            "scope": scope,
+        })
+
+        if dest == "default" and gateway and default_gw is None:
+            default_gw = gateway
+            default_dev = dev
+
+    return jsonify({
+        "routes": routes,
+        "count": len(routes),
+        "default_gw": default_gw,
+        "default_dev": default_dev,
+    })
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
