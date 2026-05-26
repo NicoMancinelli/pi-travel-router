@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.19.0] - 2026-05-26
+
+### Added
+- `GET /api/network/tcp-stats` — TCP connection state counts (ESTABLISHED/LISTEN/TIME_WAIT/CLOSE_WAIT) from /proc/net/tcp, dashboard card 🔗 TCP Stats
+- `GET /api/system/sysctl-security` — security-relevant sysctl values with expected-value checks and issue list, dashboard card 🔐 Sysctl Security
+- `GET /api/system/battery-status` — battery/UPS status from /sys/class/power_supply with capacity%, voltage, current, dashboard card 🔋 Battery Status
+
 ## [3.18.0] - 2026-05-26
 
 ### Added
