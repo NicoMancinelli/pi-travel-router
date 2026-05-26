@@ -2156,6 +2156,14 @@
   </div>
 </div>
 
+<!-- Battery Status -->
+<div class="card" id="card-battery-status">
+  <div class="card-header"><span>🔋 Battery Status</span><button class="refresh-btn" onclick="fetchBatteryStatus()">↻</button></div>
+  <div class="card-body" id="battery-status-body">
+    <div class="loading">Loading…</div>
+  </div>
+</div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -13566,82 +13574,21 @@ async function fetchTcpConnections() {
   }
 }
 
-// ── Battery / UPS Status ──────────────────────────────────────────────────────
-
+// ── Battery Status ──
 async function fetchBatteryStatus() {
-  const el = document.getElementById('battery-content');
-  if (!el) return;
+  const el = document.getElementById('battery-status-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
   try {
-    const r = await apiFetch('/api/system/battery');
+    const r = await fetch('/api/system/battery-status');
     const d = await r.json();
-
-    if (d.error) {
-      el.innerHTML = '<div class="card-title">&#x1F50B; Battery / UPS</div>' +
-        `<div style="font-size:13px;color:var(--text-dim);">${d.error}</div>`;
-      return;
-    }
-
-    const batteries = d.batteries || [];
-    const countBadge = d.count > 0
-      ? ` <span style="background:var(--accent,#0af);color:#000;border-radius:10px;padding:1px 8px;font-size:12px;">${d.count}</span>`
-      : '';
-    let html = `<div class="card-title">&#x1F50B; Battery / UPS${countBadge}</div>`;
-
-    if (batteries.length === 0) {
-      html += '<div style="font-size:13px;color:var(--text-dim);">No battery detected.</div>';
-      el.innerHTML = html;
-      return;
-    }
-
-    for (const bat of batteries) {
-      const cap = bat.capacity_pct != null ? bat.capacity_pct : null;
-      let barColor = '#28a745';
-      if (cap != null) {
-        if (cap < 20) barColor = '#dc3545';
-        else if (cap < 50) barColor = '#fd7e14';
-      }
-
-      const statusColors = {
-        'Discharging': '#fd7e14',
-        'Charging':    '#28a745',
-        'Full':        '#17a2b8',
-      };
-      const statusColor = bat.status ? (statusColors[bat.status] || '#6c757d') : '#6c757d';
-      const statusLabel = bat.status || 'Unknown';
-
-      html += `<div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border-color,#333);">`;
-      html += `<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">`;
-      html += `<span style="font-weight:bold;font-size:13px;">${bat.name}</span>`;
-      html += `<span style="background:${statusColor};color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;">${statusLabel}</span>`;
-      if (bat.model) {
-        html += `<span style="font-size:12px;color:var(--text-dim);">${bat.model}</span>`;
-      }
-      html += '</div>';
-
-      if (cap != null) {
-        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">`;
-        html += `<div style="flex:1;background:var(--border-color,#333);border-radius:4px;height:10px;overflow:hidden;">`;
-        html += `<div style="width:${cap}%;background:${barColor};height:100%;border-radius:4px;transition:width 0.3s;"></div>`;
-        html += `</div>`;
-        html += `<span style="font-size:12px;min-width:34px;text-align:right;">${cap}%</span>`;
-        html += `</div>`;
-      }
-
-      const details = [];
-      if (bat.voltage_v != null) details.push(`${bat.voltage_v} V`);
-      if (bat.technology)        details.push(bat.technology);
-      if (bat.manufacturer)      details.push(bat.manufacturer);
-      if (details.length > 0) {
-        html += `<div style="font-size:12px;color:var(--text-dim);">${details.join(' · ')}</div>`;
-      }
-
-      html += '</div>';
-    }
-
-    el.innerHTML = html;
-  } catch (e) {
-    el.textContent = 'Failed: ' + e;
-  }
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.has_battery) { el.innerHTML = '<div class="ok-msg">No battery/UPS detected</div>'; return; }
+    const rows = d.supplies.map(s => `
+      <div class="stat-row"><span>${s.name} (${s.status})</span><span class="val ${s.capacity_pct < 20 ? 'warn' : ''}">${s.capacity_pct ?? '?'}%</span></div>
+      ${s.voltage_mv ? `<div class="stat-row"><span>Voltage</span><span class="val">${s.voltage_mv} mV</span></div>` : ''}
+    `).join('');
+    el.innerHTML = rows;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
 

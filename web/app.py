@@ -17441,6 +17441,46 @@ def api_system_sysctl_security():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Battery Status ───────────────────────────────────────────────────────────
+@app.route("/api/system/battery-status")
+@require_auth
+def api_system_battery_status():
+    """Return battery/UPS status from /sys/class/power_supply."""
+    try:
+        import glob
+        supplies = []
+        for path in sorted(glob.glob("/sys/class/power_supply/*")):
+            name = path.split("/")[-1]
+            def read_ps(attr):
+                try:
+                    with open(f"{path}/{attr}") as f:
+                        return f.read().strip()
+                except (FileNotFoundError, PermissionError):
+                    return None
+            ps_type = read_ps("type")
+            if ps_type not in ("Battery", "UPS"):
+                continue
+            capacity = read_ps("capacity")
+            status = read_ps("status")
+            voltage = read_ps("voltage_now")
+            current = read_ps("current_now")
+            supplies.append({
+                "name": name,
+                "type": ps_type,
+                "status": status,
+                "capacity_pct": int(capacity) if capacity and capacity.isdigit() else None,
+                "voltage_mv": round(int(voltage) / 1000) if voltage and voltage.isdigit() else None,
+                "current_ma": round(int(current) / 1000) if current and current.isdigit() else None,
+            })
+        return jsonify({
+            "supplies": supplies,
+            "total": len(supplies),
+            "has_battery": len(supplies) > 0,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
