@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-05-25
+
+### Added
+- `GET /api/network/tcp-connections` — established TCP connections via `ss -tnp`; returns `connections[]`, `by_remote_port` counts, `unique_remotes`; dashboard card 🔗 TCP Connections with remote-port pill badges
+- `GET /api/network/dhcp-leases` — dnsmasq lease file (`/var/lib/misc/dnsmasq.leases` + fallbacks); returns `leases[]` with ip/mac/hostname/expires_ts; dashboard card 🏠 DHCP Leases with JS-computed "Xh Ym" time remaining
+- `GET /api/network/bandwidth-history` — 24-hour hourly bandwidth from `vnstat --json -h 24`; dashboard card 📈 Bandwidth (24h) with SVG sparklines for RX (blue) and TX (orange)
+
+### Milestone
+- v3.0.0: dashboard now features 50+ monitoring cards spanning system vitals, network diagnostics, security, VPN, and observability
+
 ## [2.99.0] - 2026-05-25
 
 ### Added
