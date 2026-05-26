@@ -2267,6 +2267,10 @@
 <div class="card" id="disk-partitions-card">
   <div class="card-header"><span class="card-icon">💾</span>Disk Partitions</div>
   <div class="card-body" id="disk-partitions-body"><span class="loading">Loading…</span></div>
+<!-- Process Count -->
+<div class="card" id="process-count-card">
+  <div class="card-header"><span class="card-icon">⚙️</span>Processes</div>
+  <div class="card-body" id="process-count-body"><span class="loading">Loading…</span></div>
 </div>
 <!-- Tailscale Status -->
 <!-- Neighbor Table -->
@@ -6711,6 +6715,19 @@ async function loadDiskPartitions() {
   } catch(e) { document.getElementById('disk-partitions-body').innerHTML = `<span class="error">${e}</span>`; }
 }
 loadDiskPartitions();
+// ── Process Count ──
+async function loadProcessCount() {
+  try {
+    const r = await fetch('/api/system/process-count');
+    const d = await r.json();
+    if (d.error) { document.getElementById('process-count-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
+    document.getElementById('process-count-body').innerHTML =
+      `<div class="stat-row"><span class="stat-label">Total / Threads</span><span class="stat-value">${d.total} / ${d.threads}</span></div>` +
+      `<div class="stat-row"><span class="stat-label">R / S / Z</span><span class="stat-value">${d.running} / ${d.sleeping} / ${d.zombie}</span></div>` +
+      `<div class="stat-row"><span class="stat-label">Load avg</span><span class="stat-value">${d.load1} ${d.load5} ${d.load15}</span></div>`;
+  } catch(e) { document.getElementById('process-count-body').innerHTML = `<span class="error">${e}</span>`; }
+}
+loadProcessCount();
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 // ── Kernel Version ──
 async function loadKernelVersion() {

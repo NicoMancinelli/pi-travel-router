@@ -18239,6 +18239,56 @@ def api_network_socket_stats():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ── Process Count ──────────────────────────────────────────────────────────────
+@app.route("/api/system/process-count")
+@require_auth
+def api_system_process_count():
+    """Return process count by state."""
+    try:
+        import glob
+        states = {"R": 0, "S": 0, "D": 0, "T": 0, "Z": 0, "other": 0}
+        threads = 0
+        for status_file in glob.glob("/proc/[0-9]*/status"):
+            try:
+                with open(status_file) as fh:
+                    content = fh.read()
+                for line in content.splitlines():
+                    if line.startswith("State:"):
+                        state = line.split()[1]
+                        if state in states:
+                            states[state] += 1
+                        else:
+                            states["other"] += 1
+                    elif line.startswith("Threads:"):
+                        try:
+                            threads += int(line.split()[1])
+                        except ValueError:
+                            pass
+            except OSError:
+                pass
+        total = sum(v for k, v in states.items() if k != "other") + states["other"]
+        load1 = load5 = load15 = 0.0
+        try:
+            with open("/proc/loadavg") as fh:
+                parts = fh.read().split()
+                load1, load5, load15 = float(parts[0]), float(parts[1]), float(parts[2])
+        except (OSError, ValueError):
+            pass
+        return jsonify({
+            "total": total,
+            "running": states["R"],
+            "sleeping": states["S"],
+            "uninterruptible": states["D"],
+            "stopped": states["T"],
+            "zombie": states["Z"],
+            "threads": threads,
+            "load1": load1,
+            "load5": load5,
+            "load15": load15,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
