@@ -14316,6 +14316,51 @@ def api_system_timesync():
         return jsonify({"available": False, "synchronized": False})
 
 
+# ── Block Device I/O Statistics ──────────────────────────────────────────────
+
+@app.route("/api/system/diskstats", methods=["GET"])
+@require_auth
+def api_system_diskstats():
+    """Parse /proc/diskstats for real block devices (skip loop*, ram*, sr*)."""
+    devices = []
+    try:
+        with open("/proc/diskstats", "r") as fh:
+            for line in fh:
+                cols = line.split()
+                if len(cols) < 14:
+                    continue
+                name = cols[2]
+                if re.search(r"^(loop|ram|sr)\d*", name):
+                    continue
+                try:
+                    reads_completed  = int(cols[3])
+                    reads_merged     = int(cols[4])
+                    sectors_read     = int(cols[5])
+                    ms_reading       = int(cols[6])
+                    writes_completed = int(cols[7])
+                    writes_merged    = int(cols[8])
+                    sectors_written  = int(cols[9])
+                    ms_writing       = int(cols[10])
+                    io_in_progress   = int(cols[12])
+                except (ValueError, IndexError):
+                    continue
+                devices.append({
+                    "name":             name,
+                    "reads_completed":  reads_completed,
+                    "writes_completed": writes_completed,
+                    "sectors_read":     sectors_read,
+                    "sectors_written":  sectors_written,
+                    "kb_read":          sectors_read // 2,
+                    "kb_written":       sectors_written // 2,
+                    "ms_reading":       ms_reading,
+                    "ms_writing":       ms_writing,
+                    "io_in_progress":   io_in_progress,
+                })
+    except OSError as exc:
+        return jsonify({"devices": [], "count": 0, "error": str(exc)}), 503
+    return jsonify({"devices": devices, "count": len(devices)})
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

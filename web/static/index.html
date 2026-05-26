@@ -1597,6 +1597,13 @@
       <span class="card-badge" id="timesync-badge">—</span>
     </div>
     <div class="card-body" id="timesync-body">
+  <!-- Disk I/O Stats -->
+  <div class="card" id="card-diskstats">
+    <div class="card-header">
+      <span>💽 Disk I/O</span>
+      <span class="card-badge" id="diskstats-badge">—</span>
+    </div>
+    <div class="card-body" id="diskstats-body">
       <span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>
     </div>
   </div>
@@ -5446,6 +5453,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchArpTable();
   fetchKmod();
   fetchDnsStats();
+  fetchDiskstats();
   fetchTailscaleStatus();
   fetchWanUplinks();
   fetchTempHistory();
@@ -8388,6 +8396,43 @@ async function fetchDnsStats() {
     el.innerHTML = html || '<span style="color:var(--text-dim)">No stats available</span>';
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading DNS stats</span>';
+  }
+}
+
+// ── Disk I/O Stats ────────────────────────────────────────────────────────────
+async function fetchDiskstats() {
+  const el = document.getElementById('diskstats-body');
+  const badge = document.getElementById('diskstats-badge');
+  if (!el) return;
+  el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const d = await apiFetch('/api/system/diskstats');
+    if (badge) badge.textContent = d.count ?? '—';
+    if (!d.devices || d.devices.length === 0) {
+      el.innerHTML = '<span style="color:var(--text-dim)">No block devices found.</span>';
+      return;
+    }
+    function fmtKb(kb) {
+      if (kb >= 1048576) return (kb/1048576).toFixed(1) + ' GB';
+      if (kb >= 1024) return (kb/1024).toFixed(0) + ' MB';
+      return kb + ' KB';
+    }
+    let html = '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
+    html += '<tr style="color:var(--text-dim);"><th style="text-align:left;padding:2px 6px;">Dev</th><th style="text-align:right;padding:2px 6px;">Read</th><th style="text-align:right;padding:2px 6px;">Write</th><th style="text-align:right;padding:2px 6px;">I/O</th></tr>';
+    for (const dev of d.devices) {
+      const io = dev.io_in_progress || 0;
+      const ioColor = io > 0 ? '#f59e0b' : 'var(--text-dim)';
+      html += `<tr>
+        <td style="padding:2px 6px;font-family:monospace;color:var(--accent);">${escHtml(dev.name)}</td>
+        <td style="text-align:right;padding:2px 6px;">${fmtKb(dev.kb_read||0)}</td>
+        <td style="text-align:right;padding:2px 6px;">${fmtKb(dev.kb_written||0)}</td>
+        <td style="text-align:right;padding:2px 6px;color:${ioColor};">${io}</td>
+      </tr>`;
+    }
+    html += '</table>';
+    el.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading disk stats</span>';
   }
 }
 
