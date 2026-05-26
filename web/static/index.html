@@ -1497,6 +1497,17 @@
     </div>
   </div>
 
+  <!-- USB Devices -->
+  <div class="card" id="card-usb">
+    <div class="card-header">
+      <span>🔌 USB Devices</span>
+      <span class="card-badge" id="usb-badge">—</span>
+    </div>
+    <div class="card-body" id="usb-body">
+      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -7878,6 +7889,35 @@ async function fetchCpuFreq() {
     el.innerHTML = `<table class="table" style="width:100%;border-collapse:collapse;"><tbody>${rows}</tbody></table>${govLabel}`;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = `<span style="color:var(--text-dim);font-size:13px;">Error loading CPU frequency</span>`;
+  }
+}
+
+// ── USB Devices ───────────────────────────────────────────────────────────────
+
+async function fetchUsbDevices() {
+  const badge = document.getElementById('usb-badge');
+  const body  = document.getElementById('usb-body');
+  if (!body) return;
+  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
+  try {
+    const resp = await apiFetch('/api/system/usb');
+    const data = await resp.json();
+    if (badge) badge.textContent = data.count ?? '—';
+    if (!data.devices || data.devices.length === 0) {
+      body.innerHTML = '<span style="color:var(--text-dim)">No USB devices found.</span>';
+      return;
+    }
+    let html = '<div style="font-size:13px;">';
+    for (const d of data.devices) {
+      const id   = d.id || (d.vendor_id && d.product_id ? d.vendor_id + ':' + d.product_id : '');
+      const desc = d.description || '';
+      html += '<div style="margin-bottom:4px;"><span style="font-family:monospace;color:var(--accent);">' +
+              id + '</span> ' + desc + '</div>';
+    }
+    html += '</div>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (body) body.textContent = 'Error: ' + e;
   }
 }
 
