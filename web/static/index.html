@@ -2164,6 +2164,10 @@
 <div class="card" id="card-systemd-failed">
   <div class="card-header"><span>🔴 Systemd Failed</span><button class="refresh-btn" onclick="fetchSystemdFailed()">↻</button></div>
   <div class="card-body" id="systemd-failed-body">
+<!-- MTU Info -->
+<div class="card" id="card-mtu-info">
+  <div class="card-header"><span>📏 MTU Info</span><button class="refresh-btn" onclick="fetchMtuInfo()">↻</button></div>
+  <div class="card-body" id="mtu-info-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -6364,6 +6368,22 @@ async function fetchSystemdFailed() {
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
+// ── MTU Info ──
+async function fetchMtuInfo() {
+  const el = document.getElementById('mtu-info-body');
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/network/mtu-info');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No interfaces</div>'; return; }
+    const rows = d.interfaces.map(i =>
+      `<div class="stat-row ${d.non_standard_mtu.some(n=>n.iface===i.iface)?'warn':''}"><span>${i.iface} (${i.state})</span><span class="val">${i.mtu}</span></div>`
+    ).join('');
+    el.innerHTML = `<div class="stat-row"><span>Interfaces</span><span class="val">${d.total}</span></div>${rows}`;
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -7614,6 +7634,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchJournalBoot();
   fetchMulticastGroups();
   fetchKernelCmdline();
+  fetchMtuInfo();
 });
 
 async function fetchJournal() {
@@ -7993,6 +8014,7 @@ async function refreshAll() {
   fetchIoScheduler();
   fetchTcpStats();
   fetchSystemdFailed();
+  fetchMtuInfo();
 }
 
 async function init() {

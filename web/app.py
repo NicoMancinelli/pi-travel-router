@@ -17506,6 +17506,36 @@ def api_system_systemd_failed():
             "units": units,
             "total": len(units),
             "healthy": len(units) == 0,
+# ── MTU Info ─────────────────────────────────────────────────────────────────
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/network/mtu-info")
+@require_auth
+def api_network_mtu_info():
+    """Return MTU for each network interface from /sys/class/net."""
+    try:
+        import glob
+        ifaces = []
+        for path in sorted(glob.glob("/sys/class/net/*")):
+            name = path.split("/")[-1]
+            if name == "lo":
+                continue
+            try:
+                with open(f"{path}/mtu") as f:
+                    mtu = int(f.read().strip())
+                with open(f"{path}/operstate") as f:
+                    state = f.read().strip()
+            except (FileNotFoundError, ValueError):
+                continue
+            ifaces.append({"iface": name, "mtu": mtu, "state": state})
+        non_standard = [i for i in ifaces if i["mtu"] not in (1500, 65536)]
+        return jsonify({
+            "interfaces": ifaces,
+            "non_standard_mtu": non_standard,
+            "total": len(ifaces),
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
