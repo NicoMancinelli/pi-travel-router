@@ -17786,6 +17786,35 @@ def api_system_memory_zones():
         return jsonify({"error": str(e)}), 500
 
 
+# ── Login History ────────────────────────────────────────────────────────────
+@app.route("/api/system/login-history")
+@require_auth
+def api_system_login_history():
+    """Return last 20 login records from the 'last' command."""
+    try:
+        result = _run(["last", "-n", "20", "-F", "--time-format", "iso"], timeout=8)
+        logins = []
+        for line in result.stdout.splitlines():
+            if not line.strip() or line.startswith("wtmp") or line.startswith("btmp"):
+                continue
+            parts = line.split()
+            if len(parts) >= 4:
+                logins.append({
+                    "user": parts[0],
+                    "tty": parts[1],
+                    "from": parts[2] if parts[2] not in ("", "-") else "local",
+                    "raw": line.strip(),
+                })
+        users = list({l["user"] for l in logins if l["user"] not in ("reboot", "shutdown")})
+        return jsonify({
+            "logins": logins[:20],
+            "total": len(logins),
+            "unique_users": users,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":

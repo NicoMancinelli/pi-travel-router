@@ -2219,6 +2219,14 @@
   </div>
 </div>
 
+  <!-- Login History -->
+  <div class="card" id="card-login-history">
+    <div class="card-header"><span>📜 Login History</span><button class="refresh-btn" onclick="fetchLoginHistory()">↻</button></div>
+    <div class="card-body" id="login-history-body">
+      <div class="loading">Loading…</div>
+    </div>
+  </div>
+
   <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
     <div class="card-title">
@@ -11678,6 +11686,20 @@ async function fetchDiskTemp() {
       `<div class="stat-row ${d.hot_disks.some(h=>h.device===disk.device)?'warn':''}"><span>${disk.device}</span><span class="val">${disk.temp_c}°C</span></div>`
     ).join('');
     el.innerHTML = rows;
+// ── Login History ──
+async function fetchLoginHistory() {
+  const el = document.getElementById('login-history-body');
+  if (!el) return;
+  el.innerHTML = '<div class="loading">Loading…</div>';
+  try {
+    const r = await fetch('/api/system/login-history');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    if (!d.total) { el.innerHTML = '<div class="ok-msg">No login history</div>'; return; }
+    const rows = d.logins.slice(0, 8).map(l =>
+      `<div class="stat-row"><span>${l.user}@${l.tty}</span><span class="val">${l.from}</span></div>`
+    ).join('');
+    el.innerHTML = `<div class="stat-row"><span>Recent logins</span><span class="val">${d.total}</span></div>${rows}`;
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
