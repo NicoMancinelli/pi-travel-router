@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.92.0] - 2026-05-25
+
+### Added
+- `GET /api/system/cputemp` — CPU thermal zone temperatures from `/sys/class/thermal/thermal_zone*/temp`; returns `zones[{zone, type, temp_c}]`, `max_temp_c`, `count`; dashboard card 🌡️ CPU Temperature with per-zone progress bars (green/amber/red thresholds)
+- `GET /api/system/dns-stats` — DNS resolver stats via `resolvectl statistics` with `/etc/resolv.conf` fallback; returns `current_server`, `servers[]`, `total_queries`, `cache_hits`, `cache_misses`, `dnssec_failures`; dashboard card 🔍 DNS Stats with cache hit-rate bar
+
 ## [2.91.0] - 2026-05-25
 
 ### Added
