@@ -6328,6 +6328,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchListeningPorts();
   fetchStorage();
   fetchWgPeerHealth();
+  fetchWgPeerHealthLegacy();
   fetchWgPeers();
   fetchWgPeersMgmt();
   fetchDhcpLeases();
@@ -6646,6 +6647,8 @@ async function refreshAll() {
   fetchDohResolver();
   fetchDohResolverNew();
   fetchWgPeers();
+  fetchWgPeerHealth();
+  fetchWgPeerHealthLegacy();
   fetchWgPeersMgmt();
   fetchGuestNetwork();
   fetchWifiQr();
