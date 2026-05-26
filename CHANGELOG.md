@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-05-26
+
+### Added
+- `GET /api/network/interface-errors` — per-interface RX/TX error and drop counts from `/proc/net/dev`; returns `interfaces[]`, `total_errors`, `total_drops`; dashboard card ⚠️ Interface Errors with amber highlight on non-zero counts
+- `GET /api/system/uptime-detail` — uptime from `/proc/uptime`; returns `uptime_seconds`, `uptime_str` (Xd Yh Zm), `idle_seconds`, `idle_pct`, `boot_timestamp`; dashboard card ⏰ Uptime with formatted table
+- `GET /api/system/active-users` — currently logged-in users from `who`; returns `users[]` with user/tty/login_time/from, `count`; dashboard card 👤 Active Users
+
 ## [3.11.0] - 2026-05-26
 
 ### Added
