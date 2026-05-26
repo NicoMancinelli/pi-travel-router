@@ -17053,6 +17053,26 @@ def api_network_firewall_rules():
     })
 
 
+# ── Journal Boot Messages ──────────────────────────────────────────────────────
+@app.route("/api/system/journal-boot")
+@require_auth
+def api_system_journal_boot():
+    """Return last 50 boot log lines from journalctl."""
+    try:
+        result = _run(["journalctl", "-b", "--no-pager", "-n", "50",
+                       "--output=short-iso"], timeout=10)
+        lines = [l for l in result.stdout.splitlines() if l.strip()]
+        errors = [l for l in lines if " error" in l.lower() or " fail" in l.lower()]
+        return jsonify({
+            "lines": lines[-50:],
+            "total": len(lines),
+            "error_count": len(errors),
+            "errors": errors[:10],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
