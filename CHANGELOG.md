@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.96.0] - 2026-05-25
+
+### Added
+- `GET /api/network/mdns-services` — discovers local mDNS/Avahi services via `avahi-browse -a -t -p`; returns `services[]` with name, type, address, port, host; graceful fallback when daemon absent; dashboard card 📡 mDNS Services with service-type pills and Name/Type/Address table
+- `GET /api/system/usb-devices` — lists USB devices via `lsusb`; returns `devices[]` with bus, device number, vendor/product IDs, description; dashboard card 🔌 USB Devices with vendor:product monospace display
+- `GET /api/system/process-tree` — process list with parent-child relationships from `ps -eo pid,ppid,user,comm,%cpu,%mem`; returns `processes[]` with children count, `total`, `top_level`; dashboard card 🌳 Process Tree sorted by CPU%
+
 ## [2.95.0] - 2026-05-25
 
 ### Added
