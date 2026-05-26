@@ -17606,6 +17606,56 @@ def api_system_kernel_modules():
             "total": len(modules),
             "top_by_size": modules[:10],
         })
+# ── VPN Latency ──────────────────────────────────────────────────────────────
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/vpn/vpn-latency")
+@require_auth
+def api_vpn_vpn_latency():
+    """Ping WireGuard peer endpoint and Tailscale derp to measure VPN latency."""
+    try:
+        import time
+        results = {}
+        # WireGuard: get endpoint from wg show
+        try:
+            wg = _run(["wg", "show", "wg0", "endpoints"], timeout=5)
+            for line in wg.stdout.splitlines():
+                parts = line.split()
+                if len(parts) == 2:
+                    peer, endpoint = parts
+                    host = endpoint.rsplit(":", 1)[0].strip("[]")
+                    t0 = time.time()
+                    ping = _run(["ping", "-c", "3", "-W", "2", host], timeout=10)
+                    elapsed = round((time.time() - t0) * 1000)
+                    if "rtt" in ping.stdout or "round-trip" in ping.stdout:
+                        import re
+                        m = re.search(r"(?:rtt|round-trip)[^=]+=\s*([\d.]+)", ping.stdout)
+                        avg_ms = float(m.group(1)) if m else None
+                    else:
+                        avg_ms = None
+                    results["wireguard"] = {
+                        "peer": peer[:16] + "…",
+                        "endpoint": endpoint,
+                        "avg_ms": avg_ms,
+                        "reachable": "0% packet loss" in ping.stdout,
+                    }
+                    break
+        except Exception:
+            results["wireguard"] = {"error": "wg0 not active"}
+        # Tailscale: ping derp
+        try:
+            ts = _run(["tailscale", "ping", "--c", "3", "100.100.100.100"], timeout=10)
+            import re
+            m = re.search(r"([\d.]+)\s*ms", ts.stdout)
+            results["tailscale"] = {
+                "avg_ms": float(m.group(1)) if m else None,
+                "reachable": "pong" in ts.stdout.lower() or m is not None,
+            }
+        except Exception:
+            results["tailscale"] = {"error": "tailscale not active"}
+        return jsonify(results)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

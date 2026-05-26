@@ -2191,6 +2191,10 @@
 <div class="card" id="card-kernel-modules">
   <div class="card-header"><span>🧩 Kernel Modules</span><button class="refresh-btn" onclick="fetchKernelModules()">↻</button></div>
   <div class="card-body" id="kernel-modules-body">
+<!-- VPN Latency -->
+<div class="card" id="card-vpn-latency">
+  <div class="card-header"><span>🏓 VPN Latency</span><button class="refresh-btn" onclick="fetchVpnLatency()">↻</button></div>
+  <div class="card-body" id="vpn-latency-body">
     <div class="loading">Loading…</div>
   </div>
 </div>
@@ -6466,6 +6470,31 @@ async function fetchKernelModules() {
   } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
 }
 
+// ── VPN Latency ──
+async function fetchVpnLatency() {
+  const el = document.getElementById('vpn-latency-body');
+  el.innerHTML = '<div class="loading">Pinging…</div>';
+  try {
+    const r = await fetch('/api/vpn/vpn-latency');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
+    let html = '';
+    if (d.wireguard) {
+      const wg = d.wireguard;
+      html += wg.error
+        ? `<div class="stat-row warn"><span>WireGuard</span><span class="val">${wg.error}</span></div>`
+        : `<div class="stat-row"><span>WireGuard</span><span class="val ${!wg.reachable?'warn':''}">${wg.avg_ms ? wg.avg_ms+'ms' : 'timeout'}</span></div>`;
+    }
+    if (d.tailscale) {
+      const ts = d.tailscale;
+      html += ts.error
+        ? `<div class="stat-row warn"><span>Tailscale</span><span class="val">${ts.error}</span></div>`
+        : `<div class="stat-row"><span>Tailscale</span><span class="val ${!ts.reachable?'warn':''}">${ts.avg_ms ? ts.avg_ms+'ms' : 'timeout'}</span></div>`;
+    }
+    el.innerHTML = html || '<div class="ok-msg">No VPN active</div>';
+  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+}
+
 // ── Tailscale Status ───────────────────────────────────────────────────────────
 
 // ── Network Interfaces Detail ─────────────────────────────────────────────────
@@ -8100,6 +8129,7 @@ async function refreshAll() {
   fetchCpuCache();
   fetchDnsCacheStats();
   fetchPciDevices();
+  fetchVpnLatency();
 }
 
 async function init() {
