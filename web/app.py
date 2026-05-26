@@ -16714,6 +16714,7 @@ def api_network_interface_errors():
         "interfaces": interfaces,
         "total_errors": total_errors,
         "total_drops": total_drops,
+    })
 # ── Uptime detail ─────────────────────────────────────────────────────────────
 
 @app.route("/api/system/uptime-detail", methods=["GET"])
