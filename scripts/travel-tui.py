@@ -953,6 +953,7 @@ FEATURE_FLAGS = [
     "ENABLE_WAN_METRICS",
     "ENABLE_PROMETHEUS_EXPORTER",
     "ENABLE_WIREGUARD",
+    "ENABLE_LTE_MODEM",
 ]
 
 
@@ -1056,6 +1057,11 @@ class FeaturesScreen(Screen):
                     run(["/usr/local/sbin/usb-share.sh", "enable"], timeout=30)
                 else:
                     run(["/usr/local/sbin/usb-share.sh", "disable"], timeout=30)
+            elif flag == "ENABLE_LTE_MODEM":
+                if enable:
+                    run(["systemctl", "enable", "--now", "modem-watchdog.timer"])
+                else:
+                    run(["systemctl", "disable", "--now", "modem-watchdog.timer"])
             elif flag == "ENABLE_WAN_METRICS":
                 if enable:
                     run(["systemctl", "enable", "--now", "wan-metrics.timer"])

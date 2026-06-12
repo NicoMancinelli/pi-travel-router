@@ -407,3 +407,16 @@ class TestValidateMisc:
         _, errors, _ = server._validate(form)
         port_errors = [e for e in errors if "WireGuard listen port" in e]
         assert port_errors
+
+    def test_enable_usb_share_flag_accepted(self):
+        """ENABLE_USB_SHARE is in BOOL_FLAGS and round-trips through _validate."""
+        assert "ENABLE_USB_SHARE" in server.BOOL_FLAGS
+        form = {
+            "AP_SSID": ["TestRouter"],
+            "AP_PASS": ["testpassword"],
+            "COUNTRY": ["US"],
+            "ENABLE_USB_SHARE": ["1"],
+            "_csrf_token": [server._csrf_token],
+        }
+        values, errors, _ = server._validate(form)
+        assert values["ENABLE_USB_SHARE"] == "1"
