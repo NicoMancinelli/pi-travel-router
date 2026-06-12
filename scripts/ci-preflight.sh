@@ -87,11 +87,20 @@ fi
 _section "Python lint (flake8)"
 
 if command -v flake8 &>/dev/null; then
-    if flake8 firstboot/ web/ --max-line-length=120 --ignore=E501 2>/dev/null; then
-        _ok "flake8: no errors"
+    # firstboot/: full style gate (mirrors python-lint.yml)
+    if flake8 firstboot/ --max-line-length=120 --ignore=E501 2>/dev/null; then
+        _ok "flake8 firstboot/: no errors"
     else
-        _fail "flake8 errors:"
-        flake8 firstboot/ web/ --max-line-length=120 --ignore=E501 || true
+        _fail "flake8 firstboot/ errors:"
+        flake8 firstboot/ --max-line-length=120 --ignore=E501 || true
+    fi
+    # web/: correctness-only gate (syntax errors, redefinitions, undefined names).
+    # Full style cleanup of the 18k-line app.py is tracked separately.
+    if flake8 web/ --max-line-length=120 --select=E9,F63,F7,F82,F811 2>/dev/null; then
+        _ok "flake8 web/ (critical): no errors"
+    else
+        _fail "flake8 web/ critical errors:"
+        flake8 web/ --max-line-length=120 --select=E9,F63,F7,F82,F811 || true
     fi
 else
     echo "  (flake8 not installed — skipping)"
@@ -111,7 +120,7 @@ fi
 _section "Pytest"
 
 if command -v pytest &>/dev/null; then
-    if pytest tests/unit/test_server.py -q 2>&1 | tail -5; then
+    if pytest tests/unit/ -q 2>&1 | tail -5; then
         _ok "pytest: all tests passed"
     else
         _fail "pytest: test failures (see above)"

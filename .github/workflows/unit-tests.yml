@@ -41,7 +41,7 @@ jobs:
       - name: Install deps
         run: pip install pytest flask
       - name: Run pytest
-        run: pytest tests/unit/test_server.py -v
+        run: pytest tests/unit/ -v
 
   integration-tests:
     name: Integration tests
@@ -74,4 +74,4 @@ jobs:
       - name: Run unit tests natively on ARM64
         run: bats tests/unit/
       - name: Run pytest natively on ARM64
-        run: python3 -m pytest tests/unit/test_server.py -v
+        run: python3 -m pytest tests/unit/ -v

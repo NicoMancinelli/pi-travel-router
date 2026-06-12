@@ -98,7 +98,6 @@ def _read_proc_net_dev():
 
 def _bw_sample_once():
     """Take one bandwidth sample and append to the history file."""
-    global _bw_prev_sample
     try:
         dev_stats = _read_proc_net_dev()
         # Pick the first available uplink interface
@@ -5939,7 +5938,6 @@ def api_network_interfaces():
     })
 
 
-
 # ── AdGuard Home Stats ────────────────────────────────────────────────────────
 
 @app.route("/api/dns/adguard/stats", methods=["GET"])
@@ -6256,7 +6254,6 @@ def api_network_wan():
     })
 
 
-
 # ── Speedtest ─────────────────────────────────────────────────────────────────
 
 @app.route("/api/network/speedtest", methods=["GET"])
@@ -6403,57 +6400,6 @@ def api_system_temp_history():
         "avg": round(sum(temps) / len(temps), 1),
         "count": len(samples),
     })
-
-
-# ── Log Export ────────────────────────────────────────────────────────────────
-
-@app.route("/api/logs/export", methods=["GET"])
-@require_auth
-def api_logs_export():
-    """Export combined system logs as a downloadable text file."""
-    import io
-    from flask import Response
-
-    lines = []
-
-    # journald: last 500 lines across all units
-    out, rc = _run(["journalctl", "-n", "500", "--no-pager", "--output=short-iso"])
-    if rc == 0 and out.strip():
-        lines.append("=== journald (last 500 lines) ===")
-        lines.append(out.rstrip())
-        lines.append("")
-
-    # Travel router specific service logs
-    for service in ["travel-router-web", "wan-watchdog", "wg-quick@wg0", "tailscaled", "hostapd", "dnsmasq"]:
-        svc_out, svc_rc = _run(["journalctl", "-u", service, "-n", "100", "--no-pager", "--output=short-iso"])
-        if svc_rc == 0 and svc_out.strip():
-            lines.append(f"=== {service} (last 100 lines) ===")
-            lines.append(svc_out.rstrip())
-            lines.append("")
-
-    # Syslog if available
-    for syslog_path in ["/var/log/syslog", "/var/log/messages"]:
-        try:
-            with open(syslog_path) as f:
-                content = f.readlines()[-200:]
-            lines.append(f"=== {syslog_path} (last 200 lines) ===")
-            lines.append("".join(content).rstrip())
-            lines.append("")
-            break
-        except OSError:
-            continue
-
-    content = "\n".join(lines) if lines else "No logs available.\n"
-
-    import datetime
-    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    filename = f"travel-router-logs-{ts}.txt"
-
-    return Response(
-        content,
-        mimetype="text/plain",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
 
 
 @app.route("/api/logs/summary", methods=["GET"])
@@ -7738,47 +7684,6 @@ def api_network_arp():
     return jsonify({"neighbors": visible, "count": len(visible), "reachable": reachable, "stale": stale})
 
 
-# ── IP Routing Table ──────────────────────────────────────────────────────────
-
-@app.route("/api/network/routes", methods=["GET"])
-@require_auth
-def api_network_routes():
-    """Return the main IPv4 routing table parsed from `ip -j route show`."""
-    try:
-        out, rc = _run(["ip", "-j", "route", "show"])
-        if rc != 0:
-            return jsonify({"error": out.strip() or "ip route show failed", "routes": [], "count": 0, "default_gw": None})
-        data = json.loads(out)
-        routes = []
-        default_gw = None
-        for item in data:
-            dst = item.get("dst", "")
-            gateway = item.get("gateway") or None
-            dev = item.get("dev", "")
-            protocol = item.get("protocol", "")
-            scope = item.get("scope", "")
-            metric = item.get("metric", 0)
-            try:
-                metric = int(metric)
-            except (TypeError, ValueError):
-                metric = 0
-            prefsrc = item.get("prefsrc") or None
-            routes.append({
-                "dst": dst,
-                "gateway": gateway,
-                "dev": dev,
-                "protocol": protocol,
-                "scope": scope,
-                "metric": metric,
-                "prefsrc": prefsrc,
-            })
-            if dst == "default" and gateway:
-                default_gw = gateway
-        return jsonify({"routes": routes, "count": len(routes), "default_gw": default_gw, "source": "ip-route"})
-    except Exception as exc:
-        return jsonify({"error": str(exc), "routes": [], "count": 0, "default_gw": None})
-
-
 # ── Journal Errors ────────────────────────────────────────────────────────────
 @app.route("/api/system/journal-errors", methods=["GET"])
 @require_auth
@@ -8952,46 +8857,6 @@ def api_system_memory_breakdown():
         return jsonify(result)
     except Exception as exc:  # pylint: disable=broad-except
         return jsonify({"error": str(exc)})
-
-
-@app.route("/api/network/ping")
-@require_auth
-def api_network_ping():
-    """Ping multiple hosts and return latency/loss stats."""
-    hosts = [
-        {"name": "Gateway", "host": "192.168.4.1"},
-        {"name": "Cloudflare DNS", "host": "1.1.1.1"},
-        {"name": "Google DNS", "host": "8.8.8.8"},
-        {"name": "Tailscale relay", "host": "100.100.100.100"},
-    ]
-    results = []
-    for entry in hosts:
-        out, rc = _run(["ping", "-c", "3", "-W", "2", "-q", entry["host"]])
-        record = {"name": entry["name"], "host": entry["host"], "reachable": rc == 0}
-        if rc == 0:
-            # parse summary line: 3 packets transmitted, 3 received, 0% packet loss
-            for line in out.splitlines():
-                if "packet loss" in line:
-                    parts = line.split(",")
-                    for p in parts:
-                        p = p.strip()
-                        if "transmitted" in p:
-                            record["transmitted"] = int(p.split()[0])
-                        elif "received" in p:
-                            record["received"] = int(p.split()[0])
-                        elif "packet loss" in p:
-                            record["loss_pct"] = p.split()[0]
-                # parse rtt line: rtt min/avg/max/mdev = 1.234/2.345/3.456/0.567 ms
-                if "rtt" in line or "round-trip" in line:
-                    try:
-                        stats = line.split("=")[1].strip().split("/")
-                        record["rtt_min"] = stats[0].strip()
-                        record["rtt_avg"] = stats[1].strip()
-                        record["rtt_max"] = stats[2].strip()
-                    except (IndexError, ValueError):
-                        pass
-        results.append(record)
-    return jsonify({"hosts": results})
 
 
 @app.route("/api/system/cron-jobs")
@@ -11472,43 +11337,6 @@ def api_network_arp_table():
         return jsonify({"error": str(exc), "entries": [], "count": 0})
 
 
-@app.route("/api/system/mounts")
-@require_auth
-def api_system_mounts():
-    PSEUDO_FS = {
-        "tmpfs", "devtmpfs", "squashfs", "overlay", "proc", "sysfs",
-        "devpts", "cgroup", "cgroup2", "pstore", "debugfs", "tracefs",
-        "hugetlbfs", "mqueue",
-    }
-    try:
-        out = _run(["df", "-h", "--output=source,fstype,size,used,avail,pcent,target"])
-        mounts = []
-        for line in out.splitlines()[1:]:
-            parts = line.split()
-            if len(parts) < 7:
-                continue
-            source, fstype, size, used, avail, pcent = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
-            target = " ".join(parts[6:])
-            if fstype in PSEUDO_FS:
-                continue
-            try:
-                use_pct = int(pcent.rstrip("%"))
-            except ValueError:
-                use_pct = 0
-            mounts.append({
-                "source": source,
-                "fstype": fstype,
-                "size": size,
-                "used": used,
-                "avail": avail,
-                "use_pct": use_pct,
-                "target": target,
-            })
-        return jsonify({"mounts": mounts, "count": len(mounts), "source": "df"})
-    except Exception as exc:
-        return jsonify({"error": str(exc), "mounts": [], "count": 0})
-
-
 @app.route("/api/network/ipv6-addresses")
 @require_auth
 def api_ipv6_addresses():
@@ -12915,7 +12743,7 @@ def api_network_wifi_survey():
 
 @app.route("/api/network/dhcp-leases")
 @require_auth
-def api_network_dhcp_leases():
+def api_network_dhcp_leases_v2():
     """Active DHCP leases from dnsmasq lease file (v2)."""
     lease_paths = [
         "/var/lib/misc/dnsmasq.leases",
@@ -13429,72 +13257,6 @@ def api_network_latency():
     return jsonify({"targets": results, "all_reachable": all_reachable})
 
 
-@app.route("/api/network/firewall", methods=["GET"])
-@require_auth
-def api_network_firewall():
-    """Return iptables chain summary: policy, rule count, packet/byte stats."""
-    import re as _re
-
-    def _parse_chains(output):
-        chains = []
-        current_chain = None
-        rule_count = 0
-        for line in output.splitlines():
-            # Chain header: "Chain INPUT (policy DROP 1024 packets, 98304 bytes)"
-            m = _re.match(
-                r"^Chain\s+(\S+)\s+\(policy\s+(\S+)\s+(\d+)\s+packets,\s+(\d+)\s+bytes\)",
-                line,
-            )
-            if m:
-                if current_chain is not None:
-                    current_chain["rules"] = rule_count
-                    chains.append(current_chain)
-                current_chain = {
-                    "name": m.group(1),
-                    "policy": m.group(2),
-                    "packets": int(m.group(3)),
-                    "bytes": int(m.group(4)),
-                    "rules": 0,
-                }
-                rule_count = 0
-                continue
-            # Also handle chains referenced by name without policy (e.g. user-defined)
-            m2 = _re.match(r"^Chain\s+(\S+)\s+\((\d+)\s+references\)", line)
-            if m2:
-                if current_chain is not None:
-                    current_chain["rules"] = rule_count
-                    chains.append(current_chain)
-                current_chain = {
-                    "name": m2.group(1),
-                    "policy": "—",
-                    "packets": 0,
-                    "bytes": 0,
-                    "rules": 0,
-                }
-                rule_count = 0
-                continue
-            # Count rule rows (non-empty lines that aren't the header row)
-            if current_chain is not None and line.strip() and not line.startswith("pkts"):
-                rule_count += 1
-        if current_chain is not None:
-            current_chain["rules"] = rule_count
-            chains.append(current_chain)
-        return chains
-
-    ipv4_out, _ = _run("iptables -L -n -v --line-numbers 2>/dev/null", timeout=10)
-    ip6_out, ip6_rc = _run("ip6tables -L -n -v --line-numbers 2>/dev/null", timeout=10)
-
-    chains = _parse_chains(ipv4_out)
-    total_rules = sum(c["rules"] for c in chains)
-    ipv6_available = ip6_rc == 0 and bool(ip6_out.strip())
-
-    return jsonify({
-        "chains": chains,
-        "total_rules": total_rules,
-        "ipv6_available": ipv6_available,
-    })
-
-
 @app.route("/api/system/clock", methods=["GET"])
 @require_auth
 def api_system_clock():
@@ -13726,97 +13488,6 @@ def api_network_ap_clients():
     return jsonify({"clients": clients, "count": len(clients), "interface": iface})
 
 
-# ── ARP / Neighbor Table ──────────────────────────────────────────────────────
-
-@app.route("/api/network/arp", methods=["GET"])
-@require_auth
-def api_network_arp():
-    """Return the kernel ARP/neighbor table parsed from /proc/net/arp."""
-    _FLAG_MAP = {
-        "0x0": "INCOMPLETE",
-        "0x2": "REACHABLE",
-        "0x4": "STALE",
-        "0x6": "STALE",
-    }
-    entries = []
-    try:
-        with open("/proc/net/arp") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line or line.startswith("IP address"):
-                    continue
-                parts = line.split()
-                if len(parts) < 6:
-                    continue
-                ip, _hwtype, flags, mac, _mask, iface = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
-                if mac == "00:00:00:00:00:00":
-                    continue
-                state = _FLAG_MAP.get(flags.lower(), "UNKNOWN")
-                entries.append({"ip": ip, "mac": mac, "iface": iface, "flags": flags, "state": state})
-    except OSError as exc:
-        return jsonify({"entries": [], "count": 0, "error": str(exc)})
-    return jsonify({"entries": entries, "count": len(entries)})
-
-
-# ── ARP / neighbour table ─────────────────────────────────────────────────────
-
-@app.route("/api/network/arp", methods=["GET"])
-@require_auth
-def api_network_arp():
-    """Return the current ARP/neighbour table."""
-    neighbors = []
-    try:
-        out, _ = _run(["ip", "neigh", "show"], timeout=5)
-        for line in (out or "").splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            # Format: <ip> dev <iface> lladdr <mac> <state>
-            ip_addr = parts[0] if parts else ""
-            entry = {"ip": ip_addr, "dev": "", "mac": "", "state": ""}
-            for i, p in enumerate(parts):
-                if p == "dev" and i + 1 < len(parts):
-                    entry["dev"] = parts[i + 1]
-                elif p == "lladdr" and i + 1 < len(parts):
-                    entry["mac"] = parts[i + 1]
-            # Last token is state (REACHABLE, STALE, FAILED, etc.)
-            if parts:
-                entry["state"] = parts[-1]
-            neighbors.append(entry)
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-    return jsonify({"neighbors": neighbors, "count": len(neighbors)})
-
-
-# ── ARP / Neighbor Table ──────────────────────────────────────────────────────
-@app.route("/api/network/arp", methods=["GET"])
-@require_auth
-def api_network_arp():
-    import re as _re
-    VALID_STATES = {"REACHABLE", "STALE", "DELAY", "PROBE", "PERMANENT"}
-    out, rc = _run(["ip", "neigh", "show"])
-    neighbors = []
-    if rc == 0:
-        for line in out.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            # Format: <IP> dev <iface> lladdr <MAC> <STATE>
-            m = _re.match(
-                r'^(\S+)\s+dev\s+(\S+)\s+lladdr\s+([0-9a-fA-F:]+)\s+(\S+)$',
-                line,
-            )
-            if not m:
-                continue
-            ip, dev, mac, state = m.group(1), m.group(2), m.group(3), m.group(4).upper()
-            if state not in VALID_STATES:
-                continue
-            neighbors.append({"ip": ip, "dev": dev, "mac": mac, "state": state})
-    reachable = sum(1 for n in neighbors if n["state"] == "REACHABLE")
-    return jsonify({"neighbors": neighbors, "count": len(neighbors), "reachable": reachable})
-
-
 @app.route("/api/system/uptime", methods=["GET"])
 @require_auth
 def api_system_uptime():
@@ -13877,7 +13548,7 @@ def api_system_who():
 
 @app.route("/api/network/iface-stats", methods=["GET"])
 @require_auth
-def api_network_iface_stats():
+def api_network_iface_stats_v2():
     """Return per-interface byte/packet counters from /proc/net/dev."""
 
     def _fmt_bytes(n):
@@ -14510,108 +14181,6 @@ def api_network_mdns_services():
     })
 
 
-# ── ARP Table ─────────────────────────────────────────────────────────────────
-
-@app.route("/api/network/arp-table", methods=["GET"])
-@require_auth
-def api_network_arp_table():
-    """Return ARP cache entries from /proc/net/arp."""
-    try:
-        text = Path("/proc/net/arp").read_text()
-    except OSError:
-        return jsonify({"entries": [], "count": 0})
-
-    entries = []
-    lines = text.splitlines()
-    # Skip header line: "IP address  HW type  Flags  HW address  Mask  Device"
-    for line in lines[1:]:
-        parts = line.split()
-        if len(parts) < 6:
-            continue
-        ip, hw_type, flags, mac, _mask, iface = parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]
-        # Skip incomplete entries (null MAC)
-        if mac == "00:00:00:00:00:00":
-            continue
-        entries.append({
-            "ip": ip,
-            "mac": mac,
-            "iface": iface,
-            "flags": flags,
-            "type": "ether" if hw_type == "0x1" else hw_type,
-        })
-
-    return jsonify({"entries": entries, "count": len(entries)})
-
-
-# ── System Environment ────────────────────────────────────────────────────────
-
-@app.route("/api/system/environment", methods=["GET"])
-@require_auth
-def api_system_environment():
-    """Return key system environment facts: kernel, OS, hostname, arch, boot time."""
-    import platform
-
-    # Hostname
-    hostname = "unknown"
-    try:
-        hostname = Path("/proc/sys/kernel/hostname").read_text(encoding="utf-8").strip()
-    except OSError:
-        hostname = platform.node()
-
-    # Kernel version (first token of /proc/version)
-    kernel = "unknown"
-    try:
-        version_line = Path("/proc/version").read_text(encoding="utf-8").strip()
-        # Format: "Linux version 6.1.21-v8+ (user@host) ..."
-        parts = version_line.split()
-        kernel = parts[2] if len(parts) >= 3 else version_line
-    except OSError:
-        kernel = platform.release()
-
-    # Architecture
-    arch = platform.machine() or "unknown"
-
-    # OS name / version / id from /etc/os-release
-    os_name = "unknown"
-    os_version = "unknown"
-    os_id = "unknown"
-    try:
-        os_release = Path("/etc/os-release").read_text(encoding="utf-8")
-        for line in os_release.splitlines():
-            line = line.strip()
-            if line.startswith("NAME="):
-                os_name = line.split("=", 1)[1].strip('"\'')
-            elif line.startswith("VERSION="):
-                os_version = line.split("=", 1)[1].strip('"\'')
-            elif line.startswith("ID="):
-                os_id = line.split("=", 1)[1].strip('"\'')
-    except OSError:
-        pass
-
-    # Boot time and uptime from /proc/uptime
-    boot_time = "unknown"
-    uptime_seconds = 0
-    try:
-        uptime_raw = Path("/proc/uptime").read_text(encoding="utf-8").strip()
-        from datetime import timedelta
-        uptime_seconds = int(float(uptime_raw.split()[0]))
-        boot_dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(seconds=uptime_seconds)
-        boot_time = boot_dt.strftime("%Y-%m-%d %H:%M:%S")
-    except (OSError, ValueError, IndexError):
-        pass
-
-    return jsonify({
-        "hostname": hostname,
-        "kernel": kernel,
-        "arch": arch,
-        "os_name": os_name,
-        "os_version": os_version,
-        "os_id": os_id,
-        "boot_time": boot_time,
-        "uptime_seconds": uptime_seconds,
-    })
-
-
 # ── SSH Authorized Keys (v3) ──────────────────────────────────────────────────
 
 @app.route("/api/system/ssh-keys", methods=["GET"])
@@ -15065,12 +14634,11 @@ def api_network_tcp_connections():
     })
 
 
-
 # ── Network Bandwidth History ─────────────────────────────────────────────────
 
 @app.route("/api/network/bandwidth-history")
 @require_auth
-def api_network_bandwidth_history():
+def api_network_bandwidth_history_v2():
     out, rc = _run("vnstat --json -h 24", timeout=15)
     if rc != 0 or not out.strip():
         return jsonify({"available": False, "hours": []})
@@ -15569,104 +15137,6 @@ def api_network_speedtest_post():
     return jsonify({"error": "no speedtest method available", "download_mbps": None})
 
 
-# ── CPU Frequency v3 ──────────────────────────────────────────────────────────
-
-@app.route("/api/system/cpu-freq", methods=["GET"])
-@require_auth
-def api_system_cpu_freq_v3():
-    """Return per-core CPU frequency and governor from sysfs cpufreq interface."""
-    cpufreq_base = Path("/sys/devices/system/cpu")
-    cpu_dirs = sorted(
-        cpufreq_base.glob("cpu[0-9]*"),
-        key=lambda p: int(p.name[3:]),
-    )
-    cores = []
-    for cpu_dir in cpu_dirs:
-        freq_dir = cpu_dir / "cpufreq"
-        if not freq_dir.exists():
-            continue
-        def _read(fname, d=freq_dir):
-            try:
-                return (d / fname).read_text().strip()
-            except OSError:
-                return None
-        def _khz_to_mhz(val):
-            try:
-                return int(val) / 1000.0
-            except (TypeError, ValueError):
-                return 0.0
-        core_id = int(cpu_dir.name[3:])
-        cores.append({
-            "core": core_id,
-            "freq_mhz": _khz_to_mhz(_read("scaling_cur_freq")),
-            "min_mhz": _khz_to_mhz(_read("scaling_min_freq")),
-            "max_mhz": _khz_to_mhz(_read("scaling_max_freq")),
-            "governor": _read("scaling_governor") or "",
-        })
-    if not cores:
-        return jsonify({"available": False, "cores": []})
-    avg_freq_mhz = round(sum(c["freq_mhz"] for c in cores) / len(cores), 1)
-    governor = cores[0]["governor"]
-    return jsonify({
-        "cores": cores,
-        "core_count": len(cores),
-        "avg_freq_mhz": avg_freq_mhz,
-        "governor": governor,
-    })
-
-
-# ── Entropy Pool ──────────────────────────────────────────────────────────────
-
-@app.route("/api/system/entropy")
-@require_auth
-def api_system_entropy():
-    """Return kernel entropy pool status from /proc/sys/kernel/random/."""
-    _rnd = Path("/proc/sys/kernel/random")
-
-    def _read_int(name: str) -> int:
-        try:
-            return int((_rnd / name).read_text().strip())
-        except (OSError, ValueError):
-            return 0
-
-    entropy_avail = _read_int("entropy_avail")
-    pool_size = _read_int("pool_size") or 256
-    write_wakeup_threshold = _read_int("write_wakeup_threshold")
-    urandom_min_reseed_secs = _read_int("urandom_min_reseed_secs")
-
-    fill_pct = round(entropy_avail / pool_size * 100, 1) if pool_size else 0.0
-
-    # RNG source detection
-    hw_rng = Path("/sys/class/misc/hw_random/rng_current")
-    if hw_rng.exists():
-        try:
-            rng_source = hw_rng.read_text().strip() or "hardware"
-        except OSError:
-            rng_source = "hardware"
-    elif entropy_avail > 2048:
-        rng_source = "jitter"
-    else:
-        rng_source = "software"
-
-    # Health classification
-    if fill_pct > 50:
-        health = "good"
-    elif fill_pct >= 25:
-        health = "low"
-    else:
-        health = "critical"
-
-    return jsonify({
-        "entropy_avail": entropy_avail,
-        "pool_size": pool_size,
-        "fill_pct": fill_pct,
-        "write_wakeup_threshold": write_wakeup_threshold,
-        "urandom_min_reseed_secs": urandom_min_reseed_secs,
-        "rng_source": rng_source,
-        "health": health,
-    })
-
-
 # ── Tailscale Peers v2 ───────────────────────────────────────────────────────
 
 @app.route("/api/vpn/tailscale/peers", methods=["GET"])
@@ -15789,66 +15259,6 @@ def api_system_login_history_v4():
         "logins": logins,
         "count": len(logins),
     })
-@app.route("/api/system/pi-hardware", methods=["GET"])
-@require_auth
-def api_system_pi_hardware_v3():
-    """Return Raspberry Pi hardware info from /proc/cpuinfo and /proc/meminfo."""
-    info: dict = {
-        "model": None,
-        "revision": None,
-        "serial": None,
-        "hardware": None,
-        "processor": None,
-        "core_count": 0,
-        "is_pi": False,
-        "ram_mb": None,
-    }
-
-    try:
-        cpuinfo = Path("/proc/cpuinfo").read_text()
-        for line in cpuinfo.splitlines():
-            if ":" not in line:
-                continue
-            key, _, val = line.partition(":")
-            key_stripped = key.strip()
-            val = val.strip()
-            key_lower = key_stripped.lower()
-            if key_lower == "processor":
-                info["core_count"] += 1
-            elif key_lower == "model name" and info["processor"] is None:
-                info["processor"] = val
-            elif key_lower == "hardware" and info["hardware"] is None:
-                info["hardware"] = val
-            elif key_lower == "revision" and info["revision"] is None:
-                info["revision"] = val
-            elif key_lower == "serial" and info["serial"] is None:
-                info["serial"] = val
-        # "Model" line (capital M) → Pi model string
-        for line in cpuinfo.splitlines():
-            if line.startswith("Model"):
-                _, _, val = line.partition(":")
-                info["model"] = val.strip()
-                if "Raspberry Pi" in val:
-                    info["is_pi"] = True
-                break
-    except OSError:
-        pass
-
-    if not info["is_pi"]:
-        return jsonify({"is_pi": False})
-
-    try:
-        for line in Path("/proc/meminfo").read_text().splitlines():
-            if line.startswith("MemTotal:"):
-                kb = int(line.split()[1])
-                info["ram_mb"] = round(kb / 1024)
-                break
-    except OSError:
-        pass
-
-    return jsonify(info)
-
-
 # ── Live Bandwidth ────────────────────────────────────────────────────────────
 
 
@@ -16035,44 +15445,6 @@ def api_vpn_tailscale_exit_node():
     })
 
 
-# ── Thermal zones ─────────────────────────────────────────────────────────────
-
-@app.route("/api/system/thermal-zones", methods=["GET"])
-@require_auth
-def api_system_thermal_zones():
-    """Return per-zone thermal readings from /sys/class/thermal/."""
-    import glob
-    zones = []
-    for temp_path in sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp")):
-        zone_dir = temp_path.rsplit("/", 1)[0]
-        type_path = zone_dir + "/type"
-        try:
-            with open(temp_path) as f:
-                raw = int(f.read().strip())
-            with open(type_path) as f:
-                name = f.read().strip()
-            temp_c = round(raw / 1000.0, 1)
-            if temp_c < 50:
-                status = "cool"
-            elif temp_c < 70:
-                status = "warm"
-            else:
-                status = "hot"
-            zones.append({"name": name, "temp_celsius": temp_c, "status": status})
-        except Exception:
-            continue
-    if zones:
-        hottest = max(zones, key=lambda z: z["temp_celsius"])
-        max_temp = hottest["temp_celsius"]
-        hottest_zone = hottest["name"]
-    else:
-        max_temp = None
-        hottest_zone = None
-    return jsonify({
-        "zones": zones,
-        "max_temp": max_temp,
-        "hottest_zone": hottest_zone,
-    })
 # ── Gateway info ──────────────────────────────────────────────────────────────
 
 @app.route("/api/network/gateway-info", methods=["GET"])
@@ -16871,95 +16243,6 @@ def api_network_dns_test():
         "passed": passed,
         "failed": len(tests) - passed,
     })
-# ── Firewall rules summary ────────────────────────────────────────────────────
-
-@app.route("/api/network/firewall-rules", methods=["GET"])
-@require_auth
-def api_network_firewall_rules():
-    """Return firewall rules summary from nftables or iptables."""
-    import re
-    chains = []
-    backend = "none"
-    total_rules = 0
-
-    # Try nftables first
-    try:
-        out, _ = _run(["nft", "list", "ruleset"])
-        backend = "nftables"
-        current_table = None
-        current_chain = None
-        current_policy = None
-        rule_count = 0
-        for line in out.splitlines():
-            line = line.strip()
-            m_table = re.match(r"^table\s+(\w+\s+\w+)\s*\{", line)
-            if m_table:
-                current_table = m_table.group(1)
-                continue
-            m_chain = re.match(r"^chain\s+(\w+)\s*\{", line)
-            if m_chain:
-                if current_chain and current_table:
-                    chains.append({
-                        "table": current_table,
-                        "chain": current_chain,
-                        "policy": current_policy,
-                        "rules": rule_count,
-                    })
-                    total_rules += rule_count
-                current_chain = m_chain.group(1)
-                current_policy = None
-                rule_count = 0
-                continue
-            m_policy = re.search(r"policy\s+(\w+)", line)
-            if m_policy:
-                current_policy = m_policy.group(1)
-                continue
-            if line and not line.startswith("}") and not line.startswith("type"):
-                rule_count += 1
-        if current_chain and current_table:
-            chains.append({
-                "table": current_table,
-                "chain": current_chain,
-                "policy": current_policy,
-                "rules": rule_count,
-            })
-            total_rules += rule_count
-    except Exception:
-        pass
-
-    # Fallback: iptables
-    if not chains:
-        try:
-            out, _ = _run(["iptables", "-L", "-n", "--line-numbers"])
-            backend = "iptables"
-            current_chain = None
-            rule_count = 0
-            current_policy = None
-            for line in out.splitlines():
-                m_chain = re.match(r"^Chain\s+(\S+)\s+\(policy\s+(\w+)", line)
-                if m_chain:
-                    if current_chain:
-                        chains.append({"table": "filter", "chain": current_chain, "policy": current_policy, "rules": rule_count})
-                        total_rules += rule_count
-                    current_chain = m_chain.group(1)
-                    current_policy = m_chain.group(2).lower()
-                    rule_count = 0
-                elif line and not line.startswith("num") and not line.startswith("target") and current_chain:
-                    rule_count += 1
-            if current_chain:
-                chains.append({"table": "filter", "chain": current_chain, "policy": current_policy, "rules": rule_count})
-                total_rules += rule_count
-        except Exception:
-            pass
-
-    return jsonify({
-        "backend": backend,
-        "chains": chains,
-        "total_rules": total_rules,
-        "total_chains": len(chains),
-    })
-
-
 # ── Journal Boot Messages ──────────────────────────────────────────────────────
 @app.route("/api/system/journal-boot")
 @require_auth
@@ -17006,12 +16289,12 @@ def api_network_multicast_groups():
         return jsonify({
             "groups": groups,
             "total": len(groups),
-# ── Kernel Cmdline ────────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+# ── Kernel Cmdline ────────────────────────────────────────────────────────────
 @app.route("/api/system/kernel-cmdline")
 @require_auth
 def api_system_kernel_cmdline():
@@ -17036,12 +16319,12 @@ def api_system_kernel_cmdline():
             "params": parsed,
             "flags": flags,
             "total": len(params),
-# ── Swap Usage ────────────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+# ── Swap Usage ────────────────────────────────────────────────────────────────
 @app.route("/api/system/swap-usage")
 @require_auth
 def api_system_swap_usage():
@@ -17096,93 +16379,12 @@ def api_system_entropy_pool():
             "read_wakeup_threshold": read_wakeup,
             "write_wakeup_threshold": write_wakeup,
             "fill_pct": pct,
-# ── ARP Table ────────────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/network/arp-table")
-@require_auth
-def api_network_arp_table():
-    """Return ARP cache entries from /proc/net/arp."""
-    try:
-        entries = []
-        try:
-            with open("/proc/net/arp") as f:
-                next(f)  # skip header
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 6:
-                        entries.append({
-                            "ip": parts[0],
-                            "hw_type": parts[1],
-                            "flags": parts[2],
-                            "mac": parts[3],
-                            "mask": parts[4],
-                            "iface": parts[5],
-                        })
-        except FileNotFoundError:
-            pass
-        complete = [e for e in entries if e["mac"] != "00:00:00:00:00:00"]
-        return jsonify({
-            "entries": entries,
-            "complete": complete,
-            "total": len(entries),
-            "reachable": len(complete),
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ── Open Ports ───────────────────────────────────────────────────────────────
-@app.route("/api/network/open-ports")
-@require_auth
-def api_network_open_ports():
-    """Return listening TCP/UDP ports from /proc/net/tcp and udp."""
-    try:
-        def parse_proc_net(path, proto):
-            ports = []
-            try:
-                with open(path) as f:
-                    next(f)
-                    for line in f:
-                        parts = line.split()
-                        if len(parts) < 4:
-                            continue
-                        state = parts[3]
-                        if state not in ("0A", "07"):  # LISTEN or CLOSE
-                            continue
-                        local = parts[1]
-                        port_hex = local.split(":")[1]
-                        port = int(port_hex, 16)
-                        if port and state == "0A":
-                            ports.append({"port": port, "proto": proto})
-            except FileNotFoundError:
-                pass
-            return ports
-        tcp = parse_proc_net("/proc/net/tcp", "tcp")
-        tcp6 = parse_proc_net("/proc/net/tcp6", "tcp6")
-        udp = parse_proc_net("/proc/net/udp", "udp")
-        all_ports = sorted(tcp + tcp6 + udp, key=lambda x: x["port"])
-        seen = set()
-        unique = []
-        for p in all_ports:
-            key = (p["port"], p["proto"])
-            if key not in seen:
-                seen.add(key)
-                unique.append(p)
-        return jsonify({
-            "ports": unique,
-            "total": len(unique),
-            "tcp_count": len(tcp) + len(tcp6),
-            "udp_count": len(udp),
 # ── Network Errors ───────────────────────────────────────────────────────────
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route("/api/network/network-errors")
 @require_auth
 def api_network_network_errors():
@@ -17215,12 +16417,12 @@ def api_network_network_errors():
             "interfaces": ifaces,
             "total_errors": total_errors,
             "errored_ifaces": [i for i in ifaces if i["total_errors"] > 0],
-# ── I/O Scheduler ────────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+# ── I/O Scheduler ────────────────────────────────────────────────────────────
 @app.route("/api/system/io-scheduler")
 @require_auth
 def api_system_io_scheduler():
@@ -17287,47 +16489,6 @@ def api_network_tcp_stats():
         return jsonify({"error": str(e)}), 500
 
 
-# ── Sysctl Security ──────────────────────────────────────────────────────────
-@app.route("/api/system/sysctl-security")
-@require_auth
-def api_system_sysctl_security():
-    """Return security-relevant sysctl values."""
-    try:
-        keys = [
-            "net.ipv4.ip_forward",
-            "net.ipv4.conf.all.rp_filter",
-            "net.ipv4.conf.all.accept_redirects",
-            "net.ipv4.conf.all.send_redirects",
-            "net.ipv4.tcp_syncookies",
-            "kernel.randomize_va_space",
-            "kernel.dmesg_restrict",
-            "kernel.kptr_restrict",
-            "net.ipv6.conf.all.forwarding",
-        ]
-        values = {}
-        for key in keys:
-            path = "/proc/sys/" + key.replace(".", "/")
-            try:
-                with open(path) as f:
-                    values[key] = f.read().strip()
-            except (FileNotFoundError, PermissionError):
-                values[key] = None
-        expected = {
-            "net.ipv4.tcp_syncookies": "1",
-            "kernel.randomize_va_space": "2",
-            "net.ipv4.conf.all.accept_redirects": "0",
-            "net.ipv4.conf.all.send_redirects": "0",
-        }
-        issues = [k for k, v in expected.items() if values.get(k) != v]
-        return jsonify({
-            "values": values,
-            "issues": issues,
-            "secure": len(issues) == 0,
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 # ── Battery Status ───────────────────────────────────────────────────────────
 @app.route("/api/system/battery-status")
 @require_auth
@@ -17363,12 +16524,12 @@ def api_system_battery_status():
             "supplies": supplies,
             "total": len(supplies),
             "has_battery": len(supplies) > 0,
-# ── Systemd Failed ───────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+# ── Systemd Failed ───────────────────────────────────────────────────────────
 @app.route("/api/system/systemd-failed")
 @require_auth
 def api_system_systemd_failed():
@@ -17393,12 +16554,12 @@ def api_system_systemd_failed():
             "units": units,
             "total": len(units),
             "healthy": len(units) == 0,
-# ── MTU Info ─────────────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+# ── MTU Info ─────────────────────────────────────────────────────────────────
 @app.route("/api/network/mtu-info")
 @require_auth
 def api_network_mtu_info():
@@ -17423,12 +16584,12 @@ def api_network_mtu_info():
             "interfaces": ifaces,
             "non_standard_mtu": non_standard,
             "total": len(ifaces),
-# ── CPU Cache ────────────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+# ── CPU Cache ────────────────────────────────────────────────────────────────
 @app.route("/api/system/cpu-cache")
 @require_auth
 def api_system_cpu_cache():
@@ -17503,12 +16664,12 @@ def api_network_dns_cache_stats():
             "hits": stats["hits"],
             "misses": stats["misses"],
             "hit_rate_pct": hit_rate,
-# ── Disk Temperature ─────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+# ── Disk Temperature ─────────────────────────────────────────────────────────
 @app.route("/api/system/disk-temp")
 @require_auth
 def api_system_disk_temp():
@@ -17585,42 +16746,16 @@ def api_system_pci_devices():
             "devices": devices,
             "total": len(devices),
             "by_class": classes,
-# ── Kernel Modules ───────────────────────────────────────────────────────────
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/system/kernel-modules")
-@require_auth
-def api_system_kernel_modules():
-    """Return loaded kernel modules from /proc/modules."""
-    try:
-        modules = []
-        try:
-            with open("/proc/modules") as f:
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 3:
-                        modules.append({
-                            "name": parts[0],
-                            "size": int(parts[1]),
-                            "used_by": int(parts[2]),
-                            "deps": parts[3].strip(",") if len(parts) > 3 and parts[3] != "-" else "",
-                        })
-        except FileNotFoundError:
-            pass
-        modules.sort(key=lambda x: x["size"], reverse=True)
-        return jsonify({
-            "modules": modules[:50],
-            "total": len(modules),
-            "top_by_size": modules[:10],
-        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── VPN Latency ──────────────────────────────────────────────────────────────
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
 @app.route("/api/vpn/vpn-latency")
 @require_auth
 def api_vpn_vpn_latency():
@@ -17666,11 +16801,11 @@ def api_vpn_vpn_latency():
         except Exception:
             results["tailscale"] = {"error": "tailscale not active"}
         return jsonify(results)
-# ── Nftables Counters ────────────────────────────────────────────────────────
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
+# ── Nftables Counters ────────────────────────────────────────────────────────
 @app.route("/api/network/nftables-counters")
 @require_auth
 def api_network_nftables_counters():
@@ -17742,35 +16877,6 @@ def api_system_memory_zones():
         return jsonify({
             "zones": zones,
             "total": len(zones),
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ── Login History ────────────────────────────────────────────────────────────
-@app.route("/api/system/login-history")
-@require_auth
-def api_system_login_history():
-    """Return last 20 login records from the 'last' command."""
-    try:
-        result = _run(["last", "-n", "20", "-F", "--time-format", "iso"], timeout=8)
-        logins = []
-        for line in result.stdout.splitlines():
-            if not line.strip() or line.startswith("wtmp") or line.startswith("btmp"):
-                continue
-            parts = line.split()
-            if len(parts) >= 4:
-                logins.append({
-                    "user": parts[0],
-                    "tty": parts[1],
-                    "from": parts[2] if parts[2] not in ("", "-") else "local",
-                    "raw": line.strip(),
-                })
-        users = list({l["user"] for l in logins if l["user"] not in ("reboot", "shutdown")})
-        return jsonify({
-            "logins": logins[:20],
-            "total": len(logins),
-            "unique_users": users,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -18399,13 +17505,13 @@ def api_system_meminfo_detail():
             pass
         result = {k.replace("(", "_").replace(")", ""): round(v / 1024, 1) for k, v in raw.items()}
         total = raw.get("MemTotal", 0)
-        free = raw.get("MemFree", 0)
         available = raw.get("MemAvailable", 0)
         result["used_mb"] = round((total - available) / 1024, 1) if total else 0
         result["used_pct"] = round((total - available) / total * 100, 1) if total else 0
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
