@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.32.0] — 2026-06-12
+
+### Fixed
+- **Dashboard JavaScript was entirely dead** — the page's single script block had a
+  syntax error at HEAD (truncated functions, unterminated template literals from the
+  same generator corruption found in app.py), so no dashboard JS executed in browsers
+  at all. Repaired 29 truncated functions, removed 16 duplicate function declarations
+  and 14 duplicate card blocks, restored 40 missing closing divs (balance was 78 off,
+  now 0), fixed 54 callers that used apiFetch's raw Response as parsed data, resolved
+  6 element-id collisions (3 dead stub cards removed, 3 ids renamed), and closed the
+  document properly (it ended with a dangling `<`, missing </script></body></html>).
+  Verified: full script parses (node --check), 0 duplicate ids, all 277 referenced
+  endpoints exist.
+- `ci-preflight.sh` pytest gate tested tail's exit code instead of pytest's,
+  silently passing on failures.
+
+### Changed
+- Integration tests (19 pytest + 12 bats, which boot the real Flask app) are now
+  blocking in CI and run in ci-preflight — removing the `|| true` that masked the
+  dashboard breakage.
+- Flag coverage completed: `ENABLE_USB_SHARE` in the firstboot wizard (checkbox +
+  BOOL_FLAGS + env contract), `ENABLE_LTE_MODEM` toggle in the TUI Features screen.
+
 ## [3.31.0] — 2026-06-12
 
 ### Fixed
