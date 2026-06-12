@@ -57,9 +57,9 @@ jobs:
           sudo apt-get install -y bats
           pip install flask requests pytest --quiet
       - name: Run integration tests (bats)
-        run: bats tests/integration/ || true   # non-blocking until suite is stable
+        run: bats tests/integration/
       - name: Run integration tests (pytest)
-        run: python3 -m pytest tests/integration/ -v || true
+        run: python3 -m pytest tests/integration/ -v
 
   test-arm64:
     name: Unit tests on ARM64

@@ -121,16 +121,44 @@ fi
 _section "Pytest"
 
 if command -v pytest &>/dev/null; then
-    if pytest tests/unit/ -q 2>&1 | tail -5; then
+    # Capture output so the if tests pytest's exit code, not tail's.
+    if _py_out="$(pytest tests/unit/ -q 2>&1)"; then
+        echo "${_py_out}" | tail -5
         _ok "pytest: all tests passed"
     else
+        echo "${_py_out}" | tail -15
         _fail "pytest: test failures (see above)"
     fi
 else
     echo "  (pytest not installed — skipping; install with: pip install pytest)"
 fi
 
-# ── 7. Key file existence checks ─────────────────────────────────────────────
+# ── 7. Integration tests (mirrors unit-tests.yml, blocking) ──────────────────
+_section "Integration tests"
+
+if command -v bats &>/dev/null; then
+    if _ibats_out="$(bats tests/integration/ 2>&1)"; then
+        echo "${_ibats_out}" | tail -3
+        _ok "bats integration: all tests passed"
+    else
+        echo "${_ibats_out}" | tail -15
+        _fail "bats integration: test failures (see above)"
+    fi
+else
+    echo "  (bats not installed — skipping)"
+fi
+
+if command -v pytest &>/dev/null; then
+    if _ipy_out="$(pytest tests/integration/ -q 2>&1)"; then
+        echo "${_ipy_out}" | tail -3
+        _ok "pytest integration: all tests passed"
+    else
+        echo "${_ipy_out}" | tail -15
+        _fail "pytest integration: test failures (see above)"
+    fi
+fi
+
+# ── 8. Key file existence checks ─────────────────────────────────────────────
 _section "Key file existence"
 
 REQUIRED_FILES=(
