@@ -137,6 +137,13 @@ apply_update() {
     TUI_SHELL_ALLOWLIST=(
         travel-tui-legacy.sh
     )
+    # Admin scripts installed to /usr/local/sbin by install.sh / 10-finalize.sh.
+    # Installed with their .sh extension, matching the installer.
+    SBIN_SCRIPT_ALLOWLIST=(
+        mount-storage.sh usb-share.sh overlayfs-ctl.sh schedule-reboot.sh
+        speedtest.sh set-doh-resolver.sh apply-privacy-profile.sh
+        config-backup.sh apply-qos.sh
+    )
     OTA_SCRIPT_ALLOWLIST=(
         ota-update.sh
         ota-commit.sh
@@ -243,6 +250,27 @@ apply_update() {
         if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
             cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
             log "  updated OTA script: $name"
+            changed=1
+        fi
+    done
+    shopt -u nullglob
+
+    shopt -s nullglob
+    for script in "${src}"/scripts/*.sh; do
+        name=$(basename "$script")
+
+        local _allowed=0
+        for _a in "${SBIN_SCRIPT_ALLOWLIST[@]}"; do
+            [[ "$_a" = "$name" ]] && { _allowed=1; break; }
+        done
+        if [[ "$_allowed" -eq 0 ]]; then
+            continue
+        fi
+
+        dest="${sbin_dir}/${name}"
+        if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
+            cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
+            log "  updated sbin script: $name"
             changed=1
         fi
     done
