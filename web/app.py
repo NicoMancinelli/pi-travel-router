@@ -8495,6 +8495,60 @@ def api_system_loadavg():
         return jsonify({"error": str(exc)}), 500
 
 
+@app.route("/api/system/load-history", methods=["GET"])
+@require_auth
+def api_system_load_history():
+    """Return load averages plus instantaneous per-CPU usage (two /proc/stat samples)."""
+    try:
+        with open("/proc/loadavg") as fh:
+            parts = fh.read().split()
+        load_1, load_5, load_15 = (float(p) for p in parts[:3])
+        running_procs, total_procs = (int(x) for x in parts[3].split("/"))
+
+        def read_stat():
+            cpus = {}
+            with open("/proc/stat") as fh:
+                for line in fh:
+                    if line.startswith("cpu") and line[3:4].isdigit():
+                        fields = line.split()
+                        cpus[fields[0]] = [int(v) for v in fields[1:9]]
+            return cpus
+
+        first = read_stat()
+        time.sleep(0.2)
+        second = read_stat()
+        cpus = []
+        for name, after in sorted(second.items()):
+            before = first.get(name)
+            if not before:
+                continue
+            deltas = [a - b for a, b in zip(after, before)]
+            total = sum(deltas) or 1
+            user_pct = (deltas[0] + deltas[1]) / total * 100
+            system_pct = deltas[2] / total * 100
+            idle_pct = deltas[3] / total * 100
+            iowait_pct = deltas[4] / total * 100
+            cpus.append({
+                "name": name,
+                "user_pct": round(user_pct, 1),
+                "system_pct": round(system_pct, 1),
+                "iowait_pct": round(iowait_pct, 1),
+                "busy_pct": round(100 - idle_pct, 1),
+            })
+
+        return jsonify({
+            "load_1": load_1,
+            "load_5": load_5,
+            "load_15": load_15,
+            "cpu_count": len(cpus) or 1,
+            "running_procs": running_procs,
+            "total_procs": total_procs,
+            "cpus": cpus,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/network/firewall-stats")
 @require_auth
 def api_network_firewall_stats():

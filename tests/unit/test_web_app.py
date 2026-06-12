@@ -49,5 +49,6 @@ def test_no_duplicate_url_method_pairs():
 def test_core_endpoints_present():
     """Endpoints the TUI and dashboard depend on must exist."""
     urls = {r.rule for r in _rules()}
-    for required in ("/api/storage", "/api/status", "/api/clients"):
+    for required in ("/api/storage", "/api/status", "/api/clients",
+                     "/api/system/load-history"):
         assert required in urls, f"missing core endpoint {required}"

@@ -9832,7 +9832,7 @@ async function fetchLoadHistory() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await fetch('/api/system/load-history');
+    const r = await apiFetch('/api/system/load-history');
     const d = await r.json();
     const laColor = (val, cores) => {
       const ratio = val / (cores || 1);
