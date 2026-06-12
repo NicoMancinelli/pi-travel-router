@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.31.0] — 2026-06-12
+
+### Fixed
+- **CPU Load History dashboard card always showed its error state** — it fetched
+  `/api/system/load-history`, which was never implemented. Added the endpoint (load
+  averages plus instantaneous per-CPU user/system/iowait/busy from two `/proc/stat`
+  samples) and switched the card to the authenticated `apiFetch` helper. Found by
+  auditing all 288 `/api` URLs referenced by the dashboard against registered routes.
+- **OTA updates never refreshed `/usr/local/sbin` admin scripts** — `update-router.sh`
+  now carries an explicit `SBIN_SCRIPT_ALLOWLIST` (mount-storage, usb-share,
+  overlayfs-ctl, schedule-reboot, speedtest, set-doh-resolver, apply-privacy-profile,
+  config-backup, apply-qos) with the same atomic-copy/diff-skip pattern as bin scripts.
+
+### Changed
+- `web/app.py` lint cleanup: 273 flake8 violations down to 5 deliberate ones (unused
+  imports/variables removed, blank-line/whitespace normalization, ambiguous names
+  renamed). Routes verified unchanged at 323. `ci-preflight.sh` now gates `web/` on
+  the full correctness set (E7, E9, all pyflakes F codes).
+
 ## [3.30.0] — 2026-06-12
 
 ### Fixed
