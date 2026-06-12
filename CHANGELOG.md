@@ -5,6 +5,30 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.30.0] — 2026-06-12
+
+### Fixed
+- **Web dashboard failed to start** — Flask raised `AssertionError: View function
+  mapping is overwriting an existing endpoint` at import time. Removed 15 duplicate
+  same-URL route definitions and 5 shadowed dead routes, renamed 3 function-name
+  collisions serving distinct URLs, and relocated 12 section banners that had been
+  inserted inside function bodies. The dashboard boots again with 322 unique routes.
+- CI now actually guards the dashboard: a blocking import/duplicate-route smoke test
+  (`tests/unit/test_web_app.py`) runs in the pytest jobs (x86 + ARM64), and
+  `ci-preflight.sh` gates `web/` on flake8 correctness codes (E9, F63, F7, F82, F811).
+
+### Added
+- **USB drive file sharing / travel NAS (#30)** — `usb-share.sh enable|disable|status`
+  shares `/media/travel-data` as a guest SMB share to AP clients, bound to
+  uap0/usb0/tailscale0 only (never exposed on uplinks). Enable with
+  `ENABLE_USB_SHARE=1`; `USB_SHARE_NAME` and `USB_SHARE_RO` configure the share.
+  Wired into install.sh prompts, the TUI Features/Settings screens, and `/api/storage`
+  (new `share` key). 17 unit tests.
+- **Read-only root toggle (#10)** — `overlayfs-ctl.sh status|enable|disable` wraps
+  `raspi-config nonint do_overlayfs` to put the root filesystem behind a RAM overlay,
+  eliminating SD-card corruption from power loss. TUI System screen button with
+  status-aware confirm. Disable before updates. 8 unit tests.
+
 ## [3.29.0] — 2026-05-26
 
 ### Added
