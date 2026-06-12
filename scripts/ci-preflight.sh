@@ -94,13 +94,14 @@ if command -v flake8 &>/dev/null; then
         _fail "flake8 firstboot/ errors:"
         flake8 firstboot/ --max-line-length=120 --ignore=E501 || true
     fi
-    # web/: correctness-only gate (syntax errors, redefinitions, undefined names).
-    # Full style cleanup of the 18k-line app.py is tracked separately.
-    if flake8 web/ --max-line-length=120 --select=E9,F63,F7,F82,F811 2>/dev/null; then
-        _ok "flake8 web/ (critical): no errors"
+    # web/: correctness gate — syntax errors, all pyflakes checks (unused
+    # imports/vars, redefinitions, undefined names), and E7 comparisons.
+    # Only deliberate late imports (E402) and W503/E501 style opinions remain.
+    if flake8 web/ --max-line-length=120 --select=E7,E9,F 2>/dev/null; then
+        _ok "flake8 web/ (correctness): no errors"
     else
-        _fail "flake8 web/ critical errors:"
-        flake8 web/ --max-line-length=120 --select=E9,F63,F7,F82,F811 || true
+        _fail "flake8 web/ correctness errors:"
+        flake8 web/ --max-line-length=120 --select=E7,E9,F || true
     fi
 else
     echo "  (flake8 not installed — skipping)"
