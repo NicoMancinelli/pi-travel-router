@@ -84,6 +84,15 @@ ENABLE_WAN_METRICS="1"
 ENABLE_UPS_MONITOR="0"
 UPS_SHUTDOWN_THRESHOLD="10"
 
+# USB drive file sharing (travel NAS, #30).
+# Shares /media/travel-data over SMB to AP clients (guest access — the AP
+# passphrase is the gate; never exposed on uplink interfaces).
+# Mount a drive first (TUI Storage screen or mount-storage.sh), then enable.
+# Clients connect to smb://10.3.141.1/<USB_SHARE_NAME>.
+ENABLE_USB_SHARE="0"
+USB_SHARE_NAME="TravelData"
+USB_SHARE_RO="0"
+
 # Tor AP passphrase (set during install; stored empty here to avoid plaintext).
 TOR_AP_PASS=""
 

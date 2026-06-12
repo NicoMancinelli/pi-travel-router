@@ -232,6 +232,8 @@ A condensed view of what you get after the install completes. Full feature list 
 - **Security:** fail2ban (SSH + web dashboard brute-force protection), AIDE file integrity monitoring (daily scan, ntfy alert on changes), WireGuard key rotation (monthly systemd timer)
 - **Privacy profiles:** VPN-only, Adblock, Tor transparent proxy, Direct (no VPN) — switchable from TUI or web dashboard
 - **Hardware:** optional PiSugar 3 UPS monitor with safe shutdown
+- **Travel NAS:** optional USB drive sharing over SMB to AP clients (`ENABLE_USB_SHARE=1`, guest access, never exposed on uplinks)
+- **SD card protection:** read-only root (overlayfs) toggle — `sudo overlayfs-ctl.sh enable` (disable before updates)
 - **2FA:** optional SSH TOTP via `setup-2fa.sh`
 
 ---
@@ -404,6 +406,7 @@ ENABLE_2FA="0"
 ENABLE_BANDWIDTH_DASHBOARD="0"
 ENABLE_PROMETHEUS_EXPORTER="0"
 ENABLE_UPS_MONITOR="0"
+ENABLE_USB_SHARE="0"           # Travel NAS: share /media/travel-data over SMB. Default: 0 (off).
 ENABLE_WAN_METRICS="1"         # Per-interface RX/TX accounting via vnstat. Default: 1 (on).
 
 AP_DISABLE_TIME="02:00"
@@ -516,7 +519,7 @@ The USB gadget interface (`192.168.7.1`) is always available regardless of WiFi/
 
 ## Project status / roadmap
 
-**Current version: v2.3.0** — all planned features shipped.
+**Current version:** see [`VERSION`](VERSION) — all originally planned features shipped; see [`CHANGELOG.md`](CHANGELOG.md) for ongoing releases.
 
 ### ✅ Shipped (v2.0–v2.3)
 

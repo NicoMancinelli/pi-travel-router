@@ -38,6 +38,7 @@ _BW_HISTORY_FILE = "/var/lib/travel-router/bw-history.json"
 DOH_SCRIPT = "/usr/local/sbin/set-doh-resolver.sh"
 DOH_PRESETS = ["cloudflare", "quad9", "nextdns", "adguard", "system"]
 MOUNT_STORAGE_SCRIPT = "/usr/local/sbin/mount-storage.sh"
+USB_SHARE_SCRIPT = "/usr/local/sbin/usb-share.sh"
 WOL_TARGETS_FILE = "/var/lib/travel-router/wol-targets.json"
 DATACAP_FILE = "/var/lib/travel-router/datacap.json"
 ALIASES_FILE = "/var/lib/travel-router/aliases.json"
@@ -2725,6 +2726,20 @@ def api_storage_get():
 
     used_gb, free_gb, total_gb = _parse_df_travel_data() if mounted else (None, None, None)
 
+    # SMB share status (travel NAS) — null when usb-share.sh isn't installed
+    share = None
+    try:
+        result = subprocess.run(
+            [USB_SHARE_SCRIPT, "status"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            share = json.loads(result.stdout)
+    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError, OSError):
+        pass
+
     return jsonify({
         "mounted": mounted,
         "mount_point": "/media/travel-data",
@@ -2732,6 +2747,7 @@ def api_storage_get():
         "free_gb": free_gb,
         "total_gb": total_gb,
         "devices": devices,
+        "share": share,
     })
 
 

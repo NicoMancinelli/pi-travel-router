@@ -92,6 +92,8 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 - vnStat + Prometheus textfile exporter (5-min timer to /var/lib/prometheus/node-exporter/)
 - usbmuxd hardening: Restart=on-failure, CPUQuota=20%
 - Tor installed; transparent proxy config/rules disabled by default
+- USB drive file sharing (#30): usb-share.sh — guest SMB share of /media/travel-data, bound to uap0/usb0/tailscale0 only; `ENABLE_USB_SHARE=1`
+- Read-only root toggle (#10): overlayfs-ctl.sh wraps raspi-config nonint do_overlayfs; disable before updates
 
 ## Pending Tasks
 

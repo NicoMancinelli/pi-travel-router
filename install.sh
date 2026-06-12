@@ -428,6 +428,8 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
             "Node exporter for Grafana/Prometheus. Only needed if you run a monitoring stack."
         _yn ENABLE_UPS_MONITOR         "PiSugar UPS battery monitor?"            \
             "Monitors a PiSugar battery HAT and triggers a safe shutdown at low charge."
+        _yn ENABLE_USB_SHARE           "USB drive file sharing (travel NAS)?"    \
+            "Shares a USB drive plugged into the Pi over SMB to AP clients. Guest access; the AP password is the gate."
         echo ""
 
         if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" && -z "${TOR_AP_PASS:-}" ]]; then
@@ -474,6 +476,7 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" == "1" ]]; then
     : "${ENABLE_BANDWIDTH_DASHBOARD:=0}"
     : "${ENABLE_PROMETHEUS_EXPORTER:=0}"
     : "${ENABLE_UPS_MONITOR:=0}"
+    : "${ENABLE_USB_SHARE:=0}"
     : "${ENABLE_WIREGUARD:=0}"
     : "${WG_LISTEN_PORT:=51820}"
     if [[ "${ENABLE_TOR_TRANSPARENT}" == "1" ]]; then
@@ -492,7 +495,7 @@ if [[ -n "$TS_KEY" && -z "$HEADSCALE_URL" ]]; then
     [[ "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
 fi
 ENABLE_WAN_METRICS="${ENABLE_WAN_METRICS:-1}"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_WIREGUARD; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WIREGUARD; do
     validate_flag "$flag"
 done
 
@@ -1028,7 +1031,7 @@ AP_SUBNET="${AP_SUBNET:-10.3.141.0/24}"
 AP_GATEWAY="${AP_GATEWAY:-10.3.141.1}"
 
 # Write boolean flags (values are always 0 or 1 — safe with sed too, but use helper for consistency)
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_WIREGUARD; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WIREGUARD; do
     _safe_write_conf "$flag" "${!flag:-0}" "$DEFAULTS_FILE"
 done
 
@@ -1046,6 +1049,8 @@ _safe_write_conf "VPN_DEVICE_MACS"       "${VPN_DEVICE_MACS:-}"          "$DEFAU
 _safe_write_conf "TOR_AP_PASS"           ""                              "$DEFAULTS_FILE" 2>/dev/null || true
 _safe_write_conf "PUSHGW_URL"              "${PUSHGW_URL:-}"                    "$DEFAULTS_FILE"
 _safe_write_conf "UPS_SHUTDOWN_THRESHOLD"  "${UPS_SHUTDOWN_THRESHOLD:-10}"      "$DEFAULTS_FILE"
+_safe_write_conf "USB_SHARE_NAME"          "${USB_SHARE_NAME:-TravelData}"      "$DEFAULTS_FILE"
+_safe_write_conf "USB_SHARE_RO"            "${USB_SHARE_RO:-0}"                 "$DEFAULTS_FILE"
 _safe_write_conf "TAILSCALE_UP_ARGS"       "${TAILSCALE_UP_ARGS:-}"             "$DEFAULTS_FILE"
 _safe_write_conf "WG_LISTEN_PORT"          "${WG_LISTEN_PORT:-51820}"           "$DEFAULTS_FILE"
 _safe_write_conf "WG_PEER_PUBKEY"          "${WG_PEER_PUBKEY:-}"                "$DEFAULTS_FILE"
@@ -1639,6 +1644,25 @@ else
     systemctl disable ups-monitor.timer 2>/dev/null || true
     ok "UPS monitor disabled (set ENABLE_UPS_MONITOR=1 to activate)"
     ok "Requires: PiSugar 3 HAT — https://www.pisugar.com"
+fi
+
+# ── §. USB drive file sharing — travel NAS (#30) ─────────────────────────────
+section "USB file sharing (travel NAS)"
+
+install_file scripts/usb-share.sh /usr/local/sbin/usb-share.sh 755
+
+if [[ "${ENABLE_USB_SHARE:-0}" = "1" ]]; then
+    apt-get install -y --no-install-recommends samba 2>/dev/null \
+        || warn "samba install failed — run: apt-get install --no-install-recommends samba"
+    if /usr/local/sbin/usb-share.sh enable; then
+        ok "USB share enabled — smb://${AP_GATEWAY:-10.3.141.1}/${USB_SHARE_NAME:-TravelData}"
+        ok "Mount a drive via the TUI Storage screen or: mount-storage.sh mount <device>"
+    else
+        warn "usb-share.sh enable failed — check: journalctl -u smbd"
+    fi
+else
+    /usr/local/sbin/usb-share.sh disable >/dev/null 2>&1 || true
+    ok "USB file sharing disabled (set ENABLE_USB_SHARE=1 to activate)"
 fi
 
 # ── §. Scheduled AP disable (#29) ────────────────────────────────────────────
