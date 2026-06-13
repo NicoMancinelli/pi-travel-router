@@ -4067,7 +4067,13 @@ def api_network_routes_v1():
                     route["proto"] = parts[i + 1]
             routes.append(route)
 
-    return jsonify({"routes": routes, "count": len(routes)})
+    default_gw = None
+    for rt in routes:
+        if rt.get("family") == "4" and rt.get("dest") == "default" and rt.get("gateway"):
+            default_gw = rt["gateway"]
+            break
+
+    return jsonify({"routes": routes, "count": len(routes), "default_gw": default_gw})
 
 
 @app.route("/api/network/active-connections")
@@ -10986,6 +10992,13 @@ def api_system_pi_hardware():
                 info["bootloader_version"] = line.strip()
                 break
 
+    # Aliases/extras consumed by the dashboard pi-hardware card
+    try:
+        info["core_count"] = os.cpu_count()
+    except Exception:
+        info["core_count"] = None
+    info["ram_mb"] = info.get("memory_mb")
+
     return jsonify(info)
 
 
@@ -11614,20 +11627,25 @@ def api_system_cpu_freq():
                 return int(val) / 1000.0
             except (TypeError, ValueError):
                 return 0.0
+        cur_mhz = _to_mhz(cur_khz)
         cores.append({
             "core": core_id,
-            "cur_mhz": _to_mhz(cur_khz),
+            "cur_mhz": cur_mhz,
+            "freq_mhz": cur_mhz,
             "min_mhz": _to_mhz(min_khz),
             "max_mhz": _to_mhz(max_khz),
             "governor": governor or "",
         })
     if not cores:
-        return jsonify({"error": "cpufreq sysfs not available", "cores": [], "core_count": 0})
+        return jsonify({"available": False, "error": "cpufreq sysfs not available",
+                        "cores": [], "core_count": 0})
     avg_mhz = sum(c["cur_mhz"] for c in cores) / len(cores)
     governor = cores[0]["governor"] if cores else ""
     return jsonify({
+        "available": True,
         "cores": cores,
         "avg_mhz": round(avg_mhz, 1),
+        "avg_freq_mhz": round(avg_mhz, 1),
         "governor": governor,
         "core_count": len(cores),
         "source": "sysfs",
@@ -11657,8 +11675,10 @@ SYSCTL_KEYS = [
 def api_sysctl_security():
     params = []
     try:
+        values = {}
+        issues = []
         for key, description, recommended in SYSCTL_KEYS:
-            out, err, rc = _run(["sysctl", "-n", key])
+            out, rc = _run(["sysctl", "-n", key])
             value = out.strip() if rc == 0 else "error"
             params.append({
                 "key": key,
@@ -11666,7 +11686,18 @@ def api_sysctl_security():
                 "value": value,
                 "recommended": recommended,
             })
-        return jsonify({"params": params, "count": len(params), "source": "sysctl"})
+            values[key] = value
+            # Flag only keys with a concrete recommendation that isn't met.
+            if recommended is not None and value != recommended:
+                issues.append(key)
+        return jsonify({
+            "params": params,
+            "count": len(params),
+            "source": "sysctl",
+            "values": values,
+            "issues": issues,
+            "secure": len(issues) == 0,
+        })
     except Exception as exc:
         return jsonify({"error": str(exc), "params": [], "count": 0})
 
@@ -11733,7 +11764,7 @@ def api_i2c_devices():
                 bus_num = int(dev_path.name.split("-", 1)[1])
             except (ValueError, IndexError):
                 continue
-            rc, out, _ = _run(["i2cdetect", "-y", "-r", str(bus_num)])
+            out, rc = _run(["i2cdetect", "-y", "-r", str(bus_num)])
             devices = []
             if rc == 0:
                 for line in out.splitlines():
@@ -13969,7 +14000,7 @@ def api_system_sysctl_net():
     params = []
     for key in KEYS:
         try:
-            out, _err, rc = _run(["sysctl", "-n", key])
+            out, rc = _run(["sysctl", "-n", key])
             if rc == 0:
                 params.append({
                     "key": key,
