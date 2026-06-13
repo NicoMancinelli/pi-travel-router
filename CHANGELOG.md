@@ -5,6 +5,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.33.0] — 2026-06-13
+
+### Fixed
+- **Three dashboard endpoints raised on every request** — `_run()` returns a
+  `(stdout, returncode)` 2-tuple, but `/api/system/sysctl-security`,
+  `/api/system/sysctl-net`, and `/api/system/i2c-devices` unpacked three values
+  (i2c-devices also had the order reversed). Surfaced by runtime smoke-testing the
+  live app, not just import/parse checks.
+- **Four dashboard cards rendered empty due to API contract mismatches** — after the
+  duplicate-route cleanup, the surviving implementation didn't return the keys its
+  card's JS reads (these keys were absent at HEAD too, so the cards never worked).
+  Augmented: `/api/system/sysctl-security` (+values/issues/secure),
+  `/api/system/cpu-freq` (+available/avg_freq_mhz/per-core freq_mhz),
+  `/api/system/pi-hardware` (+core_count/ram_mb), `/api/network/routes` (+default_gw).
+
+### Added
+- Regression tests: `_run` must return a 2-tuple, a static scan banning 3-tuple
+  `_run` unpacks anywhere in app.py, and a contract test asserting deduped endpoints
+  return the keys their dashboard cards consume.
+
 ## [3.32.0] — 2026-06-12
 
 ### Fixed
