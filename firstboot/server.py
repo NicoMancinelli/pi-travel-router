@@ -15,6 +15,7 @@ import secrets
 import shlex
 import subprocess
 import sys
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs
@@ -24,6 +25,7 @@ ENV_FILE = os.path.join(STATE_DIR, "firstboot-env.sh")
 ROOTPW_FILE = os.path.join(STATE_DIR, "firstboot-rootpw")
 DONE_FILE = os.path.join(STATE_DIR, "firstboot-done")
 FAIL_FILE = os.path.join(STATE_DIR, "firstboot-failed")
+START_FILE = os.path.join(STATE_DIR, "firstboot-start")
 LOG_FILE = "/var/log/firstboot-install.log"
 REPO_DIR = "/opt/pi-travel-router"
 INDEX_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
@@ -172,8 +174,24 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
         ssh_key = ""
     else:
         ssh_key = ssh_key_raw
-    if ssh_key and not re.match(r"^(ssh-|ecdsa-|sk-)", ssh_key):
-        errors.append("SSH admin public key must start with ssh-, ecdsa-, or sk- (valid OpenSSH public key).")
+    if ssh_key:
+        _ssh_parts = ssh_key.split()
+        _KNOWN_KEY_TYPES = {
+            "ssh-rsa", "ssh-ed25519", "ssh-dss",
+            "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ecdsa-sha2-nistp521",
+            "sk-ssh-ed25519@openssh.com", "sk-ecdsa-sha2-nistp256@openssh.com",
+        }
+        if len(_ssh_parts) < 2 or _ssh_parts[0] not in _KNOWN_KEY_TYPES:
+            errors.append(
+                "SSH admin public key must be a valid OpenSSH public key "
+                "(e.g. ssh-ed25519 AAAA... or ssh-rsa AAAA...)."
+            )
+        else:
+            import base64 as _b64
+            try:
+                _b64.b64decode(_ssh_parts[1], validate=True)
+            except Exception:
+                errors.append("SSH admin public key has an invalid key blob (base64 decode failed).")
     values["SSH_ADMIN_KEY"] = ssh_key
 
     stdomains = _first(form, "SPLIT_TUNNEL_DOMAINS").strip()
@@ -236,6 +254,12 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
     if ap_enable_time and not re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9]", ap_enable_time):
         errors.append("AP on time must be in HH:MM format (00:00-23:59).")
     values["AP_ENABLE_TIME"] = ap_enable_time or "07:00"
+
+    if (
+        values["ENABLE_AP_SCHEDULE"] == "1"
+        and values["AP_DISABLE_TIME"] == values["AP_ENABLE_TIME"]
+    ):
+        errors.append("AP off time and AP on time must be different.")
 
     ups_threshold = _first(form, "UPS_SHUTDOWN_THRESHOLD", "10").strip()
     if ups_threshold and not re.fullmatch(r"[0-9]{1,3}", ups_threshold):
@@ -353,6 +377,12 @@ def _write_rootpw_file(new_root_pw: str) -> None:
 
 
 def _spawn_install() -> None:
+    os.makedirs(STATE_DIR, exist_ok=True)
+    try:
+        with open(START_FILE, "w", encoding="utf-8") as _sf:
+            _sf.write(str(int(time.time())))
+    except OSError:
+        pass
     rootpw_q = shlex.quote(ROOTPW_FILE)
     fail_q = shlex.quote(FAIL_FILE)
     cmd = (
@@ -513,6 +543,21 @@ def _read_ap_ssid() -> str:
     return ""
 
 
+def _elapsed_str() -> tuple[str, int]:
+    """Return (human-readable elapsed, elapsed_seconds). Empty string if unknown."""
+    try:
+        with open(START_FILE, "r", encoding="utf-8") as _sf:
+            start_ts = int(_sf.read().strip())
+        elapsed_s = max(0, int(time.time()) - start_ts)
+        if elapsed_s >= 3600:
+            return f"{elapsed_s // 3600}h {(elapsed_s % 3600) // 60}m", elapsed_s
+        if elapsed_s >= 60:
+            return f"{elapsed_s // 60}m {elapsed_s % 60}s", elapsed_s
+        return f"{elapsed_s}s", elapsed_s
+    except (FileNotFoundError, ValueError, OSError):
+        return "", 0
+
+
 def _status_page() -> bytes:
     if os.path.exists(FAIL_FILE):
         return _failed_page()
@@ -535,6 +580,25 @@ def _status_page() -> bytes:
 </div></body></html>
 """
         return body.encode("utf-8")
+
+    elapsed, elapsed_s = _elapsed_str()
+    elapsed_html = f' &nbsp;<span style="color:#8b949e;font-size:.85rem">({elapsed})</span>' if elapsed else ""
+
+    # Warn if still "Starting…" after 5 minutes (likely stuck before first log line)
+    # or no progress at all after 25 minutes (beyond the typical 10-minute install)
+    stuck_html = ""
+    if elapsed_s >= 25 * 60:
+        stuck_html = (
+            '<div class="warn">Setup has been running for over 25 minutes. '
+            'SSH in as root and check <code>/var/log/firstboot-install.log</code> '
+            'for errors.</div>'
+        )
+    elif not sections and elapsed_s >= 5 * 60:
+        stuck_html = (
+            '<div class="warn">No progress detected after 5 minutes. '
+            'The install may be stuck. SSH in as root and check '
+            '<code>/var/log/firstboot-install.log</code>.</div>'
+        )
 
     # Build steps list
     if sections:
@@ -560,8 +624,9 @@ def _status_page() -> bytes:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>{_BASE_CSS}</style></head>
 <body><div class="wrap">
-<h1><span class="spin"></span>Installing…</h1>
+<h1><span class="spin"></span>Installing…{elapsed_html}</h1>
 <p>Currently: <strong>{current_label}</strong></p>
+{stuck_html}
 <h2>Progress</h2>
 {steps_html}
 <h2>Recent log output</h2>
