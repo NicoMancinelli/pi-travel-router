@@ -105,10 +105,18 @@ LTE_NM_PROFILE=lte-modem
 
 # Guest WiFi network (second SSID on uap1, isolated from primary AP clients)
 # Set GUEST_PASS to a passphrase (8-63 chars) or leave empty for open network.
+# MUTUAL EXCLUSION: ENABLE_GUEST_NETWORK and ENABLE_TOR_TRANSPARENT both use uap1.
 ENABLE_GUEST_NETWORK=0
 GUEST_SSID=TravelRouter-Guest
 GUEST_PASS=
+GUEST_SUBNET="192.168.5.0/24"
+GUEST_GATEWAY="192.168.5.1"
 
 # DNS-over-HTTPS resolver. Presets: cloudflare, quad9, nextdns, adguard, system.
 # Set to 'system' to use DHCP-provided DNS (DoH disabled).
 DOH_RESOLVER=system
+
+# Local port for stubby DNS-over-TLS daemon (dnsmasq forwards to 127.0.0.1:DOT_PORT).
+DOT_PORT=5300
+# Local port for AdGuard Home DNS (dnsmasq forwards to 127.0.0.1:ADGUARD_DNS_PORT).
+ADGUARD_DNS_PORT=5335

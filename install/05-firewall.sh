@@ -9,8 +9,11 @@ _setup_guest_firewall() {
     wan_if=$(ip route show default 2>/dev/null | awk '/^default/ {print $5; exit}')
     wan_if="${wan_if:-wlan0}"
 
+    local _guest_gw="${GUEST_GATEWAY:-192.168.5.1}"
+    local _guest_subnet="${GUEST_SUBNET:-192.168.5.0/24}"
+
     # Assign gateway IP to guest interface
-    run_or_dry ip addr add 192.168.5.1/24 dev uap1 2>/dev/null || true
+    run_or_dry ip addr add "${_guest_gw}/24" dev uap1 2>/dev/null || true
 
     # Allow DHCP and DNS from guest subnet
     run_or_dry iptables -A INPUT -i uap1 -p udp --dport 67 -j ACCEPT
@@ -30,10 +33,10 @@ _setup_guest_firewall() {
     run_or_dry iptables -A INPUT -i uap1 -p tcp --dport 22 -j DROP
 
     # NAT masquerade for guest subnet
-    run_or_dry iptables -t nat -A POSTROUTING -s 192.168.5.0/24 \
+    run_or_dry iptables -t nat -A POSTROUTING -s "${_guest_subnet}" \
         -o "${wan_if}" -j MASQUERADE
 
-    ok "Guest firewall rules applied (gateway 192.168.5.1, WAN=${wan_if})"
+    ok "Guest firewall rules applied (gateway ${_guest_gw}, WAN=${wan_if})"
 }
 
 run_firewall() {

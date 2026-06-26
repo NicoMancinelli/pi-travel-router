@@ -5,3 +5,5 @@ After=ModemManager.service network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/modem-watchdog.sh
+StandardOutput=journal
+StandardError=journal

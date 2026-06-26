@@ -4,9 +4,17 @@ After=network.target
 
 [Service]
 Type=simple
+User=www-data
+Group=www-data
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/travel-router /var/log/travel-router
 ExecStart=/usr/bin/python3 /opt/pi-travel-router/web/app.py
 Restart=on-failure
 RestartSec=5
+TimeoutStartSec=30
 StandardOutput=journal
 StandardError=journal
 

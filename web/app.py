@@ -392,7 +392,14 @@ def _bearer_token():
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:]
-    return request.args.get("token", "")
+    return ""
+
+
+def _bearer_token_sse():
+    # EventSource (browser SSE) cannot send custom headers, so the token is
+    # accepted as a query parameter only for the /api/events/stream endpoint.
+    token = _bearer_token()
+    return token if token else request.args.get("token", "")
 
 
 def require_auth(f):
@@ -404,6 +411,21 @@ def require_auth(f):
             return f(*args, **kwargs)
         token = _load_token()
         if token and _bearer_token() == token:
+            return f(*args, **kwargs)
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return decorated
+
+
+def require_auth_sse(f):
+    """Decorator: like require_auth but also accepts ?token= query param for EventSource."""
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if _is_ap_client():
+            return f(*args, **kwargs)
+        token = _load_token()
+        if token and _bearer_token_sse() == token:
             return f(*args, **kwargs)
         return jsonify({"error": "Unauthorized"}), 401
 
@@ -758,7 +780,7 @@ def api_status():
 
 
 @app.route("/api/events/stream")
-@require_auth
+@require_auth_sse
 def api_events_stream():
     """Server-Sent Events stream for real-time connection event notifications."""
 
