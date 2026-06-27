@@ -12,6 +12,8 @@ ExecStart=/usr/sbin/hostapd -B -P /run/hostapd-guest.pid /etc/hostapd/hostapd-gu
 ExecStop=/bin/kill $MAINPID
 Restart=on-failure
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

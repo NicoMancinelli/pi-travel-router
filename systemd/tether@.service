@@ -8,4 +8,6 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/start-tether.sh %i
 ExecStop=/usr/local/bin/stop-tether.sh %i
+StandardOutput=journal
+StandardError=journal
 

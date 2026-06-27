@@ -9,6 +9,8 @@ ConditionPathExists=/sys/class/net/wlan0
 Type=oneshot
 ExecStart=/usr/bin/macchanger -r wlan0
 RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

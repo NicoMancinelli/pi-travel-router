@@ -12,13 +12,8 @@ rm -f "${SLOT_FILE}"
 mkdir -p /var/lib/travel-router
 echo "${SLOT}" > /var/lib/travel-router/active-slot
 echo "OTA commit: slot ${SLOT} is now permanent"
-# Notify via ntfy if configured
-if [ -f /etc/default/travel-router ]; then
-    # shellcheck source=/dev/null
-    source /etc/default/travel-router
-    if [ "${ENABLE_NTFY:-0}" = "1" ] && [ -n "${NTFY_TOPIC:-}" ]; then
-        curl -sf -H "Title: OTA Update Applied" \
-             -d "Router updated to slot ${SLOT} successfully" \
-             "https://ntfy.sh/${NTFY_TOPIC}" >/dev/null 2>&1 || true
-    fi
+# shellcheck source=/dev/null
+source /etc/default/travel-router 2>/dev/null || true
+if [ -n "${NTFY_TOPIC:-}" ] && [ -x /usr/local/sbin/notify-router.sh ]; then
+    /usr/local/sbin/notify-router.sh "OTA update applied: slot ${SLOT} is now permanent" low 2>/dev/null || true
 fi

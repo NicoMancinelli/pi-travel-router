@@ -7,3 +7,5 @@ ConditionPathExists=/usr/local/bin/ap-schedule.sh
 Type=oneshot
 ExecStart=/usr/local/bin/ap-schedule.sh disable
 EnvironmentFile=-/etc/default/travel-router
+StandardOutput=journal
+StandardError=journal

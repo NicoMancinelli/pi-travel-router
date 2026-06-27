@@ -5,3 +5,5 @@ After=network.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/wg-key-rotate.sh
+StandardOutput=journal
+StandardError=journal
