@@ -12,13 +12,21 @@ case "${CURRENT_SLOT}" in
 esac
 
 REPO_URL="${REPO_URL:-https://github.com/NicoMancinelli/pi-travel-router}"
+REPO_API="${REPO_API:-https://api.github.com/repos/NicoMancinelli/pi-travel-router}"
 RELEASE_URL="${1:-}"
-WORK_DIR="$(mktemp -d)"
-trap 'rm -rf "${WORK_DIR}"' EXIT
+# Use persistent disk storage — a decompressed Pi image can be several GiB and
+# would exhaust the tmpfs RAM on a Pi Zero 2 W if placed in /tmp.
+WORK_DIR="/var/lib/travel-router/ota-work"
+mkdir -p "${WORK_DIR}"
+trap 'rm -rf "${WORK_DIR:?}/."' EXIT
 
-# If no URL given, fetch latest release from GitHub API
+# If no URL given, fetch latest release via GitHub JSON API
 if [ -z "${RELEASE_URL}" ]; then
-    RELEASE_URL="$(curl -sf "${REPO_URL}/releases/latest" | grep -oE 'https://[^"]+\.img\.xz' | head -1)"
+    RELEASE_URL="$(curl -sf -H "Accept: application/vnd.github.v3+json" \
+        "${REPO_API}/releases/latest" \
+        | python3 -c "import json,sys; assets=json.load(sys.stdin).get('assets',[]); \
+          print(next((a['browser_download_url'] for a in assets if a['name'].endswith('.img.xz')),''))" \
+        2>/dev/null || true)"
 fi
 [ -z "${RELEASE_URL}" ] && { echo "ERROR: No release URL found"; exit 1; }
 
@@ -45,20 +53,22 @@ else
     echo "WARNING: No SHA256 manifest found at ${SHA_URL}, skipping checksum verification"
 fi
 
-# Compute SHA256 of decompressed image before writing
+# Write to inactive slot and verify SHA256 in a single decompress pass.
+# next-boot-slot is written only AFTER this block, so a corrupt write is never booted.
+echo "Writing to inactive slot ${INACTIVE_SLOT} (${INACTIVE_DEV})..."
 if [ -n "${EXPECTED_SHA}" ]; then
-    echo "Computing SHA256 of decompressed image..."
-    ACTUAL_SHA="$(xz -dk "${WORK_DIR}/update.img.xz" --stdout | sha256sum | awk '{print $1}')"
+    ACTUAL_SHA="$(xz -dk "${WORK_DIR}/update.img.xz" --stdout \
+        | tee >(dd of="${INACTIVE_DEV}" bs=4M status=progress conv=fsync 2>/dev/null) \
+        | sha256sum | awk '{print $1}')"
     if [ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]; then
         echo "ERROR: SHA256 mismatch. Expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}"
-        echo "Aborting OTA — inactive slot NOT marked for boot."
+        echo "Inactive slot NOT marked for boot."
         exit 1
     fi
     echo "SHA256 verified OK"
+else
+    xz -dk "${WORK_DIR}/update.img.xz" --stdout | dd of="${INACTIVE_DEV}" bs=4M status=progress conv=fsync
 fi
-
-echo "Writing to inactive slot ${INACTIVE_SLOT} (${INACTIVE_DEV})..."
-xz -dk "${WORK_DIR}/update.img.xz" --stdout | dd of="${INACTIVE_DEV}" bs=4M status=progress conv=fsync
 
 # Set tryboot flag so next boot tries inactive slot
 echo "${INACTIVE_SLOT}" > /boot/firmware/next-boot-slot 2>/dev/null || \

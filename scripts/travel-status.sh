@@ -37,7 +37,7 @@ esac
 printf "  ${W}Uplink${NC}:   ${G}%s${NC} (%s)  src: %s\n" "${uplink:-none}" "$utype" "${src_ip:-?}"
 
 # Captive portal status
-if [ -f /tmp/captive-portal-active ]; then
+if [ -f /var/lib/travel-router/captive-portal-active ]; then
     printf "  ${Y}${BOLD}⚠ Captive portal active${NC} — authenticate via a browser, then re-check\n"
 fi
 

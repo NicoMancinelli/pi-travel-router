@@ -64,4 +64,4 @@ clients=$(iw dev "${AP_IFACE}" station dump 2>/dev/null | grep -c "^Station" || 
 
 msg="Daily digest | Up: ${uptime_str} | WAN: ${utype} | TS: ${ts_state} | AP clients: ${clients} | Data: ${data_today} | Failed units: ${failed}"
 
-/usr/local/bin/notify-router.sh "$msg" low
+/usr/local/bin/notify-router.sh "$msg" low || logger -t daily-digest "$msg"
