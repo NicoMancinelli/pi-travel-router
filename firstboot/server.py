@@ -383,6 +383,13 @@ def _spawn_install() -> None:
             _sf.write(str(int(time.time())))
     except OSError:
         pass
+    # Pre-create log file as 0600 so subcommands inherit the restricted mode.
+    # (Default umask would create it 0644, exposing anything printed to stdout.)
+    try:
+        _lfd = os.open(LOG_FILE, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        os.close(_lfd)
+    except OSError:
+        pass
     rootpw_q = shlex.quote(ROOTPW_FILE)
     fail_q = shlex.quote(FAIL_FILE)
     cmd = (
