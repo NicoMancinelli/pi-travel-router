@@ -229,7 +229,7 @@ class TestSSHKeyDedup:
 
     def test_duplicate_key_in_validate_not_duplicated(self):
         """_validate: SSH_ADMIN_KEY is preserved as-is; no duplication logic inside validate."""
-        key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI test"
+        key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA test"
         form = {
             "AP_SSID": ["TestRouter"],
             "AP_PASS": ["testpassword"],
