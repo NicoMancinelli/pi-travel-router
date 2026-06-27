@@ -9,6 +9,8 @@ After=network.target network-online.target avahi-daemon.service imager-compat.se
 Wants=network-online.target imager-compat.service
 RequiresMountsFor=/opt
 ConditionPathExists=!/var/lib/travel-router/firstboot-done
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple

@@ -528,26 +528,29 @@ def _read_log_text() -> str:
         return ""
 
 
-def _read_ap_ssid() -> str:
+def _read_env_value(key: str) -> str:
+    """Read a single exported variable from ENV_FILE. Returns '' if not found."""
     try:
+        pattern = re.compile(rf"export\s+{re.escape(key)}=(.+)$")
         with open(ENV_FILE, "r", encoding="utf-8", errors="replace") as fh:
             for line in fh:
-                m = re.match(r"export\s+AP_SSID=(.+)$", line.strip())
+                m = pattern.match(line.strip())
                 if m:
                     raw = m.group(1).strip()
-                    # Use shlex.split to correctly unescape all shell quoting
-                    # (including single quotes inside the value, e.g. SSID="It's").
                     try:
                         parts = shlex.split(raw)
                         return parts[0] if parts else ""
                     except ValueError:
-                        # Malformed quoting — fall back to stripping outer quotes
                         if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
                             return raw[1:-1]
                         return raw
-    except FileNotFoundError:
+    except (FileNotFoundError, OSError):
         pass
     return ""
+
+
+def _read_ap_ssid() -> str:
+    return _read_env_value("AP_SSID")
 
 
 def _elapsed_str() -> tuple[str, int]:
@@ -574,6 +577,7 @@ def _status_page() -> bytes:
 
     if done:
         ssid = _read_ap_ssid() or "your new"
+        gw = _read_env_value("AP_GATEWAY") or "10.3.141.1"
         body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>Travel Router — Setup complete</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -582,6 +586,9 @@ def _status_page() -> bytes:
 <div class="success"><span class="check">&#10003;</span><strong>Setup complete.</strong>
 <p style="margin:.75rem 0 0">The Pi is rebooting. Reconnect to your new SSID
 <strong>{html.escape(ssid)}</strong> to use the router.</p>
+<p style="margin:.5rem 0 0">Web dashboard:
+<strong>http://{html.escape(gw)}:8080</strong> &mdash; access token:
+<code>cat /var/lib/travel-router/web-token</code> (SSH as root).</p>
 <p style="margin:.5rem 0 0;color:#8b949e">This page will not respond after the reboot.</p>
 </div>
 </div></body></html>
@@ -759,8 +766,20 @@ class Handler(BaseHTTPRequestHandler):
             if _installing:
                 self._send(HTTPStatus.CONFLICT, b"Install still in progress", "text/plain")
                 return
+            # Disk-based guard: START_FILE exists but no terminal state file means
+            # the install process is still running — even if server.py restarted and
+            # _installing was reset to False.
+            if (os.path.exists(START_FILE)
+                    and not os.path.exists(DONE_FILE)
+                    and not os.path.exists(FAIL_FILE)):
+                self._send(
+                    HTTPStatus.CONFLICT,
+                    b"Installation is still running \xe2\x80\x94 wait for it to finish or fail.",
+                    "text/plain",
+                )
+                return
             _installing = False
-            for path in (ENV_FILE, FAIL_FILE, ROOTPW_FILE, LOG_FILE, DONE_FILE):
+            for path in (ENV_FILE, FAIL_FILE, ROOTPW_FILE, LOG_FILE, DONE_FILE, START_FILE):
                 try:
                     os.unlink(path)
                 except FileNotFoundError:

@@ -186,7 +186,9 @@ run_finalize() {
     echo "    • AP schedule: ${ENABLE_AP_SCHEDULE:-0}  (disable ${AP_DISABLE_TIME:-02:00}, re-enable ${AP_ENABLE_TIME:-07:00})"
     echo "    • WiFi QR: cat /usr/local/share/travel-router/wifi-qr/wifi-qr.txt"
     echo "    • ntfy.sh: ${NTFY_TOPIC:-not configured (set NTFY_TOPIC in /etc/default/travel-router)}"
-    echo "    • Web token: cat /var/lib/travel-router/web-token"
+    local _WEB_TOKEN
+    _WEB_TOKEN=$(cat /var/lib/travel-router/web-token 2>/dev/null || echo "not yet generated")
+    echo "    • Web dashboard: http://${_AP_GATEWAY}:8080  (token: ${_WEB_TOKEN})"
     echo ""
     echo "  Next steps:"
     [[ -z "${TS_KEY:-}" ]] && echo "    1. sudo tailscale up ${TAILSCALE_UP_ARGS:-}"
