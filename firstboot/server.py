@@ -5,6 +5,7 @@ Listens on :80, serves a single-page HTML form, and on submit writes the user's
 answers to /var/lib/travel-router/firstboot-env.sh, then spawns install.sh in
 non-interactive mode. Stdlib only.
 """
+# pylint: disable=too-many-lines
 from __future__ import annotations
 
 import html
@@ -190,7 +191,7 @@ def _validate(form: dict) -> tuple[dict, list[str], str]:
             import base64 as _b64
             try:
                 _b64.b64decode(_ssh_parts[1], validate=True)
-            except Exception:
+            except ValueError:
                 errors.append("SSH admin public key has an invalid key blob (base64 decode failed).")
     values["SSH_ADMIN_KEY"] = ssh_key
 

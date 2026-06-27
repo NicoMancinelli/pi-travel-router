@@ -62,7 +62,7 @@ logger -t "$LOG_TAG" "Battery: ${LEVEL}%  (shutdown threshold: ${THRESHOLD}%)"
 
 if [[ "$LEVEL" -le "$THRESHOLD" ]]; then
     logger -t "$LOG_TAG" "CRITICAL: battery ${LEVEL}% <= threshold ${THRESHOLD}% — shutting down"
-    local _msg="UPS battery critical: ${LEVEL}% — safe shutdown initiated"
+    _msg="UPS battery critical: ${LEVEL}% — safe shutdown initiated"
     if [ -x /usr/local/bin/notify-router.sh ]; then
         /usr/local/bin/notify-router.sh "$_msg" 2>/dev/null || logger -t "$LOG_TAG" "$_msg"
     else
