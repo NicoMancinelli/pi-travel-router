@@ -5,6 +5,54 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.34.0] — 2026-08-22
+
+### Fixed
+- **Four mutating endpoints skipped token auth for AP-subnet clients** —
+  `POST /api/system/reboot`, `POST /api/system/shutdown`, `GET|POST /api/config`,
+  and `POST /api/network/speedtest` used the AP-trusting guard, so any guest on
+  the router's own SSID could power-cycle the router or read/write its config
+  (which contains WiFi passphrases and WireGuard keys) with no credentials.
+  All four now use `require_auth_always`; the dashboard already sends the
+  Bearer token on every request, so the pair-once flow is unchanged.
+- **Dashboard served single-threaded while hosting an SSE stream** — one open
+  `/api/events/stream` connection (held up to 5 minutes) queued every other
+  dashboard request behind it. The dev server now runs with `threaded=True`.
+- **OTA verify-before-write restored** — 3.33's single-pass write streamed the
+  image to the inactive slot *while* hashing, so a corrupt download could be
+  written to disk before the SHA256 mismatch was detected. Verification now
+  completes before any bytes are written (contract enforced by integration test).
+- **failover-watchdog exited 1 on successful runs** — the EXIT trap ended with
+  `[ -n "$_LOG_TMP" ] &&`, which returns non-zero when the temp-file name is
+  empty; under `set -e` that status overrode the script's clean `exit 0`.
+- **ota-update/failover-watchdog died silently outside the Pi** — hardcoded
+  `/var/lib/travel-router` paths made both scripts abort (unwritable) in CI;
+  work/state/log directories are now env-overridable (`OTA_WORK_DIR`, `LOGFILE`,
+  `_UPLINK_STATE_DIR`, `_UPLINK_STATE_FILE`) with production defaults unchanged.
+
+### Security
+- SSE stream authenticates via short-lived, single-use tickets
+  (`POST /api/events/ticket`) instead of putting the long-lived web token in a
+  URL query string, where it leaks into access logs (`?token=` still accepted).
+- DNS lookup endpoint validates hostname charset (rejects dig/nslookup flag
+  injection such as `-x` or `+short` payloads); record-type allowlist unchanged.
+- Ping/iwconfig/iwlist/hostapd_cli/zram call sites converted from shell-string
+  interpolation to argv-list form or direct sysfs reads.
+- Outbound curls in watchdog/push/installer paths gained connect/max-timeouts
+  so a hung TCP connect can no longer stall a watchdog cycle.
+
+### Changed
+- `update-blocklists.service`: `MemoryMax=256M` / `MemoryHigh=192M` — blocklist
+  generation historically OOM'd the 512MB Zero 2 W; a capped failure is now a
+  clean retryable error instead of a router-wide OOM kill.
+- `travel-router-log-rotate.timer`: `Persistent=true` so a rotation missed while
+  powered off runs at next boot. (AP enable/disable timers intentionally keep
+  `Persistent=false` — firing them late would toggle the AP at the wrong hour.)
+
+### Added
+- `workflow_dispatch` triggers on unit-tests and python-lint workflows for
+  manual runs; repo-level GitHub Actions re-enabled after being paused.
+
 ## [3.33.0] — 2026-06-13
 
 ### Fixed
