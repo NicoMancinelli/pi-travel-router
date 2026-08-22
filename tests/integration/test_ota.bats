@@ -183,6 +183,12 @@ MOCK
 
     _run_ota
 
+    # TEMP DEBUG (test 9)
+    echo "DEBUG9 status=$status"
+    echo "DEBUG9 output<<$output>>"
+    cat "${_WORK_DIR}/ota-work/update.img.xz.sha256" >&2 || true
+    echo "DEBUG9 expected=${expected_sha}"
+
     # dd must have been called (image was written)
     [ -f "${dd_calls}" ]
     grep -q "dd_called" "${dd_calls}"
