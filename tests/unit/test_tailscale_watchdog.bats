@@ -70,7 +70,9 @@ _run_watchdog() {
 # Test 1: tailscale binary not found → script exits 0 without error
 # ---------------------------------------------------------------------------
 @test "tailscale-watchdog: tailscale binary missing exits 0 cleanly" {
-    # No tailscale mock → command will fail → script should still exit 0
+    # Force "binary missing" even on hosts where tailscale is installed:
+    # exit 127 mimics command-not-found exactly.
+    mock_cmd "tailscale" "" 127
     run _run_watchdog
     [ "$status" -eq 0 ]
 }
@@ -79,6 +81,7 @@ _run_watchdog() {
 # Test 2: tailscale binary missing → notification or logger records the event
 # ---------------------------------------------------------------------------
 @test "tailscale-watchdog: tailscale missing records daemon unreachable via logger" {
+    mock_cmd "tailscale" "" 127
     run _run_watchdog
     [ "$status" -eq 0 ]
 

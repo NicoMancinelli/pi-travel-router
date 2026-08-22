@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-AGH_DIR="/opt/AdGuardHome"
+AGH_DIR="${AGH_DIR:-/opt/AdGuardHome}"   # override in tests
 API_URL="https://api.github.com/repos/AdguardTeam/AdGuardHome/releases/latest"
 
 ARCH=$(uname -m)
