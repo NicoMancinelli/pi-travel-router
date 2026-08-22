@@ -94,6 +94,7 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 - Tor installed; transparent proxy config/rules disabled by default
 - USB drive file sharing (#30): usb-share.sh — guest SMB share of /media/travel-data, bound to uap0/usb0/tailscale0 only; `ENABLE_USB_SHARE=1`
 - Read-only root toggle (#10): overlayfs-ctl.sh wraps raspi-config nonint do_overlayfs; disable before updates
+- CIDR-based split tunnel (#6): apply-wg-split-tunnel.sh routes `WG_SPLIT_TUNNEL_CIDRS` via VPN egress (tailscale0 default, wg0 supported); fwmark 0x3 / table 201; `ENABLE_WG_SPLIT_TUNNEL=1`
 
 ## Pending Tasks
 

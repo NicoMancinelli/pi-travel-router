@@ -245,6 +245,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CIDR-based split tunnel (#6)** — route specific destination subnets through the
+  VPN uplink while everything else goes direct: `ENABLE_WG_SPLIT_TUNNEL=1` +
+  `WG_SPLIT_TUNNEL_CIDRS="10.100.0.0/16 172.16.5.0/24"` in `/etc/default/travel-router`.
+  Egress defaults to Tailscale (`tailscale0`); set `WG_SPLIT_TUNNEL_DEV=wg0` to use a
+  WireGuard upstream peer instead. Implemented as an ipset `hash:net` populated from
+  config, one mangle MARK rule (fwmark 0x3), policy rule priority 201, and routing
+  table 201 — no overlap with domain split tunnel (0x2/200) or per-device VPN (0x64/100).
+  Ships with `wg-split-tunnel.service`, installer wiring + prompts, TUI feature toggle
+  and settings entries, dashboard config allowlist, and 12 unit tests.
+
+### Fixed
+- `tests/unit/test_tailscale_watchdog.bats` "tailscale binary missing" tests now stub
+  the binary to exit 127; previously they passed only on hosts without tailscale
+  installed and failed with exit 127 wherever a real tailscale answered.
+
+### Docs
+- Roadmap reality sync: features 2, 5, 6, 8, 9, 11, 12, 13, 14, 15 marked deployed;
+  Priority Picks section rewritten (it was recommending already-shipped features).
+
 ## [3.14.0] - 2026-05-26
 
 ### Added

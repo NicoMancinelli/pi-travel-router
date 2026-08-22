@@ -130,8 +130,8 @@ SUBSYSTEM=="net", ACTION=="add", KERNEL=="usb0", RUN+="/usr/local/bin/start-teth
 SUBSYSTEM=="net", ACTION=="add", KERNEL=="rndis0", RUN+="/usr/local/bin/start-tether.sh %k"
 ```
 
-#### 6. WireGuard Split Tunnel (IP/CIDR-based)
-Route specific subnets (corporate, banking) through Tailscale while streaming/general traffic goes direct. Implement via `ip rule` + fwmark + secondary routing table.
+#### ✅ 6. WireGuard Split Tunnel (IP/CIDR-based) *(deployed — `ENABLE_WG_SPLIT_TUNNEL` + `scripts/apply-wg-split-tunnel.sh`)*
+Route specific subnets (corporate, banking) through the VPN uplink while streaming/general traffic goes direct. Implemented via ipset hash:net populated from `WG_SPLIT_TUNNEL_CIDRS` + mangle fwmark 0x3 + `ip rule` priority 201 + routing table 201; egress is Tailscale by default, set `WG_SPLIT_TUNNEL_DEV=wg0` for a WireGuard upstream peer.
 
 ```bash
 ip rule add fwmark 0x1 table 200
@@ -317,7 +317,6 @@ features that were already live.
 
 **Still open:**
 - Feature 3 — hostapd HT40+ vs HT40− review; requires the physical Pi, measure per-channel throughput before touching hostapd.conf
-- Feature 6 — WireGuard split tunnel by IP/CIDR; the domain-based (#22/#45) and per-device MAC (#44) variants are deployed, CIDR-based WG policy routing is not
 
 **Only if specific need:**
 - Feature 40 (TCP fingerprint spoofing) — significant implementation effort, marginal carrier bypass benefit unless TTL alone fails
