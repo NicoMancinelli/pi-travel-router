@@ -11,6 +11,12 @@ run_finalize() {
     ok "mount-storage.sh installed to /usr/local/sbin/mount-storage.sh"
     ok "/media/travel-data created"
 
+    # ── Read-only root (overlayfs) toggle ─────────────────────────────────────────
+    section "Read-only root toggle (overlayfs)"
+    cp "${REPO}/scripts/overlayfs-ctl.sh" /usr/local/sbin/overlayfs-ctl.sh
+    chmod +x /usr/local/sbin/overlayfs-ctl.sh
+    ok "overlayfs-ctl.sh installed — sudo overlayfs-ctl.sh enable|disable|status"
+
     # ── Scheduled reboot ──────────────────────────────────────────────────────────
     section "Scheduled reboot"
     cp "${REPO}/scripts/schedule-reboot.sh" /usr/local/sbin/schedule-reboot.sh
@@ -170,6 +176,8 @@ run_finalize() {
     echo "    • Bandwidth dashboard: ${ENABLE_BANDWIDTH_DASHBOARD:-0}  (http://${_AP_GATEWAY}/bandwidth.html)"
     echo "    • Prometheus node exporter: ${ENABLE_PROMETHEUS_EXPORTER:-0}  (:9100/metrics via Tailscale)"
     echo "    • UPS monitor (PiSugar): ${ENABLE_UPS_MONITOR:-0}  (shutdown at ${UPS_SHUTDOWN_THRESHOLD:-10}%)"
+    echo "    • USB file sharing (travel NAS): ${ENABLE_USB_SHARE:-0}  (smb://${_AP_GATEWAY}/${USB_SHARE_NAME:-TravelData})"
+    echo "    • Read-only root toggle: sudo overlayfs-ctl.sh enable|disable|status"
     echo "    • WireGuard VPN: ${ENABLE_WIREGUARD:-0}  (wg0, port ${WG_LISTEN_PORT:-51820}; public key: $(cat /etc/wireguard/wg0.pub 2>/dev/null || echo 'n/a'))"
     echo "    • Run 'sudo travel-status' for a one-shot status summary"
     echo "    • Run 'sudo travel-tui' for the interactive management TUI"

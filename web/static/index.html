@@ -794,17 +794,6 @@
     <div id="backup-status" style="margin-top:8px;font-size:12px;color:var(--text-dim);"></div>
   </div>
 
-  <!-- Traceroute Tool -->
-  <div class="card full-width" id="card-traceroute" style="margin-top:16px;">
-    <div class="card-header">
-      <span>🛤️ Traceroute</span>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
-      <input id="traceroute-host" type="text" placeholder="hostname or IP…" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:14px;">
-      <button class="btn btn-sm" id="traceroute-btn" onclick="runTraceroute()">Trace</button>
-    </div>
-    <div id="traceroute-result" style="font-size:13px;color:var(--text-dim);">Enter a hostname and click Trace.</div>
-  </div>
 
   <!-- System Resources -->
   <div class="card full-width" id="card-system-resources" style="margin-top:16px;">
@@ -832,14 +821,6 @@
     <div id="ports-content" style="overflow-x:auto;font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <!-- Storage -->
-  <div class="card full-width" id="card-storage">
-    <div class="card-title">
-      &#x1F4BE; Storage
-      <button class="btn btn-sm" onclick="fetchStorage()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="storage-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
 
   <!-- Connectivity Check -->
   <div class="card full-width" id="card-ping-checker" style="margin-top:16px;">
@@ -851,8 +832,8 @@
       <button class="btn btn-sm" onclick="runPing(window.location.hostname)">Gateway (this host)</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:10px;">
-      <input id="ping-host-input" type="text" class="form-control" placeholder="Custom host or IP" style="max-width:240px;font-size:13px;padding:4px 8px;">
-      <button class="btn btn-sm" onclick="runPing(document.getElementById('ping-host-input').value.trim())">&#x25B6; Ping</button>
+      <input id="ping-checker-host-input" type="text" class="form-control" placeholder="Custom host or IP" style="max-width:240px;font-size:13px;padding:4px 8px;">
+      <button class="btn btn-sm" onclick="runPing(document.getElementById('ping-checker-host-input').value.trim())">&#x25B6; Ping</button>
     </div>
     <div id="ping-result" style="font-size:13px;color:var(--text-dim);">Select a target above to run a ping check.</div>
   </div>
@@ -1095,12 +1076,6 @@
   <div class="card" id="cpu-freq-card">
     <h2>⚡ CPU Frequency</h2>
     <div id="cpu-freq-content"><p class="muted">Loading…</p></div>
-  </div>
-
-  <!-- Sysctl Security -->
-  <div class="card" id="sysctl-card">
-    <h2>🔒 Sysctl Security</h2>
-    <div id="sysctl-content"><p class="muted">Loading…</p></div>
   </div>
 
   <!-- Battery / UPS -->
@@ -1531,6 +1506,8 @@
       <span class="card-badge" id="kmod-badge">—</span>
     </div>
     <div class="card-body" id="kmod-body">
+  </div>
+  </div>
   <!-- CPU Temperature -->
   <div class="card" id="card-cputemp">
     <div class="card-header">
@@ -1560,6 +1537,8 @@
       <span class="card-badge" id="timesync-badge">—</span>
     </div>
     <div class="card-body" id="timesync-body">
+  </div>
+  </div>
   <!-- Disk I/O Stats -->
   <div class="card" id="card-diskstats">
     <div class="card-header">
@@ -1567,6 +1546,8 @@
       <span class="card-badge" id="diskstats-badge">—</span>
     </div>
     <div class="card-body" id="diskstats-body">
+  </div>
+  </div>
   <!-- WiFi Signal -->
   <div class="card" id="card-wifi-signal">
     <div class="card-header">
@@ -1574,6 +1555,8 @@
       <span class="card-badge" id="wifi-signal-badge">—</span>
     </div>
     <div class="card-body" id="wifi-signal-body">
+  </div>
+  </div>
   <!-- Sysctl Params -->
   <div class="card" id="card-sysctl-net">
     <div class="card-header">
@@ -1612,6 +1595,7 @@
       <span class="badge" id="route-table-badge">…</span>
     </div>
     <div class="card-body" id="route-table-body"></div>
+  </div>
   <!-- Failed Units -->
   <div class="card" id="card-failed-units">
     <div class="card-header" onclick="toggleCard('card-failed-units')">
@@ -1619,6 +1603,7 @@
       <span class="badge" id="failed-units-badge">…</span>
     </div>
     <div class="card-body" id="failed-units-body"></div>
+  </div>
   <!-- Swap Detail -->
   <div class="card" id="card-swap-detail">
     <div class="card-header" onclick="toggleCard('card-swap-detail')">
@@ -1635,6 +1620,7 @@
       <span class="badge" id="mdns-services-badge">&#x2026;</span>
     </div>
     <div class="card-body" id="mdns-services-body"></div>
+  </div>
   <!-- USB Devices -->
   <div class="card" id="card-usb-devices">
     <div class="card-header" onclick="toggleCard('card-usb-devices')">
@@ -1642,6 +1628,7 @@
       <span class="badge" id="usb-devices-badge">…</span>
     </div>
     <div class="card-body" id="usb-devices-body"></div>
+  </div>
   <!-- Process Tree -->
   <div class="card" id="card-process-tree">
     <div class="card-header" onclick="toggleCard('card-process-tree')">
@@ -1663,6 +1650,8 @@
   <!-- SSH Keys -->
   <div class="card" id="card-ssh-keys-v3">
     <div class="card-header" onclick="toggleCard('card-ssh-keys-v3')">
+  </div>
+  </div>
   <!-- SSH Keys -->
   <div class="card" id="card-ssh-keys">
     <div class="card-header" onclick="toggleCard('card-ssh-keys')">
@@ -1688,6 +1677,7 @@
       <span class="badge" id="log-summary-badge">…</span>
     </div>
     <div class="card-body" id="log-summary-body"></div>
+  </div>
   <!-- Ping Check -->
   <div class="card" id="card-ping-check">
     <div class="card-header" onclick="toggleCard('card-ping-check')">
@@ -1802,15 +1792,6 @@
     <div class="card-body" id="wg-health-body"></div>
   </div>
 
-  <!-- Speedtest -->
-  <div class="card" id="card-speedtest">
-    <div class="card-header" onclick="toggleCard('card-speedtest')">
-      <span>🚀 Speed Test</span>
-      <span class="badge" id="speedtest-badge">–</span>
-    </div>
-    <div class="card-body" id="speedtest-body">
-      <button class="btn btn-sm" onclick="fetchSpeedtest()">&#x25B6; Run Speed Test</button>
-    </div>
   <!-- System Timers -->
   <div class="card" id="card-sys-timers">
     <div class="card-header" onclick="toggleCard('card-sys-timers')">
@@ -1854,6 +1835,7 @@
       <span class="badge" id="login-history-badge">…</span>
     </div>
     <div class="card-body" id="login-history-body"></div>
+  </div>
   <!-- Pi Hardware -->
   <div class="card" id="card-pi-hw">
     <div class="card-header" onclick="toggleCard('card-pi-hw')">
@@ -1897,6 +1879,7 @@
       <span class="badge" id="thermal-zones-badge">…</span>
     </div>
     <div class="card-body" id="thermal-zones-body"></div>
+  </div>
   <!-- Gateway Info -->
   <div class="card" id="card-gateway-info">
     <div class="card-header" onclick="toggleCard('card-gateway-info')">
@@ -1904,6 +1887,7 @@
       <span class="badge" id="gateway-info-badge">…</span>
     </div>
     <div class="card-body" id="gateway-info-body"></div>
+  </div>
   <!-- Loaded Modules -->
   <div class="card" id="card-loaded-modules">
     <div class="card-header" onclick="toggleCard('card-loaded-modules')">
@@ -1911,11 +1895,12 @@
       <span class="badge" id="loaded-modules-badge">…</span>
     </div>
     <div class="card-body" id="loaded-modules-body"></div>
+  </div>
   <!-- NTP Sync -->
   <div class="card" id="card-ntp-sync">
     <div class="card-header" onclick="toggleCard('card-ntp-sync')">
       <span>🕐 NTP Sync</span>
-      <span class="badge" id="ntp-sync-badge">…</span>
+      <span class="badge" id="ntp-sync-card-badge">…</span>
     </div>
     <div class="card-body" id="ntp-sync-body"></div>
   </div>
@@ -1945,6 +1930,7 @@
       <span class="badge" id="memory-map-badge">…</span>
     </div>
     <div class="card-body" id="memory-map-body"></div>
+  </div>
   <!-- Connection Stats -->
   <div class="card" id="card-connection-stats">
     <div class="card-header" onclick="toggleCard('card-connection-stats')">
@@ -1952,6 +1938,7 @@
       <span class="badge" id="connection-stats-badge">…</span>
     </div>
     <div class="card-body" id="connection-stats-body"></div>
+  </div>
   <!-- Split Tunnel Status -->
   <div class="card" id="card-split-tunnel">
     <div class="card-header" onclick="toggleCard('card-split-tunnel')">
@@ -1959,6 +1946,7 @@
       <span class="badge" id="split-tunnel-badge">…</span>
     </div>
     <div class="card-body" id="split-tunnel-body"></div>
+  </div>
   <!-- Disk IO -->
   <div class="card" id="card-disk-io-v2">
     <div class="card-header" onclick="toggleCard('card-disk-io-v2')">
@@ -1993,6 +1981,7 @@
       <span class="badge" id="lease-summary-badge">…</span>
     </div>
     <div class="card-body" id="lease-summary-body"></div>
+  </div>
   <!-- Load Average -->
   <div class="card" id="card-load-avg">
     <div class="card-header" onclick="toggleCard('card-load-avg')">
@@ -2052,6 +2041,7 @@
     <span class="badge" id="route-summary-badge">…</span>
   </div>
   <div class="card-body" id="route-summary-body"></div>
+  </div>
 <!-- Service Health -->
 <div class="card" id="card-service-health">
   <div class="card-header" onclick="toggleCard('card-service-health')">
@@ -2059,6 +2049,7 @@
     <span class="badge" id="service-health-badge">…</span>
   </div>
   <div class="card-body" id="service-health-body"></div>
+  </div>
 <!-- Top Memory -->
 <div class="card" id="card-top-memory">
   <div class="card-header" onclick="toggleCard('card-top-memory')">
@@ -2066,6 +2057,7 @@
     <span class="badge" id="top-memory-badge">…</span>
   </div>
   <div class="card-body" id="top-memory-body"></div>
+  </div>
 <!-- DNS Test -->
 <div class="card" id="card-dns-test">
   <div class="card-header" onclick="toggleCard('card-dns-test')">
@@ -2075,27 +2067,25 @@
   <div class="card-body" id="dns-test-body"></div>
 </div>
 
-<!-- Firewall Rules -->
-<div class="card" id="card-firewall-rules">
-  <div class="card-header" onclick="toggleCard('card-firewall-rules')">
-    <span>🛡️ Firewall Rules</span>
-    <span class="badge" id="firewall-rules-badge">…</span>
-  </div>
-  <div class="card-body" id="firewall-rules-body"></div>
-</div>
 
 <!-- Journal Boot -->
 <div class="card" id="card-journal-boot">
   <div class="card-header"><span>📋 Journal Boot</span><button class="refresh-btn" onclick="fetchJournalBoot()">↻</button></div>
   <div class="card-body" id="journal-boot-body">
+  </div>
+  </div>
 <!-- Multicast Groups -->
 <div class="card" id="card-multicast-groups">
   <div class="card-header"><span>📡 Multicast Groups</span><button class="refresh-btn" onclick="fetchMulticastGroups()">↻</button></div>
   <div class="card-body" id="multicast-groups-body">
+  </div>
+  </div>
 <!-- Kernel Cmdline -->
 <div class="card" id="card-kernel-cmdline">
   <div class="card-header"><span>⚙️ Kernel Cmdline</span><button class="refresh-btn" onclick="fetchKernelCmdline()">↻</button></div>
   <div class="card-body" id="kernel-cmdline-body">
+  </div>
+  </div>
 <!-- Swap Usage -->
 <div class="card" id="card-swap-usage">
   <div class="card-header"><span>💾 Swap Usage</span><button class="refresh-btn" onclick="fetchSwapUsage()">↻</button></div>
@@ -2120,14 +2110,12 @@
   </div>
 </div>
 
-<!-- Open Ports -->
-<div class="card" id="card-open-ports">
-  <div class="card-header"><span>🔌 Open Ports</span><button class="refresh-btn" onclick="fetchOpenPorts()">↻</button></div>
-  <div class="card-body" id="open-ports-body">
 <!-- Network Errors -->
 <div class="card" id="card-network-errors">
   <div class="card-header"><span>⚠️ Network Errors</span><button class="refresh-btn" onclick="fetchNetworkErrors()">↻</button></div>
   <div class="card-body" id="network-errors-body">
+  </div>
+  </div>
 <!-- I/O Scheduler -->
 <div class="card" id="card-io-scheduler">
   <div class="card-header"><span>💿 I/O Scheduler</span><button class="refresh-btn" onclick="fetchIoScheduler()">↻</button></div>
@@ -2156,14 +2144,20 @@
 <div class="card" id="card-battery-status">
   <div class="card-header"><span>🔋 Battery Status</span><button class="refresh-btn" onclick="fetchBatteryStatus()">↻</button></div>
   <div class="card-body" id="battery-status-body">
+  </div>
+  </div>
 <!-- Systemd Failed -->
 <div class="card" id="card-systemd-failed">
   <div class="card-header"><span>🔴 Systemd Failed</span><button class="refresh-btn" onclick="fetchSystemdFailed()">↻</button></div>
   <div class="card-body" id="systemd-failed-body">
+  </div>
+  </div>
 <!-- MTU Info -->
 <div class="card" id="card-mtu-info">
   <div class="card-header"><span>📏 MTU Info</span><button class="refresh-btn" onclick="fetchMtuInfo()">↻</button></div>
   <div class="card-body" id="mtu-info-body">
+  </div>
+  </div>
 <!-- CPU Cache -->
 <div class="card" id="card-cpu-cache">
   <div class="card-header"><span>🧮 CPU Cache</span><button class="refresh-btn" onclick="fetchCpuCache()">↻</button></div>
@@ -2184,14 +2178,20 @@
 <div class="card" id="card-pci-devices">
   <div class="card-header"><span>🖧 PCI Devices</span><button class="refresh-btn" onclick="fetchPciDevices()">↻</button></div>
   <div class="card-body" id="pci-devices-body">
+  </div>
+  </div>
 <!-- Kernel Modules -->
 <div class="card" id="card-kernel-modules">
   <div class="card-header"><span>🧩 Kernel Modules</span><button class="refresh-btn" onclick="fetchKernelModules()">↻</button></div>
   <div class="card-body" id="kernel-modules-body">
+  </div>
+  </div>
 <!-- VPN Latency -->
 <div class="card" id="card-vpn-latency">
   <div class="card-header"><span>🏓 VPN Latency</span><button class="refresh-btn" onclick="fetchVpnLatency()">↻</button></div>
   <div class="card-body" id="vpn-latency-body">
+  </div>
+  </div>
 <!-- Disk Temp -->
 <div class="card" id="card-disk-temp">
   <div class="card-header"><span>🌡️ Disk Temp</span><button class="refresh-btn" onclick="fetchDiskTemp()">↻</button></div>
@@ -2204,14 +2204,20 @@
 <div class="card" id="card-nftables-counters">
   <div class="card-header"><span>🔢 Nftables Counters</span><button class="refresh-btn" onclick="fetchNftablesCounters()">↻</button></div>
   <div class="card-body" id="nftables-counters-body">
+  </div>
+  </div>
 <!-- Dmesg Errors -->
 <div class="card" id="card-dmesg-errors">
   <div class="card-header"><span>🚨 Dmesg Errors</span><button class="refresh-btn" onclick="fetchDmesgErrors()">↻</button></div>
   <div class="card-body" id="dmesg-errors-body">
+  </div>
+  </div>
 <!-- Interface Stats -->
 <div class="card" id="card-interface-stats">
   <div class="card-header"><span>📈 Interface Stats</span><button class="refresh-btn" onclick="fetchInterfaceStats()">↻</button></div>
   <div class="card-body" id="interface-stats-body">
+  </div>
+  </div>
 <!-- Resolved DNS -->
 <div class="card" id="card-resolved-dns">
   <div class="card-header"><span>🌐 Resolved DNS</span><button class="refresh-btn" onclick="fetchResolvedDns()">↻</button></div>
@@ -2228,18 +2234,7 @@
   </div>
 </div>
 
-  <!-- Login History -->
-  <div class="card" id="card-login-history">
-    <div class="card-header"><span>📜 Login History</span><button class="refresh-btn" onclick="fetchLoginHistory()">↻</button></div>
-    <div class="card-body" id="login-history-body">
-      <div class="loading">Loading…</div>
-    </div>
-  </div>
 
-  <!-- CPU Frequency -->
-<div class="card" id="cpu-freq-card">
-  <div class="card-header"><span class="card-icon">⚡</span>CPU Frequency</div>
-  <div class="card-body" id="cpu-freq-body"><span class="loading">Loading…</span></div>
 <!-- Shared Memory -->
 <div class="card" id="shm-card">
   <div class="card-header"><span class="card-icon">🗄️</span>Shared Memory</div>
@@ -2254,10 +2249,12 @@
 <div class="card" id="numa-info-card">
   <div class="card-header"><span class="card-icon">🧩</span>NUMA Topology</div>
   <div class="card-body" id="numa-info-body"><span class="loading">Loading…</span></div>
+  </div>
 <!-- Socket Stats -->
 <div class="card" id="socket-stats-card">
   <div class="card-header"><span class="card-icon">🔌</span>Socket Stats</div>
   <div class="card-body" id="socket-stats-body"><span class="loading">Loading...</span></div>
+  </div>
 <!-- Kernel Version -->
 <div class="card" id="kernel-version-card">
   <div class="card-header"><span class="card-icon">🐧</span>Kernel Version</div>
@@ -2267,6 +2264,7 @@
 <div class="card" id="disk-partitions-card">
   <div class="card-header"><span class="card-icon">💾</span>Disk Partitions</div>
   <div class="card-body" id="disk-partitions-body"><span class="loading">Loading…</span></div>
+  </div>
 <!-- Process Count -->
 <div class="card" id="process-count-card">
   <div class="card-header"><span class="card-icon">⚙️</span>Processes</div>
@@ -2276,10 +2274,12 @@
 <div class="card" id="network-bonds-card">
   <div class="card-header"><span class="card-icon">🔗</span>Network Bonds</div>
   <div class="card-body" id="network-bonds-body"><span class="loading">Loading…</span></div>
+  </div>
 <!-- CPU Steal -->
 <div class="card" id="cpu-steal-card">
   <div class="card-header"><span class="card-icon">📊</span>CPU Breakdown</div>
   <div class="card-body" id="cpu-steal-body"><span class="loading">Loading…</span></div>
+  </div>
 <!-- Meminfo Detail -->
 <div class="card" id="meminfo-detail-card">
   <div class="card-header"><span class="card-icon">🧠</span>Memory Detail</div>
@@ -2290,15 +2290,11 @@
 <div class="card" id="neighbor-table-card">
   <div class="card-header"><span class="card-icon">🔗</span>Neighbor Table</div>
   <div class="card-body" id="neighbor-table-body"><span class="loading">Loading...</span></div>
+  </div>
 <!-- Open Files -->
 <div class="card" id="open-files-card">
   <div class="card-header"><span class="card-icon">📂</span>Open Files</div>
   <div class="card-body" id="open-files-body"><span class="loading">Loading…</span></div>
-</div>
-  <!-- CPU Steal -->
-<div class="card" id="cpu-steal-card">
-  <div class="card-header"><span class="card-icon">📊</span>CPU Breakdown</div>
-  <div class="card-body" id="cpu-steal-body"><span class="loading">Loading…</span></div>
 </div>
 <!-- Tailscale Status -->
   <div class="card full-width" id="card-tailscale-status">
@@ -2318,14 +2314,6 @@
     <div id="wan-uplinks-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <!-- Speedtest -->
-  <div class="card full-width" id="card-speedtest">
-    <div class="card-title">
-      &#x26A1; Speed Test
-      <button class="btn btn-sm" id="speedtest-run-btn" onclick="runSpeedtest()" style="margin-left:8px;">&#x25B6; Run Test</button>
-    </div>
-    <div id="speedtest-content" style="font-size:13px;color:var(--text-dim);">Click "Run Test" to measure internet speed. This may take 30–60 seconds.</div>
-  </div>
 
   <!-- Temperature History -->
   <div class="card full-width" id="card-temp-history">
@@ -2336,13 +2324,6 @@
     <div id="temp-history-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <div class="card full-width" id="card-firewall-rules">
-    <div class="card-title">
-      &#x1F6E1; Firewall Rules
-      <button class="btn btn-sm" onclick="fetchFirewallRules()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="firewall-rules-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
 
   <!-- Reboot / Shutdown -->
   <div class="card" id="card-power">
@@ -2376,14 +2357,6 @@
     <div id="dns-resolvers-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <!-- SSH Authorized Keys -->
-  <div class="card full-width" id="card-ssh-keys">
-    <div class="card-title">
-      &#x1F511; SSH Authorized Keys
-      <button class="btn btn-sm" onclick="fetchSshKeys()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="ssh-keys-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
 
   <!-- Log Summary & Export -->
   <div class="card full-width" id="card-log-export">
@@ -2403,7 +2376,7 @@
       &#x1F4BB; Connected Clients
       <button class="btn btn-sm" onclick="fetchArpClients()" style="margin-left:8px;">&#x27F3; Refresh</button>
     </div>
-    <div id="clients-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
+    <div id="arp-clients-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
   <!-- VPN Kill Switch -->
@@ -2506,30 +2479,11 @@
     </div>
   </div>
 
-  <div class="card" id="card-ntp-status">
-    <div class="card-title">&#x1F553; NTP Sync Status</div>
-    <div id="ntp-status-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
-
   <div class="card full-width" id="card-open-files">
     <div class="card-title">&#x1F4C2; Open File Descriptors</div>
     <div id="open-files-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <!-- ARP / Neighbor Table -->
-  <div class="card" id="arp-table-card">
-    <div class="card-header">
-      <span>📡 ARP / Neighbors</span>
-      <span class="card-badge" id="arp-table-count">—</span>
-    </div>
-    <div class="card-body" id="arp-table-content">
-      <span style="color:var(--text-dim)"><span class="spinner"></span> Loading…</span>
-    </div>
-  </div>
-
-  <div class="card" id="card-route-table">
-    <div id="route-table-content">Loading&hellip;</div>
-  </div>
 
   <div class="card" id="card-swap-legacy" style="display:none">
     <div id="swap-legacy-content"></div>
@@ -2630,22 +2584,10 @@
           <div id="wifi-info-content"><em>Loading…</em></div>
         </div>
 
-        <!-- CPU Governors -->
-        <div class="card" id="card-cpu-governors">
-          <h2>⚙️ CPU Governors</h2>
-          <div id="cpu-governors-content"><em>Loading…</em></div>
-        </div>
-
         <!-- System Timers -->
         <div class="card" id="card-system-timers">
           <h2>⏱ System Timers</h2>
           <div id="system-timers-content"><em>Loading…</em></div>
-        </div>
-
-        <!-- mDNS Services -->
-        <div class="card" id="card-mdns">
-          <h2>📡 mDNS Services</h2>
-          <div id="mdns-content"><em>Loading…</em></div>
         </div>
 
 <!-- Failed Services -->
@@ -2760,15 +2702,6 @@
     <div id="kernel-messages-content"><em>Loading…</em></div>
   </div>
 
-  <!-- Network Interfaces -->
-  <div class="card" id="card-network-interfaces">
-    <h2>🌐 Network Interfaces</h2>
-    <div id="network-interfaces-content"><em>Loading…</em></div>
-  </div>
-
-  <div class="card" id="card-arp-table">
-    <div id="arp-table-content">Loading&hellip;</div>
-  </div>
 
   <!-- ARP / Neighbor Table -->
   <div class="card full-width" id="card-arp" style="margin-top:16px;">
@@ -3110,8 +3043,7 @@
 
 <div id="toast"></div>
 
-<script>
-// ── State ────────────────────────────────────────────────────────────────────
+<script>// ── State ────────────────────────────────────────────────────────────────────
 let _token = localStorage.getItem('travel-router-token') || '';
 let _autoLogInterval = null;
 let _statusInterval = null;
@@ -3683,15 +3615,6 @@ async function fetchClients() {
 }
 
 // ── Bandwidth ─────────────────────────────────────────────────────────────────
-async function fetchBandwidthHistory() {
-  try {
-    const resp = await apiFetch('/api/bandwidth/history');
-    if (!resp.ok) return [];
-    return await resp.json();
-  } catch (e) {
-    return [];
-  }
-}
 
 function fmtBytesK(b) {
   if (b == null) return '-';
@@ -4119,23 +4042,6 @@ function renderServices() {
   ).join('');
 }
 
-async function restartService(name, btn) {
-  if (!confirm(`Restart ${name}?`)) return;
-  btn.disabled = true;
-  btn.querySelector('.svc-action').textContent = 'Restarting…';
-  try {
-    const resp = await apiFetch(`/api/service/${encodeURIComponent(name)}/restart`, { method: 'POST' });
-    const d = await resp.json();
-    if (resp.ok) { toast(`${name} restarted`, 'ok'); btn.querySelector('.svc-action').textContent = 'Restarted ✓'; }
-    else { toast('Failed: ' + (d.error || '?'), 'err'); btn.querySelector('.svc-action').textContent = 'Failed'; }
-  } catch (e) {
-    toast('Error: ' + e.message, 'err');
-    btn.querySelector('.svc-action').textContent = 'Error';
-  } finally {
-    btn.disabled = false;
-    setTimeout(() => { if (btn.querySelector('.svc-action')) btn.querySelector('.svc-action').textContent = 'Click to restart'; }, 4000);
-  }
-}
 
 function confirmReboot() {
   if (!confirm('Reboot the router? This will disconnect all clients.')) return;
@@ -4947,7 +4853,7 @@ async function fetchWho() {
   const el = document.getElementById('who-body');
   const badge = document.getElementById('who-badge');
   try {
-    const d = await apiFetch('/api/system/who');
+    const d = await (await apiFetch('/api/system/who')).json();
     badge.textContent = d.count;
     if (!d.sessions || d.sessions.length === 0) {
       el.innerHTML = '<span style="color:var(--text-dim);">No active sessions</span>';
@@ -5027,7 +4933,7 @@ async function fetchKmod() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/kmod');
+    const d = await (await apiFetch('/api/system/kmod')).json();
     if (badge) badge.textContent = d.count ?? '—';
     if (!d.modules || d.modules.length === 0) {
       el.innerHTML = '<span style="color:var(--text-dim)">No modules found.</span>';
@@ -5063,7 +4969,7 @@ async function fetchTimesync() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/timesync');
+    const d = await (await apiFetch('/api/system/timesync')).json();
     if (!d.available) {
       if (badge) badge.textContent = 'N/A';
       el.innerHTML = '<span style="color:var(--text-dim)">timedatectl not available</span>';
@@ -5087,6 +4993,10 @@ async function fetchTimesync() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading time sync</span>';
+}
+}
+
+
 // ── WiFi Signal ───────────────────────────────────────────────────────────────
 async function fetchWifiSignal() {
   const el = document.getElementById('wifi-signal-body');
@@ -5094,7 +5004,7 @@ async function fetchWifiSignal() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/network/wifi-signal');
+    const d = await (await apiFetch('/api/network/wifi-signal')).json();
     if (badge) badge.textContent = d.count ? d.count + ' iface' : '—';
     if (!d.interfaces || d.interfaces.length === 0) {
       el.innerHTML = '<span style="color:var(--text-dim)">No WiFi interfaces found.</span>';
@@ -5126,6 +5036,10 @@ async function fetchWifiSignal() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading WiFi signal</span>';
+}
+}
+
+
 // ── Sysctl Params ─────────────────────────────────────────────────────────────
 async function fetchSysctlNet() {
   const el = document.getElementById('sysctl-net-body');
@@ -5133,7 +5047,7 @@ async function fetchSysctlNet() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/sysctl-net');
+    const d = await (await apiFetch('/api/system/sysctl-net')).json();
     if (badge) badge.textContent = d.count ?? '—';
     if (!d.params || d.params.length === 0) {
       el.innerHTML = '<span style="color:var(--text-dim)">No params found.</span>';
@@ -5162,7 +5076,7 @@ async function fetchIpv6() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/network/ipv6');
+    const d = await (await apiFetch('/api/network/ipv6')).json();
     if (badge) badge.textContent = d.global_count != null ? d.global_count + ' global' : '—';
     if (!d.interfaces || d.interfaces.length === 0) {
       el.innerHTML = '<span style="color:var(--text-dim)">No IPv6 addresses found.</span>';
@@ -5195,7 +5109,7 @@ async function fetchSwapDetail() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/swap-detail');
+    const d = await (await apiFetch('/api/system/swap-detail')).json();
     if (!d.swap_enabled) {
       if (badge) badge.textContent = 'disabled';
       el.innerHTML = '<span style="color:var(--text-dim)">No swap configured on this system</span>';
@@ -5249,7 +5163,7 @@ async function fetchMdnsServicesV2() {
   const el = document.getElementById('mdns-services-body');
   if (!el) return;
   try {
-    const d = await apiFetch('/api/network/mdns-services');
+    const d = await (await apiFetch('/api/network/mdns-services')).json();
     if (!d.available) {
       badge.textContent = 'N/A';
       el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">avahi-browse not installed</span>';
@@ -5339,7 +5253,7 @@ async function fetchLogSummary() {
   if (!body) return;
   body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/log-summary');
+    const d = await (await apiFetch('/api/system/log-summary')).json();
     if (!d.available) {
       badge.textContent = 'N/A';
       badge.style.background = 'var(--text-dim)';
@@ -5514,6 +5428,9 @@ async function fetchTcpConns() {
       }
       html += '</tbody></table></div>';
     }
+  } catch (e) {}
+}
+
 
 // ── DHCP Leases ───────────────────────────────────────────────────────────────
 async function fetchDhcpLeases() {
@@ -5650,7 +5567,7 @@ async function fetchFirewallSummary() {
   const badge = document.getElementById('firewall-summary-badge');
   const body = document.getElementById('firewall-summary-body');
   try {
-    const d = await apiFetch('/api/system/firewall-summary');
+    const d = await (await apiFetch('/api/system/firewall-summary')).json();
     const total = d.total_rules || 0;
     const backend = d.backend || 'none';
     if (badge) badge.textContent = `${total} rules · ${backend}`;
@@ -5818,7 +5735,7 @@ async function fetchPiHw() {
   const badge = document.getElementById('pi-hw-badge');
   const body  = document.getElementById('pi-hw-body');
   try {
-    const d = await apiFetch('/api/system/pi-hardware');
+    const d = await (await apiFetch('/api/system/pi-hardware')).json();
     if (!d.is_pi) {
       if (badge) badge.textContent = 'not a Pi';
       if (body)  body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">Not a Raspberry Pi.</div>';
@@ -5853,7 +5770,7 @@ async function fetchBwLive() {
   const body = document.getElementById('bw-live-body');
   if (badge) badge.textContent = '…';
   try {
-    const d = await apiFetch('/api/network/bandwidth-live');
+    const d = await (await apiFetch('/api/network/bandwidth-live')).json();
     if (!d || !d.interfaces) throw new Error('no data');
 
     const totalRx = d.interfaces.reduce((s, i) => s + i.rx_mbps, 0);
@@ -5898,7 +5815,7 @@ async function fetchOtaStatus() {
   const badge = document.getElementById('ota-status-badge');
   const body = document.getElementById('ota-status-body');
   try {
-    const d = await apiFetch('/api/system/ota-status');
+    const d = await (await apiFetch('/api/system/ota-status')).json();
     if (badge) {
       badge.textContent = d.ota_enabled ? (d.current_version || 'enabled') : 'disabled';
     }
@@ -5934,7 +5851,7 @@ async function fetchTsExitNodeV3() {
   const badge = document.getElementById('ts-exit-badge');
   const body = document.getElementById('ts-exit-body');
   try {
-    const d = await apiFetch('/api/vpn/tailscale/exit-node');
+    const d = await (await apiFetch('/api/vpn/tailscale/exit-node')).json();
     if (!d.available) {
       if (badge) badge.textContent = 'unavailable';
       if (body) body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">Tailscale not available</div>';
@@ -6049,7 +5966,7 @@ async function fetchGatewayInfo() {
   const badge = document.getElementById('gateway-info-badge');
   const body = document.getElementById('gateway-info-body');
   try {
-    const d = await apiFetch('/api/network/gateway-info');
+    const d = await (await apiFetch('/api/network/gateway-info')).json();
     if (!d.gateway_ip) {
       badge.textContent = 'n/a';
       body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No default gateway found.</p>';
@@ -6065,13 +5982,17 @@ async function fetchGatewayInfo() {
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Interface</td><td style="padding:3px 8px;font-size:13px;">${d.interface || 'n/a'}</td></tr>
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">MAC</td><td style="padding:3px 8px;font-size:13px;">${d.mac || 'n/a'}</td></tr>
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Ping</td><td style="padding:3px 8px;font-size:13px;">${d.ping_ms !== null ? d.ping_ms + ' ms' : 'n/a'}</td></tr>
-        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Status</td><td style="padding:3px 8px;font-size:13px;color:${reachColor};">${reachText}</td></tr>
+        <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Status</td><td style="padding:3px 8px;font-size:13px;color:${reachColor};">${reachText}</td></tr>`;
+  } catch (e) {}
+}
+
+
 // ── Loaded Modules ──
 async function fetchLoadedModules() {
   const badge = document.getElementById('loaded-modules-badge');
   const body = document.getElementById('loaded-modules-body');
   try {
-    const d = await apiFetch('/api/system/loaded-modules');
+    const d = await (await apiFetch('/api/system/loaded-modules')).json();
     badge.textContent = `${d.total} modules`;
     if (!d.modules || d.modules.length === 0) {
       body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No modules found.</p>';
@@ -6104,7 +6025,7 @@ async function fetchHostnameInfo() {
   const badge = document.getElementById('hostname-info-badge');
   const body = document.getElementById('hostname-info-body');
   try {
-    const d = await apiFetch('/api/system/hostname-info');
+    const d = await (await apiFetch('/api/system/hostname-info')).json();
     badge.textContent = d.hostname || 'n/a';
     const rows = [
       ['Hostname', d.hostname],
@@ -6119,12 +6040,16 @@ async function fetchHostnameInfo() {
       <td style="padding:3px 8px;font-size:13px;">${v || 'n/a'}</td>
     </tr>`).join('');
     body.innerHTML = `<table style="width:100%;border-collapse:collapse;">${rows}</table>`;
+  } catch (e) {}
+}
+
+
 // ── Recent Errors ──
 async function fetchRecentErrors() {
   const badge = document.getElementById('recent-errors-badge');
   const body = document.getElementById('recent-errors-body');
   try {
-    const d = await apiFetch('/api/system/recent-errors');
+    const d = await (await apiFetch('/api/system/recent-errors')).json();
     badge.textContent = d.count > 0 ? `${d.count} errors` : 'clean';
     badge.style.background = d.count > 0 ? '#ef4444' : '#22c55e';
     if (d.count === 0) {
@@ -6156,7 +6081,7 @@ async function fetchConnectionStats() {
   const badge = document.getElementById('connection-stats-badge');
   const body = document.getElementById('connection-stats-body');
   try {
-    const d = await apiFetch('/api/network/connection-stats');
+    const d = await (await apiFetch('/api/network/connection-stats')).json();
     badge.textContent = `${d.tcp_total} TCP`;
     const stateOrder = ['ESTABLISHED','LISTEN','TIME_WAIT','CLOSE_WAIT','SYN_SENT','SYN_RECV','FIN_WAIT1','FIN_WAIT2'];
     const stateColor = {'ESTABLISHED':'#22c55e','LISTEN':'#3b82f6','TIME_WAIT':'#f59e0b','CLOSE_WAIT':'#f97316'};
@@ -6185,7 +6110,7 @@ async function fetchResourceLimits() {
   const badge = document.getElementById('resource-limits-badge');
   const body = document.getElementById('resource-limits-body');
   try {
-    const d = await apiFetch('/api/system/resource-limits');
+    const d = await (await apiFetch('/api/system/resource-limits')).json();
     badge.textContent = d.open_files_pct !== null ? `${d.open_files_pct}% fds` : 'ok';
     const fmt = n => n !== null ? n.toLocaleString() : 'n/a';
     body.innerHTML = `
@@ -6206,7 +6131,7 @@ async function fetchPacketLoss() {
   const badge = document.getElementById('packet-loss-badge');
   const body = document.getElementById('packet-loss-body');
   try {
-    const d = await apiFetch('/api/network/packet-loss');
+    const d = await (await apiFetch('/api/network/packet-loss')).json();
     const lossColor = d.overall_loss_pct === 0 ? '#22c55e' : d.overall_loss_pct < 10 ? '#f59e0b' : '#ef4444';
     badge.textContent = `${d.overall_loss_pct}% loss`;
     badge.style.background = lossColor;
@@ -6217,12 +6142,29 @@ async function fetchPacketLoss() {
         <td style="padding:3px 8px;font-size:13px;text-align:right;color:${c};">${t.loss_pct}%</td>
         <td style="padding:3px 8px;font-size:13px;text-align:right;">${t.avg_ms !== null ? t.avg_ms+'ms' : '—'}</td>
         <td style="padding:3px 8px;font-size:12px;color:${t.reachable?'#22c55e':'#ef4444'};">${t.reachable?'✓':'✗'}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Host</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Loss</th>
+        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Avg RTT</th>
+        <th style="padding:3px 8px;font-size:11px;color:var(--text-dim);">Up</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+  } catch (e) {
+    if (badge) badge.textContent = 'err';
+    if (body) body.innerHTML = `<p style="color:#ef4444;font-size:13px;">${e.message}</p>`;
+  }
+}
+
 // ── Interface Errors ──
 async function fetchIfaceErrors() {
   const badge = document.getElementById('iface-errors-badge');
   const body = document.getElementById('iface-errors-body');
   try {
-    const d = await apiFetch('/api/network/interface-errors');
+    const d = await (await apiFetch('/api/network/interface-errors')).json();
     const hasAny = d.total_errors + d.total_drops > 0;
     badge.textContent = hasAny ? `${d.total_errors}err ${d.total_drops}drop` : 'clean';
     badge.style.background = hasAny ? '#f59e0b' : '#22c55e';
@@ -6242,10 +6184,6 @@ async function fetchIfaceErrors() {
     }).join('');
     body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
       <thead><tr>
-        <th style="padding:3px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Host</th>
-        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Loss</th>
-        <th style="padding:3px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Avg RTT</th>
-        <th style="padding:3px 8px;font-size:11px;color:var(--text-dim);">Up</th>
         <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Iface</th>
         <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">RX err</th>
         <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">RX drop</th>
@@ -6265,7 +6203,7 @@ async function fetchUptimeDetail() {
   const badge = document.getElementById('uptime-detail-badge');
   const body = document.getElementById('uptime-detail-body');
   try {
-    const d = await apiFetch('/api/system/uptime-detail');
+    const d = await (await apiFetch('/api/system/uptime-detail')).json();
     badge.textContent = d.uptime_str;
     body.innerHTML = `
       <table style="width:100%;border-collapse:collapse;">
@@ -6274,12 +6212,16 @@ async function fetchUptimeDetail() {
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Idle</td><td style="padding:3px 8px;font-size:13px;">${d.idle_pct}%</td></tr>
         <tr><td style="padding:3px 8px;font-size:13px;color:var(--text-dim);">Uptime (s)</td><td style="padding:3px 8px;font-size:13px;">${d.uptime_seconds.toLocaleString()}</td></tr>
       </table>`;
+  } catch (e) {}
+}
+
+
 // ── Active Users ──
 async function fetchActiveUsers() {
   const badge = document.getElementById('active-users-badge');
   const body = document.getElementById('active-users-body');
   try {
-    const d = await apiFetch('/api/system/active-users');
+    const d = await (await apiFetch('/api/system/active-users')).json();
     badge.textContent = `${d.count} user${d.count !== 1 ? 's' : ''}`;
     if (d.count === 0) {
       body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No users logged in.</p>';
@@ -6311,7 +6253,7 @@ async function fetchProcessStates() {
   const badge = document.getElementById('process-states-badge');
   const body = document.getElementById('process-states-body');
   try {
-    const d = await apiFetch('/api/system/process-states');
+    const d = await (await apiFetch('/api/system/process-states')).json();
     badge.textContent = `${d.total} procs`;
     if (d.has_zombies) badge.style.background = '#ef4444';
     const stateLabels = {'R':'Running','S':'Sleeping','D':'Disk wait','Z':'Zombie','T':'Stopped','I':'Idle'};
@@ -6329,12 +6271,16 @@ async function fetchProcessStates() {
           <td style="padding:2px 8px;font-size:13px;font-weight:600;text-align:right;">${d.total}</td>
         </tr>
       </table>`;
+  } catch (e) {}
+}
+
+
 // ── Service Health ──
 async function fetchServiceHealth() {
   const badge = document.getElementById('service-health-badge');
   const body = document.getElementById('service-health-body');
   try {
-    const d = await apiFetch('/api/system/service-health');
+    const d = await (await apiFetch('/api/system/service-health')).json();
     const healthColor = d.failed > 0 ? '#ef4444' : d.inactive > 3 ? '#f59e0b' : '#22c55e';
     badge.textContent = `${d.active}/${d.total} active`;
     badge.style.background = healthColor;
@@ -6361,6 +6307,10 @@ async function fetchMulticastGroups() {
     if (!d.total) { el.innerHTML = '<div class="ok-msg">No multicast groups</div>'; return; }
     const rows = d.groups.map(g => `<div class="stat-row"><span>${g.iface}</span><span class="val">${g.group} (${g.users})</span></div>`).join('');
     el.innerHTML = `<div class="stat-row"><span>Total</span><span class="val">${d.total}</span></div>${rows}`;
+  } catch (e) {}
+}
+
+
 // ── Kernel Cmdline ──
 async function fetchKernelCmdline() {
   const el = document.getElementById('kernel-cmdline-body');
@@ -6389,6 +6339,10 @@ async function fetchEntropyPool() {
       <div class="stat-row"><span>Pool size</span><span class="val">${d.pool_size} bits</span></div>
       <div class="stat-row"><span>Read wakeup</span><span class="val">${d.read_wakeup_threshold}</span></div>
     `;
+  } catch (e) {}
+}
+
+
 // ── CPU Governors ──
 async function fetchCpuGovernors() {
   const el = document.getElementById('cpu-governors-body');
@@ -6402,21 +6356,11 @@ async function fetchCpuGovernors() {
       `<div class="stat-row"><span>${c.cpu}</span><span class="val">${c.governor} @ ${c.freq_mhz} MHz</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Cores</span><span class="val">${d.total_cores} (${d.governors.join(', ')})</span></div>${rows}`;
-// ── Open Ports ──
-async function fetchOpenPorts() {
-  const el = document.getElementById('open-ports-body');
-  el.innerHTML = '<div class="loading">Loading…</div>';
-  try {
-    const r = await fetch('/api/network/open-ports');
-    const d = await r.json();
-    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
-    if (!d.total) { el.innerHTML = '<div class="ok-msg">No listening ports</div>'; return; }
-    const rows = d.ports.slice(0, 12).map(p =>
-      `<div class="stat-row"><span>:${p.port}</span><span class="val">${p.proto}</span></div>`
-    ).join('');
-    el.innerHTML = `<div class="stat-row"><span>Listening</span><span class="val">${d.total} (TCP ${d.tcp_count} · UDP ${d.udp_count})</span></div>${rows}`;
-  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
+  } catch (e) {}
 }
+
+
+// ── Open Ports ──
 
 // ── I/O Scheduler ──
 async function fetchIoScheduler() {
@@ -6431,6 +6375,10 @@ async function fetchIoScheduler() {
       `<div class="stat-row"><span>${dev.device}</span><span class="val">${dev.active}</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Devices</span><span class="val">${d.total}</span></div>${rows}`;
+  } catch (e) {}
+}
+
+
 // ── TCP Stats ──
 async function fetchTcpStats() {
   const el = document.getElementById('tcp-stats-body');
@@ -6496,6 +6444,10 @@ async function fetchCpuCache() {
       `<div class="stat-row"><span>L${c.level} ${c.type}</span><span class="val">${c.size ?? 'N/A'}</span></div>`
     ).join('');
     el.innerHTML = rows;
+  } catch (e) {}
+}
+
+
 // ── DNS Cache Stats ──
 async function fetchDnsCacheStats() {
   const el = document.getElementById('dns-cache-stats-body');
@@ -6511,6 +6463,10 @@ async function fetchDnsCacheStats() {
       ${d.hits !== null ? `<div class="stat-row"><span>Hits / Misses</span><span class="val">${d.hits} / ${d.misses}</span></div>` : ''}
       ${d.hit_rate_pct !== null ? `<div class="stat-row"><span>Hit rate</span><span class="val">${d.hit_rate_pct}%</span></div>` : ''}
     `;
+  } catch (e) {}
+}
+
+
 // ── PCI Devices ──
 async function fetchPciDevices() {
   const el = document.getElementById('pci-devices-body');
@@ -6528,19 +6484,6 @@ async function fetchPciDevices() {
 }
 
 // ── Kernel Modules ──
-async function fetchKernelModules() {
-  const el = document.getElementById('kernel-modules-body');
-  el.innerHTML = '<div class="loading">Loading…</div>';
-  try {
-    const r = await fetch('/api/system/kernel-modules');
-    const d = await r.json();
-    if (d.error) { el.innerHTML = `<div class="error">${d.error}</div>`; return; }
-    const rows = d.top_by_size.map(m =>
-      `<div class="stat-row"><span>${m.name}</span><span class="val">${Math.round(m.size/1024)} KB</span></div>`
-    ).join('');
-    el.innerHTML = `<div class="stat-row"><span>Total modules</span><span class="val">${d.total}</span></div>${rows}`;
-  } catch(e) { el.innerHTML = `<div class="error">${e}</div>`; }
-}
 
 // ── VPN Latency ──
 async function fetchVpnLatency() {
@@ -6564,6 +6507,10 @@ async function fetchVpnLatency() {
         : `<div class="stat-row"><span>Tailscale</span><span class="val ${!ts.reachable?'warn':''}">${ts.avg_ms ? ts.avg_ms+'ms' : 'timeout'}</span></div>`;
     }
     el.innerHTML = html || '<div class="ok-msg">No VPN active</div>';
+  } catch (e) {}
+}
+
+
 // ── Nftables Counters ──
 async function fetchNftablesCounters() {
   const el = document.getElementById('nftables-counters-body');
@@ -6577,6 +6524,10 @@ async function fetchNftablesCounters() {
       `<div class="stat-row"><span>${c.name}</span><span class="val">${c.packets} pkts / ${Math.round(c.bytes/1024)} KB</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Total packets</span><span class="val">${d.total_packets}</span></div>${rows}`;
+  } catch (e) {}
+}
+
+
 // ── Memory Zones ──
 async function fetchMemoryZones() {
   const el = document.getElementById('memory-zones-body');
@@ -6761,18 +6712,6 @@ async function loadNetworkBonds() {
 }
 loadNetworkBonds();
 // ── CPU Steal ──
-async function loadCpuSteal() {
-  try {
-    const r = await fetch('/api/system/cpu-steal');
-    const d = await r.json();
-    if (d.error) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
-    const stealWarn = d.steal_warning ? ' ⚠️' : '';
-    document.getElementById('cpu-steal-body').innerHTML =
-      `<div class="stat-row"><span class="stat-label">Active / Idle</span><span class="stat-value">${d.total_active}% / ${d.idle}%</span></div>` +
-      `<div class="stat-row"><span class="stat-label">System / IOWait</span><span class="stat-value">${d.system}% / ${d.iowait}%</span></div>` +
-      `<div class="stat-row"><span class="stat-label">Steal</span><span class="stat-value">${d.steal}%${stealWarn}</span></div>`;
-  } catch(e) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${e}</span>`; }
-}
 loadCpuSteal();
 // ── Meminfo Detail ──
 async function loadMeminfoDetail() {
@@ -6802,18 +6741,6 @@ async function loadKernelVersion() {
 }
 loadKernelVersion();
 // ── CPU Steal ──
-async function loadCpuSteal() {
-  try {
-    const r = await fetch('/api/system/cpu-steal');
-    const d = await r.json();
-    if (d.error) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${d.error}</span>`; return; }
-    const stealWarn = d.steal_warning ? ' ⚠️' : '';
-    document.getElementById('cpu-steal-body').innerHTML =
-      `<div class="stat-row"><span class="stat-label">Active / Idle</span><span class="stat-value">${d.total_active}% / ${d.idle}%</span></div>` +
-      `<div class="stat-row"><span class="stat-label">System / IOWait</span><span class="stat-value">${d.system}% / ${d.iowait}%</span></div>` +
-      `<div class="stat-row"><span class="stat-label">Steal</span><span class="stat-value">${d.steal}%${stealWarn}</span></div>`;
-  } catch(e) { document.getElementById('cpu-steal-body').innerHTML = `<span class="error">${e}</span>`; }
-}
 loadCpuSteal();
 // ── Tailscale Status ──
 
@@ -6822,7 +6749,7 @@ async function fetchNetIfaces() {
   const badge = document.getElementById('net-ifaces-badge');
   const body = document.getElementById('net-ifaces-body');
   try {
-    const d = await apiFetch('/api/network/interfaces');
+    const d = await (await apiFetch('/api/network/interfaces')).json();
     if (badge) badge.textContent = `${d.up_count} up / ${d.count} total`;
     if (!body) return;
     if (!d.interfaces || d.interfaces.length === 0) {
@@ -6856,42 +6783,6 @@ async function fetchNetIfaces() {
 }
 
 // ── ARP Table ─────────────────────────────────────────────────────────────────
-async function fetchArpTable() {
-  const el = document.getElementById('arp-content');
-  const badge = document.getElementById('arp-badge');
-  try {
-    const d = await apiFetch('/api/network/arp');
-    badge.textContent = d.reachable + '/' + d.count;
-    if (!d.neighbors || d.neighbors.length === 0) {
-      el.innerHTML = '<span class="dim">No ARP neighbors found</span>';
-      return;
-    }
-    const stateColor = s => {
-      if (s === 'REACHABLE') return 'color:#4caf50;';
-      if (s === 'STALE')     return 'color:#ff9800;';
-      return 'color:var(--text-dim);';
-    };
-    const rows = d.neighbors.map(n =>
-      `<tr>
-        <td style="padding:4px 8px;">${n.ip}</td>
-        <td style="padding:4px 8px;font-family:monospace;">${n.mac}</td>
-        <td style="padding:4px 8px;">${n.dev}</td>
-        <td style="padding:4px 8px;${stateColor(n.state)}">${n.state}</td>
-      </tr>`
-    ).join('');
-    el.innerHTML = `<table style="width:100%;border-collapse:collapse;">
-      <thead><tr style="text-align:left;color:var(--text-dim);font-size:11px;">
-        <th style="padding:4px 8px;">IP</th>
-        <th style="padding:4px 8px;">MAC</th>
-        <th style="padding:4px 8px;">Interface</th>
-        <th style="padding:4px 8px;">State</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-  } catch(e) {
-    if (e.message !== 'Unauthorized') el.innerHTML = '<span class="dim">Error loading ARP table</span>';
-  }
-}
 
 // ── Tailscale peers ────────────────────────────────────────────────────────────
 
@@ -7273,62 +7164,6 @@ async function fetchSpeedtestHistory() {
 }
 
 // ── Traceroute ────────────────────────────────────────────────────────────────
-async function runTraceroute() {
-  const btn = document.getElementById('btn-traceroute');
-  const spinnerEl = document.getElementById('traceroute-spinner');
-  const resultEl = document.getElementById('traceroute-result');
-  const targetInput = document.getElementById('traceroute-target');
-  const target = (targetInput ? targetInput.value.trim() : '') || '1.1.1.1';
-
-  btn.disabled = true;
-  spinnerEl.style.display = 'flex';
-  resultEl.innerHTML = '';
-
-  try {
-    const resp = await apiFetch('/api/traceroute', {
-      method: 'POST',
-      body: JSON.stringify({ target }),
-    });
-    const d = await resp.json();
-    if (!resp.ok) {
-      resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + escHtml(d.error || 'Unknown error') + '</div>';
-      return;
-    }
-    if (!d.hops || d.hops.length === 0) {
-      resultEl.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">No hops returned.</div>';
-      return;
-    }
-    let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
-    html += '<thead><tr>'
-      + '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;">Hop</th>'
-      + '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;">IP</th>'
-      + '<th style="text-align:left;padding:4px 8px;color:var(--text-dim);font-weight:600;">Avg RTT</th>'
-      + '</tr></thead><tbody>';
-    for (const hop of d.hops) {
-      const ip = hop.ip === '*' ? '<span style="color:var(--text-dim)">*</span>' : escHtml(hop.ip);
-      let rttCell = '<span style="color:var(--text-dim)">—</span>';
-      if (hop.rtts_ms && hop.rtts_ms.length > 0) {
-        const avg = hop.rtts_ms.reduce((a, b) => a + b, 0) / hop.rtts_ms.length;
-        let color = 'var(--green)';
-        if (avg >= 100) color = 'var(--red)';
-        else if (avg >= 20) color = 'var(--yellow)';
-        rttCell = '<span style="color:' + color + ';font-family:var(--mono);">' + avg.toFixed(1) + ' ms</span>';
-      }
-      html += '<tr>'
-        + '<td style="padding:3px 8px;font-family:var(--mono);">' + escHtml(String(hop.hop)) + '</td>'
-        + '<td style="padding:3px 8px;font-family:var(--mono);">' + ip + '</td>'
-        + '<td style="padding:3px 8px;">' + rttCell + '</td>'
-        + '</tr>';
-    }
-    html += '</tbody></table>';
-    resultEl.innerHTML = html;
-  } catch (e) {
-    resultEl.innerHTML = '<div style="color:var(--red);font-size:13px;">Error: ' + escHtml(e.message) + '</div>';
-  } finally {
-    spinnerEl.style.display = 'none';
-    btn.disabled = false;
-  }
-}
 
 // ── Backup & Restore ──────────────────────────────────────────────────────────
 function _updateBackupTimestamp() {
@@ -7470,9 +7305,6 @@ function initEventStream() {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
 function escAttr(s) {
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
@@ -7582,7 +7414,7 @@ let _wolTargets = [];
 
 async function fetchWolTargets() {
   try {
-    const d = await apiFetch('/api/wol');
+    const d = await (await apiFetch('/api/wol')).json();
     _wolTargets = d.targets || [];
     _renderWolTargets(_wolTargets);
   } catch (e) {
@@ -7689,7 +7521,7 @@ async function removeWolTarget(index) {
 
 async function fetchPortForwardRules() {
   try {
-    const d = await apiFetch('/api/portforward');
+    const d = await (await apiFetch('/api/portforward')).json();
     _renderPortForwardRules(d.rules || []);
   } catch (e) {
     const el = document.getElementById('portforward-content');
@@ -7782,7 +7614,7 @@ async function fetchClientHistory(limitOverride) {
   const el = document.getElementById('client-history-content');
   if (!el) return;
   try {
-    const resp = await apiFetch('/api/clients/history?limit=' + limit);
+    const resp = await (await apiFetch('/api/clients/history?limit=' + limit)).json();
     const events = resp.events || [];
     if (events.length === 0) {
       el.innerHTML = '<span class="dim">No connection history yet — events are recorded every 30s</span>';
@@ -8163,56 +7995,6 @@ async function deletePingHost(host) {
 }
 
 // ── Login History ─────────────────────────────────────────────────────────────
-async function fetchLoginHistory() {
-  const el = document.getElementById('login-history-content');
-  const badge = document.getElementById('login-history-count');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const r = await fetch('/api/system/login-history');
-    const d = await r.json();
-    if (badge) {
-      const active = d.still_logged_in || 0;
-      badge.textContent = active > 0 ? `${active} active` : `${d.count || 0} sessions`;
-    }
-    let html = '';
-    const logins = d.logins || [];
-    if (logins.length === 0) {
-      html = '<p class="muted">No login history available.</p>';
-    } else {
-      html += '<div style="max-height:280px;overflow-y:auto;">';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
-      html += `<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">
-        <th style="text-align:left;padding:2px 5px;">User</th>
-        <th style="text-align:left;padding:2px 5px;">TTY</th>
-        <th style="text-align:left;padding:2px 5px;">From</th>
-        <th style="text-align:left;padding:2px 5px;">Login</th>
-        <th style="text-align:left;padding:2px 5px;">Duration</th>
-      </tr></thead><tbody>`;
-      for (const l of logins) {
-        const isActive = l.still_logged_in;
-        html += `<tr style="border-bottom:1px solid var(--border);${isActive ? 'background:var(--bg2);' : ''}">
-          <td style="padding:2px 5px;font-weight:${isActive ? '600' : '400'}">${l.user}</td>
-          <td style="padding:2px 5px;color:var(--text-dim)">${l.tty || '—'}</td>
-          <td style="padding:2px 5px;color:var(--text-dim);font-size:10px">${l.host || 'local'}</td>
-          <td style="padding:2px 5px;font-size:10px;color:var(--text-dim)">${l.login_time ? l.login_time.slice(0, 16) : '—'}</td>
-          <td style="padding:2px 5px;">${isActive ? '<span style="color:var(--success,#16a34a);font-size:10px;font-weight:600">● active</span>' : (l.duration || '—')}</td>
-        </tr>`;
-      }
-      html += '</tbody></table></div>';
-    }
-    const failed = d.failed_attempts || [];
-    if (failed.length > 0) {
-      html += `<div style="margin-top:10px;padding:6px;background:rgba(220,38,38,0.08);border-radius:5px;border-left:3px solid #dc2626;">
-        <div style="font-size:11px;font-weight:600;color:#dc2626;margin-bottom:3px;">⚠ ${d.failed_count} failed login attempt${d.failed_count !== 1 ? 's' : ''} (last 10)</div>`;
-      for (const f of failed.slice(0, 5)) {
-        html += `<div style="font-size:10px;color:var(--text-dim);">${f.user} from ${f.host || 'local'} at ${f.login_time ? f.login_time.slice(0, 16) : '—'}</div>`;
-      }
-      html += '</div>';
-    }
-    el.innerHTML = html;
-  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
-}
 
 async function refreshAll() {
   await fetchStatus();
@@ -8629,6 +8411,8 @@ async function fetchIfaceStats() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading interface stats</span>';
+}
+}
 
 
 async function fetchNtfyConfig() {
@@ -8681,17 +8465,6 @@ async function sendNtfyTest() {
 }
 
 // ── Storage (USB/SD) ──────────────────────────────────────────────────────────
-async function fetchStorage() {
-  try {
-    const r = await apiFetch('/api/storage');
-    if (!r.ok) return;
-    const data = await r.json();
-    _renderStorage(data);
-  } catch (e) {
-    const el = document.getElementById('storage-status');
-    if (el) el.textContent = 'Storage unavailable';
-  }
-}
 
 function _renderStorage(data) {
   const statusEl = document.getElementById('storage-status');
@@ -9313,42 +9086,6 @@ async function runTraceroute() {
   }
 }
 
-async function fetchFirewallRules() {
-  const el = document.getElementById('firewall-rules-content');
-  try {
-    const r = await fetch('/api/network/firewall');
-    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
-    const d = await r.json();
-    const tableOrder = ['filter', 'nat', 'mangle'];
-    let html = '';
-    for (const tbl of tableOrder) {
-      if (!d[tbl]) continue;
-      if (d[tbl].error) {
-        html += `<div style="margin-bottom:8px;"><strong>${tbl}</strong>: <span style="color:var(--text-dim);">${d[tbl].error}</span></div>`;
-        continue;
-      }
-      html += `<div style="margin-bottom:10px;"><strong style="text-transform:uppercase;font-size:11px;letter-spacing:1px;">${tbl}</strong><table style="width:100%;border-collapse:collapse;margin-top:4px;">`;
-      html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
-        <th style="text-align:left;padding:2px 6px;">Chain</th>
-        <th style="text-align:left;padding:2px 6px;">Policy</th>
-        <th style="text-align:right;padding:2px 6px;">Rules</th>
-      </tr></thead><tbody>`;
-      for (const [chain, info] of Object.entries(d[tbl])) {
-        const policy = info.policy || '—';
-        const pColor = policy === 'DROP' ? '#e74c3c' : policy === 'ACCEPT' ? '#2ecc71' : 'inherit';
-        html += `<tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:3px 6px;font-family:monospace;">${chain}</td>
-          <td style="padding:3px 6px;color:${pColor};">${policy}</td>
-          <td style="padding:3px 6px;text-align:right;">${info.rules}</td>
-        </tr>`;
-      }
-      html += '</tbody></table></div>';
-    }
-    el.innerHTML = html || '<span style="color:var(--text-dim);">No tables found</span>';
-  } catch (e) {
-    el.textContent = 'Failed: ' + e;
-  }
-}
 
 // ── Wi-Fi Clients ─────────────────────────────────────────────────────────────
 
@@ -9832,7 +9569,7 @@ async function fetchLoadHistory() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const r = await fetch('/api/system/load-history');
+    const r = await apiFetch('/api/system/load-history');
     const d = await r.json();
     const laColor = (val, cores) => {
       const ratio = val / (cores || 1);
@@ -10640,116 +10377,12 @@ async function fetchCpuFreq() {
 
 // ── USB Devices ───────────────────────────────────────────────────────────────
 
-async function fetchUsbDevices() {
-  const badge = document.getElementById('usb-badge');
-  const body  = document.getElementById('usb-body');
-  if (!body) return;
-  body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const resp = await apiFetch('/api/system/usb');
-    const data = await resp.json();
-    if (badge) badge.textContent = data.count ?? '—';
-    if (!data.devices || data.devices.length === 0) {
-      body.innerHTML = '<span style="color:var(--text-dim)">No USB devices found.</span>';
-      return;
-    }
-    let html = '<div style="font-size:13px;">';
-    for (const d of data.devices) {
-      const id   = d.id || (d.vendor_id && d.product_id ? d.vendor_id + ':' + d.product_id : '');
-      const desc = d.description || '';
-      html += '<div style="margin-bottom:4px;"><span style="font-family:monospace;color:var(--accent);">' +
-              id + '</span> ' + desc + '</div>';
-    }
-    html += '</div>';
-    body.innerHTML = html;
-  } catch (e) {
-    if (body) body.textContent = 'Error: ' + e;
-  }
-}
 
 // ── Swap Usage ────────────────────────────────────────────────────────────────
 
-async function fetchSwapUsage() {
-  const body = document.getElementById('swap-body');
-  const badge = document.getElementById('swap-badge');
-  if (!body) return;
-  body.innerHTML = '<span class="spinner"></span> Loading&hellip;';
-  try {
-    const resp = await apiFetch('/api/system/swap');
-    const d = await resp.json();
-
-    // Derive totals from swaps array (existing endpoint shape)
-    let totalKb = 0, usedKb = 0, freeKb = 0;
-    const swaps = d.swaps || [];
-    swaps.forEach(s => {
-      totalKb += s.total_kb || 0;
-      usedKb  += s.used_kb  || 0;
-      freeKb  += s.free_kb  || 0;
-    });
-    const usedPct = totalKb > 0 ? Math.round(usedKb / totalKb * 100) : 0;
-
-    // Badge colour
-    badge.textContent = usedPct + '%';
-    badge.className = 'badge ' + (usedPct >= 80 ? 'badge-red' : usedPct >= 50 ? 'badge-yellow' : 'badge-green');
-
-    const fmt = kb => kb >= 1048576 ? (kb/1048576).toFixed(1)+' GB'
-                    : kb >= 1024    ? (kb/1024).toFixed(0)+' MB'
-                    :                 kb+' KB';
-
-    let html = '';
-    if (totalKb === 0) {
-      html = '<span style="color:var(--text-dim)">No swap configured</span>';
-    } else {
-      // Progress bar
-      const barColour = usedPct >= 80 ? 'var(--red)' : usedPct >= 50 ? 'var(--yellow)' : 'var(--green)';
-      html += `<div class="disk-bar-wrap" style="height:8px;margin-bottom:8px;">
-        <div class="disk-bar" style="width:${usedPct}%;background:${barColour};"></div>
-      </div>`;
-      html += `<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px;">
-        <span>Total: <b>${fmt(totalKb)}</b></span>
-        <span>Used: <b>${fmt(usedKb)}</b></span>
-        <span>Free: <b>${fmt(freeKb)}</b></span>
-      </div>`;
-      if (swaps.length > 0) {
-        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;">';
-        html += '<tr style="color:var(--text-dim);"><th style="text-align:left;padding:2px 6px;">Device</th><th style="text-align:left;padding:2px 6px;">Type</th><th style="text-align:right;padding:2px 6px;">Size</th><th style="text-align:right;padding:2px 6px;">Used</th><th style="text-align:right;padding:2px 6px;">Priority</th></tr>';
-        swaps.forEach(s => {
-          html += `<tr><td style="padding:2px 6px;">${s.filename||'-'}</td><td style="padding:2px 6px;">${s.type||'-'}</td><td style="text-align:right;padding:2px 6px;">${fmt(s.total_kb||0)}</td><td style="text-align:right;padding:2px 6px;">${fmt(s.used_kb||0)}</td><td style="text-align:right;padding:2px 6px;">${s.priority??'-'}</td></tr>`;
-        });
-        html += '</table>';
-      }
-    }
-    body.innerHTML = html;
-  } catch (e) {
-    body.textContent = 'Failed: ' + e;
-  }
-}
 
 // ── Entropy ───────────────────────────────────────────────────────────────────
 
-async function fetchEntropy() {
-  const badge = document.getElementById('entropy-badge');
-  const body = document.getElementById('card-entropy-body');
-  if (!body) return;
-  try {
-    const d = await apiFetch('/api/system/entropy');
-    if (badge) badge.textContent = `${d.entropy_avail} bits (${d.health})`;
-    const barColor = d.health === 'good' ? 'var(--green)' : d.health === 'low' ? '#e0b252' : 'var(--red, #e05252)';
-    const barPct = Math.min(d.fill_pct, 100);
-    let html = `<div style="background:var(--card-bg,#333);border-radius:4px;height:10px;overflow:hidden;margin-bottom:8px;">`;
-    html += `<div style="width:${barPct}%;height:100%;background:${barColor};transition:width 0.3s;"></div></div>`;
-    html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:12px;">`;
-    html += `<div style="color:var(--text-dim);">Available</div><div>${d.entropy_avail} bits</div>`;
-    html += `<div style="color:var(--text-dim);">Pool Size</div><div>${d.pool_size} bits</div>`;
-    html += `<div style="color:var(--text-dim);">Write Threshold</div><div>${d.write_wakeup_threshold} bits</div>`;
-    html += `<div style="color:var(--text-dim);">RNG Source</div><div>${escHtml(d.rng_source)}</div>`;
-    html += `</div>`;
-    body.innerHTML = html;
-  } catch (e) {
-    if (badge) badge.textContent = 'error';
-    if (body) body.innerHTML = `<div style="color:var(--text-dim);font-size:13px;">Failed: ${e}</div>`;
-  }
-}
 
 // ── System Uptime ─────────────────────────────────────────────────────────────
 
@@ -10759,7 +10392,7 @@ async function fetchUptimeCard() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/uptime');
+    const d = await (await apiFetch('/api/system/uptime')).json();
     if (badge) badge.textContent = d.uptime_human || '—';
     // Load average color coding: green <0.7/core, yellow <1.0/core, red >=1.0/core (4 cores)
     const cores = 4;
@@ -10795,7 +10428,7 @@ async function fetchTopProcs() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/top-procs');
+    const d = await (await apiFetch('/api/system/top-procs')).json();
     if (badge) badge.textContent = d.count ?? '—';
     if (!d.processes || d.processes.length === 0) {
       el.innerHTML = '<span style="color:var(--text-dim)">No processes found.</span>';
@@ -10816,6 +10449,10 @@ async function fetchTopProcs() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading processes</span>';
+}
+}
+
+
 // ── CPU Temperature ───────────────────────────────────────────────────────────
 async function fetchCpuTempCard() {
   const el = document.getElementById('cputemp-body');
@@ -10823,7 +10460,7 @@ async function fetchCpuTempCard() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/cputemp');
+    const d = await (await apiFetch('/api/system/cputemp')).json();
     const max = d.max_temp_c ?? 0;
     if (badge) {
       badge.textContent = max.toFixed(1) + '°C';
@@ -10864,7 +10501,7 @@ async function fetchDnsStats() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/dns-stats');
+    const d = await (await apiFetch('/api/system/dns-stats')).json();
     if (badge) badge.textContent = d.current_server || (d.servers && d.servers[0]) || '—';
     if (!d.available) {
       let html = `<div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;">resolvectl not available</div>`;
@@ -10907,7 +10544,7 @@ async function fetchDiskstats() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/diskstats');
+    const d = await (await apiFetch('/api/system/diskstats')).json();
     if (badge) badge.textContent = d.count ?? '—';
     if (!d.devices || d.devices.length === 0) {
       el.innerHTML = '<span style="color:var(--text-dim)">No block devices found.</span>';
@@ -10945,7 +10582,7 @@ async function fetchNatConn() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/network/nat-connections');
+    const d = await (await apiFetch('/api/network/nat-connections')).json();
     if (!d.available) {
       if (badge) badge.textContent = 'N/A';
       el.innerHTML = '<span style="color:var(--text-dim)">conntrack not available on this system</span>';
@@ -11003,7 +10640,7 @@ async function fetchRouteTableCard() {
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/network/route-table');
+    const d = await (await apiFetch('/api/network/route-table')).json();
     if (badge) badge.textContent = d.count;
     if (!d.routes || d.routes.length === 0) {
       el.innerHTML = '<span style="color:var(--text-dim)">No routes found</span>';
@@ -11032,49 +10669,12 @@ async function fetchRouteTableCard() {
     el.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') el.innerHTML = '<span style="color:var(--text-dim)">Error loading route table</span>';
+}
+}
+
+
 // ── Failed Units ─────────────────────────────────────────────────────────────
 
-async function fetchFailedUnits() {
-  const badge = document.getElementById('failed-units-badge');
-  const body  = document.getElementById('failed-units-body');
-  // legacy card support
-  const legacyEl = document.getElementById('failed-units-content');
-  if (body) body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const r = await apiFetch('/api/system/failed-units');
-    const d = await r.json();
-    if (d.healthy) {
-      if (badge) { badge.textContent = '✓ healthy'; badge.style.background = 'var(--green,#22c55e)'; badge.style.color = '#fff'; }
-      const msg = '<span style="color:var(--green,#22c55e)">✓ All units healthy</span>';
-      if (body) body.innerHTML = msg;
-      if (legacyEl) legacyEl.innerHTML = '<p style="color:var(--green)">✓ All systemd units healthy</p>';
-      return;
-    }
-    if (badge) { badge.textContent = d.count + ' failed'; badge.style.background = 'var(--red,#ef4444)'; badge.style.color = '#fff'; }
-    let html = '<ul style="margin:0;padding-left:16px;font-size:13px;">';
-    for (const u of d.units) {
-      html += `<li style="margin-bottom:4px;"><strong style="color:var(--red,#ef4444);">${escHtml(u.name || u.unit)}</strong>`;
-      if (u.description) html += ` — <span style="color:var(--text-dim);">${escHtml(u.description)}</span>`;
-      html += '</li>';
-    }
-    html += '</ul>';
-    if (body) body.innerHTML = html;
-    if (legacyEl) {
-      let legHtml = `<p style="color:var(--red);margin-bottom:6px">⚠ ${d.count} failed unit${d.count !== 1 ? 's' : ''}</p>`;
-      legHtml += '<table class="table"><thead><tr><th>Unit</th><th>Load</th><th>Active</th><th>Sub</th><th>Description</th></tr></thead><tbody>';
-      for (const u of d.units) {
-        legHtml += `<tr><td><code>${u.unit}</code></td><td>${u.load}</td><td style="color:var(--red)">${u.active}</td><td>${u.sub}</td><td>${u.description}</td></tr>`;
-      }
-      legHtml += '</tbody></table>';
-      legacyEl.innerHTML = legHtml;
-    }
-  } catch (e) {
-    if (e.message !== 'Unauthorized') {
-      if (body) body.innerHTML = '<span style="color:var(--text-dim)">Error loading failed units</span>';
-      if (legacyEl) legacyEl.innerHTML = `<p class="error">${e}</p>`;
-    }
-  }
-}
 
 // ── USB Devices (v2) ──────────────────────────────────────────────────────────
 
@@ -11140,6 +10740,15 @@ async function fetchArpTableV3() {
       html += `<td style="padding:4px 8px;font-family:monospace;">${escHtml(e.ip)}</td>`;
       html += `<td style="padding:4px 8px;font-family:monospace;">${escHtml(e.mac)}</td>`;
       html += `<td style="padding:4px 8px;">${escHtml(e.iface)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  } catch (e) {
+    if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading ARP table</span>';
+  }
+}
+
 // ── SSH Keys (v3) ─────────────────────────────────────────────────────────────
 
 async function fetchSshKeysV3() {
@@ -11148,7 +10757,7 @@ async function fetchSshKeysV3() {
   if (!body) return;
   body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/ssh-keys');
+    const d = await (await apiFetch('/api/system/ssh-keys')).json();
     if (badge) badge.textContent = d.count + ' key' + (d.count !== 1 ? 's' : '');
     if (!d.keys || d.keys.length === 0) {
       body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">No authorized keys found.</span>';
@@ -11170,7 +10779,6 @@ async function fetchSshKeysV3() {
     html += '</tbody></table>';
     body.innerHTML = html;
   } catch (e) {
-    if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading ARP table</span>';
     if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;">Error loading SSH keys</span>';
   }
 }
@@ -11210,13 +10818,17 @@ async function fetchCronJobs() {
     body.innerHTML = html;
   } catch (e) {
     if (e.message !== 'Unauthorized') body.innerHTML = '<span style="color:var(--danger)">Failed to load cron jobs</span>';
+}
+}
+
+
 // ── Ping Check ────────────────────────────────────────────────────────────────
 
 async function fetchPingCheck() {
   const body = document.getElementById('ping-check-body');
   const badge = document.getElementById('ping-check-badge');
   try {
-    const d = await apiFetch('/api/network/ping-check');
+    const d = await (await apiFetch('/api/network/ping-check')).json();
     badge.textContent = d.reachable_count + '/4 up';
     badge.style.background = d.all_reachable ? 'var(--green)' : (d.reachable_count === 0 ? 'var(--red)' : 'var(--yellow)');
     if (!d.results || d.results.length === 0) {
@@ -11245,7 +10857,7 @@ async function fetchOpenPorts() {
   const badge = document.getElementById('open-ports-badge');
   if (!body) return;
   try {
-    const d = await apiFetch('/api/network/open-ports');
+    const d = await (await apiFetch('/api/network/open-ports')).json();
     badge.textContent = d.count + ' ports (' + d.tcp_count + ' tcp / ' + d.udp_count + ' udp)';
     if (!d.ports || d.ports.length === 0) {
       body.innerHTML = '<span class="dim">No listening ports found</span>';
@@ -11282,7 +10894,7 @@ async function fetchPkgUpdates() {
   if (!body) return;
   body.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
   try {
-    const d = await apiFetch('/api/system/package-updates');
+    const d = await (await apiFetch('/api/system/package-updates')).json();
     if (!d.available) {
       if (badge) { badge.textContent = 'n/a'; badge.style.background = ''; }
       body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">apt not available on this system.</p>';
@@ -11463,7 +11075,7 @@ async function fetchSpeedtest() {
   body.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Testing&hellip;</span>';
   if (badge) badge.textContent = '…';
   try {
-    const d = await apiFetch('/api/network/speedtest', { method: 'POST' });
+    const d = await (await apiFetch('/api/network/speedtest', { method: 'POST' })).json();
     if (d.error) {
       body.innerHTML = `<span style="color:var(--danger)">${d.error}</span>`;
       if (badge) badge.textContent = 'unavailable';
@@ -11494,6 +11106,10 @@ async function fetchSpeedtest() {
   } catch (e) {
     body.innerHTML = `<div style="color:var(--danger)">Failed: ${e}</div>
       <div style="margin-top:8px;"><button class="btn btn-sm" onclick="fetchSpeedtest()">&#x25B6; Retry</button></div>`;
+}
+}
+
+
 // ── System Timers ─────────────────────────────────────────────────────────────
 
 async function fetchSysTimers() {
@@ -11546,7 +11162,7 @@ async function fetchEntropy() {
   const body = document.getElementById('card-entropy-body');
   if (!body) return;
   try {
-    const d = await apiFetch('/api/system/entropy');
+    const d = await (await apiFetch('/api/system/entropy')).json();
     if (badge) badge.textContent = `${d.entropy_avail} bits (${d.health})`;
     const barColor = d.health === 'good' ? 'var(--green)' : d.health === 'low' ? '#e0b252' : 'var(--red, #e05252)';
     const barPct = Math.min(d.fill_pct, 100);
@@ -11613,38 +11229,12 @@ async function fetchLoginHistoryV4() {
 }
 
 // ── Thermal Zones ──
-async function fetchThermalZones() {
-  const badge = document.getElementById('thermal-zones-badge');
-  const body = document.getElementById('thermal-zones-body');
-  try {
-    const d = await apiFetch('/api/system/thermal-zones');
-    if (!d.zones || d.zones.length === 0) {
-      badge.textContent = 'n/a';
-      body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No thermal zones found.</p>';
-      return;
-    }
-    badge.textContent = d.max_temp !== null ? `${d.max_temp}°C` : 'n/a';
-    const statusColor = {'cool': '#22c55e', 'warm': '#f59e0b', 'hot': '#ef4444'};
-    const rows = d.zones.map(z => `
-      <tr>
-        <td style="padding:3px 8px;font-size:13px;">${z.name}</td>
-        <td style="padding:3px 8px;font-size:13px;text-align:right;color:${statusColor[z.status] || '#ccc'};">${z.temp_celsius}°C</td>
-        <td style="padding:3px 8px;font-size:12px;color:${statusColor[z.status] || '#ccc'};">${z.status}</td>
-      </tr>`).join('');
-    body.innerHTML = `<table style="width:100%;border-collapse:collapse;">
-      <thead><tr>
-        <th style="padding:3px 8px;font-size:12px;text-align:left;color:var(--text-dim);">Zone</th>
-        <th style="padding:3px 8px;font-size:12px;text-align:right;color:var(--text-dim);">Temp</th>
-        <th style="padding:3px 8px;font-size:12px;color:var(--text-dim);">Status</th>
-      </tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
 // ── NTP Sync ──
 async function fetchNtpSync() {
-  const badge = document.getElementById('ntp-sync-badge');
+  const badge = document.getElementById('ntp-sync-card-badge');
   const body = document.getElementById('ntp-sync-body');
   try {
-    const d = await apiFetch('/api/system/ntp-sync');
+    const d = await (await apiFetch('/api/system/ntp-sync')).json();
     const syncColor = d.synchronized ? '#22c55e' : '#ef4444';
     badge.textContent = d.synchronized ? 'synced' : 'not synced';
     badge.style.background = syncColor;
@@ -11668,7 +11258,7 @@ async function fetchMemoryMap() {
   const badge = document.getElementById('memory-map-badge');
   const body = document.getElementById('memory-map-body');
   try {
-    const d = await apiFetch('/api/system/memory-map');
+    const d = await (await apiFetch('/api/system/memory-map')).json();
     const pct = d.percent_used;
     const barColor = pct > 85 ? '#ef4444' : pct > 65 ? '#f59e0b' : '#22c55e';
     badge.textContent = `${pct}%`;
@@ -11685,13 +11275,17 @@ async function fetchMemoryMap() {
         <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Available</td><td style="padding:2px 8px;font-size:13px;">${d.available_mb} MB</td></tr>
         <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Cached</td><td style="padding:2px 8px;font-size:13px;">${d.cached_mb} MB</td></tr>
         <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Buffers</td><td style="padding:2px 8px;font-size:13px;">${d.buffers_mb} MB</td></tr>
-        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Swap Used</td><td style="padding:2px 8px;font-size:13px;">${d.swap_used_mb} / ${d.swap_total_mb} MB</td></tr>
+        <tr><td style="padding:2px 8px;font-size:13px;color:var(--text-dim);">Swap Used</td><td style="padding:2px 8px;font-size:13px;">${d.swap_used_mb} / ${d.swap_total_mb} MB</td></tr>`;
+  } catch (e) {}
+}
+
+
 // ── Split Tunnel Status ──
 async function fetchSplitTunnelStatus() {
   const badge = document.getElementById('split-tunnel-badge');
   const body = document.getElementById('split-tunnel-body');
   try {
-    const d = await apiFetch('/api/vpn/split-tunnel-status');
+    const d = await (await apiFetch('/api/vpn/split-tunnel-status')).json();
     const modeColors = {'split': '#3b82f6', 'vpn': '#22c55e', 'direct': '#6b7280'};
     badge.textContent = d.mode;
     badge.style.background = modeColors[d.mode] || '#6b7280';
@@ -11716,7 +11310,7 @@ async function fetchLeaseSummary() {
   const badge = document.getElementById('lease-summary-badge');
   const body = document.getElementById('lease-summary-body');
   try {
-    const d = await apiFetch('/api/network/lease-summary');
+    const d = await (await apiFetch('/api/network/lease-summary')).json();
     badge.textContent = `${d.total} leases`;
     if (d.total === 0) {
       body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No active DHCP leases.</p>';
@@ -11742,12 +11336,16 @@ async function fetchLeaseSummary() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+  } catch (e) {}
+}
+
+
 // ── Load Average ──
 async function fetchLoadAvg() {
   const badge = document.getElementById('load-avg-badge');
   const body = document.getElementById('load-avg-body');
   try {
-    const d = await apiFetch('/api/system/load-avg');
+    const d = await (await apiFetch('/api/system/load-avg')).json();
     const statusColors = {'idle':'#22c55e','normal':'#3b82f6','high':'#f59e0b','overloaded':'#ef4444'};
     const color = statusColors[d.status] || '#6b7280';
     badge.textContent = `${d.load_1m} / ${d.load_5m} / ${d.load_15m}`;
@@ -11778,7 +11376,7 @@ async function fetchRouteSummary() {
   const badge = document.getElementById('route-summary-badge');
   const body = document.getElementById('route-summary-body');
   try {
-    const d = await apiFetch('/api/network/route-summary');
+    const d = await (await apiFetch('/api/network/route-summary')).json();
     badge.textContent = `${d.total_routes} routes`;
     const defRows = d.default_routes.map(r => `
       <tr style="background:var(--bg2);">
@@ -11800,13 +11398,17 @@ async function fetchRouteSummary() {
       <tr style="border-top:1px solid var(--border);">
         <td style="padding:2px 8px;font-size:13px;font-weight:600;">Total</td>
         <td style="padding:2px 8px;font-size:13px;font-weight:600;text-align:right;">${d.total_routes}</td>
-      </tr>
+      </tr>`;
+  } catch (e) {}
+}
+
+
 // ── Top Memory ──
 async function fetchTopMemory() {
   const badge = document.getElementById('top-memory-badge');
   const body = document.getElementById('top-memory-body');
   try {
-    const d = await apiFetch('/api/system/top-memory');
+    const d = await (await apiFetch('/api/system/top-memory')).json();
     badge.textContent = `top ${d.total_shown}`;
     const rows = d.processes.map(p => `<tr>
       <td style="padding:2px 8px;font-size:12px;color:var(--text-dim);text-align:right;">${p.pid}</td>
@@ -11819,13 +11421,17 @@ async function fetchTopMemory() {
         <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">PID</th>
         <th style="padding:2px 8px;font-size:11px;text-align:left;color:var(--text-dim);">Name</th>
         <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">RSS</th>
-        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Swap</th>
+        <th style="padding:2px 8px;font-size:11px;text-align:right;color:var(--text-dim);">Swap</th>`;
+  } catch (e) {}
+}
+
+
 // ── DNS Test ──
 async function fetchDnsTest() {
   const badge = document.getElementById('dns-test-badge');
   const body = document.getElementById('dns-test-body');
   try {
-    const d = await apiFetch('/api/network/dns-test');
+    const d = await (await apiFetch('/api/network/dns-test')).json();
     badge.textContent = d.all_passed ? `${d.passed}/${d.passed + d.failed} ok` : `${d.failed} failed`;
     badge.style.background = d.all_passed ? '#22c55e' : '#ef4444';
     const rows = d.tests.map(t => `<tr>
@@ -11854,7 +11460,7 @@ async function fetchFirewallRules() {
   const badge = document.getElementById('firewall-rules-badge');
   const body = document.getElementById('firewall-rules-body');
   try {
-    const d = await apiFetch('/api/network/firewall-rules');
+    const d = await (await apiFetch('/api/network/firewall-rules')).json();
     badge.textContent = `${d.total_rules} rules`;
     if (d.total_rules === 0) {
       badge.style.background = '#ef4444';
@@ -11893,7 +11499,11 @@ async function fetchJournalBoot() {
     el.innerHTML = `
       <div class="stat-row"><span>Lines</span><span class="val">${d.total}</span></div>
       <div class="stat-row"><span>Errors/Fails</span><span class="val ${d.error_count > 0 ? 'warn' : ''}">${d.error_count}</span></div>
-      ${d.errors.length ? '<div class="sub-label">Recent errors:</div>' + d.errors.map(l => `<div class="log-line">${l}</div>`).join('') : '<div class="ok-msg">No errors in boot log</div>'}
+      ${d.errors.length ? '<div class="sub-label">Recent errors:</div>' + d.errors.map(l => `<div class="log-line">${l}</div>`).join('') : '<div class="ok-msg">No errors in boot log</div>'}`;
+  } catch (e) {}
+}
+
+
 // ── Swap Usage ──
 async function fetchSwapUsage() {
   const el = document.getElementById('swap-usage-body');
@@ -11924,6 +11534,10 @@ async function fetchNetworkErrors() {
       `<div class="stat-row warn"><span>${i.iface}</span><span class="val">rx_err:${i.rx_errors} tx_err:${i.tx_errors} drop:${i.rx_dropped+i.tx_dropped}</span></div>`
     ).join('');
     el.innerHTML = `<div class="stat-row"><span>Total errors</span><span class="val warn">${d.total_errors}</span></div>${rows}`;
+  } catch (e) {}
+}
+
+
 // ── Sysctl Security ──
 async function fetchSysctlSecurity() {
   const el = document.getElementById('sysctl-security-body');
@@ -11956,6 +11570,10 @@ async function fetchDiskTemp() {
       `<div class="stat-row ${d.hot_disks.some(h=>h.device===disk.device)?'warn':''}"><span>${disk.device}</span><span class="val">${disk.temp_c}°C</span></div>`
     ).join('');
     el.innerHTML = rows;
+  } catch (e) {}
+}
+
+
 // ── Login History ──
 async function fetchLoginHistory() {
   const el = document.getElementById('login-history-body');
@@ -12427,7 +12045,7 @@ async function fetchSshKeys() {
 // ── ARP Clients ───────────────────────────────────────────────────────────────
 
 async function fetchArpClients() {
-  const el = document.getElementById('clients-content');
+  const el = document.getElementById('arp-clients-content');
   if (!el) return;
   el.innerHTML = '<span style="color:var(--text-dim)"><span class="spinner"></span> Loading&hellip;</span>';
   try {
@@ -12783,22 +12401,6 @@ async function fetchProcTop() {
 }
 
 // ── USB Devices ───────────────────────────────────────────────────────────────
-async function fetchUsbDevices() {
-  try {
-    const r = await fetch('/api/system/usb-devices');
-    const d = await r.json();
-    const el = document.getElementById('usb-content');
-    if (d.error) { el.innerHTML = `<p class="error">${d.error}</p>`; return; }
-    if (!d.devices || d.devices.length === 0) { el.innerHTML = '<p class="muted">No USB devices found.</p>'; return; }
-    let html = `<p class="muted" style="margin-bottom:6px">Devices: <strong>${d.count}</strong></p>`;
-    html += '<table class="table"><thead><tr><th>Bus</th><th>Device</th><th>ID</th><th>Description</th></tr></thead><tbody>';
-    for (const dev of d.devices) {
-      html += `<tr><td>${dev.bus}</td><td>${dev.device}</td><td><code>${dev.id}</code></td><td>${dev.description}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  } catch(e) { document.getElementById('usb-content').innerHTML = `<p class="error">${e}</p>`; }
-}
 
 // ── System Temperature Details ────────────────────────────────────────────────
 
@@ -13753,44 +13355,6 @@ async function fetchOpenFiles() {
 }
 
 // ── ARP / Neighbor Table ──────────────────────────────────────────────────────
-async function fetchArpTable() {
-  const el = document.getElementById('arp-table-content');
-  const badge = document.getElementById('arp-table-count');
-  if (!el) return;
-  el.innerHTML = '<span style="color:var(--text-dim);font-size:13px;"><span class="spinner"></span> Loading&hellip;</span>';
-  try {
-    const r = await fetch('/api/network/arp');
-    const d = await r.json();
-    if (badge) badge.textContent = `${d.reachable || 0} reachable`;
-    let html = '';
-    const neighbors = d.neighbors || [];
-    if (neighbors.length === 0) {
-      html = '<p class="muted">No ARP neighbors found.</p>';
-    } else {
-      const stateColor = s => s === 'REACHABLE' ? '#16a34a' : s === 'STALE' ? '#f59e0b' : s === 'DELAY' ? '#f59e0b' : '#6b7280';
-      html += '<div style="max-height:280px;overflow-y:auto;">';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:11px;">';
-      html += `<thead><tr style="color:var(--text-dim);font-size:10px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);">
-        <th style="text-align:left;padding:2px 5px;">IP</th>
-        <th style="text-align:left;padding:2px 5px;">MAC</th>
-        <th style="text-align:left;padding:2px 5px;">Iface</th>
-        <th style="text-align:left;padding:2px 5px;">State</th>
-      </tr></thead><tbody>`;
-      for (const n of neighbors) {
-        const col = stateColor(n.state);
-        html += `<tr style="border-bottom:1px solid var(--border);">
-          <td style="padding:2px 5px;font-family:monospace;font-weight:500;${n.is_ipv6 ? 'font-size:10px;' : ''}">${n.ip}</td>
-          <td style="padding:2px 5px;font-family:monospace;font-size:10px;color:var(--text-dim)">${n.mac || '—'}</td>
-          <td style="padding:2px 5px;color:var(--text-dim)">${n.iface}</td>
-          <td style="padding:2px 5px;"><span style="color:${col};font-size:10px;font-weight:600">${n.state}</span></td>
-        </tr>`;
-      }
-      html += '</tbody></table></div>';
-      html += `<div style="font-size:11px;color:var(--text-dim);margin-top:6px;">${d.reachable || 0} reachable · ${d.stale || 0} stale · ${d.count || 0} total</div>`;
-    }
-    el.innerHTML = html;
-  } catch(e) { el.innerHTML = `<p class="error">${e}</p>`; }
-}
 
 // ── IP Routing Table ──────────────────────────────────────────────────────────
 
@@ -14417,7 +13981,7 @@ async function fetchCpuTemp() {
   const badge = document.getElementById('cpu-temp-badge');
   const body = document.getElementById('cpu-temp-body');
   try {
-    const d = await apiFetch('/api/system/cpu-temp');
+    const d = await (await apiFetch('/api/system/cpu-temp')).json();
     const statusColors = {'cool':'#22c55e','normal':'#3b82f6','warm':'#f59e0b','hot':'#ef4444'};
     const color = statusColors[d.status] || '#6b7280';
     badge.textContent = `${d.temp_celsius}°C`;
@@ -14490,7 +14054,7 @@ async function fetchDiskIo() {
   const badge = document.getElementById('disk-io-badge');
   const body = document.getElementById('disk-io-body');
   try {
-    const d = await apiFetch('/api/system/disk-io');
+    const d = await (await apiFetch('/api/system/disk-io')).json();
     if (!d.devices || d.devices.length === 0) {
       badge.textContent = 'n/a';
       body.innerHTML = '<p style="color:var(--text-dim);font-size:13px;">No block devices found.</p>';
@@ -16101,38 +15665,6 @@ async function fetchUsbDevices() {
 
 // ── ARP / Neighbor Table ──────────────────────────────────────────────────────
 
-async function fetchArpTable() {
-  const el = document.getElementById('arp-table-content');
-  try {
-    const r = await fetch('/api/network/arp');
-    if (!r.ok) { el.textContent = 'Error ' + r.status; return; }
-    const d = await r.json();
-    const stateColor = { REACHABLE: '#2ecc71', STALE: '#f39c12', INCOMPLETE: '#e74c3c', UNKNOWN: '#95a5a6' };
-    let html = `<div class="card-title">&#x1F5A7; ARP Table <span style="font-size:11px;background:var(--border);border-radius:10px;padding:1px 7px;margin-left:6px;">${d.count}</span></div>`;
-    if (d.error) { html += `<div style="color:var(--text-dim);font-size:13px;">${d.error}</div>`; el.innerHTML = html; return; }
-    if (!d.entries || d.entries.length === 0) { html += '<div style="color:var(--text-dim);font-size:13px;">No ARP entries found</div>'; el.innerHTML = html; return; }
-    html += '<table style="width:100%;border-collapse:collapse;">';
-    html += `<thead><tr style="color:var(--text-dim);font-size:11px;border-bottom:1px solid var(--border);">
-      <th style="text-align:left;padding:3px 8px;">IP</th>
-      <th style="text-align:left;padding:3px 8px;">MAC</th>
-      <th style="text-align:left;padding:3px 8px;">Interface</th>
-      <th style="text-align:left;padding:3px 8px;">State</th>
-    </tr></thead><tbody>`;
-    for (const e of d.entries) {
-      const color = stateColor[e.state] || stateColor.UNKNOWN;
-      html += `<tr style="border-bottom:1px solid var(--border);">
-        <td style="padding:3px 8px;font-family:monospace;">${e.ip}</td>
-        <td style="padding:3px 8px;font-family:monospace;color:var(--text-dim);">${e.mac}</td>
-        <td style="padding:3px 8px;">${e.iface}</td>
-        <td style="padding:3px 8px;"><span style="color:${color};font-weight:600;">${e.state}</span></td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-    el.innerHTML = html;
-  } catch (e) {
-    el.textContent = 'Failed: ' + e;
-  }
-}
 
 // ── ARP / Neighbor Table ───────────────────────────────────────────────────────
 
@@ -16205,5 +15737,6 @@ async function runLanScan() {
     if (btn) { btn.disabled = false; btn.textContent = '🔍 Scan'; }
   }
 }
-
-<
+</script>
+</body>
+</html>

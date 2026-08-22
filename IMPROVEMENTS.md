@@ -69,6 +69,8 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | Real-time traffic inspector (#34) | `bmon` (per-interface) + `iftop` (per-connection) installed; accessible from TUI Network submenu |
 | ✅ | vnStat Prometheus push (#48) | `vnstat-push.sh` + hourly timer; pushes rx/tx bytes to `PUSHGW_URL` as Prometheus text metrics |
 | ✅ | PiSugar 3 UPS monitor (#50) | `ups-monitor.sh` + 5-min timer; REST API → sysfs fallback; ntfy alert + safe shutdown at `UPS_SHUTDOWN_THRESHOLD`%; enable with `ENABLE_UPS_MONITOR=1` |
+| ✅ | USB drive file sharing (#30) | `usb-share.sh` — guest SMB share of `/media/travel-data` on uap0/usb0/tailscale0 only; enable with `ENABLE_USB_SHARE=1`; `USB_SHARE_NAME` / `USB_SHARE_RO` |
+| ✅ | Read-only root toggle (#10) | `overlayfs-ctl.sh` (enable / disable / status) — overlayfs via raspi-config; protects SD card from power-loss corruption; also in TUI System screen |
 
 Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 
@@ -164,8 +166,8 @@ sudo apt install -y stubby
 #### 9. Selective Tailscale Routing by Client MAC
 Route specific devices through Tailscale exit node while others go direct.
 
-#### 10. Read-Only Root Filesystem (overlayfs)
-Prevents SD card corruption from sudden power loss. Enable via `raspi-config → Performance Options → Overlay File System`. Disable before any system updates.
+#### ✅ 10. Read-Only Root Filesystem (overlayfs) *(deployed)*
+Prevents SD card corruption from sudden power loss. Deployed as `overlayfs-ctl.sh enable|disable|status` (TUI: System → Toggle read-only root). Disable before any system updates.
 
 #### 11. Scheduled SSID Disable
 Disable the AP at night to reduce attack surface and RF exposure.
@@ -234,7 +236,7 @@ sudo apt install -y unattended-upgrades
 |---|---|---|---|
 | 28 | **mDNS Bridging (Avahi Reflector)** — bridge mDNS between uap0 and tailscale0; unlocks AirPrint, AirPlay, NAS discovery across Tailscale | Low | `avahi-daemon` (already installed) |
 | 29 | **Scheduled SSID Disable** — hostapd_cli disable/enable on timer; reduces attack surface and RF during sleep | Low | systemd timer + `hostapd_cli` |
-| 30 | **USB Drive File Sharing** — plug USB drive into Pi (via hub); expose via Samba or SFTP to AP clients; travel NAS mode | Medium | `samba` / `minidlna` / `vsftpd` |
+| ✅ 30 | **USB Drive File Sharing** *(deployed)* — `usb-share.sh`; guest SMB share of the mounted drive to AP clients; enable with `ENABLE_USB_SHARE=1` | Medium | `samba` |
 | 31 | **Captive Portal MAC Clone** — clone laptop MAC to wlan0 before portal auth; hotel sees one device for all connected clients | Low | `macchanger` (already installed) |
 
 ### Monitoring & Analytics

@@ -87,11 +87,21 @@ fi
 _section "Python lint (flake8)"
 
 if command -v flake8 &>/dev/null; then
-    if flake8 firstboot/ web/ --max-line-length=120 --ignore=E501 2>/dev/null; then
-        _ok "flake8: no errors"
+    # firstboot/: full style gate (mirrors python-lint.yml)
+    if flake8 firstboot/ --max-line-length=120 --ignore=E501 2>/dev/null; then
+        _ok "flake8 firstboot/: no errors"
     else
-        _fail "flake8 errors:"
-        flake8 firstboot/ web/ --max-line-length=120 --ignore=E501 || true
+        _fail "flake8 firstboot/ errors:"
+        flake8 firstboot/ --max-line-length=120 --ignore=E501 || true
+    fi
+    # web/: correctness gate — syntax errors, all pyflakes checks (unused
+    # imports/vars, redefinitions, undefined names), and E7 comparisons.
+    # Only deliberate late imports (E402) and W503/E501 style opinions remain.
+    if flake8 web/ --max-line-length=120 --select=E7,E9,F 2>/dev/null; then
+        _ok "flake8 web/ (correctness): no errors"
+    else
+        _fail "flake8 web/ correctness errors:"
+        flake8 web/ --max-line-length=120 --select=E7,E9,F || true
     fi
 else
     echo "  (flake8 not installed — skipping)"
@@ -111,16 +121,44 @@ fi
 _section "Pytest"
 
 if command -v pytest &>/dev/null; then
-    if pytest tests/unit/test_server.py -q 2>&1 | tail -5; then
+    # Capture output so the if tests pytest's exit code, not tail's.
+    if _py_out="$(pytest tests/unit/ -q 2>&1)"; then
+        echo "${_py_out}" | tail -5
         _ok "pytest: all tests passed"
     else
+        echo "${_py_out}" | tail -15
         _fail "pytest: test failures (see above)"
     fi
 else
     echo "  (pytest not installed — skipping; install with: pip install pytest)"
 fi
 
-# ── 7. Key file existence checks ─────────────────────────────────────────────
+# ── 7. Integration tests (mirrors unit-tests.yml, blocking) ──────────────────
+_section "Integration tests"
+
+if command -v bats &>/dev/null; then
+    if _ibats_out="$(bats tests/integration/ 2>&1)"; then
+        echo "${_ibats_out}" | tail -3
+        _ok "bats integration: all tests passed"
+    else
+        echo "${_ibats_out}" | tail -15
+        _fail "bats integration: test failures (see above)"
+    fi
+else
+    echo "  (bats not installed — skipping)"
+fi
+
+if command -v pytest &>/dev/null; then
+    if _ipy_out="$(pytest tests/integration/ -q 2>&1)"; then
+        echo "${_ipy_out}" | tail -3
+        _ok "pytest integration: all tests passed"
+    else
+        echo "${_ipy_out}" | tail -15
+        _fail "pytest integration: test failures (see above)"
+    fi
+fi
+
+# ── 8. Key file existence checks ─────────────────────────────────────────────
 _section "Key file existence"
 
 REQUIRED_FILES=(

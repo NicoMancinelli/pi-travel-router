@@ -5,6 +5,92 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.33.0] — 2026-06-13
+
+### Fixed
+- **Three dashboard endpoints raised on every request** — `_run()` returns a
+  `(stdout, returncode)` 2-tuple, but `/api/system/sysctl-security`,
+  `/api/system/sysctl-net`, and `/api/system/i2c-devices` unpacked three values
+  (i2c-devices also had the order reversed). Surfaced by runtime smoke-testing the
+  live app, not just import/parse checks.
+- **Four dashboard cards rendered empty due to API contract mismatches** — after the
+  duplicate-route cleanup, the surviving implementation didn't return the keys its
+  card's JS reads (these keys were absent at HEAD too, so the cards never worked).
+  Augmented: `/api/system/sysctl-security` (+values/issues/secure),
+  `/api/system/cpu-freq` (+available/avg_freq_mhz/per-core freq_mhz),
+  `/api/system/pi-hardware` (+core_count/ram_mb), `/api/network/routes` (+default_gw).
+
+### Added
+- Regression tests: `_run` must return a 2-tuple, a static scan banning 3-tuple
+  `_run` unpacks anywhere in app.py, and a contract test asserting deduped endpoints
+  return the keys their dashboard cards consume.
+
+## [3.32.0] — 2026-06-12
+
+### Fixed
+- **Dashboard JavaScript was entirely dead** — the page's single script block had a
+  syntax error at HEAD (truncated functions, unterminated template literals from the
+  same generator corruption found in app.py), so no dashboard JS executed in browsers
+  at all. Repaired 29 truncated functions, removed 16 duplicate function declarations
+  and 14 duplicate card blocks, restored 40 missing closing divs (balance was 78 off,
+  now 0), fixed 54 callers that used apiFetch's raw Response as parsed data, resolved
+  6 element-id collisions (3 dead stub cards removed, 3 ids renamed), and closed the
+  document properly (it ended with a dangling `<`, missing </script></body></html>).
+  Verified: full script parses (node --check), 0 duplicate ids, all 277 referenced
+  endpoints exist.
+- `ci-preflight.sh` pytest gate tested tail's exit code instead of pytest's,
+  silently passing on failures.
+
+### Changed
+- Integration tests (19 pytest + 12 bats, which boot the real Flask app) are now
+  blocking in CI and run in ci-preflight — removing the `|| true` that masked the
+  dashboard breakage.
+- Flag coverage completed: `ENABLE_USB_SHARE` in the firstboot wizard (checkbox +
+  BOOL_FLAGS + env contract), `ENABLE_LTE_MODEM` toggle in the TUI Features screen.
+
+## [3.31.0] — 2026-06-12
+
+### Fixed
+- **CPU Load History dashboard card always showed its error state** — it fetched
+  `/api/system/load-history`, which was never implemented. Added the endpoint (load
+  averages plus instantaneous per-CPU user/system/iowait/busy from two `/proc/stat`
+  samples) and switched the card to the authenticated `apiFetch` helper. Found by
+  auditing all 288 `/api` URLs referenced by the dashboard against registered routes.
+- **OTA updates never refreshed `/usr/local/sbin` admin scripts** — `update-router.sh`
+  now carries an explicit `SBIN_SCRIPT_ALLOWLIST` (mount-storage, usb-share,
+  overlayfs-ctl, schedule-reboot, speedtest, set-doh-resolver, apply-privacy-profile,
+  config-backup, apply-qos) with the same atomic-copy/diff-skip pattern as bin scripts.
+
+### Changed
+- `web/app.py` lint cleanup: 273 flake8 violations down to 5 deliberate ones (unused
+  imports/variables removed, blank-line/whitespace normalization, ambiguous names
+  renamed). Routes verified unchanged at 323. `ci-preflight.sh` now gates `web/` on
+  the full correctness set (E7, E9, all pyflakes F codes).
+
+## [3.30.0] — 2026-06-12
+
+### Fixed
+- **Web dashboard failed to start** — Flask raised `AssertionError: View function
+  mapping is overwriting an existing endpoint` at import time. Removed 15 duplicate
+  same-URL route definitions and 5 shadowed dead routes, renamed 3 function-name
+  collisions serving distinct URLs, and relocated 12 section banners that had been
+  inserted inside function bodies. The dashboard boots again with 322 unique routes.
+- CI now actually guards the dashboard: a blocking import/duplicate-route smoke test
+  (`tests/unit/test_web_app.py`) runs in the pytest jobs (x86 + ARM64), and
+  `ci-preflight.sh` gates `web/` on flake8 correctness codes (E9, F63, F7, F82, F811).
+
+### Added
+- **USB drive file sharing / travel NAS (#30)** — `usb-share.sh enable|disable|status`
+  shares `/media/travel-data` as a guest SMB share to AP clients, bound to
+  uap0/usb0/tailscale0 only (never exposed on uplinks). Enable with
+  `ENABLE_USB_SHARE=1`; `USB_SHARE_NAME` and `USB_SHARE_RO` configure the share.
+  Wired into install.sh prompts, the TUI Features/Settings screens, and `/api/storage`
+  (new `share` key). 17 unit tests.
+- **Read-only root toggle (#10)** — `overlayfs-ctl.sh status|enable|disable` wraps
+  `raspi-config nonint do_overlayfs` to put the root filesystem behind a RAM overlay,
+  eliminating SD-card corruption from power loss. TUI System screen button with
+  status-aware confirm. Disable before updates. 8 unit tests.
+
 ## [3.29.0] — 2026-05-26
 
 ### Added

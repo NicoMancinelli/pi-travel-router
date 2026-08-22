@@ -946,12 +946,14 @@ FEATURE_FLAGS = [
     "ENABLE_PER_DEVICE_VPN",
     "ENABLE_CAKE_AUTOTUNE",
     "ENABLE_UPS_MONITOR",
+    "ENABLE_USB_SHARE",
     "ENABLE_BANDWIDTH_DASHBOARD",
     "ENABLE_SPLIT_TUNNEL",
     "ENABLE_2FA",
     "ENABLE_WAN_METRICS",
     "ENABLE_PROMETHEUS_EXPORTER",
     "ENABLE_WIREGUARD",
+    "ENABLE_LTE_MODEM",
 ]
 
 
@@ -1050,6 +1052,16 @@ class FeaturesScreen(Screen):
                     run(["systemctl", "enable", "--now", "ups-monitor.timer"])
                 else:
                     run(["systemctl", "disable", "--now", "ups-monitor.timer"])
+            elif flag == "ENABLE_USB_SHARE":
+                if enable:
+                    run(["/usr/local/sbin/usb-share.sh", "enable"], timeout=30)
+                else:
+                    run(["/usr/local/sbin/usb-share.sh", "disable"], timeout=30)
+            elif flag == "ENABLE_LTE_MODEM":
+                if enable:
+                    run(["systemctl", "enable", "--now", "modem-watchdog.timer"])
+                else:
+                    run(["systemctl", "disable", "--now", "modem-watchdog.timer"])
             elif flag == "ENABLE_WAN_METRICS":
                 if enable:
                     run(["systemctl", "enable", "--now", "wan-metrics.timer"])
@@ -1529,6 +1541,7 @@ SETTINGS_ITEMS = [
     ("AP_DISABLE_TIME", "AP Disable Time (HH:MM)", False),
     ("AP_ENABLE_TIME", "AP Enable Time (HH:MM)", False),
     ("UPS_SHUTDOWN_THRESHOLD", "UPS Shutdown Threshold %", False),
+    ("USB_SHARE_NAME", "USB Share Name", False),
     ("PUSHGW_URL", "Prometheus Pushgw URL", False),
     ("SSH_ADMIN_KEY", "SSH Admin Public Key", False),
 ]
@@ -1670,6 +1683,7 @@ class SystemScreen(Screen):
             yield Button("Set up 2FA / TOTP", id="2fa-btn", classes="action")
             yield Button("Update threat-intel blocklists", id="blocklist-btn", classes="action")
             yield Button("Generate bandwidth report", id="bwreport-btn", classes="action")
+            yield Button("Toggle read-only root (overlayfs)", id="overlay-btn", classes="action")
         yield Footer()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -1717,6 +1731,27 @@ class SystemScreen(Screen):
             self.run_worker(lambda: self._run_long_cmd(
                 ["/usr/local/bin/generate-bandwidth-report.sh"], "Bandwidth report", timeout=60
             ), thread=True)
+        elif bid == "overlay-btn":
+            _rc, out, _err = run(["/usr/local/sbin/overlayfs-ctl.sh", "status"])
+            active = '"active": true' in out
+            action = "disable" if active else "enable"
+            if active:
+                msg = ("Read-only root is ACTIVE — all writes go to RAM.\n"
+                       "Disable it and reboot to make changes persistent again?")
+            else:
+                msg = ("Enable read-only root? Writes go to RAM until disabled — "
+                       "protects the SD card from power-loss corruption.\n"
+                       "Disable before updates. Rebuilds initramfs (a few minutes); "
+                       "reboot required.")
+            self.app.push_screen(
+                ConfirmModal(f"{action.capitalize()} read-only root", msg),
+                lambda r, a=action: self.run_worker(
+                    lambda: self._run_long_cmd(
+                        ["/usr/local/sbin/overlayfs-ctl.sh", a],
+                        f"overlayfs {a}", timeout=600,
+                    ), thread=True,
+                ) if r else None,
+            )
 
     def _got_new_pw(self, pw: str | None) -> None:
         if not pw:

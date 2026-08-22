@@ -98,3 +98,55 @@ _load_update_router() {
     [ "$(readlink "${UPDATE_ROUTER_BIN_DIR}/travel-status")" = "travel-status.sh" ]
     grep -q "updated OTA script: ota-update.sh" "${TEST_ROOT}/update.log"
 }
+
+@test "apply_update installs allowlisted sbin scripts during OTA" {
+    _load_update_router
+
+    src="${TEST_ROOT}/src"
+    mkdir -p "${src}/scripts"
+    printf '%s\n' '#!/bin/bash' 'echo new share' > "${src}/scripts/usb-share.sh"
+    printf '%s\n' '#!/bin/bash' 'echo new mount' > "${src}/scripts/mount-storage.sh"
+    printf '%s\n' '#!/bin/bash' 'echo install' > "${src}/install.sh"
+
+    printf '%s\n' '#!/bin/bash' 'echo old share' > "${UPDATE_ROUTER_SBIN_DIR}/usb-share.sh"
+
+    changed=0
+    run apply_update "$src"
+
+    [ "$status" -eq 0 ]
+    grep -q "new share" "${UPDATE_ROUTER_SBIN_DIR}/usb-share.sh"
+    [ -x "${UPDATE_ROUTER_SBIN_DIR}/usb-share.sh" ]
+    grep -q "new mount" "${UPDATE_ROUTER_SBIN_DIR}/mount-storage.sh"
+    grep -q "updated sbin script: usb-share.sh" "${TEST_ROOT}/update.log"
+}
+
+@test "apply_update does not install non-allowlisted scripts to sbin" {
+    _load_update_router
+
+    src="${TEST_ROOT}/src"
+    mkdir -p "${src}/scripts"
+    printf '%s\n' '#!/bin/bash' 'echo evil' > "${src}/scripts/evil-script.sh"
+    printf '%s\n' '#!/bin/bash' 'echo install' > "${src}/install.sh"
+
+    changed=0
+    run apply_update "$src"
+
+    [ "$status" -eq 0 ]
+    [ ! -e "${UPDATE_ROUTER_SBIN_DIR}/evil-script.sh" ]
+}
+
+@test "apply_update skips unchanged sbin scripts" {
+    _load_update_router
+
+    src="${TEST_ROOT}/src"
+    mkdir -p "${src}/scripts"
+    printf '%s\n' '#!/bin/bash' 'echo same' > "${src}/scripts/usb-share.sh"
+    printf '%s\n' '#!/bin/bash' 'echo install' > "${src}/install.sh"
+    printf '%s\n' '#!/bin/bash' 'echo same' > "${UPDATE_ROUTER_SBIN_DIR}/usb-share.sh"
+
+    changed=0
+    run apply_update "$src"
+
+    [ "$status" -eq 0 ]
+    ! grep -q "updated sbin script: usb-share.sh" "${TEST_ROOT}/update.log"
+}
