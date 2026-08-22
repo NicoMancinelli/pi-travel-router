@@ -11,6 +11,7 @@ run_dns() {
 
     if [[ "${ENABLE_DOT:-0}" = "1" ]]; then
         install_file config/dnsmasq-dot.conf /etc/dnsmasq.d/dot.conf
+        sed -i "s|127\.0\.0\.1#5300|127.0.0.1#${DOT_PORT:-5300}|" /etc/dnsmasq.d/dot.conf
         run_or_dry systemctl enable --now stubby 2>/dev/null || true
         ok "DNS-over-TLS enabled: dnsmasq → stubby → Cloudflare/Quad9"
     else
@@ -32,6 +33,7 @@ run_dns() {
         else
             install_file config/AdGuardHome.yaml /opt/AdGuardHome/AdGuardHome.yaml 640
             install_file config/dnsmasq-adguard.conf /etc/dnsmasq.d/adguard.conf
+            sed -i "s|127\.0\.0\.1#5335|127.0.0.1#${ADGUARD_DNS_PORT:-5335}|" /etc/dnsmasq.d/adguard.conf
             rm -f /etc/dnsmasq.d/dot.conf
             run_or_dry systemctl enable --now adguard-home 2>/dev/null || true
             ok "AdGuard Home enabled — web UI at http://${_AP_GATEWAY}:3000"

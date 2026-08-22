@@ -71,6 +71,7 @@ button.submit:hover{background:#2ea043}
   <input id="ap_pass" name="AP_PASS" type="password" minlength="8" maxlength="63" required autocomplete="off">
   <button type="button" id="togglepw" aria-label="Show or hide passphrase">Show</button>
   <button type="button" id="genpw" aria-label="Generate a random passphrase">Generate</button>
+  <button type="button" id="copypw" style="display:none" aria-label="Copy passphrase to clipboard">Copy</button>
 </div>
 <span class="hint">8-63 printable ASCII characters, excluding <code>#</code>. Used by clients joining your AP.</span>
 
@@ -350,10 +351,20 @@ button.submit:hover{background:#2ea043}
     for(var i=0;i<5;i++){out.push(randWord());}
     return out.join('-');
   }
+  var copyBtn=document.getElementById('copypw');
   document.getElementById('genpw').addEventListener('click',function(){
     pw.value=genPass();
     pw.type='text';
     btn.textContent='Hide';
+    copyBtn.style.display='';
+  });
+  copyBtn.addEventListener('click',function(){
+    if(navigator.clipboard && pw.value){
+      navigator.clipboard.writeText(pw.value).then(function(){
+        copyBtn.textContent='Copied!';
+        setTimeout(function(){copyBtn.textContent='Copy';},2000);
+      }).catch(function(){copyBtn.textContent='Copy';});
+    }
   });
   var st=document.getElementById('f_st'), box=document.getElementById('stdomains');
   function sync(){box.classList.toggle('show', st.checked);}
@@ -427,6 +438,23 @@ button.submit:hover{background:#2ea043}
     var sshk = document.getElementById('sshkey');
     if(twofa && twofa.checked && (!sshk || !sshk.value.trim())) {
       errs.push('Enabling SSH 2FA without an SSH key will lock you out. Please add an SSH public key or uncheck 2FA.');
+    }
+    var faps=document.getElementById('f_aps');
+    if(faps && faps.checked){
+      var apsDis=document.getElementById('ap_disable_time');
+      var apsEn=document.getElementById('ap_enable_time');
+      if(apsDis && apsEn && apsDis.value && apsEn.value && apsDis.value===apsEn.value){
+        errs.push('AP off time and AP on time must be different.');
+      }
+    }
+    var fwg=document.getElementById('f_wg');
+    if(fwg && fwg.checked){
+      var wgKey=document.getElementById('wg_peer_pubkey');
+      var wgEndp=document.getElementById('wg_peer_endpoint');
+      var keyFilled=wgKey && wgKey.value.trim();
+      var endpFilled=wgEndp && wgEndp.value.trim();
+      if(keyFilled && !endpFilled) errs.push('WireGuard: peer endpoint is required when peer public key is set.');
+      if(!keyFilled && endpFilled) errs.push('WireGuard: peer public key is required when peer endpoint is set.');
     }
     if(errs.length){
       ev.preventDefault();

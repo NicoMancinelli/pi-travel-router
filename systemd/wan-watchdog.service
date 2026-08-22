@@ -1,7 +1,10 @@
 [Unit]
 Description=WAN connectivity watchdog with graduated recovery
 After=network.target
+Wants=network.target
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/wan-watchdog.sh
+StandardOutput=journal
+StandardError=journal

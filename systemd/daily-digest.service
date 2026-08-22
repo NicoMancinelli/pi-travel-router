@@ -6,3 +6,5 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/daily-digest.sh
+StandardOutput=journal
+StandardError=journal

@@ -1,6 +1,11 @@
 #!/bin/bash
 # Interactive TUI dashboard for the Pi Travel Router.
 # Usage: sudo travel-tui
+#
+# DEPRECATED FALLBACK: prefer travel-tui.py (Textual-based TUI).
+# Only used on systems where python3-textual is unavailable.
+# Do not add new features here — add them to travel-tui.py instead.
+# Install textual: sudo apt install python3-textual
 
 set -euo pipefail
 [[ $EUID -ne 0 ]] && { printf "Run as root: sudo travel-tui\n" >&2; exit 1; }

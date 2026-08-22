@@ -1,6 +1,9 @@
 #!/bin/bash
 # Uplink failover: iPhone USB tether (enx*, metric 100) → Android USB tether (rndis0/usb0, metric 200) → Bluetooth PAN (bnep0, metric 300) → wlan0 (metric 600)
 # Runs as a systemd service every 30 seconds
+set -euo pipefail
+# shellcheck source=/dev/null
+source /usr/local/lib/travel-router/net-common.sh 2>/dev/null || true
 
 LOGFILE="/var/log/failover-watchdog.log"
 
@@ -123,11 +126,11 @@ can_reach_internet() {
 
     # Probe 1: HTTP generate_204
     curl -sf --max-time "${timeout}" --interface "${iface}" -o /dev/null \
-        "http://connectivitycheck.gstatic.com/generate_204" 2>/dev/null && ((pass++)) || true
+        "${_TR_PROBE_URL_204:-http://connectivitycheck.gstatic.com/generate_204}" 2>/dev/null && ((pass++)) || true
 
     # Probe 2: HTTPS detectportal
     curl -sf --max-time "${timeout}" --interface "${iface}" -o /dev/null \
-        "https://detectportal.firefox.com/success.txt" 2>/dev/null && ((pass++)) || true
+        "${_TR_PROBE_URL_DETECT:-https://detectportal.firefox.com/success.txt}" 2>/dev/null && ((pass++)) || true
 
     # Probe 3: DNS resolution
     if host -W "${timeout}" google.com 8.8.8.8 >/dev/null 2>&1 \

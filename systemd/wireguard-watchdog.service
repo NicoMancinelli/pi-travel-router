@@ -5,3 +5,5 @@ After=wg-quick@wg0.service network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/wireguard-watchdog.sh
+StandardOutput=journal
+StandardError=journal

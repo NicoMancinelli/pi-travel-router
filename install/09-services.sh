@@ -5,12 +5,18 @@
 run_services() {
     section "Scripts → /usr/local/bin/"
 
+    # Shared library
+    mkdir -p /usr/local/lib/travel-router
+    install_file scripts/net-common.sh /usr/local/lib/travel-router/net-common.sh 644
+    ok "  net-common.sh (shared probe URL constants)"
+
     # Scripts not covered by other modules
     for script in \
         vnstat-metrics.sh update-blocklists.sh travel-router-firewall.sh \
         ap-schedule.sh \
         update-router.sh \
-        travel-status.sh; do
+        travel-status.sh \
+        log-rotate.sh; do
         install_file "scripts/$script" "/usr/local/bin/$script" 755
         ok "  $script"
     done
@@ -39,6 +45,10 @@ fi
 EOF
     chmod 0755 /usr/local/sbin/travel-tui
     ok "  travel-tui wrapper → /usr/local/sbin/travel-tui"
+    if ! python3 -c "import textual" 2>/dev/null; then
+        warn "python3-textual not found — travel-tui will use the legacy bash fallback"
+        warn "  Install for the full experience: sudo apt install python3-textual"
+    fi
 
     install -m 0755 "${REPO}/scripts/ota-update.sh" /usr/local/sbin/ota-update
     install -m 0755 "${REPO}/scripts/ota-commit.sh" /usr/local/sbin/ota-commit
@@ -144,6 +154,18 @@ EOF
         install_file "systemd/$unit" "$_SYSTEMD_DEST/$unit" 644
         ok "  $unit"
     done
+
+    # ── AP schedule timer drop-ins ────────────────────────────────────────────────
+    # systemd OnCalendar= does not expand environment variables, so we generate
+    # drop-ins from the AP_DISABLE_TIME / AP_ENABLE_TIME defaults at install time.
+    local _AP_DISABLE_TIME="${AP_DISABLE_TIME:-02:00}"
+    local _AP_ENABLE_TIME="${AP_ENABLE_TIME:-07:00}"
+    mkdir -p /etc/systemd/system/ap-disable.timer.d /etc/systemd/system/ap-enable.timer.d
+    printf '[Timer]\nOnCalendar=*-*-* %s:00\n' "$_AP_DISABLE_TIME" \
+        > /etc/systemd/system/ap-disable.timer.d/schedule.conf
+    printf '[Timer]\nOnCalendar=*-*-* %s:00\n' "$_AP_ENABLE_TIME" \
+        > /etc/systemd/system/ap-enable.timer.d/schedule.conf
+    ok "AP schedule drop-ins written (disable=${_AP_DISABLE_TIME}, enable=${_AP_ENABLE_TIME})"
 
     systemctl daemon-reload
 

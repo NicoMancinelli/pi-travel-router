@@ -8,6 +8,8 @@ ConditionPathExists=|/boot/next-boot-slot
 Type=oneshot
 ExecStart=/usr/local/sbin/ota-commit
 RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

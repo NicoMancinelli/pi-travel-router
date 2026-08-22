@@ -2,6 +2,9 @@
 # Install to: /etc/rc.local
 # Make executable: chmod +x /etc/rc.local
 
+# shellcheck source=/dev/null
+source /etc/default/travel-router 2>/dev/null || true
+
 # Wait for wlan0 to associate, then match hostapd channel to it
 for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     CHAN=$(iw dev wlan0 info 2>/dev/null | awk '/channel/{print $2}')
@@ -13,7 +16,7 @@ done
 # Create virtual AP interface for concurrent AP+STA mode
 iw dev wlan0 interface add uap0 type __ap 2>/dev/null || true
 ip link set uap0 up
-ip addr add 10.3.141.1/24 dev uap0 2>/dev/null || true
+ip addr add "${AP_GATEWAY:-10.3.141.1}/24" dev uap0 2>/dev/null || true
 
 # Restart hostapd with correct channel
 systemctl restart hostapd

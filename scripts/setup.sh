@@ -65,6 +65,22 @@ case "${OS_ID}" in
         ;;
 esac
 
+# ── Internet connectivity check ───────────────────────────────────────────────
+section "Network check"
+
+_net_ok=0
+for _i in 1 2 3; do
+    if curl -fsS --max-time 15 https://one.one.one.one/ &>/dev/null; then
+        _net_ok=1; break
+    fi
+    [[ $_i -lt 3 ]] && { warn "Network check attempt $_i failed — retrying in 5s…"; sleep 5; }
+done
+if [[ $_net_ok -eq 1 ]]; then
+    ok "Internet reachable"
+else
+    warn "Internet check failed after 3 tries — clone may fail on a slow or captive network"
+fi
+
 # ── Install git ───────────────────────────────────────────────────────────────
 section "Dependencies"
 
@@ -82,14 +98,26 @@ section "Fetching pi-travel-router"
 
 if [[ -d "${INSTALL_DIR}/.git" ]]; then
     info "Repo already present at ${INSTALL_DIR} — pulling latest..."
-    git -C "${INSTALL_DIR}" pull --ff-only \
-        || warn "Pull failed (maybe offline or detached HEAD) — using existing code"
+    git -C "${INSTALL_DIR}" pull --ff-only 2>&1 \
+        || warn "Could not pull latest code (network or detached HEAD?) — using existing copy at ${INSTALL_DIR}"
     ok "Repo up to date"
 else
-    info "Cloning to ${INSTALL_DIR}..."
-    git clone --depth=1 "${REPO_URL}" "${INSTALL_DIR}" \
-        || die "Clone failed. Check your internet connection and try again."
+    info "Cloning to ${INSTALL_DIR}…"
+    _clone_ok=0
+    for _i in 1 2 3; do
+        if git clone --depth=1 "${REPO_URL}" "${INSTALL_DIR}"; then
+            _clone_ok=1; break
+        fi
+        [[ $_i -lt 3 ]] && { warn "Clone attempt $_i failed — retrying in 5s…"; sleep 5; }
+    done
+    [[ $_clone_ok -eq 1 ]] || die "Clone failed after 3 attempts. Check your internet connection and try again."
     ok "Cloned to ${INSTALL_DIR}"
+fi
+
+# ── Verify clone integrity ────────────────────────────────────────────────────
+_sentinel="${INSTALL_DIR}/scripts/wan-watchdog.sh"
+if [[ ! -f "${INSTALL_DIR}/VERSION" ]] || [[ ! -f "$_sentinel" ]]; then
+    die "Repo appears incomplete (missing VERSION or scripts/). Run: rm -rf ${INSTALL_DIR} and try again."
 fi
 
 # ── Hand off to install.sh ────────────────────────────────────────────────────

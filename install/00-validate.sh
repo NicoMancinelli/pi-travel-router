@@ -24,16 +24,30 @@ run_validate() {
 
     # Required commands
     local _missing=()
-    for _cmd in python3 systemctl apt-get curl; do
+    for _cmd in python3 systemctl apt-get curl git; do
         command -v "$_cmd" &>/dev/null || _missing+=("$_cmd")
     done
     if [[ ${#_missing[@]} -gt 0 ]]; then
         die "Required commands not found: ${_missing[*]}"
     fi
 
-    # Internet connectivity (best-effort)
-    if ! curl -fsS --max-time 5 https://one.one.one.one/ &>/dev/null; then
-        warn "Internet connectivity check failed — some installs may fail"
+    # Disk space (2 GB minimum)
+    local _avail_kb
+    _avail_kb=$(df -k / | awk 'NR==2{print $4}')
+    if [[ "$_avail_kb" -lt 2097152 ]]; then
+        warn "Less than 2 GB free on / ($((${_avail_kb}/1024)) MB available) — install may fail"
+    fi
+
+    # Internet connectivity with retry (longer timeout for flaky hotel/airport WiFi)
+    local _internet_ok=0
+    for _i in 1 2 3; do
+        if curl -fsS --max-time 15 https://one.one.one.one/ &>/dev/null; then
+            _internet_ok=1; break
+        fi
+        [[ $_i -lt 3 ]] && sleep 5
+    done
+    if [[ $_internet_ok -eq 0 ]]; then
+        warn "Internet connectivity check failed after 3 tries — some installs may fail"
     fi
 
     ok "Pre-flight checks passed"

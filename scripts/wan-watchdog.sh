@@ -2,9 +2,12 @@
 # WAN connectivity watchdog with graduated recovery
 # Replaces the basic keepalive.sh cron
 # Runs every 60s via systemd wan-watchdog.timer
+set -euo pipefail
 
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
+# shellcheck source=/dev/null
+source /usr/local/lib/travel-router/net-common.sh 2>/dev/null || true
 
 if command -v flock >/dev/null 2>&1; then
     exec 9>/run/lock/wan-watchdog.lock
@@ -19,6 +22,24 @@ STATE_FILE="/var/lib/travel-router/wan-watchdog-fails"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$LOGFILE"; }
 notify() { /usr/local/bin/notify-router.sh "$1" "${2:-default}" 2>/dev/null || true; }
+
+# H17: only run captive-check when wlan0 is the active uplink.
+# Reads uplink.state; falls back to routing table if absent.
+_maybe_run_captive_check() {
+    local _uplink=""
+    [ -f /var/lib/travel-router/uplink.state ] && \
+        _uplink=$(cat /var/lib/travel-router/uplink.state)
+    if [ -z "$_uplink" ]; then
+        _uplink=$(ip route show default 2>/dev/null \
+            | awk '/default/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' \
+            | head -1)
+    fi
+    if [ "$_uplink" = "wlan0" ] || [ -z "$_uplink" ]; then
+        local _cc_rc=0
+        /usr/local/bin/captive-check.sh 2>/dev/null || _cc_rc=$?
+        [ "$_cc_rc" -ne 0 ] && logger -t wan-watchdog "captive-check.sh exited non-zero ($_cc_rc)" || true
+    fi
+}
 
 # L1: cap log size when logrotate is not managing this file
 truncate_log() {
@@ -43,11 +64,11 @@ can_reach_wan() {
     # All pings failed — try HTTP probes before concluding WAN is down
     local code_a
     code_a=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
-        "https://www.gstatic.com/generate_204" 2>/dev/null)
+        "${_TR_PROBE_URL_204:-http://connectivitycheck.gstatic.com/generate_204}" 2>/dev/null)
     [ "$code_a" = "204" ] && return 0
     local body_b
     body_b=$(curl -s --max-time 5 \
-        "https://detectportal.firefox.com/success.txt" 2>/dev/null | tr -d '\r\n')
+        "${_TR_PROBE_URL_DETECT:-https://detectportal.firefox.com/success.txt}" 2>/dev/null | tr -d '\r\n')
     [ "$body_b" = "success" ] && return 0
     return 1
 }
@@ -70,24 +91,9 @@ if can_reach_wan; then
     else
         rm -f "$_tmp"
     fi
-    # H17: only run captive-check when wlan0 is the active uplink.
-    # Tether interfaces give direct internet — no portal to handle.
-    _active_uplink=""
-    [ -f /var/lib/travel-router/uplink.state ] && \
-        _active_uplink=$(cat /var/lib/travel-router/uplink.state)
-    # Fall back to routing table if state file absent
-    if [ -z "$_active_uplink" ]; then
-        _active_uplink=$(ip route show default 2>/dev/null \
-            | awk '/default/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' \
-            | head -1)
-    fi
-    if [ "$_active_uplink" = "wlan0" ] || [ -z "$_active_uplink" ]; then
-        # Pings succeed even behind a captive portal (the gateway responds).
-        # Run the captive-check so portal state is kept up-to-date.
-        _cc_rc=0
-        /usr/local/bin/captive-check.sh 2>/dev/null || _cc_rc=$?
-        [ "$_cc_rc" -ne 0 ] && logger -t wan-watchdog "captive-check.sh exited non-zero ($_cc_rc)" || true
-    fi
+    # Pings succeed even behind a captive portal (the gateway responds).
+    # Run the captive-check so portal state is kept up-to-date.
+    _maybe_run_captive_check
     exit 0
 fi
 
@@ -111,7 +117,7 @@ case "$FAILS" in
     2)
         log "Recovery step 2: restarting NetworkManager"
         notify "travel-router: WAN down, restarting NetworkManager" high
-        systemctl restart NetworkManager
+        systemctl restart NetworkManager 2>/dev/null || true
         ;;
     3)
         log "Recovery step 3: cycling wlan0 link + restarting hostapd"
@@ -126,7 +132,7 @@ case "$FAILS" in
         ;;
     4)
         log "Recovery step 4: full NetworkManager + dnsmasq restart"
-        systemctl restart NetworkManager
+        systemctl restart NetworkManager 2>/dev/null || true
         sleep 5
         systemctl restart dnsmasq 2>/dev/null || true
         ;;
@@ -142,17 +148,4 @@ case "$FAILS" in
         ;;
 esac
 
-# H17: only run captive-check when wlan0 is the active uplink
-_active_uplink_fail=""
-[ -f /var/lib/travel-router/uplink.state ] && \
-    _active_uplink_fail=$(cat /var/lib/travel-router/uplink.state)
-if [ -z "$_active_uplink_fail" ]; then
-    _active_uplink_fail=$(ip route show default 2>/dev/null \
-        | awk '/default/{for(i=1;i<=NF;i++){if($i=="dev"){print $(i+1);exit}}}' \
-        | head -1)
-fi
-if [ "$_active_uplink_fail" = "wlan0" ] || [ -z "$_active_uplink_fail" ]; then
-    _cc_rc=0
-    /usr/local/bin/captive-check.sh 2>/dev/null || _cc_rc=$?
-    [ "$_cc_rc" -ne 0 ] && logger -t wan-watchdog "captive-check.sh exited non-zero ($_cc_rc)" || true
-fi
+_maybe_run_captive_check

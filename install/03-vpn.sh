@@ -57,11 +57,12 @@ print(str(list(n.hosts())[0]))
 " "${WG_NETWORK:-10.9.0.0/24}")
         python3 -c "
 import sys, os, tempfile
-tmpl, dest, privkey, addr, port = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
+tmpl, dest, privkey, addr, port, network = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
 with open(tmpl) as f: content = f.read()
 content = content.replace('__WG_PRIVATE_KEY__', privkey)
 content = content.replace('__WG_SERVER_ADDRESS__', addr)
 content = content.replace('__WG_LISTEN_PORT__', port)
+content = content.replace('__WG_NETWORK__', network)
 fd, tmp = tempfile.mkstemp(dir='/etc/wireguard')
 try:
     with os.fdopen(fd, 'w') as fh: fh.write(content)
@@ -72,7 +73,8 @@ except:
 " "${REPO}/config/wg0.conf.template" /etc/wireguard/wg0.conf \
           "$(cat /etc/wireguard/wg0.key)" \
           "$_wg_server_addr" \
-          "${WG_LISTEN_PORT:-51820}"
+          "${WG_LISTEN_PORT:-51820}" \
+          "${WG_NETWORK:-10.9.0.0/24}"
 
         if [[ -n "${WG_PEER_PUBKEY:-}" ]]; then
             python3 -c "
