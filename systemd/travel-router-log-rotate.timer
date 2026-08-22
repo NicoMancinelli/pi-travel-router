@@ -4,7 +4,8 @@ Description=Rotate travel-router logs daily
 [Timer]
 OnCalendar=*-*-* 03:30:00
 AccuracySec=10min
-Persistent=false
+# Catch up a missed rotation (router was powered off at 03:30) on next boot
+Persistent=true
 
 [Install]
 WantedBy=timers.target

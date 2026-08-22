@@ -5,6 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# Cap memory: blocklist generation historically OOM'd the 512MB Pi Zero 2 W.
+# A capped failure is clean and retryable; an OOM kill takes the whole router down.
+MemoryMax=256M
+MemoryHigh=192M
 ExecStart=/usr/local/bin/update-blocklists.sh
 StandardOutput=journal
 StandardError=journal

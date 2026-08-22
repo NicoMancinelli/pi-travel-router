@@ -14,14 +14,14 @@ case "$ARCH" in
     *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
-AGH_VERSION=$(curl -fsSL "$API_URL" | grep '"tag_name"' | cut -d'"' -f4)
+AGH_VERSION=$(curl -fsSL --connect-timeout 5 --max-time 30 "$API_URL" | grep '"tag_name"' | cut -d'"' -f4)
 TARBALL="AdGuardHome_linux_${AGH_ARCH}.tar.gz"
 URL="https://github.com/AdguardTeam/AdGuardHome/releases/download/${AGH_VERSION}/${TARBALL}"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-curl -fsSL "$URL" -o "$TMP/$TARBALL"
+curl -fsSL --connect-timeout 5 "$URL" -o "$TMP/$TARBALL"
 tar -xzf "$TMP/$TARBALL" -C "$TMP"
 mkdir -p "$AGH_DIR"
 cp "$TMP/AdGuardHome/AdGuardHome" "$AGH_DIR/AdGuardHome"

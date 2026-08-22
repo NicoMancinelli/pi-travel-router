@@ -50,6 +50,31 @@ AP_SUBNETS = ("192.168.4.", "10.3.141.")
 _event_queue: list = []
 _event_lock = threading.Lock()
 
+# One-time tickets for the SSE stream: lets EventSource authenticate without
+# putting the long-lived web token into a URL query string (which leaks into
+# access logs). Tickets are single-use and expire quickly.
+_SSE_TICKETS: dict = {}
+_SSE_TICKET_TTL = 60  # seconds
+
+
+def _new_sse_ticket() -> str:
+    ticket = uuid4().hex
+    with _event_lock:
+        _SSE_TICKETS[ticket] = time.monotonic() + _SSE_TICKET_TTL
+        # opportunistic cleanup of expired entries
+        expired = [t for t, exp in _SSE_TICKETS.items() if exp < time.monotonic()]
+        for t in expired:
+            _SSE_TICKETS.pop(t, None)
+    return ticket
+
+
+def _consume_sse_ticket(ticket: str) -> bool:
+    if not ticket:
+        return False
+    with _event_lock:
+        exp = _SSE_TICKETS.pop(ticket, None)
+    return exp is not None and exp >= time.monotonic()
+
 
 def _push_event(type_: str, data: dict) -> None:
     """Append an event to the queue, keeping only the last 50."""
@@ -417,11 +442,17 @@ def require_auth(f):
 
 
 def require_auth_sse(f):
-    """Decorator: like require_auth but also accepts ?token= query param for EventSource."""
+    """Decorator for the SSE stream: accepts a short-lived one-time ?ticket=
+    (preferred — keeps the long-lived web token out of URLs and access logs)
+    or, as a fallback, the legacy ?token= query parameter. AP-subnet clients
+    are trusted as elsewhere."""
 
     @wraps(f)
     def decorated(*args, **kwargs):
         if _is_ap_client():
+            return f(*args, **kwargs)
+        ticket = request.args.get("ticket", "")
+        if _consume_sse_ticket(ticket):
             return f(*args, **kwargs)
         token = _load_token()
         if token and _bearer_token_sse() == token:
@@ -778,6 +809,14 @@ def api_status():
     return jsonify(result_dict)
 
 
+@app.route("/api/events/ticket", methods=["POST"])
+@require_auth_always
+def api_events_ticket():
+    """Issue a short-lived, single-use ticket for the SSE stream so the
+    long-lived web token never appears in a URL query string."""
+    return jsonify({"ticket": _new_sse_ticket(), "expires_in": _SSE_TICKET_TTL})
+
+
 @app.route("/api/events/stream")
 @require_auth_sse
 def api_events_stream():
@@ -1025,8 +1064,11 @@ def api_bandwidth_history():
 
 
 @app.route("/api/config", methods=["GET", "POST"])
-@require_auth
+@require_auth_always
 def api_config():
+    """Config read/write — always token-gated: the payload contains WiFi
+    passphrases and WireGuard secrets, and guests on the AP SSID must not
+    be able to read or rewrite router configuration."""
     if request.method == "GET":
         return _config_get()
     return _config_post()
@@ -1147,7 +1189,7 @@ def api_services_status():
 
 
 @app.route("/api/system/reboot", methods=["POST"])
-@require_auth
+@require_auth_always
 def api_system_reboot():
     """Schedule a system reboot in 10 seconds (gives client time to show countdown)."""
     import threading as _t
@@ -1161,7 +1203,7 @@ def api_system_reboot():
 
 
 @app.route("/api/system/shutdown", methods=["POST"])
-@require_auth
+@require_auth_always
 def api_system_shutdown():
     """Schedule a system shutdown in 10 seconds."""
     import threading as _t
@@ -1907,7 +1949,7 @@ def _parse_iwconfig(iface: str) -> dict:
     """Run iwconfig <iface> and parse quality/signal fields."""
     result: dict = {}
     try:
-        out, rc = _run(f"iwconfig {iface} 2>/dev/null")
+        out, rc = _run(["iwconfig", iface], timeout=10)
         if rc != 0 or not out.strip():
             return result
         m = re.search(r"Link Quality=(\d+)/(\d+)", out)
@@ -5397,6 +5439,11 @@ def api_dns_lookup():
     record_type = request.args.get("type", "A").strip().upper()
     if not host:
         return jsonify({"error": "host parameter required"}), 400
+    # Hostname charset guard: reject values that could be parsed as dig/
+    # nslookup flags (leading '-') or contain anything outside a hostname.
+    if len(host) > 253 or not _re.fullmatch(
+            r"[A-Za-z0-9_]([A-Za-z0-9._-]*[A-Za-z0-9_])?", host):
+        return jsonify({"error": "invalid hostname"}), 400
     valid_types = {"A", "AAAA", "MX", "TXT", "CNAME", "NS", "PTR", "SOA"}
     if record_type not in valid_types:
         record_type = "A"
@@ -7848,26 +7895,34 @@ def api_system_swap():
         result["vmstat_error"] = str(e)
 
     try:
-        # zram devices
-        zram_out, _ = _run("ls /sys/block/ 2>/dev/null")
-        for dev in zram_out.split():
-            if not dev.startswith("zram"):
+        # zram devices — read sysfs directly, no shell needed
+        for dev_path in Path("/sys/block").iterdir():
+            if not dev_path.name.startswith("zram"):
                 continue
-            zr = {"device": dev}
+            zr = {"device": dev_path.name}
+            matched_mm = False
+
+            def _sysfs_read(p):
+                try:
+                    return p.read_text().strip()
+                except OSError:
+                    return ""
+
             for attr in ("orig_data_size", "compr_data_size", "mem_used_total", "disksize"):
-                val, rc = _run(f"cat /sys/block/{dev}/mm_stat 2>/dev/null || cat /sys/block/{dev}/{attr} 2>/dev/null")
-                if attr == "orig_data_size" and val.strip():
+                val = _sysfs_read(dev_path / "mm_stat") or _sysfs_read(dev_path / attr)
+                if attr == "orig_data_size" and val:
                     # Try mm_stat: orig compr mem_used
-                    parts = val.strip().split()
+                    parts = val.split()
                     if len(parts) >= 3:
                         zr["orig_bytes"] = int(parts[0])
                         zr["compr_bytes"] = int(parts[1])
                         zr["mem_used_bytes"] = int(parts[2])
+                        matched_mm = True
                         break
-            else:
-                ds, _ = _run(f"cat /sys/block/{dev}/disksize 2>/dev/null")
-                if ds.strip().isdigit():
-                    zr["disksize_bytes"] = int(ds.strip())
+            if not matched_mm:
+                ds = _sysfs_read(dev_path / "disksize")
+                if ds.isdigit():
+                    zr["disksize_bytes"] = int(ds)
             result["zram"].append(zr)
     except Exception:
         pass
@@ -12810,7 +12865,7 @@ def api_network_wifi_survey():
             return jsonify({"error": "No wireless interfaces found", "networks": [], "interface": None})
         # Use the first interface that looks like a client (not ap-only)
         iface = ifaces[0]
-        scan_out, rc = _run(f"iwlist {iface} scan 2>&1")
+        scan_out, rc = _run(["iwlist", iface, "scan"])
         if rc != 0 or "Interface doesn't support scanning" in scan_out:
             # Try nmcli as fallback
             nm_out, nm_rc = _run("nmcli -t -f SSID,BSSID,CHAN,FREQ,SIGNAL,SECURITY dev wifi list 2>/dev/null")
@@ -13365,7 +13420,10 @@ def api_network_latency():
     results = []
     for t in targets:
         host = t["host"]
-        out, rc = _run(f"ping -c 3 -W 2 {host}", timeout=10)
+        # list-form argv + charset guard: never interpolate into a shell string
+        if not _re.fullmatch(r"[A-Za-z0-9._:-]+", str(host)):
+            continue
+        out, rc = _run(["ping", "-c", "3", "-W", "2", str(host)], timeout=10)
         rtt_ms = None
         reachable = False
         if rc == 0 and out:
@@ -13603,12 +13661,12 @@ def api_network_ap_clients():
         return clients
 
     # Try hostapd_cli first
-    out, rc = _run("hostapd_cli all_sta 2>/dev/null", timeout=5)
+    out, rc = _run(["hostapd_cli", "all_sta"], timeout=5)
     if rc == 0 and out.strip():
         clients = _parse_hostapd(out)
     else:
         # Fallback: iw
-        out, rc = _run(f"iw dev {iface} station dump 2>/dev/null", timeout=5)
+        out, rc = _run(["iw", "dev", iface, "station", "dump"], timeout=5)
         if rc != 0:
             # Try uap0 as well
             out, rc = _run("iw dev uap0 station dump 2>/dev/null", timeout=5)
@@ -15217,7 +15275,7 @@ def api_vpn_wireguard_peer_health():
 # ── On-demand Speed Test (POST) ───────────────────────────────────────────────
 
 @app.route("/api/network/speedtest", methods=["POST"])
-@require_auth
+@require_auth_always
 def api_network_speedtest_post():
     """Run an on-demand speed test. Returns measured speeds."""
     import json as _json
@@ -17691,4 +17749,4 @@ def api_system_meminfo_detail():
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8080, debug=False, threaded=False)
+    app.run(host="0.0.0.0", port=8080, debug=False, threaded=True)

@@ -47,7 +47,7 @@ router_vnstat_tx_bytes_month{interface="%s"} %s
     # T-H7: redact credentials from PUSHGW_URL before logging
     local _pushgw_log
     _pushgw_log=$(printf '%s' "$PUSHGW_URL" | sed 's|://[^@]*@|://***@|g')
-    if printf '%s\n' "$metrics" | curl -sf --data-binary @- \
+    if printf '%s\n' "$metrics" | curl -sf --connect-timeout 5 --max-time 30 --data-binary @- \
         "${PUSHGW_URL}/metrics/job/travel-router/instance/${iface}" >/dev/null 2>&1; then
         logger -t "$LOG_TAG" "pushed stats for $iface"
     else

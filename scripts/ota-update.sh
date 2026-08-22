@@ -23,7 +23,7 @@ trap 'rm -rf "${WORK_DIR}"' EXIT
 
 # If no URL given, fetch latest release via GitHub JSON API
 if [ -z "${RELEASE_URL}" ]; then
-    RELEASE_URL="$(curl -sf -H "Accept: application/vnd.github.v3+json" \
+    RELEASE_URL="$(curl -sf --connect-timeout 5 --max-time 20 -H "Accept: application/vnd.github.v3+json" \
         "${REPO_API}/releases/latest" \
         | python3 -c "import json,sys; assets=json.load(sys.stdin).get('assets',[]); \
           print(next((a['browser_download_url'] for a in assets if a['name'].endswith('.img.xz')),''))" \
