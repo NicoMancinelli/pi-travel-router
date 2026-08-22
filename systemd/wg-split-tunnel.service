@@ -1,0 +1,14 @@
+[Unit]
+Description=CIDR-based split tunnel routing (VPN egress)
+After=network-online.target tailscaled.service wg-quick@wg0.service
+Wants=network-online.target tailscaled.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/apply-wg-split-tunnel.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -410,6 +410,12 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
             _ask SPLIT_TUNNEL_DOMAINS "Split tunnel domains (space-separated)" "" \
                 "Example: mybank.com work.example.com — these go via your tailnet, rest goes direct."
         fi
+        _yn ENABLE_WG_SPLIT_TUNNEL "CIDR-based split tunnel?"          \
+            "Route specific destination subnets (e.g. 10.100.0.0/16) via VPN; everything else direct."
+        if [[ "${ENABLE_WG_SPLIT_TUNNEL:-0}" = "1" && -z "${WG_SPLIT_TUNNEL_CIDRS:-}" ]]; then
+            _ask WG_SPLIT_TUNNEL_CIDRS "Split tunnel CIDRs (space-separated)" "" \
+                "Example: 10.100.0.0/16 172.16.5.0/24 — these subnets go via VPN, rest goes direct."
+        fi
         _yn ENABLE_AVAHI_REFLECTOR "mDNS reflector (AirPrint / AirPlay)?" \
             "Reflects mDNS across subnets so AirPrint and AirPlay work over Tailscale."
         _yn ENABLE_PER_DEVICE_VPN  "Per-device VPN routing?"              \
@@ -449,6 +455,8 @@ TS_KEY="${TS_KEY:-}"
 SSH_ADMIN_KEY="${SSH_ADMIN_KEY:-}"
 HEADSCALE_URL="${HEADSCALE_URL:-}"
 SPLIT_TUNNEL_DOMAINS="${SPLIT_TUNNEL_DOMAINS:-}"
+WG_SPLIT_TUNNEL_CIDRS="${WG_SPLIT_TUNNEL_CIDRS:-}"
+WG_SPLIT_TUNNEL_DEV="${WG_SPLIT_TUNNEL_DEV:-}"
 TOR_AP_PASS="${TOR_AP_PASS:-}"
 
 if [[ "${INSTALL_NONINTERACTIVE:-0}" == "1" ]]; then
@@ -495,7 +503,7 @@ if [[ -n "$TS_KEY" && -z "$HEADSCALE_URL" ]]; then
     [[ "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
 fi
 ENABLE_WAN_METRICS="${ENABLE_WAN_METRICS:-1}"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WIREGUARD; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_WG_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WIREGUARD; do
     validate_flag "$flag"
 done
 
@@ -1031,7 +1039,7 @@ AP_SUBNET="${AP_SUBNET:-10.3.141.0/24}"
 AP_GATEWAY="${AP_GATEWAY:-10.3.141.1}"
 
 # Write boolean flags (values are always 0 or 1 — safe with sed too, but use helper for consistency)
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WIREGUARD; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_WG_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WIREGUARD; do
     _safe_write_conf "$flag" "${!flag:-0}" "$DEFAULTS_FILE"
 done
 
@@ -1039,6 +1047,8 @@ done
 _safe_write_conf "NTFY_TOPIC"            "${NTFY_TOPIC:-}"               "$DEFAULTS_FILE"
 _safe_write_conf "HEADSCALE_URL"         "${HEADSCALE_URL:-}"            "$DEFAULTS_FILE"
 _safe_write_conf "SPLIT_TUNNEL_DOMAINS"  "${SPLIT_TUNNEL_DOMAINS:-}"     "$DEFAULTS_FILE"
+_safe_write_conf "WG_SPLIT_TUNNEL_CIDRS"  "${WG_SPLIT_TUNNEL_CIDRS:-}"   "$DEFAULTS_FILE"
+_safe_write_conf "WG_SPLIT_TUNNEL_DEV"    "${WG_SPLIT_TUNNEL_DEV:-tailscale0}" "$DEFAULTS_FILE"
 _safe_write_conf "IPHONE_BT_MAC"         "${IPHONE_BT_MAC:-}"            "$DEFAULTS_FILE"
 _safe_write_conf "SSH_ADMIN_KEY"         "${SSH_ADMIN_KEY:-}"            "$DEFAULTS_FILE"
 _safe_write_conf "AP_CLIENT_BANDWIDTH"   "${AP_CLIENT_BANDWIDTH:-unlimited}" "$DEFAULTS_FILE"
@@ -1431,6 +1441,29 @@ else
     systemctl disable split-tunnel.service 2>/dev/null || true
     rm -f /etc/dnsmasq.d/split-tunnel.conf
     ok "Split tunnel disabled (set ENABLE_SPLIT_TUNNEL=1 + SPLIT_TUNNEL_DOMAINS)"
+fi
+
+# ── §. CIDR-based split tunnel (#6) ──────────────────────────────────────────
+section "CIDR-based split tunnel"
+
+install_file scripts/apply-wg-split-tunnel.sh /usr/local/bin/apply-wg-split-tunnel.sh 755
+
+install_file systemd/wg-split-tunnel.service /etc/systemd/system/wg-split-tunnel.service 644
+systemctl daemon-reload
+
+if [[ "${ENABLE_WG_SPLIT_TUNNEL:-0}" = "1" ]]; then
+    if [[ -z "${WG_SPLIT_TUNNEL_CIDRS:-}" ]]; then
+        warn "ENABLE_WG_SPLIT_TUNNEL=1 but WG_SPLIT_TUNNEL_CIDRS is empty"
+        warn "  Set WG_SPLIT_TUNNEL_CIDRS in /etc/default/travel-router and run:"
+        warn "  sudo systemctl restart wg-split-tunnel.service"
+    else
+        apt-get install -y ipset 2>/dev/null || true
+        systemctl enable --now wg-split-tunnel.service 2>/dev/null || true
+        ok "CIDR split tunnel enabled via ${WG_SPLIT_TUNNEL_DEV}: ${WG_SPLIT_TUNNEL_CIDRS}"
+    fi
+else
+    systemctl disable wg-split-tunnel.service 2>/dev/null || true
+    ok "CIDR split tunnel disabled (set ENABLE_WG_SPLIT_TUNNEL=1 + WG_SPLIT_TUNNEL_CIDRS)"
 fi
 
 # ── §. CAKE bandwidth auto-tuning ─────────────────────────────────────────────
