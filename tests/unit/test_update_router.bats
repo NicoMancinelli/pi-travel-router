@@ -27,7 +27,6 @@ _load_update_router() {
 
 @test "apply_update installs allowlisted Python TUI during OTA" {
     _load_update_router
-
     src="${TEST_ROOT}/src"
     mkdir -p "${src}/scripts"
     printf '%s\n' 'print("new tui")' > "${src}/scripts/travel-tui.py"
@@ -149,4 +148,25 @@ _load_update_router() {
 
     [ "$status" -eq 0 ]
     ! grep -q "updated sbin script: usb-share.sh" "${TEST_ROOT}/update.log"
+}
+
+@test "apply_update installs wireguard and cidr split tunnel scripts during OTA" {
+    # Regression: both scripts ship via install.sh but were missing from
+    # SCRIPT_ALLOWLIST, so OTA silently skipped them on installed Pis.
+    _load_update_router
+
+    src="${TEST_ROOT}/src"
+    mkdir -p "${src}/scripts"
+    printf '%s\n' '#!/bin/bash' 'echo new wg watchdog' > "${src}/scripts/wireguard-watchdog.sh"
+    printf '%s\n' '#!/bin/bash' 'echo new wg split tunnel' > "${src}/scripts/apply-wg-split-tunnel.sh"
+    printf '%s\n' '#!/bin/bash' 'echo install' > "${src}/install.sh"
+
+    changed=0
+    run apply_update "$src"
+
+    [ "$status" -eq 0 ]
+    grep -q "new wg watchdog" "${UPDATE_ROUTER_BIN_DIR}/wireguard-watchdog.sh"
+    grep -q "new wg split tunnel" "${UPDATE_ROUTER_BIN_DIR}/apply-wg-split-tunnel.sh"
+    grep -q "updated script: wireguard-watchdog.sh" "${TEST_ROOT}/update.log"
+    grep -q "updated script: apply-wg-split-tunnel.sh" "${TEST_ROOT}/update.log"
 }
