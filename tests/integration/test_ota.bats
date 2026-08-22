@@ -99,8 +99,10 @@ MOCK
     chmod +x "${MOCK_BIN}/xz"
 
     # sha256sum: return a hash that does NOT match the expected value
+    # (consumes stdin like the real tool to avoid SIGPIPE under pipefail)
     cat > "${MOCK_BIN}/sha256sum" <<'MOCK'
 #!/bin/bash
+cat > /dev/null
 printf '0000000000000000000000000000000000000000000000000000000000000000  -\n'
 MOCK
     chmod +x "${MOCK_BIN}/sha256sum"
@@ -167,8 +169,11 @@ MOCK
     chmod +x "${MOCK_BIN}/xz"
 
     # sha256sum mock: return the matching hash
+    # Consume stdin like the real tool — otherwise the upstream xz mock can
+    # hit SIGPIPE under set -o pipefail (intermittent, CI-only).
     cat > "${MOCK_BIN}/sha256sum" <<MOCK
 #!/bin/bash
+cat > /dev/null
 printf '%s  -\n' "${expected_sha}"
 MOCK
     chmod +x "${MOCK_BIN}/sha256sum"
@@ -182,12 +187,6 @@ MOCK
     chmod +x "${MOCK_BIN}/dd"
 
     _run_ota
-
-    # TEMP DEBUG (test 9)
-    echo "DEBUG9 status=$status"
-    echo "DEBUG9 output<<$output>>"
-    cat "${_WORK_DIR}/ota-work/update.img.xz.sha256" >&2 || true
-    echo "DEBUG9 expected=${expected_sha}"
 
     # dd must have been called (image was written)
     [ -f "${dd_calls}" ]

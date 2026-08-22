@@ -19,7 +19,7 @@ RELEASE_URL="${1:-}"
 # Overridable via OTA_WORK_DIR for testing and non-standard layouts.
 WORK_DIR="${OTA_WORK_DIR:-/var/lib/travel-router/ota-work}"
 mkdir -p "${WORK_DIR}"
-trap 'rm -rf "${WORK_DIR:?}/."' EXIT
+trap 'rm -rf "${WORK_DIR}"' EXIT
 
 # If no URL given, fetch latest release via GitHub JSON API
 if [ -z "${RELEASE_URL}" ]; then
