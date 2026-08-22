@@ -5,7 +5,7 @@ set -euo pipefail
 # shellcheck source=/dev/null
 source /usr/local/lib/travel-router/net-common.sh 2>/dev/null || true
 
-LOGFILE="/var/log/failover-watchdog.log"
+LOGFILE="${LOGFILE:-/var/log/failover-watchdog.log}"
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOGFILE"
@@ -28,7 +28,9 @@ flock -n 9 || exit 0
 
 # N-M18: atomic log truncation with mktemp and EXIT trap cleanup
 _LOG_TMP=""
-_cleanup_log_tmp() { [ -n "$_LOG_TMP" ] && rm -f "$_LOG_TMP"; }
+# Status-neutral: when _LOG_TMP is empty the [ -n ] test returns 1, which would
+# otherwise override a successful exit status via the EXIT trap under set -e.
+_cleanup_log_tmp() { [ -n "$_LOG_TMP" ] && rm -f "$_LOG_TMP" || true; }
 trap _cleanup_log_tmp EXIT
 
 truncate_log() {
@@ -152,8 +154,9 @@ promote_iface() {
 }
 
 # ── Uplink-change state tracking ─────────────────────────────────────────────
-_UPLINK_STATE_DIR="/var/lib/travel-router"
-_UPLINK_STATE_FILE="$_UPLINK_STATE_DIR/uplink.state"
+# Paths overridable via env for testing and non-standard layouts.
+_UPLINK_STATE_DIR="${_UPLINK_STATE_DIR:-/var/lib/travel-router}"
+_UPLINK_STATE_FILE="${_UPLINK_STATE_FILE:-${_UPLINK_STATE_DIR}/uplink.state}"
 mkdir -p "$_UPLINK_STATE_DIR"
 
 _uplink_label() {

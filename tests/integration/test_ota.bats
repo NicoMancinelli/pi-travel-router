@@ -16,6 +16,10 @@ setup() {
     export _WORK_DIR
     _WORK_DIR="$(mktemp -d)"
 
+    # ota-update.sh writes its download work dir under /var/lib by default;
+    # redirect it into the writable temp dir via the supported override.
+    export OTA_WORK_DIR="${_WORK_DIR}/ota-work"
+
     # Fake /proc to satisfy slot detection
     # The script does: grep -oE 'root=/dev/[^ ]+' /proc/cmdline
     # We mock grep to intercept /proc/cmdline reads and return mmcblk0p2

@@ -16,7 +16,8 @@ REPO_API="${REPO_API:-https://api.github.com/repos/NicoMancinelli/pi-travel-rout
 RELEASE_URL="${1:-}"
 # Use persistent disk storage — a decompressed Pi image can be several GiB and
 # would exhaust the tmpfs RAM on a Pi Zero 2 W if placed in /tmp.
-WORK_DIR="/var/lib/travel-router/ota-work"
+# Overridable via OTA_WORK_DIR for testing and non-standard layouts.
+WORK_DIR="${OTA_WORK_DIR:-/var/lib/travel-router/ota-work}"
 mkdir -p "${WORK_DIR}"
 trap 'rm -rf "${WORK_DIR:?}/."' EXIT
 
@@ -53,22 +54,23 @@ else
     echo "WARNING: No SHA256 manifest found at ${SHA_URL}, skipping checksum verification"
 fi
 
-# Write to inactive slot and verify SHA256 in a single decompress pass.
-# next-boot-slot is written only AFTER this block, so a corrupt write is never booted.
-echo "Writing to inactive slot ${INACTIVE_SLOT} (${INACTIVE_DEV})..."
+# Verify-then-write: compute SHA256 of the decompressed image FIRST and abort
+# on mismatch so a corrupt download is never written to the inactive slot.
+# next-boot-slot is written only AFTER this block, so a bad write is never booted.
+echo "Preparing to write inactive slot ${INACTIVE_SLOT} (${INACTIVE_DEV})..."
 if [ -n "${EXPECTED_SHA}" ]; then
-    ACTUAL_SHA="$(xz -dk "${WORK_DIR}/update.img.xz" --stdout \
-        | tee >(dd of="${INACTIVE_DEV}" bs=4M status=progress conv=fsync 2>/dev/null) \
-        | sha256sum | awk '{print $1}')"
+    echo "Computing SHA256 of decompressed image..."
+    ACTUAL_SHA="$(xz -dk "${WORK_DIR}/update.img.xz" --stdout | sha256sum | awk '{print $1}')"
     if [ "${ACTUAL_SHA}" != "${EXPECTED_SHA}" ]; then
         echo "ERROR: SHA256 mismatch. Expected ${EXPECTED_SHA}, got ${ACTUAL_SHA}"
-        echo "Inactive slot NOT marked for boot."
+        echo "Inactive slot NOT written and NOT marked for boot."
         exit 1
     fi
     echo "SHA256 verified OK"
-else
-    xz -dk "${WORK_DIR}/update.img.xz" --stdout | dd of="${INACTIVE_DEV}" bs=4M status=progress conv=fsync
 fi
+
+echo "Writing to inactive slot ${INACTIVE_SLOT} (${INACTIVE_DEV})..."
+xz -dk "${WORK_DIR}/update.img.xz" --stdout | dd of="${INACTIVE_DEV}" bs=4M status=progress conv=fsync
 
 # Set tryboot flag so next boot tries inactive slot
 echo "${INACTIVE_SLOT}" > /boot/firmware/next-boot-slot 2>/dev/null || \
