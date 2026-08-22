@@ -949,6 +949,7 @@ FEATURE_FLAGS = [
     "ENABLE_USB_SHARE",
     "ENABLE_BANDWIDTH_DASHBOARD",
     "ENABLE_SPLIT_TUNNEL",
+    "ENABLE_WG_SPLIT_TUNNEL",
     "ENABLE_2FA",
     "ENABLE_WAN_METRICS",
     "ENABLE_PROMETHEUS_EXPORTER",
@@ -1077,6 +1078,11 @@ class FeaturesScreen(Screen):
                     run(["systemctl", "try-restart", "split-tunnel.service"])
                 else:
                     run(["systemctl", "stop", "split-tunnel.service"])
+            elif flag == "ENABLE_WG_SPLIT_TUNNEL":
+                if enable:
+                    run(["systemctl", "try-restart", "wg-split-tunnel.service"])
+                else:
+                    run(["systemctl", "stop", "wg-split-tunnel.service"])
             elif flag == "ENABLE_BANDWIDTH_DASHBOARD":
                 if enable:
                     run(["systemctl", "try-restart", "bandwidth-dashboard.service"])
@@ -1535,6 +1541,8 @@ SETTINGS_ITEMS = [
     ("WAN_PING_TARGETS", "WAN Ping Targets", False),
     ("VPN_DEVICE_MACS", "VPN Device MACs", False),
     ("SPLIT_TUNNEL_DOMAINS", "Split Tunnel Domains", False),
+    ("WG_SPLIT_TUNNEL_CIDRS", "Split Tunnel CIDRs", False),
+    ("WG_SPLIT_TUNNEL_DEV", "Split Tunnel Egress Dev", False),
     ("AP_CLIENT_BANDWIDTH", "Per-Client Bandwidth", False),
     ("TOR_AP_PASS", "Tor AP Password", True),
     ("MAX_BLOCKLIST_ENTRIES", "Max Blocklist Entries", False),

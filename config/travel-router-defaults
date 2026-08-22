@@ -68,6 +68,15 @@ ENABLE_PROMETHEUS_EXPORTER="0"
 ENABLE_SPLIT_TUNNEL="0"
 SPLIT_TUNNEL_DOMAINS=""
 
+# CIDR-based split tunnel (#6): route specific destination subnets through the
+# VPN uplink while everything else goes direct. Egress is Tailscale by default;
+# set WG_SPLIT_TUNNEL_DEV=wg0 to use a WireGuard upstream peer instead.
+# Enable with ENABLE_WG_SPLIT_TUNNEL=1, then list IPv4 CIDRs separated by spaces.
+# Example: WG_SPLIT_TUNNEL_CIDRS="10.100.0.0/16 172.16.5.0/24 198.51.100.0/24"
+ENABLE_WG_SPLIT_TUNNEL="0"
+WG_SPLIT_TUNNEL_CIDRS=""
+WG_SPLIT_TUNNEL_DEV="tailscale0"
+
 # Safety cap for update-blocklists.sh on memory-constrained Pi Zero hardware.
 MAX_BLOCKLIST_ENTRIES="20000"
 
