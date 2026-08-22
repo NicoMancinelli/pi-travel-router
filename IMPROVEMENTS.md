@@ -95,7 +95,7 @@ table inet mangle {
 ```
 Disable `iptables-persistent` for mangle after migrating.
 
-#### 2. Captive Portal MAC Cloning
+#### ✅ 2. Captive Portal MAC Cloning *(deployed as #31 — `scripts/clone-mac.sh`)*
 Before connecting to hotel WiFi, clone your laptop's MAC to wlan0 so the portal only sees one authenticated device. Combined with the existing captive portal detection, this fully automates hotel onboarding.
 
 ```bash
@@ -106,7 +106,7 @@ ip link set wlan0 up
 nmcli device connect wlan0
 ```
 
-#### 3. hostapd HT Capability (full review)
+#### 3. hostapd HT Capability (full review) — **OPEN, needs physical Pi**
 Current config uses `[HT40][SHORT-GI-20][DSSS_CCK-40]`. The `[SHORT-GI-40]` capability was tried and rejected by the brcmfmac driver. Consider testing `[HT40+]` vs `[HT40-]` depending on channel — `+` means secondary channel above primary, `-` means below. Channel 6 with `[HT40-]` uses channels 2+6 which is cleaner in most deployments.
 
 ---
@@ -121,7 +121,7 @@ SPEED=$(speedtest-cli --simple 2>/dev/null | awk '/Upload/{print int($2 * 0.9) "
 [ -n "$SPEED" ] && tc qdisc replace dev wlan0 root cake bandwidth "$SPEED" besteffort
 ```
 
-#### 5. Android USB Tethering (RNDIS)
+#### ✅ 5. Android USB Tethering (RNDIS) *(deployed as #24)*
 Extend the udev auto-tether rules to cover Android phones (vendor IDs vary; use `rndis_host` kernel module). Add `usbcore.autosuspend=-1` to `/boot/firmware/cmdline.txt` to prevent USB autosuspend breaking RNDIS.
 
 ```
@@ -150,7 +150,7 @@ iptables -A FORWARD -i uap0 -o enx+ -j ACCEPT
 iptables -A FORWARD -i usb0 -o wlan0 -j ACCEPT
 ```
 
-#### 8. DNS-over-TLS (stubby)
+#### ✅ 8. DNS-over-TLS (stubby) *(deployed as #16 — `ENABLE_DOT` + `config/stubby.yml`)*
 Encrypt upstream DNS queries so Visible/Verizon can't see or inject DNS responses.
 
 ```bash
@@ -163,13 +163,13 @@ sudo apt install -y stubby
 
 ### 🟢 Low Priority
 
-#### 9. Selective Tailscale Routing by Client MAC
+#### ✅ 9. Selective Tailscale Routing by Client MAC *(deployed as #44 — `ENABLE_PER_DEVICE_VPN`)*
 Route specific devices through Tailscale exit node while others go direct.
 
 #### ✅ 10. Read-Only Root Filesystem (overlayfs) *(deployed)*
 Prevents SD card corruption from sudden power loss. Deployed as `overlayfs-ctl.sh enable|disable|status` (TUI: System → Toggle read-only root). Disable before any system updates.
 
-#### 11. Scheduled SSID Disable
+#### ✅ 11. Scheduled SSID Disable *(deployed as #29 — `scripts/ap-schedule.sh`)*
 Disable the AP at night to reduce attack surface and RF exposure.
 
 ```bash
@@ -177,7 +177,7 @@ Disable the AP at night to reduce attack surface and RF exposure.
 # 02:00 disable, 07:00 re-enable
 ```
 
-#### 12. Avahi mDNS Reflector
+#### ✅ 12. Avahi mDNS Reflector *(deployed as #28 — `ENABLE_AVAHI_REFLECTOR`)*
 Bridge mDNS between uap0 and tailscale0 so AP clients can discover home devices (AirPrint, AirPlay, NAS).
 
 ```
@@ -186,13 +186,13 @@ Bridge mDNS between uap0 and tailscale0 so AP clients can discover home devices 
 enable-reflector=yes
 ```
 
-#### 13. DNS-over-HTTPS (dnscrypt-proxy)
+#### ✅ 13. DNS-over-HTTPS *(deployed via systemd-resolved DoH presets — `scripts/set-doh-resolver.sh`; dnscrypt-proxy not needed)*
 Alternative to stubby; supports server rotation and anonymized DNS.
 
-#### 14. Static DHCP Leases for Your Devices
+#### ✅ 14. Static DHCP Leases for Your Devices *(deployed — `config/dnsmasq-static-leases.conf`)*
 Fill in `/etc/dnsmasq.d/static-leases.conf` with your devices' MACs for predictable IPs.
 
-#### 15. Automatic Security Updates
+#### ✅ 15. Automatic Security Updates *(deployed as #26 — `ENABLE_AUTO_UPDATES`)*
 ```bash
 sudo apt install -y unattended-upgrades
 # Configure /etc/apt/apt.conf.d/50unattended-upgrades
@@ -308,24 +308,20 @@ Research sources: Juraj Bednar bypass-anti-tethering, xiv3r bypass-anti-tetherin
 
 ## Priority Picks (best ROI given current stack)
 
-**Do these next — low effort, high travel value:**
-- Feature 16 (Encrypted DNS / DoT) — biggest daily privacy gap still open
-- Feature 28 (Avahi mDNS) — 5 min setup, unlocks home device discovery over Tailscale
-- Feature 26 (Unattended upgrades) — passive; just turn it on
-- Feature 35 (Tailscale peer dashboard) — 50 lines of bash, uses ntfy.sh already deployed
+**Status (v3.34.0): every original pick below has shipped.** DoT/stubby (#16), VPN kill
+switch (#17), AdGuard Home (#18), Android tethering (#24), unattended upgrades (#26),
+Avahi mDNS (#28), Tailscale peer watchdog (#35), Tor SSID (#42), domain split tunnel
+(#45), Headscale (#46), PiSugar 3 UPS (#50) — all in the Deployed Features table.
+Verify against that table before picking up any item; this list previously recommended
+features that were already live.
 
-**High-value medium effort:**
-- Feature 18 (AdGuard Home) — single binary replaces dnsmasq DNS, adds per-client analytics; rivals $150 GL.iNet feature set
-- Feature 46 (Headscale) — eliminates Tailscale cloud dependency
-- Feature 24 (Android tethering) — real second-carrier redundancy
-- Feature 17 (VPN kill switch) — makes the VPN setup fail-safe
+**Still open:**
+- Feature 3 — hostapd HT40+ vs HT40− review; requires the physical Pi, measure per-channel throughput before touching hostapd.conf
+- Feature 6 — WireGuard split tunnel by IP/CIDR; the domain-based (#22/#45) and per-device MAC (#44) variants are deployed, CIDR-based WG policy routing is not
 
 **Only if specific need:**
 - Feature 40 (TCP fingerprint spoofing) — significant implementation effort, marginal carrier bypass benefit unless TTL alone fails
-- Feature 42 (Tor SSID) — significant throughput hit, for high-risk travel only
 - Feature 49 (Sagan IDS) — worthwhile if you want edge threat detection; heavier to maintain
-- Feature 25/50 (UPS HAT/PiSugar 3) — requires hardware, but definitively solves SD corruption
-- Feature 45 (Domain split tunnel) — complex to maintain; only if you need selective VPN routing by domain
 
 ---
 
