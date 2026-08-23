@@ -12,6 +12,7 @@ setup() {
     export UPDATE_ROUTER_PORTAL_EXAMPLES_DIR="${TEST_ROOT}/portals/examples"
     export UPDATE_ROUTER_SYSTEMD_DIR="${TEST_ROOT}/systemd"
     export UPDATE_ROUTER_SHARE_DIR="${TEST_ROOT}/share"
+    export UPDATE_ROUTER_LIB_DIR="${TEST_ROOT}/lib"
     mkdir -p "$UPDATE_ROUTER_BIN_DIR" "$UPDATE_ROUTER_SBIN_DIR" "$UPDATE_ROUTER_SYSTEMD_DIR" "$UPDATE_ROUTER_SHARE_DIR"
 }
 
@@ -169,4 +170,47 @@ _load_update_router() {
     grep -q "new wg split tunnel" "${UPDATE_ROUTER_BIN_DIR}/apply-wg-split-tunnel.sh"
     grep -q "updated script: wireguard-watchdog.sh" "${TEST_ROOT}/update.log"
     grep -q "updated script: apply-wg-split-tunnel.sh" "${TEST_ROOT}/update.log"
+}
+
+@test "apply_update installs phased-installer sbin and bin scripts during OTA" {
+    # Regression: these ship via install/ phases at provision time but were
+    # missing from allowlists, so OTA silently froze them on installed Pis.
+    _load_update_router
+
+    src="${TEST_ROOT}/src"
+    mkdir -p "${src}/scripts"
+    printf '%s\n' '#!/bin/bash' 'echo new key rotate' > "${src}/scripts/wg-key-rotate.sh"
+    printf '%s\n' '#!/bin/bash' 'echo new peer expire' > "${src}/scripts/wg-peer-expire.sh"
+    printf '%s\n' '#!/bin/bash' 'echo new aide' > "${src}/scripts/aide-check.sh"
+    printf '%s\n' '#!/bin/bash' 'echo new log rotate' > "${src}/scripts/log-rotate.sh"
+    printf '%s\n' '#!/bin/bash' 'echo new modem watchdog' > "${src}/scripts/modem-watchdog.sh"
+
+    changed=0
+    run apply_update "$src"
+
+    [ "$status" -eq 0 ]
+    grep -q "new key rotate" "${UPDATE_ROUTER_SBIN_DIR}/wg-key-rotate.sh"
+    grep -q "new peer expire" "${UPDATE_ROUTER_SBIN_DIR}/wg-peer-expire.sh"
+    grep -q "new aide" "${UPDATE_ROUTER_SBIN_DIR}/aide-check.sh"
+    grep -q "new log rotate" "${UPDATE_ROUTER_BIN_DIR}/log-rotate.sh"
+    grep -q "new modem watchdog" "${UPDATE_ROUTER_BIN_DIR}/modem-watchdog.sh"
+}
+
+@test "apply_update delivers shared libs to the travel-router lib dir" {
+    _load_update_router
+
+    src="${TEST_ROOT}/src"
+    mkdir -p "${src}/scripts"
+    printf '%s\n' '# shared constants' '_TR_PROBE_URL_204="x"' > "${src}/scripts/net-common.sh"
+    printf '%s\n' '#!/bin/bash' 'echo not a lib' > "${src}/scripts/failover-watchdog.sh"
+
+    changed=0
+    run apply_update "$src"
+
+    [ "$status" -eq 0 ]
+    grep -q "shared constants" "${UPDATE_ROUTER_LIB_DIR}/net-common.sh"
+    # Lib delivery must be 0644 (data, not executable)
+    [ ! -x "${UPDATE_ROUTER_LIB_DIR}/net-common.sh" ]
+    [ ! -e "${UPDATE_ROUTER_LIB_DIR}/failover-watchdog.sh" ]
+    grep -q "updated lib script: net-common.sh" "${TEST_ROOT}/update.log"
 }
