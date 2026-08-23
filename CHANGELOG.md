@@ -5,6 +5,42 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.36.0] — 2026-08-23
+
+### Changed
+- **WireGuard key rotation is now opt-in (#265)** — the image path previously
+  enabled the monthly `wg-key-rotate.timer` unconditionally; rotating the server
+  identity key invalidates every peer config until clients are re-enrolled.
+  New `ENABLE_WG_KEY_ROTATION=1` flag (default off) gates the phase installer,
+  root installer prompt/summary, and TUI toggle.
+- **modem-watchdog shipped by both installer paths** — script, units and timer
+  existed with a TUI toggle but nothing installed them. Now wired into
+  `install/06-failover.sh` and root `install.sh`; ModemManager is apt-installed
+  only when `ENABLE_LTE_MODEM=1`.
+- **Required CI contexts run on every PR** — path-filtered workflows could never
+  report on tests/docs-only changes, making branch protection unenforceable for
+  those PRs. Push triggers keep their path filters.
+
+### Added
+- `HOSTAPD-BENCH.md` — measurement runbook for roadmap item #3 (HT40+ vs HT40−),
+  the last open roadmap item, which now only needs bench time with the Pi
+- Unit tests for the last three uncovered scripts: domain split tunnel,
+  clone-mac, ap-schedule (**25 new tests**; suite at 164)
+- Dependabot re-enabled in low-noise form (GitHub Actions only, monthly)
+
+### Fixed
+- **All ~148 shellcheck findings resolved repo-wide** (SC2015/SC2059/SC2003)
+  across nine scripts — semantics-preserving rewrites; printf formats with
+  escapes moved to `%b` so user-facing TUI output is byte-identical
+- update-router OTA allowlist completed for every provisioned script
+  (`wg-key-rotate`, `wg-peer-expire`, `aide-check`, `log-rotate`,
+  `modem-watchdog`, `net-common.sh` via new lib delivery class)
+
+### Security/Hardening
+- Branch protection on `main`: five fast CI contexts required (image build
+  stays optional), force-push/deletion blocked, admin bypass retained
+- Vulnerability alerts + automated security fixes enabled
+
 ## [3.35.0] — 2026-08-22
 
 ### Added
