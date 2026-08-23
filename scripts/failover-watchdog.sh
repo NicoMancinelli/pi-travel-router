@@ -30,12 +30,12 @@ flock -n 9 || exit 0
 _LOG_TMP=""
 # Status-neutral: when _LOG_TMP is empty the [ -n ] test returns 1, which would
 # otherwise override a successful exit status via the EXIT trap under set -e.
-_cleanup_log_tmp() { [ -n "$_LOG_TMP" ] && rm -f "$_LOG_TMP" || true; }
+_cleanup_log_tmp() { if [ -n "$_LOG_TMP" ]; then rm -f "$_LOG_TMP"; fi; }
 trap _cleanup_log_tmp EXIT
 
 truncate_log() {
     _LOG_TMP=$(mktemp "${LOGFILE}.tmp.XXXXXX")
-    tail -n 10000 "$LOGFILE" > "$_LOG_TMP" && mv "$_LOG_TMP" "$LOGFILE" || true
+    if tail -n 10000 "$LOGFILE" > "$_LOG_TMP"; then mv "$_LOG_TMP" "$LOGFILE" || true; fi
     _LOG_TMP=""
 }
 truncate_log
@@ -127,12 +127,16 @@ can_reach_internet() {
     local pass=0
 
     # Probe 1: HTTP generate_204
-    curl -sf --max-time "${timeout}" --interface "${iface}" -o /dev/null \
-        "${_TR_PROBE_URL_204:-http://connectivitycheck.gstatic.com/generate_204}" 2>/dev/null && ((pass++)) || true
+    if curl -sf --max-time "${timeout}" --interface "${iface}" -o /dev/null \
+        "${_TR_PROBE_URL_204:-http://connectivitycheck.gstatic.com/generate_204}" 2>/dev/null; then
+        ((pass++)) || true
+    fi
 
     # Probe 2: HTTPS detectportal
-    curl -sf --max-time "${timeout}" --interface "${iface}" -o /dev/null \
-        "${_TR_PROBE_URL_DETECT:-https://detectportal.firefox.com/success.txt}" 2>/dev/null && ((pass++)) || true
+    if curl -sf --max-time "${timeout}" --interface "${iface}" -o /dev/null \
+        "${_TR_PROBE_URL_DETECT:-https://detectportal.firefox.com/success.txt}" 2>/dev/null; then
+        ((pass++)) || true
+    fi
 
     # Probe 3: DNS resolution
     if host -W "${timeout}" google.com 8.8.8.8 >/dev/null 2>&1 \

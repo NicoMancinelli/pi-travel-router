@@ -47,9 +47,9 @@ for cmd in curl xz dd; do
 done
 
 printf "\n"
-printf "${BLD}╔══════════════════════════════════════════════════╗${RST}\n"
-printf "${BLD}║    pi-travel-router — SD card flash tool         ║${RST}\n"
-printf "${BLD}╚══════════════════════════════════════════════════╝${RST}\n\n"
+printf '%s╔══════════════════════════════════════════════════╗%s\n' "${BLD}" "${RST}"
+printf '%s║    pi-travel-router — SD card flash tool         ║%s\n' "${BLD}" "${RST}"
+printf '%s╚══════════════════════════════════════════════════╝%s\n\n' "${BLD}" "${RST}"
 
 # ── Fetch latest release ──────────────────────────────────────────────────────
 banner "Fetching latest release..."
@@ -87,8 +87,8 @@ echo ""
 
 # ── Device selection ──────────────────────────────────────────────────────────
 if [ -z "${TARGET_DEV}" ]; then
-    printf "${YEL}WARNING: this will ERASE the selected device completely.${RST}\n\n"
-    printf "Enter SD card device (e.g. ${BLD}/dev/disk4${RST} on macOS, ${BLD}/dev/sdb${RST} on Linux): "
+    printf '%sWARNING: this will ERASE the selected device completely.%s\n\n' "${YEL}" "${RST}"
+    printf 'Enter SD card device (e.g. %s/dev/disk4%s on macOS, %s/dev/sdb%s on Linux): ' "${BLD}" "${RST}" "${BLD}" "${RST}"
     read -r TARGET_DEV
 fi
 
@@ -110,8 +110,8 @@ fi
 
 ok "Target device: ${TARGET_DEV} (${DISK_SIZE})"
 
-printf "\n${RED}${BLD}This will PERMANENTLY ERASE ${TARGET_DEV}.${RST}\n"
-printf "Type ${BLD}yes${RST} to continue: "
+printf '\n%s%sThis will PERMANENTLY ERASE %s.%s\n' "${RED}" "${BLD}" "${TARGET_DEV}" "${RST}"
+printf 'Type %syes%s to continue: ' "${BLD}" "${RST}"
 read -r CONFIRM
 [ "${CONFIRM}" = "yes" ] || die "Aborted."
 
@@ -166,17 +166,17 @@ xz -dk "${IMG_XZ}" --stdout \
     || die "dd failed. Try running the script with sudo, or check the device."
 
 if [ "${OS}" = "Darwin" ]; then
-    sudo diskutil eject "${TARGET_DEV}" 2>/dev/null && ok "SD card ejected safely" || true
+    if sudo diskutil eject "${TARGET_DEV}" 2>/dev/null; then ok "SD card ejected safely"; fi
 else
     sync
     ok "Write complete — safe to remove SD card"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
-printf "\n${GRN}${BLD}✓ Done! SD card is ready.${RST}\n\n"
+printf '\n%s%s✓ Done! SD card is ready.%s\n\n' "${GRN}" "${BLD}" "${RST}"
 printf "  1. Insert SD card into Pi Zero 2W\n"
-printf "  2. Connect ${BLD}PWR IN${RST} port to power (outer micro-USB)\n"
-printf "  3. Connect ${BLD}USB${RST} port to your laptop (middle micro-USB) — ${BLD}data cable required${RST}\n"
+printf '  2. Connect %sPWR IN%s port to power (outer micro-USB)\n' "${BLD}" "${RST}"
+printf '  3. Connect %sUSB%s port to your laptop (middle micro-USB) — %sdata cable required%s\n' "${BLD}" "${RST}" "${BLD}" "${RST}"
 printf "  4. Wait ~60 seconds — a USB Ethernet device will appear on your laptop\n"
-printf "  5. Open ${BLD}http://192.168.7.1${RST} in your browser\n\n"
-printf "  Trouble? Check: ${BLD}system_profiler SPUSBDataType | grep -i ncm${RST}\n\n"
+printf '  5. Open %shttp://192.168.7.1%s in your browser\n\n' "${BLD}" "${RST}"
+printf '  Trouble? Check: %ssystem_profiler SPUSBDataType | grep -i ncm%s\n\n' "${BLD}" "${RST}"

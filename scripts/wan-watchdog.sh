@@ -37,7 +37,9 @@ _maybe_run_captive_check() {
     if [ "$_uplink" = "wlan0" ] || [ -z "$_uplink" ]; then
         local _cc_rc=0
         /usr/local/bin/captive-check.sh 2>/dev/null || _cc_rc=$?
-        [ "$_cc_rc" -ne 0 ] && logger -t wan-watchdog "captive-check.sh exited non-zero ($_cc_rc)" || true
+        if [ "$_cc_rc" -ne 0 ]; then
+            logger -t wan-watchdog "captive-check.sh exited non-zero ($_cc_rc)" || true
+        fi
     fi
 }
 

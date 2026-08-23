@@ -32,19 +32,19 @@ case "${cmd}" in
     hh="${time_str%%:*}"
     mm="${time_str##*:}"
 
-    # Validate hour and minute ranges using expr (no bc needed)
-    if [ "$(expr "${hh}" + 0)" -lt 0 ] || [ "$(expr "${hh}" + 0)" -gt 23 ]; then
+    # Validate hour and minute ranges (10# forces base-10 so "08" is not octal)
+    if [ "$((10#${hh}))" -lt 0 ] || [ "$((10#${hh}))" -gt 23 ]; then
         printf 'Error: hour must be 0-23\n' >&2
         exit 1
     fi
-    if [ "$(expr "${mm}" + 0)" -lt 0 ] || [ "$(expr "${mm}" + 0)" -gt 59 ]; then
+    if [ "$((10#${mm}))" -lt 0 ] || [ "$((10#${mm}))" -gt 59 ]; then
         printf 'Error: minute must be 0-59\n' >&2
         exit 1
     fi
 
     # Strip leading zeros for cron (cron treats 08 as octal on some systems)
-    cron_hh="$(expr "${hh}" + 0)"
-    cron_mm="$(expr "${mm}" + 0)"
+    cron_hh="$((10#${hh}))"
+    cron_mm="$((10#${mm}))"
 
     if [ "${skip_flag}" = "--skip-if-clients" ]; then
         cron_line="${cron_mm} ${cron_hh} * * * root ${SELF} _do-reboot --skip-if-clients"

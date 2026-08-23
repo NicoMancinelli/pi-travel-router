@@ -6,9 +6,9 @@ source /etc/default/travel-router 2>/dev/null || true
 AP_IFACE="${AP_IFACE:-uap0}"
 
 C='\033[0;36m'; G='\033[0;32m'; Y='\033[0;33m'; NC='\033[0m'; W='\033[1;37m'; DIM='\033[2m'; BOLD='\033[1m'
-_flag() { [[ "${!1:-0}" = "1" ]] && printf "${G}on${NC}" || printf "${DIM}off${NC}"; }
+_flag() { if [[ "${!1:-0}" = "1" ]]; then printf '%son%s' "$G" "$NC"; else printf '%soff%s' "$DIM" "$NC"; fi; }
 
-printf "${C}━━ Travel Router ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+printf '%s━━ Travel Router ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "${C}" "${NC}"
 
 # Active uplink — prefer failover state file, fall back to routing table
 _UPLINK_STATE_FILE="/var/lib/travel-router/uplink.state"
@@ -38,7 +38,7 @@ printf "  ${W}Uplink${NC}:   ${G}%s${NC} (%s)  src: %s\n" "${uplink:-none}" "$ut
 
 # Captive portal status
 if [ -f /var/lib/travel-router/captive-portal-active ]; then
-    printf "  ${Y}${BOLD}⚠ Captive portal active${NC} — authenticate via a browser, then re-check\n"
+    printf '  %s%s⚠ Captive portal active%s — authenticate via a browser, then re-check\n' "${Y}" "${BOLD}" "${NC}"
 fi
 
 # Tailscale
@@ -51,9 +51,9 @@ ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d
 ap_clients=$(iw dev "${AP_IFACE}" station dump 2>/dev/null | grep -c "^Station" || printf "0")
 printf "  ${W}AP${NC}:       %s  clients: %s\n" "$ap_ssid" "$ap_clients"
 
-printf "  ${W}Features${NC}: DoT=$(_flag ENABLE_DOT) Blocklist=$(_flag ENABLE_BLOCKLISTS) KillSwitch=$(_flag ENABLE_VPN_KILLSWITCH) AdGuard=$(_flag ENABLE_ADGUARD) Avahi=$(_flag ENABLE_AVAHI_REFLECTOR)\n"
+printf '  %sFeatures%s: DoT=%s Blocklist=%s KillSwitch=%s AdGuard=%s Avahi=%s\n' "$W" "$NC" "$(_flag ENABLE_DOT)" "$(_flag ENABLE_BLOCKLISTS)" "$(_flag ENABLE_VPN_KILLSWITCH)" "$(_flag ENABLE_ADGUARD)" "$(_flag ENABLE_AVAHI_REFLECTOR)"
 
-printf "${C}━━ System ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+printf '%s━━ System ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "${C}" "${NC}"
 
 temp=$(awk '{printf "%.0f°C", $1/1000}' /sys/class/thermal/thermal_zone0/temp 2>/dev/null || printf "?")
 uptime_str=$(uptime -p 2>/dev/null | sed 's/up //' || printf "?")
@@ -67,4 +67,4 @@ printf "  CPU: %d%%  Temp: %s  Up: %s\n" "$CPU_PCT" "$temp" "$uptime_str"
 free -m 2>/dev/null | awk '/^Mem/{printf "  RAM: %dM used / %dM total\n", $3, $2}'
 df -h / 2>/dev/null | awk 'NR==2{printf "  Disk: %s/%s (%s used)\n", $3, $2, $5}'
 printf "  Version: %s\n" "$(cat /etc/travel-router-version 2>/dev/null || printf "unknown")"
-printf "${C}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+printf '%s━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "${C}" "${NC}"
