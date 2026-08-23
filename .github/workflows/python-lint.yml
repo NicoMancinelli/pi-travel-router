@@ -7,9 +7,6 @@ on:
       - 'firstboot/**'
       - '.github/workflows/python-lint.yml'
   pull_request:
-    paths:
-      - 'firstboot/**'
-      - '.github/workflows/python-lint.yml'
 
 jobs:
   python-lint:

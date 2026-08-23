@@ -11,13 +11,6 @@ on:
       - 'web/**'
       - '.github/workflows/unit-tests.yml'
   pull_request:
-    paths:
-      - 'scripts/**'
-      - 'firstboot/**'
-      - 'tests/**'
-      - 'install/**'
-      - 'web/**'
-      - '.github/workflows/unit-tests.yml'
 
 jobs:
   bats:
