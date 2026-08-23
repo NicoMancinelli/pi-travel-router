@@ -7,13 +7,6 @@ on:
     tags:
       - 'v*'
   pull_request:
-    paths:
-      - 'scripts/**'
-      - 'install.sh'
-      - 'build/**'
-      - 'firstboot/**'
-      - 'config/**'
-      - '.github/workflows/shellcheck.yml'
 
 jobs:
   shellcheck:
