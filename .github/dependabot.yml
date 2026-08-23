@@ -1,0 +1,13 @@
+# Dependabot was fully disabled in b9b9473 due to PR noise. Re-enabled in
+# low-noise form only: GitHub Actions bumps monthly, no pip/ecosystem churn.
+# To revert: delete this file (vulnerability alerts are a repo setting, not
+# affected by this file).
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    labels:
+      - "ci"
