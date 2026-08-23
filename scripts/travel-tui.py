@@ -954,6 +954,7 @@ FEATURE_FLAGS = [
     "ENABLE_WAN_METRICS",
     "ENABLE_PROMETHEUS_EXPORTER",
     "ENABLE_WIREGUARD",
+    "ENABLE_WG_KEY_ROTATION",
     "ENABLE_LTE_MODEM",
 ]
 
@@ -1083,6 +1084,11 @@ class FeaturesScreen(Screen):
                     run(["systemctl", "try-restart", "wg-split-tunnel.service"])
                 else:
                     run(["systemctl", "stop", "wg-split-tunnel.service"])
+            elif flag == "ENABLE_WG_KEY_ROTATION":
+                if enable:
+                    run(["systemctl", "enable", "--now", "wg-key-rotate.timer"])
+                else:
+                    run(["systemctl", "disable", "--now", "wg-key-rotate.timer"])
             elif flag == "ENABLE_BANDWIDTH_DASHBOARD":
                 if enable:
                     run(["systemctl", "try-restart", "bandwidth-dashboard.service"])

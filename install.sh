@@ -384,6 +384,8 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
             "Blocks Firehol Level-1: known malware, botnets, and scanner IPs (~10 000 entries)."
         _yn ENABLE_VPN_KILLSWITCH "VPN kill switch?"               \
             "Drops all AP traffic if Tailscale disconnects. Only enable if you always route via VPN."
+        _yn ENABLE_WG_KEY_ROTATION "Monthly WireGuard key rotation?" \
+            "Rotates the WG server key each month. Every peer config must be re-enrolled after each rotation — leave OFF unless you understand the re-enrolment burden."
         echo ""
     fi
 
@@ -503,7 +505,7 @@ if [[ -n "$TS_KEY" && -z "$HEADSCALE_URL" ]]; then
     [[ "$TS_KEY" =~ ^tskey-auth- ]] || die "Tailscale auth key must start with tskey-auth-"
 fi
 ENABLE_WAN_METRICS="${ENABLE_WAN_METRICS:-1}"
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_WG_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WIREGUARD; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_WG_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WG_KEY_ROTATION ENABLE_WIREGUARD; do
     validate_flag "$flag"
 done
 
@@ -544,6 +546,7 @@ if [[ "${INSTALL_NONINTERACTIVE:-0}" != "1" ]]; then
     _sum_feat ENABLE_BLOCKLISTS     "Threat-intel IP blocklist  (Firehol Level 1)"
     [[ "${ENABLE_VPN_KILLSWITCH:-0}" == "1" ]] && \
         echo -e "    ${G}✓${NC}  VPN kill switch  (AP blocked if Tailscale drops)"
+    _sum_feat ENABLE_WG_KEY_ROTATION "WireGuard monthly key rotation  (peers need re-enrolment)"
     echo ""
     if [[ -n "${TS_KEY:-}" ]]; then
         echo -e "  ${G}✓${NC}  Tailscale key provided — Pi will join your tailnet on first boot"
@@ -929,6 +932,7 @@ for script in \
     update-router.sh \
     tailscale-watchdog.sh \
     wireguard-watchdog.sh \
+    modem-watchdog.sh \
     travel-status.sh \
     daily-digest.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
@@ -1039,7 +1043,7 @@ AP_SUBNET="${AP_SUBNET:-10.3.141.0/24}"
 AP_GATEWAY="${AP_GATEWAY:-10.3.141.1}"
 
 # Write boolean flags (values are always 0 or 1 — safe with sed too, but use helper for consistency)
-for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_WG_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WIREGUARD; do
+for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_WG_SPLIT_TUNNEL ENABLE_2FA ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER ENABLE_UPS_MONITOR ENABLE_USB_SHARE ENABLE_WG_KEY_ROTATION ENABLE_WIREGUARD; do
     _safe_write_conf "$flag" "${!flag:-0}" "$DEFAULTS_FILE"
 done
 
@@ -1083,6 +1087,7 @@ for unit in \
     update-blocklists.service update-blocklists.timer \
     tailscale-watchdog.service tailscale-watchdog.timer \
     wireguard-watchdog.service wireguard-watchdog.timer \
+    modem-watchdog.service modem-watchdog.timer \
     adguard-home.service \
     ap-disable.service ap-disable.timer \
     ap-enable.service ap-enable.timer \
@@ -1104,6 +1109,7 @@ systemctl daemon-reload
 
 for unit in \
     failover-watchdog.timer wan-watchdog.timer \
+    modem-watchdog.timer \
     cpu-performance.service cake-qdisc.service \
     wlan-mac-random.service \
     vnstat-metrics.timer update-blocklists.timer \
@@ -1350,6 +1356,22 @@ with open(path, 'a') as f: f.write(peer_block)
 else
     systemctl disable wg-quick@wg0 2>/dev/null || true
     ok "WireGuard disabled (set ENABLE_WIREGUARD=1 to activate)"
+fi
+
+# ── 18c. USB LTE modem ───────────────────────────────────────────────────────
+section "USB LTE modem"
+
+# modem-watchdog.sh + units are installed with the other watchdogs; the timer
+# is enabled there and the script self-exits unless ENABLE_LTE_MODEM=1.
+# ModemManager is only pulled in when the feature is actually switched on.
+if [[ "${ENABLE_LTE_MODEM:-0}" = "1" ]] && ! command -v mmcli > /dev/null 2>&1; then
+    apt-get install -y modemmanager 2>/dev/null || \
+        warn "ModemManager install failed — mmcli will be missing until installed"
+fi
+if [[ "${ENABLE_LTE_MODEM:-0}" = "1" ]]; then
+    ok "LTE modem watchdog active (wwan0 metric 150)"
+else
+    ok "LTE modem watchdog dormant (set ENABLE_LTE_MODEM=1 to activate)"
 fi
 
 # ── 19. firewall rules ───────────────────────────────────────────────────────
