@@ -40,7 +40,7 @@ PYEOF
 
 vnstat --json d 2>/dev/null \
     | python3 "$_py_tmp" "$TIMESTAMP" > "${METRICS_FILE}.tmp" 2>/dev/null || true
-[[ -s "${METRICS_FILE}.tmp" ]] && mv "${METRICS_FILE}.tmp" "$METRICS_FILE" || true
+if [[ -s "${METRICS_FILE}.tmp" ]]; then mv "${METRICS_FILE}.tmp" "$METRICS_FILE" || true; fi
 
 if [ -n "$PUSHGW_URL" ] && [ -f "$METRICS_FILE" ]; then
     curl -s --max-time 10 --data-binary @"$METRICS_FILE" "$PUSHGW_URL" || true

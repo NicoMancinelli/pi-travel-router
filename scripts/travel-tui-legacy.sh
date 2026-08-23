@@ -34,9 +34,9 @@ AP_IFACE="${AP_IFACE:-uap0}"
 _HR='══════════════════════════════════════════════════════════════════'
 _TOP="╔${_HR}╗"; _SEP="╠${_HR}╣"; _BOT="╚${_HR}╝"
 
-_box_top() { printf "${C}${_TOP}${NC}\n"; }
-_box_sep() { printf "${C}${_SEP}${NC}\n"; }
-_box_bot() { printf "${C}${_BOT}${NC}\n"; }
+_box_top() { printf '%s%s%s\n' "$C" "$_TOP" "$NC"; }
+_box_sep() { printf '%s%s%s\n' "$C" "$_SEP" "$NC"; }
+_box_bot() { printf '%s%s%s\n' "$C" "$_BOT" "$NC"; }
 
 # Plain text line — printf %-62s handles padding correctly (no ANSI inside $1)
 _bl() { printf "${C}║${NC}  %-62s  ${C}║${NC}\n" "$1"; }
@@ -65,11 +65,11 @@ _rl() {
 }
 
 # ── Indicator helpers ────────────────────────────────────────────────────────
-_dot()  { [[ "${!1:-0}" = "1" ]] && printf "${G}●${NC}" || printf "${DIM}○${NC}"; }
-_onoff(){ [[ "${!1:-0}" = "1" ]] && printf "${G}on${NC}" || printf "${DIM}off${NC}"; }
+_dot()  { if [[ "${!1:-0}" = "1" ]]; then printf "%s●%s" "$G" "$NC"; else printf "%s○%s" "$DIM" "$NC"; fi; }
+_onoff(){ if [[ "${!1:-0}" = "1" ]]; then printf "%son%s" "$G" "$NC"; else printf "%soff%s" "$DIM" "$NC"; fi; }
 _svc_dot() {
     systemctl is-active --quiet "$1" 2>/dev/null \
-        && printf "${G}●${NC}" || printf "${R}○${NC}"
+        && printf '%s●%s' "${G}" "${NC}" || printf '%s\n' "${R}○${NC}"
 }
 
 _cpu_usage() {
@@ -137,7 +137,7 @@ _cfg_edit() {
     else
         read -r new_val || true
     fi
-    [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
+    [[ -z "$new_val" ]] && { printf '%b\n' "  ${DIM}(unchanged)${NC}"; return; }
     python3 - "$varname" "$new_val" "/etc/default/travel-router" << 'PY'
 import sys, re, tempfile, os, shlex
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -160,11 +160,11 @@ os.replace(tmp, path)
 PY
     # shellcheck disable=SC2181
     if [[ $? -ne 0 ]]; then
-        printf "  ${R}✗ Failed to save — is /etc/default/travel-router writable?${NC}\n"
+        printf '  %s✗ Failed to save — is /etc/default/travel-router writable?%s\n' "${R}" "${NC}"
         sleep 2
         return
     fi
-    printf "  ${G}✓ Saved${NC}\n"
+    printf '  %s✓ Saved%s\n' "${G}" "${NC}"
 }
 
 _ap_edit_ssid() {
@@ -172,16 +172,16 @@ _ap_edit_ssid() {
     cur=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo "")
     printf "\n  ${W}AP Network Name (SSID)${NC}\n  Current: ${DIM}%s${NC}\n  New value (Enter to keep): " "${cur:-(unknown)}"
     read -r new_val || true
-    [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
+    [[ -z "$new_val" ]] && { printf '%b\n' "  ${DIM}(unchanged)${NC}"; return; }
     if [[ ${#new_val} -lt 1 || ${#new_val} -gt 32 ]]; then
-        printf "  ${R}SSID must be 1-32 characters${NC}\n"
+        printf '  %sSSID must be 1-32 characters%s\n' "${R}" "${NC}"
         return
     fi
     if [[ "$new_val" =~ $'\n' || "$new_val" =~ $'\r' || "$new_val" =~ $'\t' ]]; then
-        printf "  ${R}SSID must not contain control characters${NC}\n"
+        printf '  %sSSID must not contain control characters%s\n' "${R}" "${NC}"
         return
     fi
-    [[ "$new_val" =~ '#' ]] && { printf "  ${R}✗ SSID must not contain '#' (hostapd comment char)${NC}\n"; return; }
+    [[ "$new_val" =~ '#' ]] && { printf '%b\n' "  ${R}✗ SSID must not contain '#' (hostapd comment char)${NC}"; return; }
     python3 - "ssid" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
 import sys, re, os
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -202,27 +202,27 @@ with open(tmp, 'w') as fh:
     fh.writelines(lines)
 os.replace(tmp, path)
 PY
-    printf "  ${G}✓ Saved${NC} — restarting hostapd...\n"
+    printf '  %s✓ Saved%s — restarting hostapd...\n' "${G}" "${NC}"
     systemctl restart hostapd 2>/dev/null \
         && printf "  ${G}✓ hostapd restarted — AP is now %s${NC}\n" "$new_val" \
-        || printf "  ${R}✗ hostapd restart failed${NC}\n"
+        || printf '  %s✗ hostapd restart failed%s\n' "${R}" "${NC}"
 }
 
 _ap_edit_pass() {
     local cur new_val
     cur=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2- || echo "")
-    printf "\n  ${W}AP Password${NC}\n"
+    printf '\n  %sAP Password%s\n' "${W}" "${NC}"
     [[ -n "$cur" ]] \
         && printf "  Current: ${DIM}(set — %d chars)${NC}\n" "${#cur}" \
-        || printf "  Current: ${DIM}(empty)${NC}\n"
+        || printf '  Current: %s(empty)%s\n' "${DIM}" "${NC}"
     printf "  New password (8–63 chars, Enter to keep): "
     read -rs new_val || true; printf "\n"
-    [[ -z "$new_val" ]] && { printf "  ${DIM}(unchanged)${NC}\n"; return; }
+    [[ -z "$new_val" ]] && { printf '%b\n' "  ${DIM}(unchanged)${NC}"; return; }
     if [[ ${#new_val} -lt 8 || ${#new_val} -gt 63 ]]; then
-        printf "  ${R}✗ Password must be 8–63 characters${NC}\n"
+        printf '  %s✗ Password must be 8–63 characters%s\n' "${R}" "${NC}"
         return
     fi
-    [[ "$new_val" =~ '#' ]] && { printf "  ${R}✗ Password must not contain '#' (hostapd comment char)${NC}\n"; return; }
+    [[ "$new_val" =~ '#' ]] && { printf '%b\n' "  ${R}✗ Password must not contain '#' (hostapd comment char)${NC}"; return; }
     python3 - "wpa_passphrase" "$new_val" "/etc/hostapd/hostapd.conf" << 'PY'
 import sys, re, os
 key, val, path = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -243,10 +243,10 @@ with open(tmp, 'w') as fh:
     fh.writelines(lines)
 os.replace(tmp, path)
 PY
-    printf "  ${G}✓ Saved${NC} — restarting hostapd...\n"
+    printf '  %s✓ Saved%s — restarting hostapd...\n' "${G}" "${NC}"
     systemctl restart hostapd 2>/dev/null \
-        && printf "  ${G}✓ hostapd restarted${NC}\n" \
-        || printf "  ${R}✗ hostapd restart failed${NC}\n"
+        && printf '  %s✓ hostapd restarted%s\n' "${G}" "${NC}" \
+        || printf '  %s✗ hostapd restart failed%s\n' "${R}" "${NC}"
 }
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -521,8 +521,8 @@ PY
                         ENABLE_VPN_KILLSWITCH|ENABLE_TOR_TRANSPARENT|ENABLE_BLOCKLISTS|ENABLE_PER_DEVICE_VPN)
                             printf "  Reloading firewall...\n"
                             /usr/local/bin/travel-router-firewall.sh --save 2>/dev/null \
-                                && printf "  ${G}✓ firewall reloaded${NC}\n" \
-                                || printf "  ${R}✗ firewall reload failed${NC}\n"
+                                && printf '  %s✓ firewall reloaded%s\n' "${G}" "${NC}" \
+                                || printf '  %s✗ firewall reload failed%s\n' "${R}" "${NC}"
                             if [[ "$target_flag" = "ENABLE_BLOCKLISTS" && "$new_val" = "1" ]]; then
                                 printf "  Triggering blocklist update...\n"
                                 systemctl start update-blocklists.service 2>/dev/null || true
@@ -548,7 +548,7 @@ PY
                             ;;
                         ENABLE_AVAHI_REFLECTOR)
                             systemctl reload-or-restart avahi-daemon 2>/dev/null || true
-                            printf "  ${G}✓ avahi-daemon restarted${NC}\n"
+                            printf '  %s✓ avahi-daemon restarted%s\n' "${G}" "${NC}"
                             ;;
                         ENABLE_HTTP_UA_REWRITE)
                             if [[ "$new_val" = "1" ]]; then
@@ -561,24 +561,24 @@ PY
                         ENABLE_AP_SCHEDULE)
                             if [[ "$new_val" = "1" ]]; then
                                 systemctl enable --now ap-disable.timer ap-enable.timer 2>/dev/null || true
-                                printf "  ${G}✓ AP schedule timers enabled${NC}\n"
+                                printf '  %s✓ AP schedule timers enabled%s\n' "${G}" "${NC}"
                             else
                                 systemctl disable --now ap-disable.timer ap-enable.timer 2>/dev/null || true
-                                printf "  ${G}✓ AP schedule timers disabled${NC}\n"
+                                printf '  %s✓ AP schedule timers disabled%s\n' "${G}" "${NC}"
                             fi
                             ;;
                         ENABLE_CAKE_AUTOTUNE)
                             if [[ "$new_val" = "1" ]]; then
                                 systemctl enable --now tune-cake.timer 2>/dev/null || true
-                                printf "  ${G}✓ CAKE autotune enabled${NC}\n"
+                                printf '  %s✓ CAKE autotune enabled%s\n' "${G}" "${NC}"
                             else
                                 systemctl disable --now tune-cake.timer 2>/dev/null || true
-                                printf "  ${G}✓ CAKE autotune disabled${NC}\n"
+                                printf '  %s✓ CAKE autotune disabled%s\n' "${G}" "${NC}"
                             fi
                             ;;
                         ENABLE_CLIENT_QOS)
                             /usr/local/bin/apply-cake.sh 2>/dev/null || true
-                            printf "  ${G}✓ CAKE qdisc re-applied${NC}\n"
+                            printf '  %s✓ CAKE qdisc re-applied%s\n' "${G}" "${NC}"
                             ;;
                         ENABLE_AUTO_UPDATES)
                             if [[ "$new_val" = "1" ]]; then
@@ -591,59 +591,59 @@ PY
                         ENABLE_UPS_MONITOR)
                             if [[ "$new_val" = "1" ]]; then
                                 systemctl enable --now ups-monitor.timer 2>/dev/null || true
-                                printf "  ${G}✓ UPS monitor enabled${NC}\n"
+                                printf '  %s✓ UPS monitor enabled%s\n' "${G}" "${NC}"
                             else
                                 systemctl disable --now ups-monitor.timer 2>/dev/null || true
-                                printf "  ${G}✓ UPS monitor disabled${NC}\n"
+                                printf '  %s✓ UPS monitor disabled%s\n' "${G}" "${NC}"
                             fi
                             ;;
                         ENABLE_2FA)
                             if [[ "$new_val" = "1" ]]; then
-                                printf "  ${G}✓ 2FA enabled in config${NC}\n"
-                                printf "  ${DIM}Run: sudo setup-2fa.sh  to generate your TOTP secret and QR code${NC}\n"
+                                printf '  %s✓ 2FA enabled in config%s\n' "${G}" "${NC}"
+                                printf '  %sRun: sudo setup-2fa.sh  to generate your TOTP secret and QR code%s\n' "${DIM}" "${NC}"
                             else
-                                printf "  ${G}✓ 2FA disabled${NC}\n"
-                                printf "  ${DIM}PAM config still loads the module — remove ~/.google_authenticator to fully disable${NC}\n"
+                                printf '  %s✓ 2FA disabled%s\n' "${G}" "${NC}"
+                                printf '  %sPAM config still loads the module — remove ~/.google_authenticator to fully disable%s\n' "${DIM}" "${NC}"
                             fi
                             ;;
                         ENABLE_WAN_METRICS)
                             if [[ "$new_val" = "1" ]]; then
                                 systemctl enable --now wan-metrics.timer 2>/dev/null || true
-                                printf "  ${G}✓ WAN metrics collection enabled${NC}\n"
+                                printf '  %s✓ WAN metrics collection enabled%s\n' "${G}" "${NC}"
                             else
                                 systemctl disable --now wan-metrics.timer 2>/dev/null || true
-                                printf "  ${G}✓ WAN metrics collection disabled${NC}\n"
+                                printf '  %s✓ WAN metrics collection disabled%s\n' "${G}" "${NC}"
                             fi
                             ;;
                         ENABLE_PROMETHEUS_EXPORTER)
                             if [[ "$new_val" = "1" ]]; then
                                 systemctl enable --now prometheus-node-exporter 2>/dev/null || true
-                                printf "  ${G}✓ Prometheus exporter enabled${NC}\n"
+                                printf '  %s✓ Prometheus exporter enabled%s\n' "${G}" "${NC}"
                             else
                                 systemctl disable --now prometheus-node-exporter 2>/dev/null || true
-                                printf "  ${G}✓ Prometheus exporter disabled${NC}\n"
+                                printf '  %s✓ Prometheus exporter disabled%s\n' "${G}" "${NC}"
                             fi
                             ;;
                         ENABLE_SPLIT_TUNNEL)
                             if [[ "$new_val" = "1" ]]; then
                                 systemctl try-restart split-tunnel.service 2>/dev/null || true
-                                printf "  ${G}✓ split-tunnel service restarted${NC}\n"
+                                printf '  %s✓ split-tunnel service restarted%s\n' "${G}" "${NC}"
                             else
                                 systemctl stop split-tunnel.service 2>/dev/null || true
-                                printf "  ${G}✓ split-tunnel service stopped${NC}\n"
+                                printf '  %s✓ split-tunnel service stopped%s\n' "${G}" "${NC}"
                             fi
                             ;;
                         ENABLE_BANDWIDTH_DASHBOARD)
                             if [[ "$new_val" = "1" ]]; then
                                 systemctl try-restart bandwidth-dashboard.service 2>/dev/null || true
-                                printf "  ${G}✓ bandwidth-dashboard service restarted${NC}\n"
+                                printf '  %s✓ bandwidth-dashboard service restarted%s\n' "${G}" "${NC}"
                             else
                                 systemctl stop bandwidth-dashboard.service 2>/dev/null || true
-                                printf "  ${G}✓ bandwidth-dashboard service stopped${NC}\n"
+                                printf '  %s✓ bandwidth-dashboard service stopped%s\n' "${G}" "${NC}"
                             fi
                             ;;
                         *)
-                            printf "  ${DIM}Flag saved — restart affected service if needed${NC}\n"
+                            printf '  %sFlag saved — restart affected service if needed%s\n' "${DIM}" "${NC}"
                             ;;
                     esac
                     sleep 2
@@ -673,24 +673,24 @@ show_logs() {
         local choice
         read -r choice || true
         case "$choice" in
-            1) clear; printf "${W}wan-watchdog.log:${NC}\n\n"
+            1) clear; printf '%b\n' "${W}wan-watchdog.log:${NC}\n\n"
                tail -n 30 /var/log/wan-watchdog.log 2>/dev/null || printf "  (no log found)\n"
                printf "\n  Press any key..."; read -rsn1 || true ;;
-            2) clear; printf "${W}tailscaled (last 30):${NC}\n\n"
+            2) clear; printf '%b\n' "${W}tailscaled (last 30):${NC}\n\n"
                journalctl -u tailscaled -n 30 --no-pager 2>/dev/null || printf "  (unavailable)\n"
                printf "\n  Press any key..."; read -rsn1 || true ;;
-            3) clear; printf "${W}failover-watchdog (last 30):${NC}\n\n"
+            3) clear; printf '%b\n' "${W}failover-watchdog (last 30):${NC}\n\n"
                journalctl -u failover-watchdog -n 30 --no-pager 2>/dev/null \
                    || printf "  (unavailable)\n"
                printf "\n  Press any key..."; read -rsn1 || true ;;
-            4) clear; printf "${W}hostapd (last 30):${NC}\n\n"
+            4) clear; printf '%b\n' "${W}hostapd (last 30):${NC}\n\n"
                journalctl -u hostapd -n 30 --no-pager 2>/dev/null \
                    || printf "  (unavailable)\n"
                printf "\n  Press any key..."; read -rsn1 || true ;;
-            5) clear; printf "${W}Failed units:${NC}\n\n"
+            5) clear; printf '%b\n' "${W}Failed units:${NC}\n\n"
                systemctl --failed --no-pager 2>/dev/null || true
                printf "\n  Press any key..."; read -rsn1 || true ;;
-            6) clear; printf "${W}update-router.log:${NC}\n\n"
+            6) clear; printf '%b\n' "${W}update-router.log:${NC}\n\n"
                tail -n 20 /var/log/update-router.log 2>/dev/null || printf "  (no log found)\n"
                printf "\n  Press any key..."; read -rsn1 || true ;;
             q|Q) return ;;
@@ -801,7 +801,7 @@ show_network() {
         local choice
         read -r choice || true
         case "$choice" in
-            1) clear; printf "${W}WiFi QR Code:${NC}\n\n"
+            1) clear; printf '%b\n' "${W}WiFi QR Code:${NC}\n\n"
                local _ssid _pass _auth
                _ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2-)
                _pass=$(grep "^wpa_passphrase=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d= -f2-)
@@ -821,23 +821,23 @@ show_network() {
                    printf "  qrencode not installed — scan this string manually:\n  %s\n" "$_wifi_str"
                fi
                printf "\n  Press any key..."; read -rsn1 || true ;;
-            2) clear; printf "${W}Running speedtest...${NC}\n\n"
+            2) clear; printf '%b\n' "${W}Running speedtest...${NC}\n\n"
                /usr/local/bin/tune-cake.sh 2>&1 || \
-                   printf "  ${R}failed${NC} — check: journalctl -u tune-cake\n"
+                   printf '  %sfailed%s — check: journalctl -u tune-cake\n' "${R}" "${NC}"
                printf "\n  Press any key..."; read -rsn1 || true ;;
             3) printf "\n  MAC to clone (e.g. aa:bb:cc:dd:ee:ff): "
                local mac_in; read -r mac_in || true
                if [[ "$mac_in" =~ ^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$ ]]; then
                    /usr/local/bin/clone-mac.sh "$mac_in" 2>&1 \
-                       && printf "  ${G}✓ MAC cloned to wlan0${NC}\n" \
-                       || printf "  ${R}✗ clone failed${NC}\n"
+                       && printf '  %s✓ MAC cloned to wlan0%s\n' "${G}" "${NC}" \
+                       || printf '  %s✗ clone failed%s\n' "${R}" "${NC}"
                else
-                   printf "  ${R}Invalid MAC format${NC}\n"
+                   printf '  %sInvalid MAC format%s\n' "${R}" "${NC}"
                fi
                sleep 2 ;;
             4) /usr/local/bin/clone-mac.sh --restore 2>&1 \
-                   && printf "  ${G}✓ original MAC restored${NC}\n" \
-                   || printf "  ${R}✗ restore failed${NC}\n"
+                   && printf '  %s✓ original MAC restored%s\n' "${G}" "${NC}" \
+                   || printf '  %s✗ restore failed%s\n' "${R}" "${NC}"
                sleep 2 ;;
             5) if command -v bmon >/dev/null 2>&1; then
                    bmon || true
@@ -852,7 +852,7 @@ show_network() {
                    printf "  iftop not installed\n  Press any key..."; read -rsn1 || true
                fi ;;
             7) clear
-               printf "${W}Connect to WiFi Network${NC}\n\n"
+               printf '%sConnect to WiFi Network%s\n\n' "${W}" "${NC}"
                printf "  Scanning...\n\n"
                nmcli --fields SSID,SIGNAL,SECURITY device wifi list 2>/dev/null | head -20 || true
                printf "\n  SSID to connect to (Enter to cancel): "
@@ -864,47 +864,47 @@ show_network() {
                if [[ -n "$wifi_pass" ]]; then
                    nmcli device wifi connect "$wifi_ssid" password "$wifi_pass" ifname wlan0 2>&1 \
                        && { printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid"; _connect_ok=1; } \
-                       || printf "  ${R}✗ failed — check SSID/password${NC}\n"
+                       || printf '  %s✗ failed — check SSID/password%s\n' "${R}" "${NC}"
                else
                    nmcli device wifi connect "$wifi_ssid" ifname wlan0 2>&1 \
                        && { printf "  ${G}✓ connected to %s${NC}\n" "$wifi_ssid"; _connect_ok=1; } \
-                       || printf "  ${R}✗ could not connect${NC}\n"
+                       || printf '  %s✗ could not connect%s\n' "${R}" "${NC}"
                fi
                if [[ "$_connect_ok" -eq 1 ]]; then
-                   printf "  ${DIM}Waiting for DHCP...${NC}\n"
+                   printf '  %sWaiting for DHCP...%s\n' "${DIM}" "${NC}"
                    sleep 4
                    printf "  Checking for captive portal...\n"
                    /usr/local/bin/captive-check.sh 2>/dev/null || true
                    if [ -f /tmp/captive-portal-active ]; then
-                       printf "  ${R}${BOLD}⚠  Captive portal detected!${NC}\n"
-                       printf "  ${W}Open a browser on your laptop/phone and log in to the hotel WiFi,${NC}\n"
-                       printf "  ${W}then return here and press [h] to re-check.${NC}\n"
+                       printf '  %s%s⚠  Captive portal detected!%s\n' "${R}" "${BOLD}" "${NC}"
+                       printf '  %sOpen a browser on your laptop/phone and log in to the hotel WiFi,%s\n' "${W}" "${NC}"
+                       printf '  %sthen return here and press [h] to re-check.%s\n' "${W}" "${NC}"
                    else
-                       printf "  ${G}✓ Internet clear — no captive portal${NC}\n"
+                       printf '  %s✓ Internet clear — no captive portal%s\n' "${G}" "${NC}"
                    fi
                fi
                printf "\n  Press any key..."; read -rsn1 || true ;;
             8) if [[ -z "$bt_mac" ]]; then
-                   printf "  ${R}IPHONE_BT_MAC not set — go to Settings → [1]${NC}\n"
+                   printf '  %sIPHONE_BT_MAC not set — go to Settings → [1]%s\n' "${R}" "${NC}"
                    sleep 2
                else
                    printf "  Starting Bluetooth tethering to %s...\n" "$bt_mac"
                    /usr/local/bin/start-bt-tether.sh "$bt_mac" 2>&1 \
-                       && printf "  ${G}✓ BT tethering started${NC}\n" \
-                       || printf "  ${R}✗ BT tethering failed — is the phone paired and hotspot on?${NC}\n"
+                       && printf '  %s✓ BT tethering started%s\n' "${G}" "${NC}" \
+                       || printf '  %s✗ BT tethering failed — is the phone paired and hotspot on?%s\n' "${R}" "${NC}"
                    sleep 2
                fi ;;
             9) printf "  Stopping Bluetooth tethering...\n"
                /usr/local/bin/stop-bt-tether.sh 2>&1 \
-                   && printf "  ${G}✓ BT tethering stopped${NC}\n" \
-                   || printf "  ${R}✗ stop failed${NC}\n"
+                   && printf '  %s✓ BT tethering stopped%s\n' "${G}" "${NC}" \
+                   || printf '  %s✗ stop failed%s\n' "${R}" "${NC}"
                sleep 2 ;;
             h|H) printf "  Running captive portal check...\n"
                /usr/local/bin/captive-check.sh 2>/dev/null || true
                if [ -f /tmp/captive-portal-active ]; then
-                   printf "  ${R}⚠  Portal still active — authenticate via your browser first${NC}\n"
+                   printf '  %s⚠  Portal still active — authenticate via your browser first%s\n' "${R}" "${NC}"
                else
-                   printf "  ${G}✓ Internet clear — no captive portal${NC}\n"
+                   printf '  %s✓ Internet clear — no captive portal%s\n' "${G}" "${NC}"
                fi
                sleep 3 ;;
             q|Q) return ;;
@@ -1000,15 +1000,15 @@ show_settings() {
                 # shellcheck source=/dev/null
                 source /etc/default/travel-router 2>/dev/null || true
                 if [[ ! "${AP_DISABLE_TIME:-02:00}" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
-                    printf "  ${R}✗ Invalid time format — drop-in not written${NC}\n"
+                    printf '  %s✗ Invalid time format — drop-in not written%s\n' "${R}" "${NC}"
                     sleep 2
                 else
                     mkdir -p /etc/systemd/system/ap-disable.timer.d
                     _dropin_tmp=$(mktemp /etc/systemd/system/ap-disable.timer.d/time.conf.XXXXXX)
-                    printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
+                    if printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
                         "${AP_DISABLE_TIME:-02:00}" > "$_dropin_tmp" \
-                        && mv "$_dropin_tmp" /etc/systemd/system/ap-disable.timer.d/time.conf \
-                        || rm -f "$_dropin_tmp"
+                        && mv "$_dropin_tmp" /etc/systemd/system/ap-disable.timer.d/time.conf; then :;
+                    else rm -f "$_dropin_tmp"; fi
                     systemctl daemon-reload 2>/dev/null || true
                     systemctl try-restart ap-disable.timer 2>/dev/null || true
                     sleep 1
@@ -1018,15 +1018,15 @@ show_settings() {
                 # shellcheck source=/dev/null
                 source /etc/default/travel-router 2>/dev/null || true
                 if [[ ! "${AP_ENABLE_TIME:-07:00}" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
-                    printf "  ${R}✗ Invalid time format — drop-in not written${NC}\n"
+                    printf '  %s✗ Invalid time format — drop-in not written%s\n' "${R}" "${NC}"
                     sleep 2
                 else
                     mkdir -p /etc/systemd/system/ap-enable.timer.d
                     _dropin_tmp=$(mktemp /etc/systemd/system/ap-enable.timer.d/time.conf.XXXXXX)
-                    printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
+                    if printf '[Timer]\nOnCalendar=\nOnCalendar=*-*-* %s:00\n' \
                         "${AP_ENABLE_TIME:-07:00}" > "$_dropin_tmp" \
-                        && mv "$_dropin_tmp" /etc/systemd/system/ap-enable.timer.d/time.conf \
-                        || rm -f "$_dropin_tmp"
+                        && mv "$_dropin_tmp" /etc/systemd/system/ap-enable.timer.d/time.conf; then :;
+                    else rm -f "$_dropin_tmp"; fi
                     systemctl daemon-reload 2>/dev/null || true
                     systemctl try-restart ap-enable.timer 2>/dev/null || true
                     sleep 1
@@ -1042,7 +1042,7 @@ show_settings() {
                 source /etc/default/travel-router 2>/dev/null || true
                 if [[ -n "${SSH_ADMIN_KEY:-}" ]]; then
                     if [[ ! "${SSH_ADMIN_KEY}" =~ ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519|sk-ecdsa-sha2-nistp256)[[:space:]] ]]; then
-                        printf "  ${R}Invalid SSH key format${NC}\n"
+                        printf '  %sInvalid SSH key format%s\n' "${R}" "${NC}"
                         sleep 2
                         continue
                     fi
@@ -1052,9 +1052,9 @@ show_settings() {
                     if ! grep -qF "${SSH_ADMIN_KEY}" /root/.ssh/authorized_keys 2>/dev/null; then
                         printf '%s\n' "${SSH_ADMIN_KEY}" >> /root/.ssh/authorized_keys
                         chmod 600 /root/.ssh/authorized_keys
-                        printf "  ${G}✓ Key added to /root/.ssh/authorized_keys${NC}\n"
+                        printf '  %s✓ Key added to /root/.ssh/authorized_keys%s\n' "${G}" "${NC}"
                     else
-                        printf "  ${DIM}Key already present in authorized_keys${NC}\n"
+                        printf '  %sKey already present in authorized_keys%s\n' "${DIM}" "${NC}"
                     fi
                 fi
                 sleep 2 ;;
@@ -1092,36 +1092,36 @@ show_system() {
                printf "  Confirm password: "
                local _pw2; read -rs _pw2 || true; printf "\n"
                if [[ -z "$_pw1" ]]; then
-                   printf "  ${DIM}Cancelled${NC}\n"
+                   printf '  %sCancelled%s\n' "${DIM}" "${NC}"
                elif [[ "$_pw1" != "$_pw2" ]]; then
-                   printf "  ${R}✗ Passwords do not match${NC}\n"
+                   printf '  %s✗ Passwords do not match%s\n' "${R}" "${NC}"
                elif [[ ${#_pw1} -lt 8 ]]; then
-                   printf "  ${R}✗ Must be at least 8 characters${NC}\n"
+                   printf '  %s✗ Must be at least 8 characters%s\n' "${R}" "${NC}"
                else
                    printf 'root:%s\n' "${_pw1}" | chpasswd 2>/dev/null \
-                       && printf "  ${G}✓ Root password updated${NC}\n" \
-                       || printf "  ${R}✗ chpasswd failed${NC}\n"
+                       && printf '  %s✓ Root password updated%s\n' "${G}" "${NC}" \
+                       || printf '  %s✗ chpasswd failed%s\n' "${R}" "${NC}"
                fi
                sleep 2 ;;
             1) printf "  Rebooting...\n"; reboot ;;
             2) printf "  Shutting down...\n"; shutdown -h now ;;
-            3) clear; printf "${W}Running update-router.sh...${NC}\n\n"
+            3) clear; printf '%b\n' "${W}Running update-router.sh...${NC}\n\n"
                /usr/local/bin/update-router.sh 2>&1 || true
                printf "\n  Press any key..."; read -rsn1 || true ;;
             4) /usr/local/bin/daily-digest.sh 2>&1 || true
-               printf "  ${G}✓ digest sent${NC}\n"; sleep 2 ;;
+               printf '  %s✓ digest sent%s\n' "${G}" "${NC}"; sleep 2 ;;
             5) printf "  Reloading firewall...\n"
                /usr/local/bin/travel-router-firewall.sh --save 2>/dev/null || true
-               printf "  ${G}✓ firewall reloaded${NC}\n"; sleep 2 ;;
-            6) clear; printf "${W}Running travel-diagnostic...${NC}\n\n"
+               printf '  %s✓ firewall reloaded%s\n' "${G}" "${NC}"; sleep 2 ;;
+            6) clear; printf '%b\n' "${W}Running travel-diagnostic...${NC}\n\n"
                /usr/local/bin/travel-diagnostic 2>&1 || true
                printf "\n  Press any key..."; read -rsn1 || true ;;
             7) clear; /usr/local/bin/setup-2fa.sh 2>&1 || true
                printf "\n  Press any key..."; read -rsn1 || true ;;
-            8) clear; printf "${W}Updating blocklists...${NC}\n\n"
+            8) clear; printf '%b\n' "${W}Updating blocklists...${NC}\n\n"
                /usr/local/bin/update-blocklists.sh 2>&1 || true
                printf "\n  Press any key..."; read -rsn1 || true ;;
-            9) clear; printf "${W}Generating bandwidth report...${NC}\n\n"
+            9) clear; printf '%b\n' "${W}Generating bandwidth report...${NC}\n\n"
                /usr/local/bin/generate-bandwidth-report.sh 2>&1 || true
                printf "\n  Report: /var/lib/travel-router/bandwidth.html\n"
                printf "\n  Press any key..."; read -rsn1 || true ;;

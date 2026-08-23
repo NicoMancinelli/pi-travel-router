@@ -27,10 +27,10 @@ die()     { printf "\n  ${RED}✗ FATAL:${RST} %s\n\n" "$*" >&2; exit 1; }
 section() { printf "\n${BLD}── %s ──${RST}\n" "$*"; }
 
 printf "\n"
-printf "${BLD}╔══════════════════════════════════════════════════╗${RST}\n"
-printf "${BLD}║   pi-travel-router — Setup                       ║${RST}\n"
-printf "${BLD}║   https://github.com/NicoMancinelli/pi-travel-router ║${RST}\n"
-printf "${BLD}╚══════════════════════════════════════════════════╝${RST}\n\n"
+printf '%s╔══════════════════════════════════════════════════╗%s\n' "${BLD}" "${RST}"
+printf '%s║   pi-travel-router — Setup                       ║%s\n' "${BLD}" "${RST}"
+printf '%s║   https://github.com/NicoMancinelli/pi-travel-router ║%s\n' "${BLD}" "${RST}"
+printf '%s╚══════════════════════════════════════════════════╝%s\n\n' "${BLD}" "${RST}"
 
 # ── Root check ────────────────────────────────────────────────────────────────
 [[ $EUID -eq 0 ]] || die "Run as root:  curl ... | sudo bash"

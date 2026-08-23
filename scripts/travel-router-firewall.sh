@@ -39,18 +39,18 @@ save_rules() {
     mkdir -p /etc/iptables
     local _tmp
     _tmp=$(mktemp /etc/iptables/rules.v4.XXXXXX)
-    iptables-save > "$_tmp" && mv "$_tmp" /etc/iptables/rules.v4 || rm -f "$_tmp"
+    if iptables-save > "$_tmp" && mv "$_tmp" /etc/iptables/rules.v4; then :; else rm -f "$_tmp"; fi
     _tmp=$(mktemp /etc/iptables/rules.v6.XXXXXX)
-    ip6tables-save > "$_tmp" && mv "$_tmp" /etc/iptables/rules.v6 || rm -f "$_tmp"
+    if ip6tables-save > "$_tmp" && mv "$_tmp" /etc/iptables/rules.v6; then :; else rm -f "$_tmp"; fi
 }
 
 restore_rules() {
     # Fast path: restore persisted rules to avoid full rebuild on every start
     if command -v netfilter-persistent >/dev/null 2>&1; then
-        netfilter-persistent reload 2>/dev/null && return 0 || true
+        if netfilter-persistent reload 2>/dev/null; then return 0; fi
     fi
-    [ -f /etc/iptables/rules.v4 ] && iptables-restore  < /etc/iptables/rules.v4 2>/dev/null || true
-    [ -f /etc/iptables/rules.v6 ] && ip6tables-restore < /etc/iptables/rules.v6 2>/dev/null || true
+    if [ -f /etc/iptables/rules.v4 ]; then iptables-restore  < /etc/iptables/rules.v4 2>/dev/null || true; fi
+    if [ -f /etc/iptables/rules.v6 ]; then ip6tables-restore < /etc/iptables/rules.v6 2>/dev/null || true; fi
 }
 
 # If called with --restore, replay saved rules and exit (used by boot service)
