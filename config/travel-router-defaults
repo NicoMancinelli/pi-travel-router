@@ -117,6 +117,11 @@ WG_LISTEN_PORT=51820
 WG_NETWORK=10.9.0.0/24
 WG_INTERFACE=wg0
 
+# Monthly WireGuard server key rotation (#265). OFF by default: rotating the
+# server identity key invalidates every peer config until clients are
+# re-enrolled with the new public key (announced via ntfy when it fires).
+ENABLE_WG_KEY_ROTATION="0"
+
 ENABLE_LTE_MODEM=0
 LTE_APN=internet
 LTE_NM_PROFILE=lte-modem

@@ -91,15 +91,22 @@ run_security() {
         ok "Auto security updates disabled (set ENABLE_AUTO_UPDATES=1 to activate)"
     fi
 
-    # ── WireGuard key rotation ───────────────────────────────────────────────────
+    # ── WireGuard key rotation (opt-in — #265) ──────────────────────────────────
+    # Rotating the server identity key invalidates every peer config until the
+    # owner re-enrols clients, so rotation is OFF unless explicitly enabled.
     section "WireGuard key rotation"
 
-    install_file scripts/wg-key-rotate.sh /usr/local/sbin/wg-key-rotate.sh 755
-    install_file systemd/wg-key-rotate.service /etc/systemd/system/wg-key-rotate.service 644
-    install_file systemd/wg-key-rotate.timer   /etc/systemd/system/wg-key-rotate.timer   644
-    run_or_dry systemctl daemon-reload
-    run_or_dry systemctl enable wg-key-rotate.timer
-    ok "WireGuard monthly key rotation timer enabled"
+    if [[ "${ENABLE_WG_KEY_ROTATION:-0}" = "1" ]]; then
+        install_file scripts/wg-key-rotate.sh /usr/local/sbin/wg-key-rotate.sh 755
+        install_file systemd/wg-key-rotate.service /etc/systemd/system/wg-key-rotate.service 644
+        install_file systemd/wg-key-rotate.timer   /etc/systemd/system/wg-key-rotate.timer   644
+        run_or_dry systemctl daemon-reload
+        run_or_dry systemctl enable wg-key-rotate.timer
+        ok "WireGuard monthly key rotation timer enabled"
+    else
+        run_or_dry systemctl disable wg-key-rotate.timer 2>/dev/null || true
+        ok "WireGuard key rotation disabled (set ENABLE_WG_KEY_ROTATION=1 to activate)"
+    fi
 
     # ── AIDE file integrity ──────────────────────────────────────────────────────
     section "AIDE file integrity"

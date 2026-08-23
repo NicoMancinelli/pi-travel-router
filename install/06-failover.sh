@@ -13,12 +13,31 @@ run_failover() {
         start-bt-tether.sh stop-bt-tether.sh \
         clone-mac.sh \
         tailscale-watchdog.sh \
-        wireguard-watchdog.sh; do
+        wireguard-watchdog.sh \
+        modem-watchdog.sh; do
         install_file "scripts/$script" "/usr/local/bin/$script" 755
         ok "  $script"
     done
 
     ok "Failover/watchdog scripts installed"
+
+    # ── USB LTE modem watchdog ─────────────────────────────────────────────────
+    section "USB LTE modem"
+
+    install_file systemd/modem-watchdog.service /etc/systemd/system/modem-watchdog.service 644
+    install_file systemd/modem-watchdog.timer   /etc/systemd/system/modem-watchdog.timer   644
+    run_or_dry systemctl daemon-reload
+
+    if [[ "${ENABLE_LTE_MODEM:-0}" = "1" ]]; then
+        if ! command -v mmcli > /dev/null 2>&1; then
+            run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y modemmanager 2>/dev/null || true
+        fi
+        run_or_dry systemctl enable --now modem-watchdog.timer 2>/dev/null || true
+        ok "LTE modem watchdog enabled (metric 150, between iPhone and Android)"
+    else
+        run_or_dry systemctl disable modem-watchdog.timer 2>/dev/null || true
+        ok "LTE modem watchdog disabled (set ENABLE_LTE_MODEM=1 to activate)"
+    fi
 
     # ── CAKE auto-tuning ────────────────────────────────────────────────────────
     section "CAKE bandwidth auto-tuning"
