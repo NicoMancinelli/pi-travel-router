@@ -133,6 +133,7 @@ apply_update() {
         travel-status.sh travel-diagnostic.sh generate-bandwidth-report.sh
         vnstat-push.sh vnstat-metrics.sh tune-cake.sh daily-digest.sh update-router.sh update-blocklists.sh
         setup-2fa.sh install-adguard.sh apply-cake.sh
+        log-rotate.sh modem-watchdog.sh
     )
     TUI_SHELL_ALLOWLIST=(
         travel-tui-legacy.sh
@@ -143,6 +144,11 @@ apply_update() {
         mount-storage.sh usb-share.sh overlayfs-ctl.sh schedule-reboot.sh
         speedtest.sh set-doh-resolver.sh apply-privacy-profile.sh
         config-backup.sh apply-qos.sh
+        wg-key-rotate.sh wg-peer-expire.sh aide-check.sh
+    )
+    # Shared libraries sourced by shipped scripts (installed 0644).
+    LIB_SCRIPT_ALLOWLIST=(
+        net-common.sh
     )
     OTA_SCRIPT_ALLOWLIST=(
         ota-update.sh
@@ -271,6 +277,29 @@ apply_update() {
         if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
             cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
             log "  updated sbin script: $name"
+            changed=1
+        fi
+    done
+    shopt -u nullglob
+
+    # Shared libraries → /usr/local/lib/travel-router/ (0644, not executable)
+    shopt -s nullglob
+    for script in "${src}"/scripts/*.sh; do
+        name=$(basename "$script")
+
+        local _lallowed=0
+        for _la in "${LIB_SCRIPT_ALLOWLIST[@]}"; do
+            [[ "$_la" = "$name" ]] && { _lallowed=1; break; }
+        done
+        if [[ "$_lallowed" -eq 0 ]]; then
+            continue
+        fi
+
+        mkdir -p "${UPDATE_ROUTER_LIB_DIR:-/usr/local/lib/travel-router}"
+        dest="${UPDATE_ROUTER_LIB_DIR:-/usr/local/lib/travel-router}/${name}"
+        if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
+            cp "$script" "${dest}.tmp" && chmod 644 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
+            log "  updated lib script: $name"
             changed=1
         fi
     done
