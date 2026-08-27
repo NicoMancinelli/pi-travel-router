@@ -88,42 +88,43 @@ Open [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
 
 - **Choose OS** → **Use custom** → select the `.img.xz` you downloaded
 - **Choose Storage** → select your SD card
-- **OS Customisation** (optional): You can configure Hostname, Wi-Fi credentials & country, Timezone, User password, and SSH keys directly in Imager's customisation dialog! They will be automatically extracted, applied to `root`, and pre-seeded into the setup wizard.
-- *(Optional Headless Setup)*: You can also drop a `travel-router.env` file (with `AUTO_INSTALL=1` and `AP_PASS="yourpassphrase"`) onto the FAT32 boot partition right after flashing for zero-touch automated setup.
+- **OS Customisation**:
+  - *Option A (Imager Customization)*: In Imager v2.0+, press **`Ctrl+Shift+X`** (or **`Cmd+Shift+X`** on macOS) to open the Advanced Options / Customization dialog. Alternatively, launch Imager with our repository manifest: `rpi-imager --repo https://raw.githubusercontent.com/NicoMancinelli/pi-travel-router/main/os_list.json`. You can configure Hostname, Wi-Fi credentials & country, Timezone, User password, and SSH keys directly!
+  - *Option B (Boot Drop-in)*: After flashing, simply drop a `travel-router.env` file (e.g. with `AUTO_INSTALL=1`, `AP_PASS="mysecretpassword"`) onto the FAT32 boot partition (`/Volumes/bootfs/` or `E:\`) for zero-touch setup without any Imager prompts.
 - **Write**
 
 ---
 
 **3. Boot the Pi**
 
-Insert the SD card. Connect power to the `PWR` port. (The `PWR` port is the one closer to the **edge** of the board, labeled `PWR IN`. The `USB` port in the next step is the one in the middle.) Wait ~90 seconds for first boot (mDNS, network, and the firstboot wizard need to come up). Wait for the USB Ethernet adapter to appear on your laptop before opening a browser.
+Insert the SD card. Connect your laptop to the **USB** data port (the middle micro-USB port, next to HDMI). The laptop's USB-C port provides both power and data! Wait ~90 seconds for first boot (mDNS, network, and the firstboot wizard need to come up).
 
 **4. Open the wizard**
 
-Plug the Pi's `USB` port (not `PWR`) into your laptop with a USB-C cable. The image pre-enables USB gadget mode (CDC NCM / `g_ncm`), so the laptop sees a new USB Ethernet device and gets a DHCP lease in `192.168.7.0/24`. Browse to:
+The image pre-enables USB Ethernet gadget mode (CDC-ECM / `g_ether`), so your MacBook/laptop detects a new USB Ethernet adapter and receives a DHCP lease in `192.168.7.0/24`. Browse to:
 
 ```
 http://192.168.7.1
 ```
 
-- **Linux / macOS**: the USB device appears automatically; DHCP lease arrives within a few seconds.
-- **Windows 10/11**: uses CDC NCM — inbox driver, no installation needed. The device may take 10–15 seconds to enumerate on first use.
+- **macOS / Linux**: Native CDC-ECM support — appears automatically in **System Settings → Network** as `RNDIS/Ethernet Gadget` or `USB 10/100 LAN`.
+- **Windows 10/11**: CDC-ECM/RNDIS driver assigns IP automatically.
 
-If the Pi is already on a network you can reach (e.g. via a USB Ethernet hub or pre-seeded Wi-Fi), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (SSH key required — see step 6).
+If the Pi is already on a network you can reach (e.g. via pre-seeded Wi-Fi or USB Ethernet hub), `http://travelrouter.local` works too. SSH terminal: `ssh root@192.168.7.1` (SSH key required).
 
-#### USB gadget not showing up?
+#### USB gadget not showing up on MacBook / Laptop?
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Nothing in System Settings → Network | Wrong port | Use the **middle** micro-USB port (`USB`), not the outer one (`PWR IN`) |
-| Nothing in System Settings → Network | Charge-only cable | Swap for a data cable — test with `system_profiler SPUSBDataType \| grep -i ncm` |
-| Device appears but no IP / can't reach 192.168.7.1 | `config.txt` patch didn't apply | Mount SD card, check `/Volumes/bootfs/config.txt` for `dtoverlay=dwc2,dr_mode=peripheral` and `cmdline.txt` for `modules-load=dwc2,g_ncm`; if missing, re-flash |
-| Interface appears as "RNDIS" not Ethernet (Windows) | Driver mismatch | Expected — CDC NCM should show as Ethernet; if RNDIS appears, ensure Windows is up to date |
+| Nothing in System Settings → Network | Wrong port | Connect to the **middle** micro-USB port (`USB`), NOT the outer one (`PWR IN` has no data pins) |
+| Nothing in System Settings → Network | Charge-only cable | Swap for a 4-wire data cable — test with `system_profiler SPUSBDataType \| grep -i gadget` |
+| Device appears but no IP / can't reach 192.168.7.1 | `config.txt` patch missing | Mount SD card, check `/Volumes/bootfs/config.txt` for `dtoverlay=dwc2,dr_mode=peripheral` and `cmdline.txt` for `modules-load=dwc2,g_ether` |
+| Interface shows "Self-Assigned IP" on Mac | DHCP negotiation delay | Wait 15–30 seconds for NetworkManager to assign `192.168.7.x` via DHCP |
 
-Quick check (macOS, Pi plugged in):
+Quick check (macOS Terminal, Pi plugged into middle USB port):
 ```bash
-system_profiler SPUSBDataType | grep -i -A8 "ncm\|gadget\|linux"
-# Should show: "Linux File-Stor Gadget" or similar with CDC NCM
+system_profiler SPUSBDataType | grep -i -A8 "gadget\|ethernet\|rndis\|cdc\|linux"
+# Should show: "RNDIS/Ethernet Gadget" or similar CDC-ECM device
 ```
 
 **5. Fill in the form**

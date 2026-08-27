@@ -37,13 +37,13 @@ Replace `/dev/diskN` with your SD card device. Use `lsblk` (Linux) or `diskutil 
 
 ## Reaching the first-boot wizard
 
-A fresh Pi Zero 2 W has no Ethernet, no Wi-Fi STA configured, and no AP up yet (the AP is created by `install.sh`, which the wizard hasn't run). The image pre-enables USB gadget mode (`dwc2` + `g_ncm`) and a NetworkManager profile that gives `usb0` the static address `192.168.7.1/24` with `method=shared`, so the Pi runs a built-in DHCP server on the USB link. Three ways to reach the wizard, in order of reliability:
+A fresh Pi Zero 2 W has no Ethernet, no Wi-Fi STA configured, and no AP up yet (the AP is created by `install.sh`, which the wizard hasn't run). The image pre-enables USB gadget mode (`dwc2` + `g_ether`) and a NetworkManager profile that gives `usb0` the static address `192.168.7.1/24` with `method=shared`, so the Pi runs a built-in DHCP server on the USB link. Three ways to reach the wizard, in order of reliability:
 
-1. **USB-C cable to a laptop (recommended).** Plug the Pi's `USB` port (not `PWR`) into your laptop. The laptop sees a new USB Ethernet (CDC NCM) device and grabs an IP in `192.168.7.0/24` via DHCP. Browse to `http://192.168.7.1`.
+1. **USB-C cable to a laptop (recommended).** Plug the Pi's middle `USB` port (not `PWR`) into your laptop. The laptop sees a new USB Ethernet (CDC-ECM) device and grabs an IP in `192.168.7.0/24` via DHCP. Browse to `http://192.168.7.1`.
 
-   - macOS: `ifconfig | grep -A3 192.168.7` to confirm the interface picked up an address.
+   - macOS: Native CDC-ECM support — appears in System Settings → Network.
    - Linux: `ip addr | grep -A3 192.168.7`.
-   - Windows 10/11: uses CDC NCM — inbox driver, no installation needed. The device may take 10–15 seconds to enumerate on first use.
+   - Windows 10/11: Native RNDIS/Ethernet driver.
 
 2. **Same Wi-Fi or LAN network.** If you have another way to put the Pi on a network (e.g. Ethernet via a powered USB hub, or by pre-seeding Wi-Fi credentials in the boot partition's `userconf`/`wpa_supplicant.conf`), browse to `http://travelrouter.local` (mDNS via avahi). If `travelrouter.local` doesn't resolve, find the Pi's IP in your router's DHCP table and use it directly.
 

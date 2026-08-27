@@ -3,7 +3,7 @@
 # Defines run_networking(). Source this file; do not execute directly.
 
 run_networking() {
-    section "Boot config — USB gadget mode (dwc2/g_ncm)"
+    section "Boot config — USB gadget mode (dwc2/g_ether)"
 
     local CONFIG_TXT="/boot/firmware/config.txt"
     [[ -f "$CONFIG_TXT" ]] || CONFIG_TXT="/boot/config.txt"
@@ -16,7 +16,8 @@ run_networking() {
     fi
 
     echo "dwc2"       > /etc/modules-load.d/dwc2.conf
-    echo "g_ncm"      > /etc/modules-load.d/g-ncm.conf
+    echo "g_ether"    > /etc/modules-load.d/g-ether.conf
+    rm -f /etc/modules-load.d/g-ncm.conf
     echo "tcp_bbr"    > /etc/modules-load.d/tcp_bbr.conf
     echo "bcm2835_wdt" > /etc/modules-load.d/watchdog.conf
     ok "Module load configs written"

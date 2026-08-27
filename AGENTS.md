@@ -71,7 +71,7 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 - WAN watchdog + graduated recovery: 60s timer, reassociate → restart → reboot
 - Captive portal detection + Tailscale pause (captive-check.sh)
 - ntfy.sh push notifications via notify-router.sh
-- USB Ethernet gadget (g_ncm/dwc2): 192.168.7.1/24 — pre-enabled in the image; no post-install reboot needed for USB gadget reachability
+- USB Ethernet gadget (g_ether/dwc2): 192.168.7.1/24 — pre-enabled in the image; no post-install reboot needed for USB gadget reachability
 - Open WiFi fallback is available but disabled by default (`ENABLE_OPEN_WIFI_FALLBACK=0`)
 - Tailscale + subnet router (10.3.141.0/24), exit node capable
 - TTL=65 + IPv6 hop-limit=65 + DSCP strip + IPv6 ext-header drop via nftables `inet travel_mangle` table (`/etc/nftables.conf.d/travel-router.nft`) — carrier bypass

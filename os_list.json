@@ -1,0 +1,18 @@
+{
+  "os_list": [
+    {
+      "name": "Pi Travel Router (64-bit)",
+      "description": "Hardened travel router for Pi Zero 2 W with captive portal automation, Tailscale/WireGuard VPN, and carrier bypass",
+      "url": "https://github.com/NicoMancinelli/pi-travel-router/releases/latest/download/travelrouter-arm64-lite.img.xz",
+      "release_date": "2026-08-27",
+      "init_format": "systemd",
+      "website": "https://github.com/NicoMancinelli/pi-travel-router",
+      "devices": [
+        "pi02w",
+        "pi3",
+        "pi4",
+        "pi5"
+      ]
+    }
+  ]
+}

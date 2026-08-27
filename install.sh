@@ -684,7 +684,7 @@ with open(path, 'w') as f: f.write(content)
 fi
 
 # ── 2. Boot config (USB gadget mode) ─────────────────────────────────────────
-section "Boot config — USB gadget mode (dwc2/g_ncm)"
+section "Boot config — USB gadget mode (dwc2/g_ether)"
 
 CONFIG_TXT="/boot/firmware/config.txt"
 [[ -f "$CONFIG_TXT" ]] || CONFIG_TXT="/boot/config.txt"
@@ -696,9 +696,9 @@ else
     ok "dwc2 overlay already present"
 fi
 
-echo "dwc2"  > /etc/modules-load.d/dwc2.conf
-# g_ncm (CDC NCM) used instead of g_ether (CDC ECM): Windows 10/11 inbox NCM driver
-echo "g_ncm" > /etc/modules-load.d/g-ncm.conf
+echo "dwc2"    > /etc/modules-load.d/dwc2.conf
+echo "g_ether" > /etc/modules-load.d/g-ether.conf
+rm -f /etc/modules-load.d/g-ncm.conf
 echo "tcp_bbr" > /etc/modules-load.d/tcp_bbr.conf
 echo "bcm2835_wdt" > /etc/modules-load.d/watchdog.conf
 ok "Module load configs written"

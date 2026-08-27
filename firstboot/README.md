@@ -64,7 +64,10 @@ When writing an image with **Raspberry Pi Imager** (or mounting the FAT32 boot p
 
 ### 1. Raspberry Pi Imager "OS Customisation" Options
 
-When prompted by Raspberry Pi Imager to apply OS customisation settings, the following options are automatically extracted and configured:
+When using Raspberry Pi Imager, the customization dialog can be accessed directly:
+- **In Imager v2.0+**: If writing a custom local image, press **`Ctrl+Shift+X`** (or **`Cmd+Shift+X`** on macOS) to open the Advanced Options / Customisation dialog, OR launch Imager with our repository manifest: `rpi-imager --repo https://raw.githubusercontent.com/NicoMancinelli/pi-travel-router/main/os_list.json`.
+
+The following options are automatically extracted and configured:
 
 - **Hostname (`ROUTER_HOSTNAME`)** — sets the system hostname and default mDNS name (`hostname.local`).
 - **User / Password** — password (or password hash) configured in Imager is automatically applied to `root`, replacing temporary console credentials. Temporary plaintext password files on the boot partition are shredded on first boot.

@@ -175,8 +175,8 @@ fi
 # ── Done ──────────────────────────────────────────────────────────────────────
 printf '\n%s%s✓ Done! SD card is ready.%s\n\n' "${GRN}" "${BLD}" "${RST}"
 printf "  1. Insert SD card into Pi Zero 2W\n"
-printf '  2. Connect %sPWR IN%s port to power (outer micro-USB)\n' "${BLD}" "${RST}"
-printf '  3. Connect %sUSB%s port to your laptop (middle micro-USB) — %sdata cable required%s\n' "${BLD}" "${RST}" "${BLD}" "${RST}"
-printf "  4. Wait ~60 seconds — a USB Ethernet device will appear on your laptop\n"
-printf '  5. Open %shttp://192.168.7.1%s in your browser\n\n' "${BLD}" "${RST}"
-printf '  Trouble? Check: %ssystem_profiler SPUSBDataType | grep -i ncm%s\n\n' "${BLD}" "${RST}"
+printf '  2. Connect your laptop to the %sUSB%s port (middle micro-USB, next to HDMI)\n' "${BLD}" "${RST}"
+printf '     (The laptop will power the Pi and provide the USB Ethernet link)\n'
+printf "  3. Wait ~60 seconds — a USB Ethernet device will appear on your laptop\n"
+printf '  4. Open %shttp://192.168.7.1%s in your browser\n\n' "${BLD}" "${RST}"
+printf '  Trouble on Mac? Run: %ssystem_profiler SPUSBDataType | grep -i gadget%s\n\n' "${BLD}" "${RST}"
