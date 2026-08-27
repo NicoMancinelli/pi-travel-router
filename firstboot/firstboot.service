@@ -5,8 +5,11 @@ Description=Travel Router first-boot setup wizard
 # Before= in imager-compat.service is not enough on its own when
 # firstboot.service lives in multi-user.target — make the ordering
 # explicit here too so systemd enforces it regardless of target changes.
-After=network.target network-online.target avahi-daemon.service imager-compat.service
-Wants=network-online.target imager-compat.service
+#
+# Use network.target (not network-online.target) to avoid a 90-120s
+# delay on first boot when no uplink is configured yet.
+After=network.target avahi-daemon.service imager-compat.service
+Wants=imager-compat.service
 RequiresMountsFor=/opt
 ConditionPathExists=!/var/lib/travel-router/firstboot-done
 StartLimitIntervalSec=60
@@ -16,19 +19,16 @@ StartLimitBurst=5
 Type=simple
 ExecStartPre=/bin/mkdir -p /var/lib/travel-router
 ExecStart=/usr/bin/python3 /opt/pi-travel-router/firstboot/server.py
-ExecStartPost=-/bin/sh -c "shred -u /boot/firmware/root-password.txt 2>/dev/null; rm -f /boot/firmware/root-password.txt /boot/root-password.txt"
+# NOTE: Do not add capability restrictions here — server.py spawns
+# install.sh which needs full root capabilities (iptables, nftables,
+# modprobe, chpasswd, systemctl, etc.).
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=infinity
 StandardOutput=journal
 StandardError=journal
-NoNewPrivileges=yes
 PrivateTmp=yes
-ProtectHome=read-only
-ReadWritePaths=/root/.ssh
-PrivateDevices=yes
-AmbientCapabilities=CAP_NET_BIND_SERVICE
-CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target
+

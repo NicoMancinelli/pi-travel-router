@@ -42,7 +42,7 @@ summary{cursor:pointer;color:#58a6ff;font-weight:600;padding:.5rem 0}
 button.submit{width:100%;background:#238636;color:#fff;border:0;border-radius:8px;padding:.95rem;font-size:1.05rem;font-weight:600;cursor:pointer;margin-top:.5rem}
 button.submit:hover{background:#2ea043}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
-@media(max-width:480px){.row2{grid-template-columns:1fr}body{padding:.75rem}}
+@media(max-width:480px){.row2{grid-template-columns:1fr}body{padding:.75rem}.pwrow{flex-wrap:wrap}.pwrow input{width:100%}.pwrow button{flex:1;min-width:0}}
 .split-domains{margin-left:1.7rem;margin-top:.25rem;display:none}
 .split-domains.show{display:block}
 .optgroup{padding:.5rem 0;border-top:1px dashed #30363d;margin-top:.5rem}
@@ -241,9 +241,9 @@ button.submit:hover{background:#2ea043}
 
 <div class="flag"><input type="checkbox" id="f_bl" name="ENABLE_BLOCKLISTS" value="1"><label class="label" for="f_bl">Threat-intel blocklists<span class="desc">Firehol L1 IP blocklist refreshed daily.</span></label></div>
 
-<div class="flag"><input type="checkbox" id="f_dot" name="ENABLE_DOT" value="1"><label class="label" for="f_dot">DNS-over-TLS<span class="desc">Encrypt upstream DNS via stubby (Cloudflare + Quad9).</span></label></div>
+<div class="flag"><input type="checkbox" id="f_dot" name="ENABLE_DOT" value="1" checked><label class="label" for="f_dot">DNS-over-TLS<span class="desc">Encrypt upstream DNS via stubby (Cloudflare + Quad9). Recommended.</span></label></div>
 
-<div class="flag"><input type="checkbox" id="f_au" name="ENABLE_AUTO_UPDATES" value="1"><label class="label" for="f_au">Automatic security updates<span class="desc">unattended-upgrades for OS security patches.</span></label></div>
+<div class="flag"><input type="checkbox" id="f_au" name="ENABLE_AUTO_UPDATES" value="1" checked><label class="label" for="f_au">Automatic security updates<span class="desc">unattended-upgrades for OS security patches. Recommended.</span></label></div>
 
 <div class="flag"><input type="checkbox" id="f_ar" name="ENABLE_AVAHI_REFLECTOR" value="1"><label class="label" for="f_ar">mDNS reflector<span class="desc">AirPrint/AirPlay over Tailscale.</span></label></div>
 
@@ -367,6 +367,14 @@ button.submit:hover{background:#2ea043}
       }).catch(function(){copyBtn.textContent='Copy';});
     }
   });
+  // Auto-generate a passphrase on page load if no preseed value was set.
+  // Show it in plaintext so the user can see and save it before submitting.
+  if(!pw.value){
+    pw.value=genPass();
+    pw.type='text';
+    btn.textContent='Hide';
+    copyBtn.style.display='';
+  }
   var st=document.getElementById('f_st'), box=document.getElementById('stdomains');
   function sync(){box.classList.toggle('show', st.checked);}
   st.addEventListener('change',sync); sync();
@@ -409,7 +417,13 @@ button.submit:hover{background:#2ea043}
   document.getElementById('pw_warn_set').addEventListener('click',function(){
     pwWarnDiv.style.display='none';
     submitBtn.style.display='';
-    document.getElementById('rootpw').focus();
+    // Auto-open the Advanced accordion that contains the root password field
+    var rootpwEl=document.getElementById('rootpw');
+    if(rootpwEl){
+      var details=rootpwEl.closest('details');
+      if(details && !details.open) details.open=true;
+      rootpwEl.focus();
+    }
   });
   document.getElementById('pw_warn_continue').addEventListener('click',function(){
     pwWarnDiv.style.display='none';
@@ -478,6 +492,71 @@ button.submit:hover{background:#2ea043}
     submitBtn.disabled=true;
     submitBtn.textContent='Configuring…';
   });
+
+  function applyPreseed(ps){
+    if(!ps) return;
+    var mapping = {
+      'AP_SSID': 'ap_ssid',
+      'AP_PASS': 'ap_pass',
+      'COUNTRY': 'country',
+      'ROUTER_HOSTNAME': 'hostname',
+      'ROUTER_TIMEZONE': 'tz',
+      'SSH_ADMIN_KEY': 'sshkey',
+      'NTFY_TOPIC': 'ntfy',
+      'TS_KEY': 'tskey',
+      'HEADSCALE_URL': 'hsurl',
+      'SPLIT_TUNNEL_DOMAINS': 'stinp',
+      'TOR_AP_PASS': 'tor_ap_pass',
+      'IPHONE_BT_MAC': 'iphone_bt_mac',
+      'TAILSCALE_UP_ARGS': 'tailscale_up_args',
+      'PUSHGW_URL': 'pushgw_url',
+      'UPS_SHUTDOWN_THRESHOLD': 'ups_shutdown_threshold',
+      'AP_CLIENT_BANDWIDTH': 'ap_client_bw',
+      'AP_DISABLE_TIME': 'ap_disable_time',
+      'AP_ENABLE_TIME': 'ap_enable_time',
+      'VPN_DEVICE_MACS': 'vpn_macs',
+      'WG_LISTEN_PORT': 'wg_listen_port',
+      'WG_PEER_PUBKEY': 'wg_peer_pubkey',
+      'WG_PEER_ENDPOINT': 'wg_peer_endpoint',
+      'WG_PEER_ALLOWED_IPS': 'wg_peer_allowed_ips',
+      'ENABLE_WAN_METRICS': 'f_wm',
+      'ENABLE_VPN_KILLSWITCH': 'f_ks',
+      'ENABLE_BLOCKLISTS': 'f_bl',
+      'ENABLE_DOT': 'f_dot',
+      'ENABLE_AUTO_UPDATES': 'f_au',
+      'ENABLE_AVAHI_REFLECTOR': 'f_ar',
+      'ENABLE_ADGUARD': 'f_ag',
+      'ENABLE_AP_SCHEDULE': 'f_aps',
+      'ENABLE_CLIENT_QOS': 'f_qos',
+      'ENABLE_CAKE_AUTOTUNE': 'f_cake',
+      'ENABLE_BANDWIDTH_DASHBOARD': 'f_bw',
+      'ENABLE_PROMETHEUS_EXPORTER': 'f_pe',
+      'ENABLE_UPS_MONITOR': 'f_ups',
+      'ENABLE_USB_SHARE': 'f_usbshare',
+      'ENABLE_2FA': 'f_2fa',
+      'ENABLE_SPLIT_TUNNEL': 'f_st',
+      'ENABLE_TOR_TRANSPARENT': 'f_tor',
+      'ENABLE_HTTP_UA_REWRITE': 'f_ua',
+      'ENABLE_OPEN_WIFI_FALLBACK': 'f_owf',
+      'ENABLE_PER_DEVICE_VPN': 'f_pdv',
+      'ENABLE_WIREGUARD': 'f_wg'
+    };
+    for(var k in ps){
+      if(!Object.prototype.hasOwnProperty.call(ps, k)) continue;
+      var elId = mapping[k] || k;
+      var el = document.getElementById(elId);
+      if(!el) continue;
+      if(el.type === 'checkbox'){
+        el.checked = (ps[k] === '1' || ps[k] === 'true' || ps[k] === true || ps[k] === 1);
+        el.dispatchEvent(new Event('change'));
+      } else {
+        el.value = ps[k];
+        el.dispatchEvent(new Event('change'));
+      }
+    }
+  }
+  window.applyPreseed = applyPreseed;
+  if(window._ps){ applyPreseed(window._ps); }
 })();
 </script>
 </body>

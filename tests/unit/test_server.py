@@ -420,3 +420,86 @@ class TestValidateMisc:
         }
         values, errors, _ = server._validate(form)
         assert values["ENABLE_USB_SHARE"] == "1"
+
+
+# ---------------------------------------------------------------------------
+# Test group 6: Preseed loading & Auto-Install
+# ---------------------------------------------------------------------------
+
+class TestPreseedAndAutoInstall:
+    def test_load_preseed_from_json(self, tmp_path, monkeypatch):
+        """_load_preseed parses imager-preseed.json accurately."""
+        preseed_data = {
+            "AP_SSID": "ImagerSSID",
+            "AP_PASS": "ImagerPass123",
+            "COUNTRY": "GB",
+            "ROUTER_HOSTNAME": "myrouter",
+            "ROUTER_TIMEZONE": "Europe/London",
+            "ENABLE_ADGUARD": "1",
+            "ENABLE_BLOCKLISTS": "1",
+        }
+        json_file = tmp_path / "imager-preseed.json"
+        import json
+        json_file.write_text(json.dumps(preseed_data))
+
+        monkeypatch.setattr(server, "STATE_DIR", str(tmp_path))
+        loaded = server._load_preseed()
+        for k, v in preseed_data.items():
+            assert loaded.get(k) == v
+
+    def test_load_preseed_from_env_dropin(self, tmp_path, monkeypatch):
+        """_load_preseed parses drop-in travel-router.env file."""
+        env_file = tmp_path / "travel-router.env.orig"
+        env_file.write_text(
+            "# Comment line\n"
+            "export AP_SSID='DropinRouter'\n"
+            "AP_PASS=\"DropinPassword123\"\n"
+            "COUNTRY=DE\n"
+            "ROUTER_TIMEZONE='Europe/Berlin'\n"
+            "ENABLE_VPN_KILLSWITCH=1\n"
+        )
+        monkeypatch.setattr(server, "STATE_DIR", str(tmp_path))
+        loaded = server._load_preseed()
+        assert loaded.get("AP_SSID") == "DropinRouter"
+        assert loaded.get("AP_PASS") == "DropinPassword123"
+        assert loaded.get("COUNTRY") == "DE"
+        assert loaded.get("ROUTER_TIMEZONE") == "Europe/Berlin"
+        assert loaded.get("ENABLE_VPN_KILLSWITCH") == "1"
+
+    def test_maybe_auto_install_triggers(self, tmp_path, monkeypatch):
+        """_maybe_auto_install triggers install when AUTO_INSTALL=1 and AP_PASS is valid."""
+        spawn_called = []
+        monkeypatch.setattr(server, "_spawn_install", lambda: spawn_called.append(True))
+        monkeypatch.setattr(server, "STATE_DIR", str(tmp_path))
+        monkeypatch.setattr(server, "ENV_FILE", str(tmp_path / "firstboot-env.sh"))
+        monkeypatch.setattr(server, "ROOTPW_FILE", str(tmp_path / "firstboot-rootpw"))
+
+        preseed = {
+            "AUTO_INSTALL": "1",
+            "AP_SSID": "AutoRouter",
+            "AP_PASS": "validpassword123",
+            "COUNTRY": "US",
+        }
+        res = server._maybe_auto_install(preseed)
+        assert res is True
+        assert len(spawn_called) == 1
+        assert server._installing is True
+        assert os.path.exists(str(tmp_path / "firstboot-env.sh"))
+
+    def test_maybe_auto_install_requires_valid_ap_pass(self, tmp_path, monkeypatch):
+        """_maybe_auto_install does not trigger if AP_PASS is missing or < 8 chars."""
+        spawn_called = []
+        monkeypatch.setattr(server, "_spawn_install", lambda: spawn_called.append(True))
+        monkeypatch.setattr(server, "STATE_DIR", str(tmp_path))
+
+        preseed = {
+            "AUTO_INSTALL": "1",
+            "AP_SSID": "AutoRouter",
+            "AP_PASS": "short",
+            "COUNTRY": "US",
+        }
+        res = server._maybe_auto_install(preseed)
+        assert res is False
+        assert len(spawn_called) == 0
+        assert server._installing is False
+

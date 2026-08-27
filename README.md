@@ -88,6 +88,8 @@ Open [Raspberry Pi Imager](https://www.raspberrypi.com/software/):
 
 - **Choose OS** → **Use custom** → select the `.img.xz` you downloaded
 - **Choose Storage** → select your SD card
+- **OS Customisation** (optional): You can configure Hostname, Wi-Fi credentials & country, Timezone, User password, and SSH keys directly in Imager's customisation dialog! They will be automatically extracted, applied to `root`, and pre-seeded into the setup wizard.
+- *(Optional Headless Setup)*: You can also drop a `travel-router.env` file (with `AUTO_INSTALL=1` and `AP_PASS="yourpassphrase"`) onto the FAT32 boot partition right after flashing for zero-touch automated setup.
 - **Write**
 
 ---

@@ -164,6 +164,11 @@ After=local-fs.target
 Before=firstboot.service
 ConditionPathExists=|/boot/firmware/firstrun.sh
 ConditionPathExists=|/boot/firstrun.sh
+ConditionPathExists=|/boot/firmware/userconf.txt
+ConditionPathExists=|/boot/firmware/userconf
+ConditionPathExists=|/boot/firmware/travel-router.env
+ConditionPathExists=|/boot/firmware/travel-router.conf
+ConditionPathExists=|/boot/firmware/firstboot.env
 DefaultDependencies=no
 
 [Service]

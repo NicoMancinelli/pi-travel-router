@@ -82,6 +82,10 @@ BOOL_FLAGS = [
     "ENABLE_PER_DEVICE_VPN",
     "ENABLE_WIREGUARD",
     "ENABLE_USB_SHARE",
+    "ENABLE_GUEST_NETWORK",
+    "ENABLE_LTE_MODEM",
+    "ENABLE_WG_KEY_ROTATION",
+    "ENABLE_WG_SPLIT_TUNNEL",
 ]
 
 STRING_FIELDS = [
@@ -108,6 +112,12 @@ STRING_FIELDS = [
     "WG_PEER_PUBKEY",
     "WG_PEER_ENDPOINT",
     "WG_PEER_ALLOWED_IPS",
+    "GUEST_SSID",
+    "GUEST_PASS",
+    "LTE_APN",
+    "DOH_RESOLVER",
+    "WG_SPLIT_TUNNEL_CIDRS",
+    "WG_SPLIT_TUNNEL_DEV",
 ]
 
 # Module-level flag to prevent double-submit
@@ -689,10 +699,47 @@ class Handler(BaseHTTPRequestHandler):
         return bool(_BARE_IP_RE.match(host))
 
     def do_GET(self):  # noqa: N802
+        # During firstboot wizard, allow captive portal probes from any host
+        # so phones/laptops auto-discover the setup page via their native
+        # "Log in to Wi-Fi" popup.
+        _captive_probe_paths = {
+            "/hotspot-detect.html",       # Apple iOS / macOS
+            "/library/test/success.html",  # Apple legacy
+            "/generate_204",              # Android / Chrome OS
+            "/gen_204",                   # Android alt
+            "/ncsi.txt",                  # Windows NCSI
+            "/connecttest.txt",           # Windows 10+
+            "/canonical.html",            # Firefox
+            "/success.txt",              # Firefox alt
+            "/redirect",                 # Android fallback
+        }
+        if self.path.lower().split("?")[0] in _captive_probe_paths:
+            # Redirect to the wizard — the OS will open the captive portal popup
+            self.send_response(302)
+            self.send_header("Location", "http://192.168.7.1/")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            return
+
         if not self._host_allowed():
+            # During firstboot, redirect unknown hosts to wizard instead of 400
+            # This enables captive portal detection on devices that probe with
+            # their own Host headers (e.g. captive.apple.com)
+            if not os.path.exists(DONE_FILE):
+                self.send_response(302)
+                self.send_header("Location", "http://192.168.7.1/")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
             self._send(HTTPStatus.BAD_REQUEST, b"Invalid Host header", "text/plain")
             return
         if self.path == "/" or self.path.startswith("/?"):
+            # Redirect to status if install is already running or completed
+            if _installing or any(os.path.exists(p) for p in (LOG_FILE, DONE_FILE, FAIL_FILE)):
+                self.send_response(302)
+                self.send_header("Location", "/status")
+                self.end_headers()
+                return
             try:
                 with open(INDEX_HTML, "rb") as fh:
                     body = fh.read()
@@ -705,13 +752,15 @@ class Handler(BaseHTTPRequestHandler):
                 _csrf_token.encode("ascii"),
             )
             if _preseed:
-                script = '<script>var _ps=' + json.dumps(_preseed).replace("</", "<\\/") + ';'
-                script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
-                script += ('if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");'
-                           'if(e)e.value=_ps.ROUTER_HOSTNAME;}')
-                script += ('if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");'
-                           'if(e)e.value=_ps.SSH_ADMIN_KEY;}')
-                script += 'if(_ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=_ps.AP_PASS;}'
+                safe_ps = {k: v for k, v in _preseed.items() if k not in ("TS_KEY", "TOR_AP_PASS", "new_root_password")}
+                script = '<script>window._ps=' + json.dumps(safe_ps).replace("</", "<\\/") + ';'
+                script += 'if(window.applyPreseed){window.applyPreseed(window._ps);}'
+                script += 'if(window._ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=window._ps.AP_SSID;}'
+                script += ('if(window._ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");'
+                           'if(e)e.value=window._ps.ROUTER_HOSTNAME;}')
+                script += ('if(window._ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");'
+                           'if(e)e.value=window._ps.SSH_ADMIN_KEY;}')
+                script += 'if(window._ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=window._ps.AP_PASS;}'
                 script += '</script>'
                 body = body.replace(b'</body>', script.encode() + b'</body>')
             self._send(HTTPStatus.OK, body)
@@ -836,21 +885,23 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.INTERNAL_SERVER_ERROR, b"index.html missing", "text/plain")
                 return
             err_body = err_body.replace(b"{{CSRF_TOKEN}}", _csrf_token.encode("ascii"))
-            # Inject preseed of submitted values so the form retains state.
-            # Explicitly exclude secrets (TS_KEY, TOR_AP_PASS) — they must
-            # not be echoed back in the inline JSON sent to the browser.
             err_preseed = {k: values.get(k, "") for k in (
                 "AP_SSID", "ROUTER_HOSTNAME", "SSH_ADMIN_KEY", "AP_PASS",
-                "PUSHGW_URL", "NTFY_TOPIC", "ROUTER_TIMEZONE",
-                "SPLIT_TUNNEL_DOMAINS", "TAILSCALE_UP_ARGS",
-            )}
-            err_script = '<script>var _ps=' + json.dumps(err_preseed).replace("</", "<\\/") + ';'
-            err_script += 'if(_ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=_ps.AP_SSID;}'
-            err_script += ('if(_ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");'
-                           'if(e)e.value=_ps.ROUTER_HOSTNAME;}')
-            err_script += ('if(_ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");'
-                           'if(e)e.value=_ps.SSH_ADMIN_KEY;}')
-            err_script += 'if(_ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=_ps.AP_PASS;}'
+                "COUNTRY", "ROUTER_TIMEZONE", "PUSHGW_URL", "NTFY_TOPIC",
+                "HEADSCALE_URL", "SPLIT_TUNNEL_DOMAINS", "TAILSCALE_UP_ARGS",
+                "IPHONE_BT_MAC", "AP_CLIENT_BANDWIDTH", "AP_DISABLE_TIME",
+                "AP_ENABLE_TIME", "UPS_SHUTDOWN_THRESHOLD", "VPN_DEVICE_MACS",
+                "WG_LISTEN_PORT", "WG_PEER_PUBKEY", "WG_PEER_ENDPOINT",
+                "WG_PEER_ALLOWED_IPS",
+            ) + tuple(BOOL_FLAGS)}
+            err_script = '<script>window._ps=' + json.dumps(err_preseed).replace("</", "<\\/") + ';'
+            err_script += 'if(window.applyPreseed){window.applyPreseed(window._ps);}'
+            err_script += 'if(window._ps.AP_SSID){var e=document.getElementById("ap_ssid");if(e)e.value=window._ps.AP_SSID;}'
+            err_script += ('if(window._ps.ROUTER_HOSTNAME){var e=document.getElementById("hostname");'
+                           'if(e)e.value=window._ps.ROUTER_HOSTNAME;}')
+            err_script += ('if(window._ps.SSH_ADMIN_KEY){var e=document.getElementById("sshkey");'
+                           'if(e)e.value=window._ps.SSH_ADMIN_KEY;}')
+            err_script += 'if(window._ps.AP_PASS){var e=document.getElementById("ap_pass");if(e)e.value=window._ps.AP_PASS;}'
             # Inject errors list so JS can display the banner
             err_items_json = json.dumps(errors).replace("</", "<\\/")
             err_script += 'var _errors=' + err_items_json + ';'
@@ -909,98 +960,264 @@ _preseed: dict[str, str] = {}
 
 
 def _load_preseed() -> dict[str, str]:
+    result: dict[str, str] = {}
     try:
-        firstrun_path = None
-        for candidate in ("/boot/firmware/firstrun.sh", "/boot/firstrun.sh"):
-            if os.path.exists(candidate):
-                firstrun_path = candidate
-                break
-        if firstrun_path is None:
-            return {}
-        with open(firstrun_path, "r", encoding="utf-8", errors="replace") as fh:
-            content = fh.read()
-        result: dict[str, str] = {}
-        # SSH pubkey: scan every line for an OpenSSH public-key token.
-        # Imager encodes the key differently across versions:
-        #   echo 'ssh-ed25519 AAAA...' >> authorized_keys
-        #   SSHPUBKEY="ssh-ed25519 AAAA..."
-        #   install ... <<< "ssh-rsa AAAA..."
-        # Scanning every line (not just ones with "echo" or "authorized_keys")
-        # is more robust across Imager versions.
-        pubkey = None
-        for line in content.splitlines():
-            m = re.search(
-                r"(ssh-(?:rsa|ed25519|dss|xmss)|ecdsa-sha2-[A-Za-z0-9]+)"
-                r"\s+([A-Za-z0-9+/]+=*)"
-                r"(\s+\S+)?",
-                line,
-            )
-            if m:
-                # Reconstruct key: type + blob + optional comment
-                pubkey = m.group(1) + " " + m.group(2)
-                if m.group(3):
-                    pubkey += m.group(3)
-                pubkey = pubkey.strip().rstrip("\"'")
-                break
+        # 1. Load from imager-preseed.json if available
+        json_path = os.path.join(STATE_DIR, "imager-preseed.json")
+        if os.path.isfile(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8", errors="replace") as fh:
+                    loaded = json.load(fh)
+                    if isinstance(loaded, dict):
+                        for k, v in loaded.items():
+                            if isinstance(v, (str, int, float, bool)):
+                                result[str(k)] = str(v)
+            except Exception as _e:  # pylint: disable=broad-exception-caught
+                _log(f"Error loading {json_path}: {_e}")
+
+        # 2. Check drop-in env files
+        dropin_candidates = [
+            "/boot/firmware/travel-router.env",
+            "/boot/firmware/travel-router.conf",
+            "/boot/firmware/firstboot.env",
+            "/boot/travel-router.env",
+            "/boot/travel-router.conf",
+            "/boot/firstboot.env",
+            os.path.join(STATE_DIR, "travel-router.env.orig"),
+        ]
+        for candidate in dropin_candidates:
+            if os.path.isfile(candidate):
+                try:
+                    with open(candidate, "r", encoding="utf-8", errors="replace") as fh:
+                        for line in fh:
+                            line_str = line.strip()
+                            if not line_str or line_str.startswith("#"):
+                                continue
+                            if line_str.startswith("export "):
+                                line_str = line_str[7:].strip()
+                            if "=" in line_str:
+                                k, v = line_str.split("=", 1)
+                                k = k.strip()
+                                v = v.strip().strip("'\"")
+                                if k and k not in result:
+                                    result[k] = v
+                except Exception as _e:  # pylint: disable=broad-exception-caught
+                    _log(f"Error reading drop-in {candidate}: {_e}")
+
+        # 3. Check wpa_supplicant.conf candidates
+        for wpa_cand in ("/boot/firmware/wpa_supplicant.conf", "/boot/wpa_supplicant.conf"):
+            if os.path.isfile(wpa_cand):
+                try:
+                    with open(wpa_cand, "r", encoding="utf-8", errors="replace") as fh:
+                        wpa_c = fh.read()
+                    m_cc = re.search(r'country=([A-Za-z]{2})', wpa_c, re.IGNORECASE)
+                    if m_cc and "COUNTRY" not in result:
+                        result["COUNTRY"] = m_cc.group(1).upper()
+                    m_ssid = re.search(r'ssid="([^"]+)"', wpa_c)
+                    if m_ssid and "AP_SSID" not in result:
+                        result["AP_SSID"] = m_ssid.group(1)
+                    m_psk = re.search(r'psk="([^"]+)"', wpa_c)
+                    if m_psk and "AP_PASS" not in result and len(m_psk.group(1)) >= 8:
+                        result["AP_PASS"] = m_psk.group(1)
+                except Exception:
+                    pass
+
+        # 4. Check firstrun.sh candidates
+        firstrun_candidates = [
+            "/boot/firmware/firstrun.sh",
+            "/boot/firstrun.sh",
+            os.path.join(STATE_DIR, "firstrun.sh.orig"),
+        ]
+        firstrun_content = ""
+        for candidate in firstrun_candidates:
+            if os.path.isfile(candidate):
+                try:
+                    with open(candidate, "r", encoding="utf-8", errors="replace") as fh:
+                        firstrun_content = fh.read()
+                        if firstrun_content.strip():
+                            break
+                except Exception:
+                    pass
+
+        if firstrun_content:
+            for line in firstrun_content.splitlines():
+                line_str = line.strip()
+                # SSH pubkey
+                if "SSH_ADMIN_KEY" not in result:
+                    m = re.search(
+                        r"(ssh-(?:rsa|ed25519|dss|xmss)|ecdsa-sha2-[A-Za-z0-9]+|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-[A-Za-z0-9]+@openssh\.com)"
+                        r"\s+([A-Za-z0-9+/]+=*)"
+                        r"(\s+\S+)?",
+                        line_str,
+                    )
+                    if m:
+                        pubkey = m.group(1) + " " + m.group(2)
+                        if m.group(3):
+                            pubkey += m.group(3)
+                        result["SSH_ADMIN_KEY"] = pubkey.strip().rstrip("\"'")
+
+                # Hostname
+                if "ROUTER_HOSTNAME" not in result:
+                    m = re.search(r'raspi-config\s+nonint\s+do_hostname\s+(\S+)', line_str)
+                    if not m:
+                        m = re.search(r'echo\s+(\S+)\s*>\s*/etc/hostname', line_str)
+                    if not m:
+                        m = re.search(r'\b(?:ROUTER_)?HOSTNAME=(["\']?)([^"\'\s]+)\1', line_str)
+                    if m:
+                        result["ROUTER_HOSTNAME"] = m.group(1 if len(m.groups()) == 1 else 2).strip("\"'")
+
+                # WiFi Country
+                if "COUNTRY" not in result:
+                    m = re.search(r'raspi-config\s+nonint\s+do_wifi_country\s+([A-Za-z]{2})', line_str, re.IGNORECASE)
+                    if not m:
+                        m = re.search(r'\bCOUNTRY=(["\']?)([A-Za-z]{2})\1', line_str, re.IGNORECASE)
+                    if m:
+                        result["COUNTRY"] = m.group(1 if len(m.groups()) == 1 else 2).upper()
+
+                # Timezone
+                if "ROUTER_TIMEZONE" not in result:
+                    m = re.search(r'raspi-config\s+nonint\s+do_change_timezone\s+(\S+)', line_str)
+                    if not m:
+                        m = re.search(r'timedatectl\s+set-timezone\s+(\S+)', line_str)
+                    if not m:
+                        m = re.search(r'ln\s+.*zoneinfo/(\S+)\s+/etc/localtime', line_str)
+                    if not m:
+                        m = re.search(r'\b(?:ROUTER_)?TIMEZONE=(["\']?)([^"\'\s]+)\1', line_str)
+                    if m:
+                        result["ROUTER_TIMEZONE"] = m.group(1 if len(m.groups()) == 1 else 2).strip("\"'")
+
+                # WiFi SSID & Passphrase
+                if "AP_SSID" not in result:
+                    m = re.search(r'nmcli.*(?:ssid|\bconnect)\s+"([^"]+)"', line_str)
+                    if not m:
+                        m = re.search(r'nmcli.*(?:ssid|\bconnect)\s+([^\s"\'=]+)', line_str)
+                    if not m:
+                        m = re.search(r'\b(?:AP_)?SSID=(["\']?)([^"\'\n]+)\1', line_str)
+                    if m:
+                        result["AP_SSID"] = m.group(1 if len(m.groups()) == 1 else 2).strip("\"'")
+
+                if "AP_PASS" not in result:
+                    m = re.search(r'nmcli.*\bpassword\b\s+"([^"]+)"', line_str)
+                    if not m:
+                        m = re.search(r'nmcli.*\bpassword\b\s+([^\s"\'=]+)', line_str)
+                    if not m:
+                        m = re.search(r'wpa_passphrase\s+\S+\s+"?([^"\n]+)"?', line_str)
+                    if not m:
+                        m = re.search(r'\b(?:AP_)?PASS=(["\']?)([^"\'\s]+)\1', line_str)
+                    if not m:
+                        m = re.search(r'\b(?:WIFI_)?PASSWORD=(["\']?)([^"\'\s]+)\1', line_str)
+                    if m:
+                        p_val = m.group(1 if len(m.groups()) == 1 else 2).strip("\"'")
+                        if len(p_val) >= 8:
+                            result["AP_PASS"] = p_val
+
+                # Generic variables
+                m = re.search(r'^(?:export\s+)?([A-Za-z0-9_]+)=(["\']?)(.*)\2$', line_str)
+                if m:
+                    var_name = m.group(1)
+                    var_val = m.group(3).strip()
+                    if var_name not in result and var_val:
+                        result[var_name] = var_val
+
+        # Ensure SSH Key is written to /root/.ssh/authorized_keys
+        pubkey = result.get("SSH_ADMIN_KEY")
         if pubkey:
-            result["SSH_ADMIN_KEY"] = pubkey
             try:
                 os.makedirs("/root/.ssh", mode=0o700, exist_ok=True)
                 os.chmod("/root/.ssh", 0o700)
                 ak_path = "/root/.ssh/authorized_keys"
                 existing = ""
                 if os.path.exists(ak_path):
-                    # Read before checking — imager-compat.sh may have already
-                    # written the key; avoid creating a duplicate line.
                     with open(ak_path, "r", encoding="utf-8", errors="replace") as f:
                         existing = f.read()
                 existing_lines = existing.splitlines()
                 if pubkey.strip() not in (line.strip() for line in existing_lines):
-                    # Open with O_CREAT | O_APPEND and explicit 0o600 so the
-                    # file is never created world-readable (open("a") is
-                    # umask-dependent and can produce 0o644).
                     fd = os.open(ak_path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
                     try:
-                        os.write(fd, (pubkey + "\n").encode("utf-8"))
+                        os.write(fd, (pubkey.strip() + "\n").encode("utf-8"))
                     finally:
                         os.close(fd)
                 os.chmod(ak_path, 0o600)
             except Exception as _e:  # pylint: disable=broad-exception-caught
                 import traceback
                 _log(f"SSH key write error: {_e}\n{traceback.format_exc()}")
-        # WiFi SSID: nmcli ... ssid "VALUE" or wpa SSID_VALUE style
-        ssid = None
-        m = re.search(r'nmcli.*\bssid\b\s+"([^"]+)"', content)
-        if m:
-            ssid = m.group(1)
-        else:
-            m = re.search(r'\bSSID=(\S+)', content)
-            if m:
-                ssid = m.group(1).strip('"\'')
-        if ssid:
-            result["AP_SSID"] = ssid
-        # Hostname: raspi-config nonint do_hostname VALUE or echo VALUE > /etc/hostname
-        hostname = None
-        m = re.search(r'raspi-config\s+nonint\s+do_hostname\s+(\S+)', content)
-        if m:
-            hostname = m.group(1).strip('"\'')
-        else:
-            m = re.search(r'echo\s+(\S+)\s*>\s*/etc/hostname', content)
-            if m:
-                hostname = m.group(1).strip('"\'')
-        if hostname:
-            result["ROUTER_HOSTNAME"] = hostname
-        # AP_PASS: explicitly pre-seeded by the user in firstrun.sh
-        m = re.search(r'\bAP_PASS=(["\']?)([^"\'\s]+)\1', content)
-        if m:
-            ap_pass_val = m.group(2)
-            if len(ap_pass_val) >= 8:
-                result["AP_PASS"] = ap_pass_val
+
         return result
     except Exception as e:  # pylint: disable=broad-exception-caught
         import traceback
         _log(f"preseed error: {e}\n{traceback.format_exc()}")
-        return {}
+        return result
+
+
+def _maybe_auto_install(preseed_data: dict[str, str]) -> bool:
+    """If AUTO_INSTALL or HEADLESS mode is requested and AP_PASS is valid, trigger non-interactive install."""
+    global _installing
+    auto = (
+        preseed_data.get("AUTO_INSTALL", "").strip().lower() in ("1", "true", "yes")
+        or preseed_data.get("HEADLESS", "").strip().lower() in ("1", "true", "yes")
+    )
+    if not auto:
+        return False
+    ap_pass = preseed_data.get("AP_PASS", "")
+    if not ap_pass or len(ap_pass) < 8:
+        # Generate a random passphrase for true zero-touch provisioning
+        _words = [
+            "oak", "elm", "ash", "ivy", "bay", "fog", "ice", "jet", "log", "mud",
+            "net", "orb", "pit", "rod", "sap", "tar", "urn", "wax", "yew", "arc",
+            "wolf", "tide", "peak", "sand", "vine", "hawk", "moon", "coal", "flame",
+            "river", "arrow", "blade", "cloud", "crane", "delta", "eagle", "field",
+            "grove", "hedge", "inlet", "jade", "kelp", "lark", "maple", "marsh",
+            "orbit", "palm", "ridge", "stone", "tower", "vale", "amber", "birch",
+            "cedar", "depth", "ember", "flint", "glade", "haven", "ledge", "manor",
+            "olive", "plume", "quill", "raven", "slate", "thyme", "wheat", "trek",
+            "port", "cafe", "road", "sky", "sea", "boat", "sail", "camp", "hike",
+            "park", "lake", "hill", "reef", "cove", "dune", "mist", "rain", "wind",
+            "star", "dusk", "dawn", "path", "trail", "swift", "calm", "bold", "crisp",
+            "cool", "warm", "deep", "wide", "free", "clear", "sharp", "vast", "wild",
+            "brave", "keen", "agile", "alert", "hardy", "eager", "loyal", "proud",
+        ]
+        import random as _rnd
+        _sysrnd = _rnd.SystemRandom()
+        ap_pass = "-".join(_sysrnd.choice(_words) for _ in range(5))
+        preseed_data["AP_PASS"] = ap_pass
+        _log(f"[firstboot] AUTO_INSTALL: generated random AP passphrase.")
+        # Save the generated passphrase so user can retrieve it via SSH
+        gen_pass_file = os.path.join(STATE_DIR, "generated-ap-pass.txt")
+        try:
+            old_umask = os.umask(0o077)
+            try:
+                with open(gen_pass_file, "w", encoding="utf-8") as _gpf:
+                    _gpf.write(f"# Auto-generated AP passphrase for headless install\n")
+                    _gpf.write(f"# Connect to SSID: {preseed_data.get('AP_SSID', 'TravelRouter')}\n")
+                    _gpf.write(f"AP_PASS={ap_pass}\n")
+                os.chmod(gen_pass_file, 0o600)
+            finally:
+                os.umask(old_umask)
+            _log(f"[firstboot] Generated passphrase saved to {gen_pass_file}")
+        except Exception as _e:
+            _log(f"[firstboot] Warning: could not write {gen_pass_file}: {_e}")
+    form: dict[str, list[str]] = {}
+    for k, v in preseed_data.items():
+        form[k] = [str(v)]
+    form.setdefault("AP_SSID", ["TravelRouter"])
+    form.setdefault("COUNTRY", ["US"])
+    form.setdefault("_csrf_token", [_csrf_token])
+    values, errors, new_root_pw = _validate(form)
+    if errors:
+        _log(f"[firstboot] AUTO_INSTALL validation errors: {errors}. Waiting for user input via web UI.")
+        return False
+    _installing = True
+    try:
+        _write_env_file(values)
+        if new_root_pw:
+            _write_rootpw_file(new_root_pw)
+        _spawn_install()
+        _log("[firstboot] AUTO_INSTALL successfully spawned install.sh.")
+        return True
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        _installing = False
+        _log(f"[firstboot] AUTO_INSTALL failed to spawn: {exc}")
+        return False
 
 
 def main() -> int:
@@ -1009,6 +1226,7 @@ def main() -> int:
     httpd = HTTPServer(addr, Handler)
     sys.stderr.write(f"[firstboot] listening on 0.0.0.0:{addr[1]}\n")
     _preseed.update(_load_preseed())
+    _maybe_auto_install(_preseed)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

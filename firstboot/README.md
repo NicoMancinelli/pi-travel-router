@@ -58,29 +58,54 @@ Boolean flags (`0`/`1`, default `0` in non-interactive mode if unset):
 
 If `ENABLE_TOR_TRANSPARENT=1`, `TOR_AP_PASS` (8+ chars) must also be set.
 
-## Raspberry Pi Imager pre-seed
+## Raspberry Pi Imager Provisioning & Drop-in Configuration
 
-When a `firstrun.sh` file written by Raspberry Pi Imager is present on the boot partition (`/boot/firmware/firstrun.sh` or `/boot/firstrun.sh`), the wizard reads it at startup and pre-fills the following fields automatically:
+When writing an image with **Raspberry Pi Imager** (or mounting the FAT32 boot partition after writing), you can provision router settings in two ways:
 
-- **Hostname → AP SSID** — the hostname set in Imager becomes the default AP SSID.
-- **SSH public key** — if Imager added an authorized key, it is pre-filled in the SSH admin key field.
-- **AP passphrase** — if `AP_PASS` is present in `firstrun.sh`, it is pre-filled and the user can submit the wizard without typing a passphrase at all.
+### 1. Raspberry Pi Imager "OS Customisation" Options
 
-To pre-seed the AP passphrase via Imager, add the following line anywhere in `firstrun.sh` (or in the Imager "Advanced options" custom script field):
+When prompted by Raspberry Pi Imager to apply OS customisation settings, the following options are automatically extracted and configured:
 
+- **Hostname (`ROUTER_HOSTNAME`)** — sets the system hostname and default mDNS name (`hostname.local`).
+- **User / Password** — password (or password hash) configured in Imager is automatically applied to `root`, replacing temporary console credentials. Temporary plaintext password files on the boot partition are shredded on first boot.
+- **Wireless LAN Country (`COUNTRY`)** — sets the Wi-Fi regulatory domain (e.g. `US`, `GB`, `DE`).
+- **Timezone (`ROUTER_TIMEZONE`)** — sets system timezone for cron jobs, AP schedules, and daily reports (e.g. `America/New_York`, `Europe/London`).
+- **Wireless LAN SSID & Password (`AP_SSID`, `AP_PASS`)** — pre-seeds the Wi-Fi AP name and passphrase (min 8 characters).
+- **SSH Public Keys (`SSH_ADMIN_KEY`)** — automatically written to `/root/.ssh/authorized_keys` with `0600` permissions and loaded into the wizard.
+
+### 2. Boot-Partition Drop-in File (`travel-router.env`)
+
+You can create a file named `travel-router.env` (or `travel-router.conf`) in the root of the boot partition (`/boot/firmware/` or `/boot/`). Any router variable or feature toggle can be defined:
+
+```bash
+# /boot/firmware/travel-router.env
+AP_SSID="MyTravelRouter"
+AP_PASS="SuperSecretPassphrase123"
+COUNTRY="US"
+ROUTER_HOSTNAME="travelrouter"
+ROUTER_TIMEZONE="America/New_York"
+SSH_ADMIN_KEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"
+TS_KEY="tskey-auth-..."
+NTFY_TOPIC="my-router-alerts"
+ENABLE_BLOCKLISTS=1
+ENABLE_ADGUARD=1
+ENABLE_VPN_KILLSWITCH=1
+ENABLE_AUTO_UPDATES=1
+ENABLE_WIREGUARD=0
+
+# Set AUTO_INSTALL=1 for headless zero-touch setup (requires AP_PASS >= 8 chars)
+AUTO_INSTALL=1
 ```
-AP_PASS="your-passphrase-here"
-```
 
-The value must be at least 8 characters; shorter values are silently ignored and the field remains blank.
+### 3. Headless Zero-Touch Provisioning (`AUTO_INSTALL=1`)
 
-If `AP_PASS` is not present in `firstrun.sh`, the wizard will still require it to be entered interactively in the browser — the form will not submit without it.
-
-**Security note:** `AP_PASS` stored in `firstrun.sh` is plaintext on the FAT boot partition, readable by anyone with physical access to the SD card. This is acceptable for personal/home use. Do not use this pre-seed mechanism on SD cards that will be shared or used in public environments; enter the passphrase interactively instead.
+If `AUTO_INSTALL=1` (or `HEADLESS=1`) is specified in `travel-router.env` or `firstrun.sh` along with a valid `AP_PASS` (>= 8 chars), the router will automatically start the non-interactive installation on first boot without requiring any browser interaction.
+While the installation runs, the web server on port 80 streams real-time status on `http://travelrouter.local/status` (or `http://192.168.7.1/status`).
 
 ## Security notes
 
-- Form fields are shell-escaped with `shlex.quote` before being written to the env file. Inputs that look like shell metacharacters can't break out.
+- Credentials (passwords, auth keys, drop-in configs) written to the FAT32 boot partition are migrated securely to `/var/lib/travel-router/` (mode `0600`) and the originals on the unencrypted boot partition are safely shredded on boot.
+- Form fields are shell-escaped with `shlex.quote` before being written to the env file. Inputs that look like shell metacharacters cannot break out.
 - The env file is written with mode `0600` so only root can read the AP passphrase / Tailscale key.
 - The wizard only listens during first boot; after the install completes the unit is disabled and the file `firstboot-done` blocks reactivation.
 - **The `/status` page is unauthenticated and streams install log output to anyone on the LAN while the wizard is active.** Never add `set -x` or equivalent to `install.sh` as it would expose secrets (Tailscale keys, AP passphrases) in the log.
