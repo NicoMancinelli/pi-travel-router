@@ -956,6 +956,7 @@ FEATURE_FLAGS = [
     "ENABLE_WIREGUARD",
     "ENABLE_WG_KEY_ROTATION",
     "ENABLE_LTE_MODEM",
+    "ENABLE_GUEST_NETWORK",
 ]
 
 
@@ -1094,6 +1095,13 @@ class FeaturesScreen(Screen):
                     run(["systemctl", "try-restart", "bandwidth-dashboard.service"])
                 else:
                     run(["systemctl", "stop", "bandwidth-dashboard.service"])
+            elif flag == "ENABLE_GUEST_NETWORK":
+                if enable:
+                    run(["systemctl", "start", "hostapd-guest"], timeout=10)
+                else:
+                    run(["systemctl", "stop", "hostapd-guest"], timeout=10)
+                run(["/usr/local/bin/travel-router-firewall.sh", "--save"], timeout=15)
+                run(["systemctl", "reload-or-restart", "dnsmasq"])
         except Exception:
             pass
 
@@ -1558,6 +1566,10 @@ SETTINGS_ITEMS = [
     ("USB_SHARE_NAME", "USB Share Name", False),
     ("PUSHGW_URL", "Prometheus Pushgw URL", False),
     ("SSH_ADMIN_KEY", "SSH Admin Public Key", False),
+    ("GUEST_SSID", "Guest Network SSID", False),
+    ("GUEST_PASS", "Guest Network Password", True),
+    ("LTE_APN", "LTE Modem APN", False),
+    ("DOH_RESOLVER", "DNS-over-HTTPS Resolver", False),
 ]
 
 
@@ -1664,6 +1676,56 @@ class SettingsScreen(Screen):
                             restart_msg = "\nKey already present"
                     except OSError as exc:
                         restart_msg = f"\nCould not write authorized_keys: {exc}"
+        elif key == "GUEST_SSID":
+            if len(value) < 1 or len(value) > 32:
+                err = "Guest SSID must be 1–32 characters"
+            elif "#" in value:
+                err = "Guest SSID must not contain '#'"
+            else:
+                err = write_default(key, value)
+                if not err:
+                    guest_conf = "/etc/hostapd/hostapd-guest.conf"
+                    if os.path.exists(guest_conf):
+                        try:
+                            with open(guest_conf) as fh:
+                                glines = fh.readlines()
+                            gpat = re.compile(r"^ssid=")
+                            g_replaced = False
+                            for gi, gline in enumerate(glines):
+                                if gpat.match(gline):
+                                    glines[gi] = f"ssid={value}\n"
+                                    g_replaced = True
+                                    break
+                            if not g_replaced:
+                                glines.append(f"ssid={value}\n")
+                            gtmp = guest_conf + ".tmp"
+                            with open(gtmp, "w") as fh:
+                                fh.writelines(glines)
+                            os.replace(gtmp, guest_conf)
+                        except OSError as exc:
+                            err = f"Could not update {guest_conf}: {exc}"
+                    if not err and svc_active("hostapd-guest"):
+                        rc, _, stderr = run(["systemctl", "restart", "hostapd-guest"])
+                        restart_msg = "\nhostapd-guest restarted" if rc == 0 else f"\nhostapd-guest restart failed: {stderr[:60]}"
+        elif key == "GUEST_PASS":
+            if value and (len(value) < 8 or len(value) > 63):
+                err = "Guest password must be 8–63 characters (or empty for open network)"
+            elif "#" in value:
+                err = "Guest password must not contain '#'"
+            else:
+                err = write_default(key, value)
+                if not err and svc_active("hostapd-guest"):
+                    rc, _, stderr = run(["systemctl", "restart", "hostapd-guest"])
+                    restart_msg = "\nhostapd-guest restarted" if rc == 0 else f"\nhostapd-guest restart failed: {stderr[:60]}"
+        elif key == "DOH_RESOLVER":
+            valid_resolvers = ("cloudflare", "quad9", "nextdns", "adguard", "system")
+            if value.lower() not in valid_resolvers:
+                err = f"Resolver must be one of: {', '.join(valid_resolvers)}"
+            else:
+                err = write_default(key, value.lower())
+                if not err and os.path.exists("/usr/local/sbin/set-doh-resolver.sh"):
+                    rc, _, stderr = run(["/usr/local/sbin/set-doh-resolver.sh", value.lower()])
+                    restart_msg = f"\nDoH resolver set to {value.lower()}" if rc == 0 else f"\nset-doh-resolver failed: {stderr[:60]}"
         else:
             err = write_default(key, value)
 
