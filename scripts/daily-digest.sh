@@ -62,6 +62,28 @@ failed=$(systemctl list-units --state=failed --no-legend 2>/dev/null \
 # AP clients right now
 clients=$(iw dev "${AP_IFACE}" station dump 2>/dev/null | grep -c "^Station" || printf "0")
 
-msg="Daily digest | Up: ${uptime_str} | WAN: ${utype} | TS: ${ts_state} | AP clients: ${clients} | Data: ${data_today} | Failed units: ${failed}"
+# CPU Temp & Throttling
+temp_str="n/a"
+if [ -f /sys/class/thermal/thermal_zone0/temp ]; then
+    raw_temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo "0")
+    if [ "$raw_temp" -gt 0 ]; then
+        temp_str="$(( raw_temp / 1000 ))°C"
+    fi
+fi
+
+power_str="OK"
+if command -v vcgencmd >/dev/null 2>&1; then
+    raw_throttled=$(vcgencmd get_throttled 2>/dev/null || echo "")
+    if [[ "$raw_throttled" =~ throttled=(0x[0-9a-fA-F]+) ]]; then
+        tval=$(( BASH_REMATCH[1] ))
+        if (( (tval & 0x1) != 0 )); then
+            power_str="UNDERVOLT"
+        elif (( (tval & 0x10000) != 0 )); then
+            power_str="undervolt-occurred"
+        fi
+    fi
+fi
+
+msg="Daily digest | Up: ${uptime_str} | Temp: ${temp_str} (${power_str}) | WAN: ${utype} | TS: ${ts_state} | AP clients: ${clients} | Data: ${data_today} | Failed: ${failed}"
 
 /usr/local/bin/notify-router.sh "$msg" low || logger -t daily-digest "$msg"

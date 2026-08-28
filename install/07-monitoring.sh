@@ -88,4 +88,14 @@ run_monitoring() {
     else
         ok "Daily digest installed — set NTFY_TOPIC in /etc/default/travel-router to activate"
     fi
+
+    # ── Hardware & Thermal Watchdog ──────────────────────────────────────────────
+    section "Hardware & Thermal Watchdog"
+
+    install_file scripts/hardware-watchdog.sh /usr/local/bin/hardware-watchdog.sh 755
+    install_file systemd/hardware-watchdog.service /etc/systemd/system/hardware-watchdog.service 644
+    install_file systemd/hardware-watchdog.timer   /etc/systemd/system/hardware-watchdog.timer   644
+    systemctl daemon-reload
+    run_or_dry systemctl enable --now hardware-watchdog.timer 2>/dev/null || true
+    ok "Hardware watchdog enabled (undervoltage & thermal check every 2 min)"
 }

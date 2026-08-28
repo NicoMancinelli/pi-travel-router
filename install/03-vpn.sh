@@ -38,6 +38,9 @@ run_vpn() {
         fi
     fi
 
+    install_file scripts/tailscale-exit-node.sh /usr/local/bin/tailscale-exit-node.sh 755
+    ok "Tailscale exit node manager installed (/usr/local/bin/tailscale-exit-node.sh)"
+
     # ── WireGuard ───────────────────────────────────────────────────────────────
     section "WireGuard"
 

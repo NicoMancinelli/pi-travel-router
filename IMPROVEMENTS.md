@@ -246,7 +246,7 @@ sudo apt install -y unattended-upgrades
 | ✅ 32 | **Bandwidth Analytics Dashboard** *(deployed)* — dark HTML report at `http://10.3.141.1/bandwidth.html`; enable with `ENABLE_BANDWIDTH_DASHBOARD=1` | Low | `generate-bandwidth-report.sh` |
 | ✅ 33 | **Prometheus + Node Exporter** *(deployed)* — `:9100/metrics` via Tailscale; enable with `ENABLE_PROMETHEUS_EXPORTER=1` | Low | `prometheus-node-exporter` |
 | ✅ 34 | **Real-Time Traffic Inspector** *(deployed)* — `bmon` + `iftop` installed; accessible from TUI Network submenu | Low-Med | `bmon` / `iftop` |
-| 35 | **Tailscale Peer Status + ntfy Enrichment** — parse `tailscale status --json` every 5 min; ntfy alert when tunnel goes stale, peer drops, or handshake fails | Low | `jq` + `curl` (already have both) |
+| ✅ 35 | **Tailscale Exit Node & Peer Status** *(deployed)* — `tailscale-watchdog.sh` + `tailscale-exit-node.sh` + TUI `TailscaleExitNodeScreen`; ntfy alerts on peer drop, active exit node selection with LAN preservation | Low | `scripts/tailscale-exit-node.sh` |
 
 ---
 

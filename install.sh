@@ -934,7 +934,9 @@ for script in \
     wireguard-watchdog.sh \
     modem-watchdog.sh \
     travel-status.sh \
-    daily-digest.sh; do
+    daily-digest.sh \
+    tailscale-exit-node.sh \
+    hardware-watchdog.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"
 done
@@ -1700,6 +1702,16 @@ else
     ok "UPS monitor disabled (set ENABLE_UPS_MONITOR=1 to activate)"
     ok "Requires: PiSugar 3 HAT — https://www.pisugar.com"
 fi
+
+# ── §. Hardware & Thermal Watchdog ───────────────────────────────────────────
+section "Hardware & Thermal Watchdog"
+
+install_file scripts/hardware-watchdog.sh /usr/local/bin/hardware-watchdog.sh 755
+install_file systemd/hardware-watchdog.service "/etc/systemd/system/hardware-watchdog.service" 644
+install_file systemd/hardware-watchdog.timer "/etc/systemd/system/hardware-watchdog.timer" 644
+systemctl daemon-reload
+systemctl enable --now hardware-watchdog.timer 2>/dev/null || true
+ok "Hardware watchdog enabled (undervoltage & thermal check every 2 min)"
 
 # ── §. USB drive file sharing — travel NAS (#30) ─────────────────────────────
 section "USB file sharing (travel NAS)"

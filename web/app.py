@@ -3508,6 +3508,122 @@ def api_system_throttle():
     return jsonify(throttle_info)
 
 
+@app.route("/api/system/health", methods=["GET"])
+@require_auth
+def api_system_health():
+    """Return comprehensive consolidated hardware health, thermal, power, and service metrics."""
+    health: dict = {
+        "status": "healthy",
+        "issues": [],
+        "thermal": {
+            "cpu_temp_c": None,
+            "status": "ok",
+            "warn_threshold": 70.0,
+            "critical_threshold": 80.0,
+        },
+        "throttling": {
+            "available": False,
+            "raw": None,
+            "currently_undervolted": False,
+            "currently_throttled": False,
+            "currently_freq_capped": False,
+            "undervoltage_occurred": False,
+            "throttling_occurred": False,
+        },
+        "resources": {
+            "load_1m": 0.0,
+            "load_5m": 0.0,
+            "load_15m": 0.0,
+            "ram_used_pct": None,
+            "disk_used_pct": None,
+        },
+        "services": {
+            "failed_units_count": 0,
+            "failed_units": [],
+        },
+    }
+
+    # 1. Thermal & Frequency
+    temp_c = None
+    try:
+        temp_str = Path("/sys/class/thermal/thermal_zone0/temp").read_text().strip()
+        temp_c = round(int(temp_str) / 1000, 1)
+        health["thermal"]["cpu_temp_c"] = temp_c
+        if temp_c >= 80.0:
+            health["thermal"]["status"] = "critical"
+            health["status"] = "critical"
+            health["issues"].append(f"CPU temperature critical ({temp_c}°C)")
+        elif temp_c >= 70.0:
+            health["thermal"]["status"] = "warm"
+            if health["status"] == "healthy":
+                health["status"] = "warning"
+            health["issues"].append(f"CPU temperature elevated ({temp_c}°C)")
+    except (OSError, ValueError):
+        pass
+
+    # 2. Throttling
+    try:
+        out, _ = _run(["vcgencmd", "get_throttled"], timeout=3)
+        if out and "throttled=" in out:
+            hex_val = out.strip().split("=", 1)[1].strip()
+            parsed = _parse_throttled(hex_val)
+            health["throttling"]["available"] = True
+            health["throttling"]["raw"] = hex_val
+            health["throttling"]["currently_undervolted"] = parsed["undervoltage"]
+            health["throttling"]["currently_throttled"] = parsed["throttled"]
+            health["throttling"]["currently_freq_capped"] = parsed["freq_capped"]
+            health["throttling"]["undervoltage_occurred"] = "undervoltage-occurred" in parsed["flags"]
+            health["throttling"]["throttling_occurred"] = "throttling-occurred" in parsed["flags"]
+
+            if parsed["undervoltage"]:
+                health["status"] = "critical"
+                health["issues"].append("Power supply under-voltage (<4.63V) detected")
+            if parsed["throttled"]:
+                health["status"] = "critical"
+                health["issues"].append("CPU thermal throttling actively engaged")
+            if parsed["freq_capped"]:
+                if health["status"] == "healthy":
+                    health["status"] = "warning"
+                health["issues"].append("ARM frequency actively capped")
+    except Exception:
+        pass
+
+    # 3. Load & Resources
+    try:
+        load1, load5, load15 = os.getloadavg()
+        health["resources"]["load_1m"] = round(load1, 2)
+        health["resources"]["load_5m"] = round(load5, 2)
+        health["resources"]["load_15m"] = round(load15, 2)
+    except OSError:
+        pass
+
+    # Disk root usage
+    try:
+        st = os.statvfs("/")
+        total = st.f_blocks * st.f_frsize
+        free = st.f_bavail * st.f_frsize
+        if total > 0:
+            health["resources"]["disk_used_pct"] = round((1 - (free / total)) * 100, 1)
+    except OSError:
+        pass
+
+    # 4. Failed systemd units
+    try:
+        out, rc = _run(["systemctl", "list-units", "--state=failed", "--no-legend", "--plain"], timeout=5)
+        if rc == 0 and out.strip():
+            failed = [line.split()[0] for line in out.strip().splitlines() if line.strip()]
+            health["services"]["failed_units_count"] = len(failed)
+            health["services"]["failed_units"] = failed
+            if failed:
+                if health["status"] == "healthy":
+                    health["status"] = "warning"
+                health["issues"].append(f"{len(failed)} failed systemd unit(s)")
+    except Exception:
+        pass
+
+    return jsonify(health)
+
+
 # ── Serve index.html ──────────────────────────────────────────────────────────
 
 

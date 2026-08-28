@@ -43,6 +43,8 @@ collect iptables-nat.txt         iptables -t nat -L -n -v
 collect tailscale-status.txt     tailscale status
 collect df.txt                   df -h
 collect free.txt                 free -h
+collect hardware-health.txt      bash -c 'echo "=== Thermal ==="; cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || true; vcgencmd measure_temp 2>/dev/null || true; echo "=== Throttling ==="; vcgencmd get_throttled 2>/dev/null || true; echo "=== Clocks ==="; vcgencmd measure_clock arm 2>/dev/null || true; echo "=== Voltages ==="; vcgencmd measure_volts core 2>/dev/null || true'
+collect hardware-state.txt       cat /var/lib/travel-router/hardware-state.json
 collect systemctl-failed.txt     systemctl list-units --state=failed --no-pager
 collect os-release.txt           cat /etc/os-release
 collect image-version.txt        cat /etc/travel-router-image-version

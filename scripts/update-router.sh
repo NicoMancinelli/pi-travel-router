@@ -133,7 +133,7 @@ apply_update() {
         travel-status.sh travel-diagnostic.sh generate-bandwidth-report.sh
         vnstat-push.sh vnstat-metrics.sh tune-cake.sh daily-digest.sh update-router.sh update-blocklists.sh
         setup-2fa.sh install-adguard.sh apply-cake.sh
-        log-rotate.sh modem-watchdog.sh
+        log-rotate.sh modem-watchdog.sh tailscale-exit-node.sh hardware-watchdog.sh
     )
     TUI_SHELL_ALLOWLIST=(
         travel-tui-legacy.sh

@@ -216,10 +216,14 @@ def collect_status() -> dict:
     _, ts_ip_out, _ = run(["tailscale", "ip", "-4"])
     ts_ip = ts_ip_out.strip().split("\n")[0] if ts_ip_out.strip() else ""
     ts_peers = 0
+    ts_exit_node = ""
     _, ts_json, _ = run(["tailscale", "status", "--json"], timeout=5)
     for m2 in re.finditer(r'"Online"\s*:\s*(true|false)', ts_json):
         if m2.group(1) == "true":
             ts_peers += 1
+    m_exit = re.search(r'"ExitNodeStatus"\s*:\s*\{[^}]*"HostName"\s*:\s*"([^"]+)"', ts_json)
+    if m_exit:
+        ts_exit_node = m_exit.group(1)
 
     # Access Point
     ap_ssid = read_hostapd("ssid")
@@ -228,12 +232,33 @@ def collect_status() -> dict:
     hostapd_active = svc_active("hostapd")
 
     # System stats
-    temp = "?"
+    temp_str = "?"
     try:
         with open("/sys/class/thermal/thermal_zone0/temp") as fh:
-            temp = f"{int(fh.read().strip()) // 1000}°C"
-    except OSError:
+            val = int(fh.read().strip())
+            t_c = val // 1000
+            if t_c >= 75:
+                temp_str = f"[@red bold]{t_c}°C 🔥[/]"
+            elif t_c >= 60:
+                temp_str = f"[@yellow]{t_c}°C[/]"
+            else:
+                temp_str = f"[@green]{t_c}°C[/]"
+    except (OSError, ValueError):
         pass
+
+    hw_alert = ""
+    state_f = "/var/lib/travel-router/hardware-state.json"
+    if os.path.exists(state_f):
+        try:
+            import json as _j
+            with open(state_f) as fh:
+                hwd = _j.load(fh)
+                if hwd.get("currently_undervolted"):
+                    hw_alert = "[@red bold]⚡ UNDERVOLT[/]"
+                elif hwd.get("currently_throttled"):
+                    hw_alert = "[@red bold]🔥 THROTTLED[/]"
+        except Exception:
+            pass
 
     _, up_out, _ = run(["uptime", "-p"])
     uptime_str = up_out.strip().replace("up ", "") or "?"
@@ -265,10 +290,12 @@ def collect_status() -> dict:
         "ts_label": ts_label,
         "ts_ip": ts_ip,
         "ts_peers": ts_peers,
+        "ts_exit_node": ts_exit_node,
         "ap_ssid": ap_ssid,
         "ap_clients": ap_clients,
         "hostapd_active": hostapd_active,
-        "temp": temp,
+        "temp": temp_str,
+        "hw_alert": hw_alert,
         "uptime": uptime_str,
         "ram": ram_str,
         "disk": disk_str,
@@ -482,6 +509,7 @@ class DashboardScreen(Screen):
         Binding("6", "push_screen('settings')", "Settings"),
         Binding("7", "push_screen('system')", "System"),
         Binding("w", "push_screen('wireguard')", "WireGuard"),
+        Binding("e", "push_screen('exitnode')", "ExitNode"),
         Binding("r", "push_screen('routes')", "Routes"),
         Binding("g", "push_screen('guest')", "Guest"),
         Binding("s", "push_screen('speedtest')", "SpeedTest"),
@@ -506,8 +534,8 @@ class DashboardScreen(Screen):
             yield Static(id="signal-panel", classes="panel")
         yield Static(
             "  [P]Privacy  [1]Services  [2]Features  [3]Logs  [4]Clients  [5]Network  "
-            "[6]Settings  [7]System  [W]WireGuard  [R]Routes  [G]Guest  [S]SpeedTest  "
-            "[T]Traceroute  [C]Captive  [U]Storage  [K]WoL  [A]Aliases  [Q]Quit",
+            "[6]Settings  [7]System  [W]WireGuard  [E]ExitNode  [R]Routes  [G]Guest  "
+            "[S]SpeedTest  [T]Traceroute  [C]Captive  [U]Storage  [K]WoL  [A]Aliases  [Q]Quit",
             id="nav-panel",
         )
         yield Footer()
@@ -683,10 +711,12 @@ class DashboardScreen(Screen):
         ts_label = d.get("ts_label", "Tailscale")
         ts_ip = d.get("ts_ip", "")
         ts_peers = d.get("ts_peers", 0)
+        ts_exit_node = d.get("ts_exit_node", "")
         ts_dot = "[@green]●[/]" if ts_ip else "[@dim]○[/]"
+        exit_str = f"  [@green]● Exit: {ts_exit_node}[/]" if ts_exit_node else "  [@dim]Exit: Direct[/]"
         ts_text = (
             f"[@cyan bold]{ts_label}[/]\n"
-            f"  {ts_dot} {ts_ip or 'not connected'}  [@dim]{ts_peers} peers online[/]"
+            f"  {ts_dot} {ts_ip or 'not connected'}  [@dim]{ts_peers} peers online[/]{exit_str}"
         )
         try:
             self.query_one("#ts-panel", Static).update(ts_text)
@@ -729,12 +759,14 @@ class DashboardScreen(Screen):
             pass
 
         # System panel
+        hw_alert = d.get("hw_alert", "")
+        hw_alert_str = f"  {hw_alert}" if hw_alert else ""
         sys_text = (
             f"[@cyan bold]SYSTEM[/]\n"
             f"  [@dim]Temp[/] {d.get('temp','?')}  "
             f"[@dim]RAM[/] {d.get('ram','?')}  "
             f"[@dim]Disk[/] {d.get('disk','?')}  "
-            f"[@dim]Up[/] {d.get('uptime','?')}"
+            f"[@dim]Up[/] {d.get('uptime','?')}{hw_alert_str}"
         )
         try:
             self.query_one("#system-panel", Static).update(sys_text)
@@ -3451,6 +3483,176 @@ class AliasesScreen(Screen):
         self._load()
 
 
+# ── Tailscale Exit Node screen ────────────────────────────────────────────────
+class TailscaleExitNodeScreen(Screen):
+    """Tailscale exit node manager — select exit node peer or clear to direct."""
+
+    BINDINGS = [
+        Binding("q,escape", "pop_screen", "Back"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("c", "clear_exit_node", "Clear (Direct)"),
+        Binding("a", "toggle_advertise", "Toggle Adv"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        yield Label("Tailscale Exit Nodes  —  select peer to route traffic through", classes="panel-title")
+        yield Static(id="ts-exit-status")
+        yield DataTable(id="ts-exit-table", zebra_stripes=True)
+        with Horizontal():
+            yield Button("Set Selected [Enter]", id="set-btn", classes="action")
+            yield Button("Clear / Direct [C]", id="clear-btn", classes="action")
+            yield Button("Toggle Advertise [A]", id="adv-btn", classes="action")
+            yield Button("Refresh [R]", id="refresh-btn", classes="action")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        t = self.query_one("#ts-exit-table", DataTable)
+        t.add_columns("Hostname", "Tailscale IP", "Status", "Active", "OS")
+        self._load()
+
+    def _load(self) -> None:
+        self.run_worker(self._fetch, exclusive=True, thread=True)
+
+    def _fetch(self) -> None:
+        import json as _json
+        rc, out, _ = run(["tailscale", "status", "--json"], timeout=8)
+        if rc != 0 or not out.strip():
+            self.call_from_thread(self._apply, None, False, [])
+            return
+        try:
+            data = _json.loads(out)
+        except Exception:
+            self.call_from_thread(self._apply, None, False, [])
+            return
+
+        self_info = data.get("Self", {})
+        adv = bool(self_info.get("ExitNodeOption", False))
+
+        exit_status = data.get("ExitNodeStatus")
+        current_exit = None
+        if exit_status:
+            current_exit = exit_status.get("HostName") or (exit_status.get("TailscaleIPs") or [""])[0]
+
+        peers = []
+        for p in (data.get("Peer") or {}).values():
+            if p.get("ExitNodeOption"):
+                peers.append({
+                    "hostname": p.get("HostName", "?"),
+                    "ip": (p.get("TailscaleIPs") or [""])[0],
+                    "online": bool(p.get("Online", False)),
+                    "active": bool(p.get("ExitNode", False)),
+                    "os": p.get("OS", "?"),
+                })
+
+        self.call_from_thread(self._apply, current_exit, adv, peers)
+
+    def _apply(self, current_exit: str | None, adv: bool, peers: list[dict]) -> None:
+        adv_str = "[@green]Advertising[/]" if adv else "[@dim]Not advertising[/]"
+        if current_exit:
+            stat = f"[@green]● Active Exit Node:[/] [@green bold]{current_exit}[/]  |  This router: {adv_str}"
+        else:
+            stat = f"[@yellow]○ Direct WAN Routing (No Exit Node)[/]  |  This router: {adv_str}"
+
+        try:
+            self.query_one("#ts-exit-status", Static).update(stat)
+        except Exception:
+            pass
+
+        t = self.query_one("#ts-exit-table", DataTable)
+        t.clear()
+        if not peers:
+            t.add_row("[dim]No exit node peers found on your tailnet[/dim]", "", "", "", "")
+        else:
+            for p in peers:
+                h = f"[@green bold]{p['hostname']}[/]" if p["active"] else p["hostname"]
+                ip = p["ip"]
+                st = "[@green]online[/]" if p["online"] else "[@red]offline[/]"
+                act = "[@green bold]● ACTIVE[/]" if p["active"] else "[@dim]○ no[/]"
+                os_name = p["os"]
+                t.add_row(h, ip, st, act, os_name)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "set-btn":
+            self.action_select_exit_node()
+        elif event.button.id == "clear-btn":
+            self.action_clear_exit_node()
+        elif event.button.id == "adv-btn":
+            self.action_toggle_advertise()
+        elif event.button.id == "refresh-btn":
+            self._load()
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self.action_select_exit_node()
+
+    def action_select_exit_node(self) -> None:
+        t = self.query_one("#ts-exit-table", DataTable)
+        idx = t.cursor_row
+        if idx is None or idx < 0:
+            return
+        row = t.get_row_at(idx)
+        if not row or not row[1]:
+            return
+        target_ip = str(row[1]).strip()
+        target_name = str(row[0]).replace("[@green bold]", "").replace("[/]", "").strip()
+        self.app.push_screen(
+            ConfirmModal(
+                "Set Exit Node",
+                f"Route all router & client traffic through {target_name} ({target_ip})?\n(LAN access is preserved)",
+            ),
+            lambda confirmed, ip=target_ip, name=target_name: self._set_worker(ip, name) if confirmed else None,
+        )
+
+    def _set_worker(self, target_ip: str, target_name: str) -> None:
+        self.run_worker(lambda: self._do_set(target_ip, target_name), thread=True)
+
+    def _do_set(self, target_ip: str, target_name: str) -> None:
+        rc, _, err = run(["tailscale", "set", f"--exit-node={target_ip}", "--exit-node-allow-lan-access=true"], timeout=12)
+        msg = f"✓ Routed through {target_name}" if rc == 0 else f"✗ Failed to set exit node: {err[:120]}"
+        var = "success" if rc == 0 else "error"
+        self.call_from_thread(lambda: self.app.push_screen(MessageModal("Exit Node", msg, var)))
+        self.call_from_thread(self._load)
+
+    def action_clear_exit_node(self) -> None:
+        self.app.push_screen(
+            ConfirmModal("Clear Exit Node", "Revert to direct local WAN routing?"),
+            lambda confirmed: self._clear_worker() if confirmed else None,
+        )
+
+    def _clear_worker(self) -> None:
+        self.run_worker(self._do_clear, thread=True)
+
+    def _do_clear(self) -> None:
+        rc, _, err = run(["tailscale", "set", "--exit-node="], timeout=12)
+        msg = "✓ Restored direct WAN routing" if rc == 0 else f"✗ Failed to clear exit node: {err[:120]}"
+        var = "success" if rc == 0 else "error"
+        self.call_from_thread(lambda: self.app.push_screen(MessageModal("Exit Node", msg, var)))
+        self.call_from_thread(self._load)
+
+    def action_toggle_advertise(self) -> None:
+        self.run_worker(self._do_toggle_adv, thread=True)
+
+    def _do_toggle_adv(self) -> None:
+        import json as _json
+        rc, out, _ = run(["tailscale", "status", "--json"], timeout=6)
+        adv = False
+        if rc == 0 and out.strip():
+            try:
+                adv = bool(_json.loads(out).get("Self", {}).get("ExitNodeOption", False))
+            except Exception:
+                pass
+        new_val = "false" if adv else "true"
+        rc2, _, err = run(["tailscale", "set", f"--advertise-exit-node={new_val}"], timeout=12)
+        state_str = "disabled" if new_val == "false" else "enabled"
+        msg = f"✓ Exit node advertising {state_str}" if rc2 == 0 else f"✗ Failed: {err[:120]}"
+        var = "success" if rc2 == 0 else "error"
+        self.call_from_thread(lambda: self.app.push_screen(MessageModal("Advertise Exit Node", msg, var)))
+        self.call_from_thread(self._load)
+
+    def action_refresh(self) -> None:
+        self._load()
+
+
 # ── Main App ──────────────────────────────────────────────────────────────────
 class TravelRouterApp(App):
     TITLE = "Pi Travel Router"
@@ -3467,6 +3669,7 @@ class TravelRouterApp(App):
         "settings": SettingsScreen,
         "system": SystemScreen,
         "wireguard": WireGuardScreen,
+        "exitnode": TailscaleExitNodeScreen,
         "routes": RoutesScreen,
         "guest": GuestNetworkScreen,
         "speedtest": SpeedTestScreen,
