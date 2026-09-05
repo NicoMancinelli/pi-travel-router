@@ -742,11 +742,10 @@ class DashboardScreen(Screen):
             f"[@cyan bold]FEATURES[/]\n"
             f"  DoT {dot('ENABLE_DOT')}  "
             f"Kill {dot('ENABLE_VPN_KILLSWITCH')}  "
-            f"Tor {dot('ENABLE_TOR_TRANSPARENT')}  "
-            f"Blocks {dot('ENABLE_BLOCKLISTS')}  "
-            f"AdGuard {dot('ENABLE_ADGUARD')}  "
-            f"2FA {dot('ENABLE_2FA')}  "
-            f"QoS {dot('ENABLE_CLIENT_QOS')}  "
+            f"QUIC {dot('ENABLE_BLOCK_QUIC')}  "
+            f"Share {dot('ENABLE_USB_SHARE')}  "
+            f"Split {dot('ENABLE_WG_SPLIT_TUNNEL')}  "
+            f"Avahi {dot('ENABLE_AVAHI_REFLECTOR')}  "
             f"WG {dot('ENABLE_WIREGUARD')}"
         )
         try:
@@ -960,6 +959,7 @@ class ServicesScreen(Screen):
 
 # ── Features screen ───────────────────────────────────────────────────────────
 FEATURE_FLAGS = [
+    "ENABLE_BLOCK_QUIC",
     "ENABLE_DOT",
     "ENABLE_VPN_KILLSWITCH",
     "ENABLE_AUTO_UPDATES",
@@ -1021,7 +1021,7 @@ class FeaturesScreen(Screen):
     def _apply_side_effects(self, flag: str, new_val: str) -> None:
         enable = new_val == "1"
         try:
-            if flag in ("ENABLE_VPN_KILLSWITCH", "ENABLE_PER_DEVICE_VPN"):
+            if flag in ("ENABLE_VPN_KILLSWITCH", "ENABLE_PER_DEVICE_VPN", "ENABLE_BLOCK_QUIC"):
                 run(["/usr/local/bin/travel-router-firewall.sh", "--save"], timeout=15)
             elif flag == "ENABLE_DOT":
                 if enable:

@@ -51,7 +51,7 @@ ap_ssid=$(grep "^ssid=" /etc/hostapd/hostapd.conf 2>/dev/null | head -1 | cut -d
 ap_clients=$(iw dev "${AP_IFACE}" station dump 2>/dev/null | grep -c "^Station" || printf "0")
 printf "  ${W}AP${NC}:       %s  clients: %s\n" "$ap_ssid" "$ap_clients"
 
-printf '  %sFeatures%s: DoT=%s Blocklist=%s KillSwitch=%s AdGuard=%s Avahi=%s\n' "$W" "$NC" "$(_flag ENABLE_DOT)" "$(_flag ENABLE_BLOCKLISTS)" "$(_flag ENABLE_VPN_KILLSWITCH)" "$(_flag ENABLE_ADGUARD)" "$(_flag ENABLE_AVAHI_REFLECTOR)"
+printf '  %sFeatures%s: DoT=%s QUICBlock=%s KillSwitch=%s Share=%s Split=%s Avahi=%s\n' "$W" "$NC" "$(_flag ENABLE_DOT)" "$(_flag ENABLE_BLOCK_QUIC)" "$(_flag ENABLE_VPN_KILLSWITCH)" "$(_flag ENABLE_USB_SHARE)" "$(_flag ENABLE_WG_SPLIT_TUNNEL)" "$(_flag ENABLE_AVAHI_REFLECTOR)"
 
 printf '%s━━ System ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━%s\n' "${C}" "${NC}"
 

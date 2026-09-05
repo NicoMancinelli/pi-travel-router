@@ -187,12 +187,16 @@ _notify_uplink_change() {
             rm -f "$_tmp"
         fi
     fi
-    # Only send notification when there actually was a previous uplink and it changed
+    # Only send notification and flush conntrack when there actually was a previous uplink and it changed
     if [ -n "$curr_uplink" ] && [ -n "$prev_uplink" ] && [ "$curr_uplink" != "$prev_uplink" ]; then
         local prev_label curr_label
         prev_label=$(_uplink_label "${prev_uplink:-none}")
         curr_label=$(_uplink_label "$curr_uplink")
         _notify_safe "Uplink: ${prev_label} → ${curr_label}" low
+        # Flush stale NAT states on uplink switch to prevent carrier cross-stream tracking / stalls
+        if command -v conntrack >/dev/null 2>&1; then
+            conntrack -F 2>/dev/null || true
+        fi
     fi
 }
 # ─────────────────────────────────────────────────────────────────────────────

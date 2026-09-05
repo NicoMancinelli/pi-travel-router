@@ -72,6 +72,7 @@ _yaml_val() {
 }
 
 VPN="$(_yaml_val vpn)"
+# shellcheck disable=SC2034
 ADBLOCK="$(_yaml_val adblock)"
 TOR="$(_yaml_val tor)"
 KILL_SWITCH="$(_yaml_val kill_switch)"
@@ -133,14 +134,6 @@ if [[ "${VPN}" != "true" ]]; then
     tailscale down 2>/dev/null || true
 fi
 
-# ── Step 2b: AdGuard Home ─────────────────────────────────────────────────────
-if [[ "${ADBLOCK}" == "true" ]]; then
-    _log "Starting AdGuard Home"
-    systemctl start adguardhome 2>/dev/null || true
-else
-    _log "Stopping AdGuard Home"
-    systemctl stop adguardhome 2>/dev/null || true
-fi
 
 # ── Step 3: Tor ───────────────────────────────────────────────────────────────
 if [[ "${TOR}" == "true" ]]; then

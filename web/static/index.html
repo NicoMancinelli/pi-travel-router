@@ -856,14 +856,6 @@
     <div id="net-interfaces-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
   </div>
 
-  <!-- AdGuard Home Stats -->
-  <div class="card full-width" id="card-adguard-stats">
-    <div class="card-title">
-      &#x1F6E1; AdGuard Home
-      <button class="btn btn-sm" onclick="fetchAdguardStats()" style="margin-left:8px;">&#x27F3; Refresh</button>
-    </div>
-    <div id="adguard-stats-content" style="font-size:13px;color:var(--text-dim);">Loading&hellip;</div>
-  </div>
 
   <!-- System Services -->
   <div class="card full-width" id="card-system-services">
@@ -3056,7 +3048,7 @@ let _openQosPopover = null;    // currently open popover element
 let _aliases = {};             // mac.toLowerCase() → friendly name
 
 const SERVICES = [
-  'hostapd', 'NetworkManager', 'adguardhome',
+  'hostapd', 'NetworkManager',
   'wg-quick@wg0', 'tailscaled', 'wan-watchdog', 'failover-watchdog'
 ];
 
@@ -7725,7 +7717,6 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchDhcpLeases();
   fetchSshKeys();
   fetchNetInterfaces();
-  fetchAdguardStats();
   fetchSystemServices();
   fetchServicesStatus();
   fetchArpTable();

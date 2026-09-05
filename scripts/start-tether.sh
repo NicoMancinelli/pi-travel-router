@@ -20,12 +20,13 @@ if ! ip link show "$IFACE" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Crucial for Visible/Verizon bypass: immediately disable IPv6 on the hotplugged tether interface
+# (must run before driver sleep so kernel SLAAC/RA does not negotiate IPv6 during enumeration)
+sysctl -w "net.ipv6.conf.${IFACE}.disable_ipv6=1" 2>/dev/null || true
+
 sleep 3  # wait for driver init (ipheth iOS trust handshake; RNDIS/CDC-ECM enumeration)
 
 logger "start-tether: bringing up $IFACE"
-# Crucial for Visible/Verizon bypass: dynamically disable IPv6 on the hotplugged tether interface
-# (sysctl configs cannot match dynamic enx* interfaces, and un-mangled IPv6 leaks trigger carrier throttling)
-sysctl -w "net.ipv6.conf.${IFACE}.disable_ipv6=1" 2>/dev/null || true
 
 # Let NetworkManager handle DHCP; explicit connect as fallback if NM hasn't auto-connected
 nmcli device connect "$IFACE" 2>&1 | logger -t "start-tether" || true

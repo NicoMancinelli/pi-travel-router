@@ -386,7 +386,6 @@ def _validate_config_value(key, value):
 WHITELISTED_SERVICES = {
     "hostapd",
     "NetworkManager",
-    "adguardhome",
     "wg-quick@wg0",
     "tailscaled",
     "wan-watchdog",
@@ -5109,8 +5108,7 @@ def api_network_scan():
 _JOURNAL_ALLOWED_UNITS = {
     "hostapd", "dnsmasq", "wg-quick@wg0", "tailscaled",
     "travel-router-web", "systemd-networkd", "dhcpcd",
-    "failover-watchdog", "wan-watchdog", "tailscale-watchdog",
-    "wg-key-rotate", "wg-peer-expire", "aide-check",
+    "failover-watchdog", "wan-watchdog",
 }
 
 
@@ -6145,68 +6143,8 @@ def api_network_interfaces():
 @app.route("/api/dns/adguard/stats", methods=["GET"])
 @require_auth
 def api_dns_adguard_stats():
-    """Return AdGuard Home query stats via its REST API."""
-    import urllib.request
-    import urllib.error
-    import json as _json
-
-    # AdGuard Home listens on port 3000 (or 80 in some installs) on localhost
-    # Try common ports
-    adguard_base = None
-    for port in [3000, 80, 8088]:
-        try:
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{port}/control/status",
-                headers={"User-Agent": "travel-router/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=2) as resp:
-                if resp.status == 200:
-                    adguard_base = f"http://127.0.0.1:{port}"
-                    break
-        except Exception:
-            continue
-
-    if not adguard_base:
-        return jsonify({"available": False, "error": "AdGuard Home not reachable"})
-
-    def agh_get(path):
-        try:
-            req = urllib.request.Request(
-                f"{adguard_base}{path}",
-                headers={"User-Agent": "travel-router/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                return _json.loads(resp.read().decode())
-        except Exception:
-            return None
-
-    stats = agh_get("/control/stats")
-    if stats is None:
-        return jsonify({"available": False, "error": "Failed to fetch AdGuard stats"})
-
-    top_blocked = stats.get("top_blocked_domains", [])[:5]
-    top_clients = stats.get("top_clients", [])[:5]
-    top_queried = stats.get("top_queried_domains", [])[:5]
-
-    num_dns_queries = stats.get("num_dns_queries", 0)
-    num_blocked_filtering = stats.get("num_blocked_filtering", 0)
-    num_replaced_safebrowsing = stats.get("num_replaced_safebrowsing", 0)
-    num_replaced_parental = stats.get("num_replaced_parental", 0)
-    total_blocked = num_blocked_filtering + num_replaced_safebrowsing + num_replaced_parental
-    block_pct = round(total_blocked / num_dns_queries * 100, 1) if num_dns_queries > 0 else 0.0
-
-    return jsonify({
-        "available": True,
-        "base_url": adguard_base,
-        "num_dns_queries": num_dns_queries,
-        "num_blocked_filtering": num_blocked_filtering,
-        "total_blocked": total_blocked,
-        "block_percent": block_pct,
-        "avg_processing_time": stats.get("avg_processing_time", 0),
-        "top_blocked_domains": top_blocked,
-        "top_clients": top_clients,
-        "top_queried_domains": top_queried,
-    })
+    """AdGuard Home has been removed in favor of native dnsmasq / DoH."""
+    return jsonify({"available": False, "installed": False, "error": "AdGuard Home not installed"})
 
 
 # ── System Services Status ────────────────────────────────────────────────────
@@ -16465,7 +16403,7 @@ def api_system_service_health():
     import subprocess as sp
     SERVICES = [
         "wg-quick@wg0", "dnsmasq", "hostapd", "fail2ban",
-        "tailscaled", "nftables", "adguardhome", "chrony",
+        "tailscaled", "nftables", "chrony",
         "systemd-timesyncd", "ssh",
     ]
     services = []

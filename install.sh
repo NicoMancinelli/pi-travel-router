@@ -898,6 +898,17 @@ for script in \
     ok "  $script"
 done
 
+mkdir -p /usr/local/lib/travel-router
+install_file scripts/net-common.sh /usr/local/lib/travel-router/net-common.sh 644
+ok "  net-common.sh → /usr/local/lib/travel-router/net-common.sh"
+
+for sbin_script in \
+    mount-storage.sh overlayfs-ctl.sh speedtest.sh \
+    set-doh-resolver.sh apply-privacy-profile.sh config-backup.sh; do
+    install_file "scripts/$sbin_script" "/usr/local/sbin/$sbin_script" 755
+    ok "  $sbin_script → /usr/local/sbin/$sbin_script"
+done
+
 install_file scripts/travel-diagnostic.sh /usr/local/bin/travel-diagnostic 755
 ln -sfn update-router.sh /usr/local/bin/update-router
 ln -sfn travel-status.sh /usr/local/bin/travel-status
@@ -1177,21 +1188,6 @@ else
     ok "WireGuard disabled (set ENABLE_WIREGUARD=1 to activate)"
 fi
 
-# ── 18c. USB LTE modem ───────────────────────────────────────────────────────
-section "USB LTE modem"
-
-# modem-watchdog.sh + units are installed with the other watchdogs; the timer
-# is enabled there and the script self-exits unless ENABLE_LTE_MODEM=1.
-# ModemManager is only pulled in when the feature is actually switched on.
-if [[ "${ENABLE_LTE_MODEM:-0}" = "1" ]] && ! command -v mmcli > /dev/null 2>&1; then
-    apt-get install -y modemmanager 2>/dev/null || \
-        warn "ModemManager install failed — mmcli will be missing until installed"
-fi
-if [[ "${ENABLE_LTE_MODEM:-0}" = "1" ]]; then
-    ok "LTE modem watchdog active (wwan0 metric 150)"
-else
-    ok "LTE modem watchdog dormant (set ENABLE_LTE_MODEM=1 to activate)"
-fi
 
 # ── 19. firewall rules ───────────────────────────────────────────────────────
 # I-H4: firewall applied AFTER tailscaled is enabled/started so tailscale0

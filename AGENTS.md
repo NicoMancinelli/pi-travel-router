@@ -55,7 +55,7 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 /etc/nftables.conf.d/travel-router.nft  # nftables inet travel_mangle table (TTL/DSCP/hop-limit rules)
 /etc/tor/torrc                  # Tor transparent proxy config
 /usr/local/bin/                 # Operational scripts and user command aliases
-/usr/local/sbin/                # Admin entrypoints: travel-tui and OTA tools
+/usr/local/sbin/                # Admin entrypoints: travel-tui and management tools
 /etc/systemd/system/            # All watchdog timers and services
 /etc/udev/rules.d/90-ipheth.rules
 /etc/udev/rules.d/99-apple-autosuspend.rules
@@ -89,7 +89,6 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 - iptables-persistent saves
 - USB autosuspend disabled for Apple devices (udev, prevents ipheth drops)
 - privoxy: HTTP User-Agent normalization config installed; redirect disabled by default
-- vnStat + Prometheus textfile exporter (5-min timer to /var/lib/prometheus/node-exporter/)
 - usbmuxd hardening: Restart=on-failure, CPUQuota=20%
 - Tor installed; transparent proxy config/rules disabled by default
 - USB drive file sharing (#30): usb-share.sh — guest SMB share of /media/travel-data, bound to uap0/usb0/tailscale0 only; `ENABLE_USB_SHARE=1`

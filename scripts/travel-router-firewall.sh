@@ -15,6 +15,7 @@ flock -x 8
 source /etc/default/travel-router 2>/dev/null || true
 
 ENABLE_VPN_KILLSWITCH="${ENABLE_VPN_KILLSWITCH:-0}"
+ENABLE_BLOCK_QUIC="${ENABLE_BLOCK_QUIC:-1}"
 
 ipt_add() {
     local table=$1 chain=$2
@@ -66,6 +67,13 @@ iptables -F FORWARD
 iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 # AP client isolation: prevent clients from reaching each other or the Pi LAN.
 iptables -A FORWARD -i uap0 -o uap0 -j DROP
+
+# Carrier stealth (Visible/Verizon): reject QUIC (UDP 443) from AP clients.
+# Forces browsers to fall back immediately to TCP TLS 1.3, avoiding cellular UDP throttling,
+# DPI packet inspection of unencrypted UDP handshakes, and allowing TCP MSS clamping & BBR to work.
+if [ "$ENABLE_BLOCK_QUIC" = "1" ]; then
+    iptables -A FORWARD -i uap0 -p udp --dport 443 -j REJECT --reject-with icmp-port-unreachable
+fi
 
 # IPv6 FORWARD: mirror the IPv4 policy so AP clients cannot bypass the VPN
 # kill-switch via IPv6 (default ip6tables FORWARD policy is ACCEPT).
@@ -122,6 +130,11 @@ ipt_add nat PREROUTING -i uap0 -p udp --dport 53 -j REDIRECT --to-ports 53
 ipt_add nat PREROUTING -i uap0 -p tcp --dport 53 -j REDIRECT --to-ports 53
 ip6t_add nat PREROUTING -i uap0 -p udp --dport 53 -j REDIRECT --to-ports 53 2>/dev/null || true
 ip6t_add nat PREROUTING -i uap0 -p tcp --dport 53 -j REDIRECT --to-ports 53 2>/dev/null || true
+
+# NTP interception: redirect client NTP (UDP 123) to local NTP daemon (chrony).
+# Prevents desktop OS queries (time.windows.com, time.apple.com) from profiling client devices over cellular uplinks.
+ipt_add nat PREROUTING -i uap0 -p udp --dport 123 -j REDIRECT --to-ports 123
+ip6t_add nat PREROUTING -i uap0 -p udp --dport 123 -j REDIRECT --to-ports 123 2>/dev/null || true
 
 # Carrier bypass defense-in-depth (Visible/Verizon): enforce TTL=65, DSCP 0, and MSS clamping in iptables
 for _out in wlan0 bnep0 usb0 rndis0 enx+; do

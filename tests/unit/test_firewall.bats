@@ -200,3 +200,22 @@ PYEOF
     grep -q -- "-t nat -C POSTROUTING -o enx+ -j MASQUERADE" "${IPT_LOG}"
 }
 
+# ---------------------------------------------------------------------------
+# Test 11: QUIC rejection on uap0 when ENABLE_BLOCK_QUIC=1
+# ---------------------------------------------------------------------------
+@test "firewall: rejects QUIC (UDP 443) on uap0 when enabled" {
+    printf 'ENABLE_BLOCK_QUIC=1\n' > "${TRAVEL_ROUTER_ENV}"
+    _run_firewall
+
+    grep -q -- "-A FORWARD -i uap0 -p udp --dport 443 -j REJECT --reject-with icmp-port-unreachable" "${IPT_LOG}"
+}
+
+# ---------------------------------------------------------------------------
+# Test 12: NTP interception redirects uap0 port 123 UDP to local chrony
+# ---------------------------------------------------------------------------
+@test "firewall: redirects client port 123 NTP queries to local chrony" {
+    _run_firewall
+
+    grep -q -- "-i uap0 -p udp --dport 123 -j REDIRECT --to-ports 123" "${IPT_LOG}"
+}
+
