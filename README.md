@@ -17,7 +17,7 @@ Travel networks are hostile. Hotel Wi-Fi runs captive portals that re-auth every
 
 This project turns one Pi Zero 2 W into the box that solves all of that at once. It is a single AP your devices stay associated to no matter where you are. Behind it, an uplink failover watchdog promotes whichever of your iPhone, Android, Bluetooth tether, or hotel Wi-Fi is currently working, and a TTL/hop-limit/DSCP mangler hides the fact that you're tethered. Tailscale runs as a subnet router so your laptop on the AP can reach home as if it were on your home LAN, and a captive-portal detector pauses Tailscale automatically while you sign in to hotel Wi-Fi, then restores it.
 
-Everything is opt-in via flags: DNS-over-TLS, AdGuard Home, VPN kill switch, Tor transparent SSID, threat-intel IP blocklists, per-client QoS, scheduled AP disable, ntfy push notifications, automatic security updates, Headscale support. Defaults are off; the install is idempotent; one config file (`/etc/default/travel-router`) controls everything.
+Everything is controlled via flags: DNS-over-TLS, VPN kill switch, split tunneling, per-device VPN routing, USB storage share, ntfy push notifications, Headscale support. Defaults are off; the install is idempotent; one config file (`/etc/default/travel-router`) controls everything.
 
 ---
 
@@ -134,7 +134,7 @@ The wizard collects everything `install.sh` needs:
 - AP SSID and passphrase (8+ chars)
 - Wi-Fi country code
 - Optional Tailscale auth key, SSH public key, ntfy topic, Headscale URL
-- Feature toggles (DoT, AdGuard, kill switch, blocklists, etc.)
+- Feature toggles (DoT, kill switch, split tunnel, etc.)
 
 Submit. The wizard writes a shell-escaped env file, kicks off `install.sh` in the background, and redirects you to a status page that tails `/var/log/firstboot-install.log`. The Pi reboots itself when the install finishes.
 
@@ -227,17 +227,13 @@ A condensed view of what you get after the install completes. Full feature list 
 - **Captive portal** detection, MAC clone helper (`clone-mac.sh`), and per-SSID auto-login hooks
 - **Carrier bypass:** TTL=65, IPv6 hop-limit=65, DSCP strip, IPv6 ext-header drop (nftables `inet travel_mangle`)
 - **Stateful firewall:** `FORWARD DROP` with explicit ACCEPTs, AP client isolation, optional VPN kill switch
-- **DNS:** dnsmasq with rebind protection; optional DNS-over-TLS via stubby; optional AdGuard Home
-- **Privacy opt-ins:** Tor transparent SSID, Firehol L1 blocklist, MAC randomization, HTTP UA rewrite
-- **QoS:** CAKE bufferbloat (with optional weekly auto-tune), TCP BBR, per-client fairness
+- **DNS:** dnsmasq with rebind protection; optional DNS-over-TLS via stubby
+- **QoS:** TCP BBR congestion control, CAKE queue discipline
 - **Reliability:** hardware watchdog, log2ram, log rotation, unattended security updates
-- **Observability:** `travel-tui` dashboard, web dashboard (`:8080`), `travel-status`, ntfy push, daily digest, Tailscale peer watchdog, optional Prometheus exporter, optional bandwidth HTML dashboard
-- **Security:** fail2ban (SSH + web dashboard brute-force protection), AIDE file integrity monitoring (daily scan, ntfy alert on changes), WireGuard key rotation (monthly systemd timer)
-- **Privacy profiles:** VPN-only, Adblock, Tor transparent proxy, Direct (no VPN) — switchable from TUI or web dashboard
-- **Hardware:** optional PiSugar 3 UPS monitor with safe shutdown
+- **Observability:** `travel-tui` dashboard, web dashboard (`:8080`), `travel-status`, ntfy push
 - **Travel NAS:** optional USB drive sharing over SMB to AP clients (`ENABLE_USB_SHARE=1`, guest access, never exposed on uplinks)
 - **SD card protection:** read-only root (overlayfs) toggle — `sudo overlayfs-ctl.sh enable` (disable before updates)
-- **2FA:** optional SSH TOTP via `setup-2fa.sh`
+- **Split Tunnel:** CIDR-based split tunneling (`ENABLE_WG_SPLIT_TUNNEL=1`) and per-device VPN routing (`ENABLE_PER_DEVICE_VPN=1`)
 
 ---
 
@@ -391,33 +387,23 @@ HEADSCALE_URL=""
 WAN_PING_TARGETS="1.1.1.1 8.8.8.8"
 
 # Feature flags (0 = off, 1 = on)
+ENABLE_OPEN_WIFI_FALLBACK="0"
 ENABLE_DOT="0"
 ENABLE_VPN_KILLSWITCH="0"
-ENABLE_ADGUARD="0"
-ENABLE_BLOCKLISTS="0"
-ENABLE_TOR_TRANSPARENT="0"
-ENABLE_HTTP_UA_REWRITE="0"
-ENABLE_OPEN_WIFI_FALLBACK="0"
-ENABLE_AVAHI_REFLECTOR="0"
-ENABLE_AP_SCHEDULE="0"
-ENABLE_CLIENT_QOS="0"
-ENABLE_PER_DEVICE_VPN="0"
 ENABLE_AUTO_UPDATES="0"
-ENABLE_CAKE_AUTOTUNE="0"
-ENABLE_SPLIT_TUNNEL="0"
-ENABLE_2FA="0"
-ENABLE_BANDWIDTH_DASHBOARD="0"
-ENABLE_PROMETHEUS_EXPORTER="0"
-ENABLE_UPS_MONITOR="0"
-ENABLE_USB_SHARE="0"           # Travel NAS: share /media/travel-data over SMB. Default: 0 (off).
-ENABLE_WAN_METRICS="1"         # Per-interface RX/TX accounting via vnstat. Default: 1 (on).
-
-AP_DISABLE_TIME="02:00"
-AP_ENABLE_TIME="07:00"
-AP_CLIENT_BANDWIDTH="unlimited"
+ENABLE_AVAHI_REFLECTOR="0"
+ENABLE_PER_DEVICE_VPN="0"
 VPN_DEVICE_MACS=""
-SPLIT_TUNNEL_DOMAINS=""
-MAX_BLOCKLIST_ENTRIES="20000"
+
+ENABLE_WG_SPLIT_TUNNEL="0"
+WG_SPLIT_TUNNEL_CIDRS=""
+WG_SPLIT_TUNNEL_DEV="tailscale0"
+
+ENABLE_WAN_METRICS="1"
+ENABLE_USB_SHARE="0"           # Travel NAS: share /media/travel-data over SMB.
+USB_SHARE_NAME="TravelData"
+
+ENABLE_WIREGUARD="0"
 ```
 
 For non-interactive installs, the same flags can be exported as env vars before `install.sh` runs (with `INSTALL_NONINTERACTIVE=1`). Full env-var contract: [`firstboot/README.md`](firstboot/README.md).
@@ -425,9 +411,8 @@ For non-interactive installs, the same flags can be exported as env vars before 
 After flipping a flag, reload firewall or restart the relevant service:
 
 ```sh
-sudo travel-router-firewall.sh --save     # ENABLE_VPN_KILLSWITCH, ENABLE_BLOCKLISTS, ENABLE_TOR_TRANSPARENT
+sudo travel-router-firewall.sh --save     # ENABLE_VPN_KILLSWITCH
 sudo systemctl restart stubby             # ENABLE_DOT
-sudo systemctl restart adguard-home       # ENABLE_ADGUARD
 sudo systemctl restart avahi-daemon       # ENABLE_AVAHI_REFLECTOR
 ```
 

@@ -12,8 +12,7 @@ run_services() {
 
     # Scripts not covered by other modules
     for script in \
-        vnstat-metrics.sh update-blocklists.sh travel-router-firewall.sh \
-        ap-schedule.sh \
+        travel-router-firewall.sh \
         update-router.sh \
         travel-status.sh \
         log-rotate.sh; do
@@ -26,34 +25,23 @@ run_services() {
     ln -sfn travel-status.sh /usr/local/bin/travel-status
     ok "  command aliases: update-router, travel-status"
 
-    # TUI: Python (preferred) + bash fallback
+    # TUI: Python Textual
     cp "${REPO}/scripts/travel-tui.py" /usr/local/sbin/travel-tui.py
     chmod 0755 /usr/local/sbin/travel-tui.py
     ok "  travel-tui.py → /usr/local/sbin/travel-tui.py"
-
-    cp "${REPO}/scripts/travel-tui-legacy.sh" /usr/local/sbin/travel-tui-legacy
-    chmod 0755 /usr/local/sbin/travel-tui-legacy
-    ok "  travel-tui-legacy.sh → /usr/local/sbin/travel-tui-legacy"
 
     cat > /usr/local/sbin/travel-tui << 'EOF'
 #!/bin/bash
 if python3 -c "import textual" 2>/dev/null; then
     exec python3 /usr/local/sbin/travel-tui.py "$@"
 else
-    exec /usr/local/sbin/travel-tui-legacy "$@"
+    echo "python3-textual not found — run: sudo apt install python3-textual"
+    echo "For a quick overview, run: travel-status"
+    exit 1
 fi
 EOF
     chmod 0755 /usr/local/sbin/travel-tui
     ok "  travel-tui wrapper → /usr/local/sbin/travel-tui"
-    if ! python3 -c "import textual" 2>/dev/null; then
-        warn "python3-textual not found — travel-tui will use the legacy bash fallback"
-        warn "  Install for the full experience: sudo apt install python3-textual"
-    fi
-
-    install -m 0755 "${REPO}/scripts/ota-update.sh" /usr/local/sbin/ota-update
-    install -m 0755 "${REPO}/scripts/ota-commit.sh" /usr/local/sbin/ota-commit
-    install -m 0755 "${REPO}/scripts/ota-rollback.sh" /usr/local/sbin/ota-rollback
-    ok "  ota-update / ota-commit / ota-rollback → /usr/local/sbin/"
 
     # Captive portal hooks directory
     mkdir -p /etc/travel-router/portals/examples
@@ -102,27 +90,17 @@ EOF
     local _AP_SUBNET="${AP_SUBNET:-10.3.141.0/24}"
     local _AP_GATEWAY="${AP_GATEWAY:-10.3.141.1}"
 
-    for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_HTTP_UA_REWRITE ENABLE_TOR_TRANSPARENT \
-        ENABLE_BLOCKLISTS ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES \
-        ENABLE_AVAHI_REFLECTOR ENABLE_ADGUARD ENABLE_AP_SCHEDULE ENABLE_CLIENT_QOS \
-        ENABLE_PER_DEVICE_VPN ENABLE_CAKE_AUTOTUNE ENABLE_SPLIT_TUNNEL ENABLE_2FA \
-        ENABLE_WAN_METRICS ENABLE_BANDWIDTH_DASHBOARD ENABLE_PROMETHEUS_EXPORTER \
-        ENABLE_UPS_MONITOR ENABLE_WIREGUARD; do
+    for flag in ENABLE_OPEN_WIFI_FALLBACK ENABLE_DOT ENABLE_VPN_KILLSWITCH ENABLE_AUTO_UPDATES \
+        ENABLE_AVAHI_REFLECTOR ENABLE_PER_DEVICE_VPN ENABLE_WAN_METRICS ENABLE_USB_SHARE \
+        ENABLE_WG_SPLIT_TUNNEL ENABLE_WIREGUARD; do
         _safe_write_conf "$flag" "${!flag:-0}" "$_DEFAULTS_FILE"
     done
 
     _safe_write_conf "NTFY_TOPIC"            "${NTFY_TOPIC:-}"               "$_DEFAULTS_FILE"
     _safe_write_conf "HEADSCALE_URL"         "${HEADSCALE_URL:-}"            "$_DEFAULTS_FILE"
-    _safe_write_conf "SPLIT_TUNNEL_DOMAINS"  "${SPLIT_TUNNEL_DOMAINS:-}"     "$_DEFAULTS_FILE"
     _safe_write_conf "IPHONE_BT_MAC"         "${IPHONE_BT_MAC:-}"            "$_DEFAULTS_FILE"
     _safe_write_conf "SSH_ADMIN_KEY"         "${SSH_ADMIN_KEY:-}"            "$_DEFAULTS_FILE"
-    _safe_write_conf "AP_CLIENT_BANDWIDTH"   "${AP_CLIENT_BANDWIDTH:-unlimited}" "$_DEFAULTS_FILE"
-    _safe_write_conf "AP_DISABLE_TIME"       "${AP_DISABLE_TIME:-02:00}"     "$_DEFAULTS_FILE"
-    _safe_write_conf "AP_ENABLE_TIME"        "${AP_ENABLE_TIME:-07:00}"      "$_DEFAULTS_FILE"
     _safe_write_conf "VPN_DEVICE_MACS"       "${VPN_DEVICE_MACS:-}"          "$_DEFAULTS_FILE"
-    _safe_write_conf "TOR_AP_PASS"           ""                              "$_DEFAULTS_FILE" 2>/dev/null || true
-    _safe_write_conf "PUSHGW_URL"              "${PUSHGW_URL:-}"                    "$_DEFAULTS_FILE"
-    _safe_write_conf "UPS_SHUTDOWN_THRESHOLD"  "${UPS_SHUTDOWN_THRESHOLD:-10}"      "$_DEFAULTS_FILE"
     _safe_write_conf "TAILSCALE_UP_ARGS"       "${TAILSCALE_UP_ARGS:-}"             "$_DEFAULTS_FILE"
     _safe_write_conf "WG_LISTEN_PORT"          "${WG_LISTEN_PORT:-51820}"           "$_DEFAULTS_FILE"
     _safe_write_conf "WG_PEER_PUBKEY"          "${WG_PEER_PUBKEY:-}"                "$_DEFAULTS_FILE"
@@ -141,31 +119,12 @@ EOF
         wan-watchdog.service wan-watchdog.timer \
         cpu-performance.service cake-qdisc.service \
         wlan-mac-random.service \
-        vnstat-metrics.service vnstat-metrics.timer \
-        update-blocklists.service update-blocklists.timer \
-        tailscale-watchdog.service tailscale-watchdog.timer \
-        wireguard-watchdog.service wireguard-watchdog.timer \
-        adguard-home.service \
-        ap-disable.service ap-disable.timer \
-        ap-enable.service ap-enable.timer \
-        daily-digest.service daily-digest.timer \
+        travel-router-log-rotate.service travel-router-log-rotate.timer \
         update-router.service update-router.timer \
-        tune-cake.service tune-cake.timer; do
+        wg-split-tunnel.service; do
         install_file "systemd/$unit" "$_SYSTEMD_DEST/$unit" 644
         ok "  $unit"
     done
-
-    # ── AP schedule timer drop-ins ────────────────────────────────────────────────
-    # systemd OnCalendar= does not expand environment variables, so we generate
-    # drop-ins from the AP_DISABLE_TIME / AP_ENABLE_TIME defaults at install time.
-    local _AP_DISABLE_TIME="${AP_DISABLE_TIME:-02:00}"
-    local _AP_ENABLE_TIME="${AP_ENABLE_TIME:-07:00}"
-    mkdir -p /etc/systemd/system/ap-disable.timer.d /etc/systemd/system/ap-enable.timer.d
-    printf '[Timer]\nOnCalendar=*-*-* %s:00\n' "$_AP_DISABLE_TIME" \
-        > /etc/systemd/system/ap-disable.timer.d/schedule.conf
-    printf '[Timer]\nOnCalendar=*-*-* %s:00\n' "$_AP_ENABLE_TIME" \
-        > /etc/systemd/system/ap-enable.timer.d/schedule.conf
-    ok "AP schedule drop-ins written (disable=${_AP_DISABLE_TIME}, enable=${_AP_ENABLE_TIME})"
 
     systemctl daemon-reload
 
@@ -173,10 +132,7 @@ EOF
         failover-watchdog.timer wan-watchdog.timer \
         cpu-performance.service cake-qdisc.service \
         wlan-mac-random.service \
-        vnstat-metrics.timer update-blocklists.timer \
-        tailscale-watchdog.timer \
-        wireguard-watchdog.timer \
-        daily-digest.timer \
+        travel-router-log-rotate.timer \
         update-router.timer; do
         if run_or_dry systemctl enable "$unit" 2>/dev/null; then
             ok "  enabled: $unit"
@@ -184,16 +140,6 @@ EOF
             warn "  could not enable $unit"
         fi
     done
-
-    # Initial blocklist load
-    if [[ "${ENABLE_BLOCKLISTS:-0}" = "1" ]]; then
-        info "Running initial blocklist load (this may take ~30s)..."
-        if run_or_dry systemctl start update-blocklists.service 2>/dev/null; then
-            ok "Initial blocklist loaded"
-        else
-            warn "Initial blocklist load failed — will retry at next timer fire"
-        fi
-    fi
 
     # Web dashboard
     section "Web management dashboard"

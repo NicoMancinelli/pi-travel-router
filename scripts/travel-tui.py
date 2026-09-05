@@ -5,7 +5,6 @@ Usage: sudo python3 /usr/local/sbin/travel-tui.py
        or simply: sudo travel-tui   (if wrapper script prefers Python)
 
 Requires python3-textual (apt install python3-textual).
-Falls back to travel-tui-legacy if Textual is not installed.
 """
 
 import asyncio
@@ -43,12 +42,9 @@ try:
 except ImportError:
     print(
         "python3-textual not installed — run: sudo apt install python3-textual\n"
-        "Falling back to bash TUI if available.",
+        "Or run 'travel-status' for a quick CLI overview.",
         file=sys.stderr,
     )
-    legacy = "/usr/local/sbin/travel-tui-legacy"
-    if os.path.exists(legacy):
-        os.execv(legacy, [legacy] + sys.argv[1:])
     sys.exit(1)
 
 
@@ -897,8 +893,8 @@ class PrivacyScreen(Screen):
 
 # ── Services screen ───────────────────────────────────────────────────────────
 SERVICES = [
-    "tailscaled", "hostapd", "dnsmasq", "stubby", "adguard-home",
-    "tor", "privoxy", "failover-watchdog", "wan-watchdog", "tailscale-watchdog",
+    "tailscaled", "hostapd", "dnsmasq", "stubby",
+    "failover-watchdog", "wan-watchdog", "travel-router-web",
 ]
 
 
@@ -968,27 +964,11 @@ FEATURE_FLAGS = [
     "ENABLE_VPN_KILLSWITCH",
     "ENABLE_AUTO_UPDATES",
     "ENABLE_AVAHI_REFLECTOR",
-    "ENABLE_ADGUARD",
-    "ENABLE_BLOCKLISTS",
-    "ENABLE_TOR_TRANSPARENT",
-    "ENABLE_HTTP_UA_REWRITE",
     "ENABLE_OPEN_WIFI_FALLBACK",
-    "ENABLE_AP_SCHEDULE",
-    "ENABLE_CLIENT_QOS",
     "ENABLE_PER_DEVICE_VPN",
-    "ENABLE_CAKE_AUTOTUNE",
-    "ENABLE_UPS_MONITOR",
     "ENABLE_USB_SHARE",
-    "ENABLE_BANDWIDTH_DASHBOARD",
-    "ENABLE_SPLIT_TUNNEL",
     "ENABLE_WG_SPLIT_TUNNEL",
-    "ENABLE_2FA",
-    "ENABLE_WAN_METRICS",
-    "ENABLE_PROMETHEUS_EXPORTER",
     "ENABLE_WIREGUARD",
-    "ENABLE_WG_KEY_ROTATION",
-    "ENABLE_LTE_MODEM",
-    "ENABLE_GUEST_NETWORK",
 ]
 
 
@@ -1041,99 +1021,31 @@ class FeaturesScreen(Screen):
     def _apply_side_effects(self, flag: str, new_val: str) -> None:
         enable = new_val == "1"
         try:
-            if flag in ("ENABLE_VPN_KILLSWITCH", "ENABLE_TOR_TRANSPARENT",
-                        "ENABLE_BLOCKLISTS", "ENABLE_PER_DEVICE_VPN"):
+            if flag in ("ENABLE_VPN_KILLSWITCH", "ENABLE_PER_DEVICE_VPN"):
                 run(["/usr/local/bin/travel-router-firewall.sh", "--save"], timeout=15)
-                if flag == "ENABLE_BLOCKLISTS" and enable:
-                    run(["systemctl", "start", "update-blocklists.service"])
             elif flag == "ENABLE_DOT":
                 if enable:
                     run(["systemctl", "restart", "stubby"])
                 else:
                     run(["systemctl", "stop", "stubby"])
                 run(["systemctl", "reload-or-restart", "dnsmasq"])
-            elif flag == "ENABLE_ADGUARD":
-                if enable:
-                    run(["systemctl", "restart", "adguard-home"])
-                else:
-                    run(["systemctl", "stop", "adguard-home"])
-                run(["systemctl", "reload-or-restart", "dnsmasq"])
             elif flag == "ENABLE_AVAHI_REFLECTOR":
                 run(["systemctl", "reload-or-restart", "avahi-daemon"])
-            elif flag == "ENABLE_HTTP_UA_REWRITE":
-                if enable:
-                    run(["systemctl", "restart", "privoxy"])
-                else:
-                    run(["systemctl", "stop", "privoxy"])
-            elif flag == "ENABLE_AP_SCHEDULE":
-                if enable:
-                    run(["systemctl", "enable", "--now", "ap-disable.timer", "ap-enable.timer"])
-                else:
-                    run(["systemctl", "disable", "--now", "ap-disable.timer", "ap-enable.timer"])
-            elif flag == "ENABLE_CAKE_AUTOTUNE":
-                if enable:
-                    run(["systemctl", "enable", "--now", "tune-cake.timer"])
-                else:
-                    run(["systemctl", "disable", "--now", "tune-cake.timer"])
-            elif flag == "ENABLE_CLIENT_QOS":
-                run(["/usr/local/bin/apply-cake.sh"])
             elif flag == "ENABLE_AUTO_UPDATES":
                 if enable:
                     run(["systemctl", "enable", "unattended-upgrades"])
                 else:
                     run(["systemctl", "disable", "unattended-upgrades"])
-            elif flag == "ENABLE_UPS_MONITOR":
-                if enable:
-                    run(["systemctl", "enable", "--now", "ups-monitor.timer"])
-                else:
-                    run(["systemctl", "disable", "--now", "ups-monitor.timer"])
             elif flag == "ENABLE_USB_SHARE":
                 if enable:
                     run(["/usr/local/sbin/usb-share.sh", "enable"], timeout=30)
                 else:
                     run(["/usr/local/sbin/usb-share.sh", "disable"], timeout=30)
-            elif flag == "ENABLE_LTE_MODEM":
-                if enable:
-                    run(["systemctl", "enable", "--now", "modem-watchdog.timer"])
-                else:
-                    run(["systemctl", "disable", "--now", "modem-watchdog.timer"])
-            elif flag == "ENABLE_WAN_METRICS":
-                if enable:
-                    run(["systemctl", "enable", "--now", "wan-metrics.timer"])
-                else:
-                    run(["systemctl", "disable", "--now", "wan-metrics.timer"])
-            elif flag == "ENABLE_PROMETHEUS_EXPORTER":
-                if enable:
-                    run(["systemctl", "enable", "--now", "prometheus-node-exporter"])
-                else:
-                    run(["systemctl", "disable", "--now", "prometheus-node-exporter"])
-            elif flag == "ENABLE_SPLIT_TUNNEL":
-                if enable:
-                    run(["systemctl", "try-restart", "split-tunnel.service"])
-                else:
-                    run(["systemctl", "stop", "split-tunnel.service"])
             elif flag == "ENABLE_WG_SPLIT_TUNNEL":
                 if enable:
                     run(["systemctl", "try-restart", "wg-split-tunnel.service"])
                 else:
                     run(["systemctl", "stop", "wg-split-tunnel.service"])
-            elif flag == "ENABLE_WG_KEY_ROTATION":
-                if enable:
-                    run(["systemctl", "enable", "--now", "wg-key-rotate.timer"])
-                else:
-                    run(["systemctl", "disable", "--now", "wg-key-rotate.timer"])
-            elif flag == "ENABLE_BANDWIDTH_DASHBOARD":
-                if enable:
-                    run(["systemctl", "try-restart", "bandwidth-dashboard.service"])
-                else:
-                    run(["systemctl", "stop", "bandwidth-dashboard.service"])
-            elif flag == "ENABLE_GUEST_NETWORK":
-                if enable:
-                    run(["systemctl", "start", "hostapd-guest"], timeout=10)
-                else:
-                    run(["systemctl", "stop", "hostapd-guest"], timeout=10)
-                run(["/usr/local/bin/travel-router-firewall.sh", "--save"], timeout=15)
-                run(["systemctl", "reload-or-restart", "dnsmasq"])
         except Exception:
             pass
 
@@ -1586,21 +1498,10 @@ SETTINGS_ITEMS = [
     ("TAILSCALE_UP_ARGS", "Tailscale Up Arguments", False),
     ("WAN_PING_TARGETS", "WAN Ping Targets", False),
     ("VPN_DEVICE_MACS", "VPN Device MACs", False),
-    ("SPLIT_TUNNEL_DOMAINS", "Split Tunnel Domains", False),
     ("WG_SPLIT_TUNNEL_CIDRS", "Split Tunnel CIDRs", False),
     ("WG_SPLIT_TUNNEL_DEV", "Split Tunnel Egress Dev", False),
-    ("AP_CLIENT_BANDWIDTH", "Per-Client Bandwidth", False),
-    ("TOR_AP_PASS", "Tor AP Password", True),
-    ("MAX_BLOCKLIST_ENTRIES", "Max Blocklist Entries", False),
-    ("AP_DISABLE_TIME", "AP Disable Time (HH:MM)", False),
-    ("AP_ENABLE_TIME", "AP Enable Time (HH:MM)", False),
-    ("UPS_SHUTDOWN_THRESHOLD", "UPS Shutdown Threshold %", False),
     ("USB_SHARE_NAME", "USB Share Name", False),
-    ("PUSHGW_URL", "Prometheus Pushgw URL", False),
     ("SSH_ADMIN_KEY", "SSH Admin Public Key", False),
-    ("GUEST_SSID", "Guest Network SSID", False),
-    ("GUEST_PASS", "Guest Network Password", True),
-    ("LTE_APN", "LTE Modem APN", False),
     ("DOH_RESOLVER", "DNS-over-HTTPS Resolver", False),
 ]
 
@@ -1708,47 +1609,6 @@ class SettingsScreen(Screen):
                             restart_msg = "\nKey already present"
                     except OSError as exc:
                         restart_msg = f"\nCould not write authorized_keys: {exc}"
-        elif key == "GUEST_SSID":
-            if len(value) < 1 or len(value) > 32:
-                err = "Guest SSID must be 1–32 characters"
-            elif "#" in value:
-                err = "Guest SSID must not contain '#'"
-            else:
-                err = write_default(key, value)
-                if not err:
-                    guest_conf = "/etc/hostapd/hostapd-guest.conf"
-                    if os.path.exists(guest_conf):
-                        try:
-                            with open(guest_conf) as fh:
-                                glines = fh.readlines()
-                            gpat = re.compile(r"^ssid=")
-                            g_replaced = False
-                            for gi, gline in enumerate(glines):
-                                if gpat.match(gline):
-                                    glines[gi] = f"ssid={value}\n"
-                                    g_replaced = True
-                                    break
-                            if not g_replaced:
-                                glines.append(f"ssid={value}\n")
-                            gtmp = guest_conf + ".tmp"
-                            with open(gtmp, "w") as fh:
-                                fh.writelines(glines)
-                            os.replace(gtmp, guest_conf)
-                        except OSError as exc:
-                            err = f"Could not update {guest_conf}: {exc}"
-                    if not err and svc_active("hostapd-guest"):
-                        rc, _, stderr = run(["systemctl", "restart", "hostapd-guest"])
-                        restart_msg = "\nhostapd-guest restarted" if rc == 0 else f"\nhostapd-guest restart failed: {stderr[:60]}"
-        elif key == "GUEST_PASS":
-            if value and (len(value) < 8 or len(value) > 63):
-                err = "Guest password must be 8–63 characters (or empty for open network)"
-            elif "#" in value:
-                err = "Guest password must not contain '#'"
-            else:
-                err = write_default(key, value)
-                if not err and svc_active("hostapd-guest"):
-                    rc, _, stderr = run(["systemctl", "restart", "hostapd-guest"])
-                    restart_msg = "\nhostapd-guest restarted" if rc == 0 else f"\nhostapd-guest restart failed: {stderr[:60]}"
         elif key == "DOH_RESOLVER":
             valid_resolvers = ("cloudflare", "quad9", "nextdns", "adguard", "system")
             if value.lower() not in valid_resolvers:
@@ -1785,12 +1645,8 @@ class SystemScreen(Screen):
             yield Button("Reboot now", id="reboot-btn", classes="danger")
             yield Button("Shutdown now", id="shutdown-btn", classes="danger")
             yield Button("Run update-router.sh", id="update-btn", classes="action")
-            yield Button("Send daily digest now", id="digest-btn", classes="action")
             yield Button("Reload firewall", id="firewall-btn", classes="action")
             yield Button("Run travel-diagnostic", id="diag-btn", classes="action")
-            yield Button("Set up 2FA / TOTP", id="2fa-btn", classes="action")
-            yield Button("Update threat-intel blocklists", id="blocklist-btn", classes="action")
-            yield Button("Generate bandwidth report", id="bwreport-btn", classes="action")
             yield Button("Toggle read-only root (overlayfs)", id="overlay-btn", classes="action")
         yield Footer()
 
@@ -1815,10 +1671,6 @@ class SystemScreen(Screen):
             self.run_worker(lambda: self._run_long_cmd(
                 ["/usr/local/bin/update-router.sh"], "update-router.sh", timeout=300
             ), thread=True)
-        elif bid == "digest-btn":
-            self.run_worker(lambda: self._run_cmd(
-                ["/usr/local/bin/daily-digest.sh"], "Daily digest"
-            ), thread=True)
         elif bid == "firewall-btn":
             self.run_worker(lambda: self._run_cmd(
                 ["/usr/local/bin/travel-router-firewall.sh", "--save"], "Firewall reload"
@@ -1826,18 +1678,6 @@ class SystemScreen(Screen):
         elif bid == "diag-btn":
             self.run_worker(lambda: self._run_long_cmd(
                 ["/usr/local/bin/travel-diagnostic"], "travel-diagnostic", timeout=120
-            ), thread=True)
-        elif bid == "2fa-btn":
-            self.run_worker(lambda: self._run_long_cmd(
-                ["/usr/local/bin/setup-2fa.sh"], "setup-2fa.sh"
-            ), thread=True)
-        elif bid == "blocklist-btn":
-            self.run_worker(lambda: self._run_long_cmd(
-                ["/usr/local/bin/update-blocklists.sh"], "update-blocklists.sh", timeout=120
-            ), thread=True)
-        elif bid == "bwreport-btn":
-            self.run_worker(lambda: self._run_long_cmd(
-                ["/usr/local/bin/generate-bandwidth-report.sh"], "Bandwidth report", timeout=60
             ), thread=True)
         elif bid == "overlay-btn":
             _rc, out, _err = run(["/usr/local/sbin/overlayfs-ctl.sh", "status"])

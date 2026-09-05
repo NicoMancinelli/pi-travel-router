@@ -11,75 +11,12 @@ run_failover() {
         failover-watchdog.sh wan-watchdog.sh captive-check.sh \
         notify-router.sh apply-cake.sh \
         start-bt-tether.sh stop-bt-tether.sh \
-        clone-mac.sh \
-        tailscale-watchdog.sh \
-        wireguard-watchdog.sh \
-        modem-watchdog.sh; do
+        clone-mac.sh; do
         install_file "scripts/$script" "/usr/local/bin/$script" 755
         ok "  $script"
     done
 
     ok "Failover/watchdog scripts installed"
-
-    # ── USB LTE modem watchdog ─────────────────────────────────────────────────
-    section "USB LTE modem"
-
-    install_file systemd/modem-watchdog.service /etc/systemd/system/modem-watchdog.service 644
-    install_file systemd/modem-watchdog.timer   /etc/systemd/system/modem-watchdog.timer   644
-    run_or_dry systemctl daemon-reload
-
-    if [[ "${ENABLE_LTE_MODEM:-0}" = "1" ]]; then
-        if ! command -v mmcli > /dev/null 2>&1; then
-            run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y modemmanager 2>/dev/null || true
-        fi
-        run_or_dry systemctl enable --now modem-watchdog.timer 2>/dev/null || true
-        ok "LTE modem watchdog enabled (metric 150, between iPhone and Android)"
-    else
-        run_or_dry systemctl disable modem-watchdog.timer 2>/dev/null || true
-        ok "LTE modem watchdog disabled (set ENABLE_LTE_MODEM=1 to activate)"
-    fi
-
-    # ── CAKE auto-tuning ────────────────────────────────────────────────────────
-    section "CAKE bandwidth auto-tuning"
-
-    install_file scripts/tune-cake.sh /usr/local/bin/tune-cake.sh 755
-
-    if [[ "${ENABLE_CAKE_AUTOTUNE:-0}" = "1" ]]; then
-        run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y speedtest-cli 2>/dev/null || true
-        run_or_dry systemctl enable --now tune-cake.timer 2>/dev/null || true
-        ok "CAKE auto-tune enabled — weekly speedtest adjusts wlan0 CAKE bandwidth"
-    else
-        systemctl disable tune-cake.timer 2>/dev/null || true
-        ok "CAKE auto-tune disabled (set ENABLE_CAKE_AUTOTUNE=1 to activate)"
-    fi
-
-    # ── Per-client bandwidth fairness (CAKE per-host) ────────────────────────────
-    section "Per-client bandwidth fairness (CAKE per-host)"
-
-    local _DEFAULTS_FILE="/etc/default/travel-router"
-
-    if [[ "${ENABLE_CLIENT_QOS:-0}" = "1" ]]; then
-        _safe_write_conf "AP_CLIENT_BANDWIDTH" "${AP_CLIENT_BANDWIDTH:-unlimited}" "$_DEFAULTS_FILE"
-        if [[ -x /usr/local/bin/apply-cake.sh ]]; then
-            /usr/local/bin/apply-cake.sh 2>&1 || warn "CAKE apply failed (will retry at boot)"
-        fi
-        cat > /etc/systemd/system/apply-cake.service << 'EOF'
-[Unit]
-Description=Apply CAKE qdisc on AP interface
-After=hostapd.service
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/apply-cake.sh
-[Install]
-WantedBy=multi-user.target
-EOF
-        systemctl daemon-reload
-        run_or_dry systemctl enable apply-cake.service 2>/dev/null || true
-        ok "CAKE per-host enabled on uap0 (cap: ${AP_CLIENT_BANDWIDTH:-unlimited})"
-    else
-        systemctl disable apply-cake.service 2>/dev/null || true
-        ok "Per-client QoS disabled (set ENABLE_CLIENT_QOS=1 to activate)"
-    fi
 
     # ── Per-device Tailscale routing ─────────────────────────────────────────────
     section "Per-device Tailscale routing"

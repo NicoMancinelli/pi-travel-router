@@ -17,12 +17,6 @@ run_finalize() {
     chmod +x /usr/local/sbin/overlayfs-ctl.sh
     ok "overlayfs-ctl.sh installed — sudo overlayfs-ctl.sh enable|disable|status"
 
-    # ── Scheduled reboot ──────────────────────────────────────────────────────────
-    section "Scheduled reboot"
-    cp "${REPO}/scripts/schedule-reboot.sh" /usr/local/sbin/schedule-reboot.sh
-    chmod +x /usr/local/sbin/schedule-reboot.sh
-    ok "schedule-reboot.sh installed to /usr/local/sbin/schedule-reboot.sh"
-
     # ── Speed test script + optional speedtest-cli ───────────────────────────────
     section "Speed test setup"
     cp "${REPO}/scripts/speedtest.sh" /usr/local/sbin/speedtest.sh
@@ -63,16 +57,6 @@ run_finalize() {
     fi
     touch /var/lib/travel-router/captive-creds.json 2>/dev/null || true
     ok "captive-check.sh installed; captive-portal.json initialised"
-
-    # ── Per-device QoS ───────────────────────────────────────────────────────────
-    section "Per-device QoS (apply-qos.sh)"
-    cp "${REPO}/scripts/apply-qos.sh" /usr/local/sbin/apply-qos.sh
-    chmod +x /usr/local/sbin/apply-qos.sh
-    # Initialise empty QoS store if not already present
-    if [[ ! -f /var/lib/travel-router/qos-limits.json ]]; then
-        echo "[]" > /var/lib/travel-router/qos-limits.json
-    fi
-    ok "apply-qos.sh installed; QoS store initialised"
 
     # ── Bandwidth history store ───────────────────────────────────────────────────
     section "Bandwidth history"
@@ -158,24 +142,11 @@ run_finalize() {
     echo "    • WAN watchdog + captive portal detection: 60s timer"
     echo "    • TTL=65 + DSCP strip (Visible carrier bypass)"
     echo "    • DNS-over-TLS: ${ENABLE_DOT:-0}  (stubby → Cloudflare/Quad9)"
-    echo "    • AdGuard Home: ${ENABLE_ADGUARD:-0}  (web UI: http://${_AP_GATEWAY}:3000)"
     echo "    • VPN kill switch: ${ENABLE_VPN_KILLSWITCH:-0}  (AP traffic blocked if Tailscale drops)"
-    echo "    • privoxy: HTTP User-Agent normalization (${ENABLE_HTTP_UA_REWRITE:-0})"
-    echo "    • Tor: transparent proxy (${ENABLE_TOR_TRANSPARENT:-0})"
-    echo "    • Threat intel blocklist: daily timer installed, loading enabled=${ENABLE_BLOCKLISTS:-0}"
     echo "    • Auto security updates: ${ENABLE_AUTO_UPDATES:-0}  (unattended-upgrades, reboot 03:30)"
     echo "    • Auto-update: weekly check (Sun 03:00) — run manually: sudo update-router.sh"
-    echo "    • Tailscale watchdog: 5-min peer health check + ntfy alerts"
-    echo "    • Daily digest: 08:00 ntfy push (uptime, uplink, Tailscale, AP clients)"
-    echo "    • Per-client QoS: ${ENABLE_CLIENT_QOS:-0}  (CAKE per-host on uap0)"
-    echo "    • CAKE auto-tune: ${ENABLE_CAKE_AUTOTUNE:-0}  (weekly speedtest → adjusts wlan0 CAKE bandwidth)"
     echo "    • Per-device VPN: ${ENABLE_PER_DEVICE_VPN:-0}  (set VPN_DEVICE_MACS in /etc/default/travel-router)"
-    echo "    • Domain split tunnel: ${ENABLE_SPLIT_TUNNEL:-0}  (domains via Tailscale: ${SPLIT_TUNNEL_DOMAINS:-none})"
-    echo "    • SSH 2FA (TOTP): ${ENABLE_2FA:-0}  (run: sudo -u \$(logname) setup-2fa.sh to configure)"
     echo "    • WAN metric management: ${ENABLE_WAN_METRICS:-1}  (enx*=100 rndis0=200 bnep0=300 wlan0=600)"
-    echo "    • Bandwidth dashboard: ${ENABLE_BANDWIDTH_DASHBOARD:-0}  (http://${_AP_GATEWAY}/bandwidth.html)"
-    echo "    • Prometheus node exporter: ${ENABLE_PROMETHEUS_EXPORTER:-0}  (:9100/metrics via Tailscale)"
-    echo "    • UPS monitor (PiSugar): ${ENABLE_UPS_MONITOR:-0}  (shutdown at ${UPS_SHUTDOWN_THRESHOLD:-10}%)"
     echo "    • USB file sharing (travel NAS): ${ENABLE_USB_SHARE:-0}  (smb://${_AP_GATEWAY}/${USB_SHARE_NAME:-TravelData})"
     echo "    • Read-only root toggle: sudo overlayfs-ctl.sh enable|disable|status"
     echo "    • WireGuard VPN: ${ENABLE_WIREGUARD:-0}  (wg0, port ${WG_LISTEN_PORT:-51820}; public key: $(cat /etc/wireguard/wg0.pub 2>/dev/null || echo 'n/a'))"
@@ -191,7 +162,6 @@ run_finalize() {
     echo "    • SSH hardening: PermitRootLogin no, MaxAuthTries 3${SSH_ADMIN_KEY:+, key auth only (password disabled)}"
     echo "    • MAC randomization: wlan0 at boot"
     echo "    • mDNS reflector: ${ENABLE_AVAHI_REFLECTOR:-0}  (AirPrint/AirPlay/NAS over Tailscale)"
-    echo "    • AP schedule: ${ENABLE_AP_SCHEDULE:-0}  (disable ${AP_DISABLE_TIME:-02:00}, re-enable ${AP_ENABLE_TIME:-07:00})"
     echo "    • WiFi QR: cat /usr/local/share/travel-router/wifi-qr/wifi-qr.txt"
     echo "    • ntfy.sh: ${NTFY_TOPIC:-not configured (set NTFY_TOPIC in /etc/default/travel-router)}"
     local _WEB_TOKEN

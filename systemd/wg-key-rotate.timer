@@ -1,9 +1,0 @@
-[Unit]
-Description=Monthly WireGuard key rotation
-
-[Timer]
-OnCalendar=monthly
-Persistent=true
-
-[Install]
-WantedBy=timers.target

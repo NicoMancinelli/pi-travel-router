@@ -14,8 +14,6 @@ flock -x 8
 # shellcheck source=/dev/null
 source /etc/default/travel-router 2>/dev/null || true
 
-ENABLE_HTTP_UA_REWRITE="${ENABLE_HTTP_UA_REWRITE:-0}"
-ENABLE_TOR_TRANSPARENT="${ENABLE_TOR_TRANSPARENT:-0}"
 ENABLE_VPN_KILLSWITCH="${ENABLE_VPN_KILLSWITCH:-0}"
 
 ipt_add() {
@@ -112,19 +110,6 @@ ip6t_add filter INPUT -i uap0 -p tcp --dport 22 -j DROP
 ipt_add filter INPUT -i uap0 -p tcp --dport 80 -j DROP
 ip6t_add filter INPUT -i uap0 -p tcp --dport 80 -j DROP
 
-if [ "$ENABLE_HTTP_UA_REWRITE" = "1" ]; then
-    ipt_add nat PREROUTING -i uap0 -p tcp --dport 80 -j REDIRECT --to-port 8118
-fi
-
-if [ "$ENABLE_TOR_TRANSPARENT" = "1" ]; then
-    TOR_SUBNET="172.16.100.0/24"
-    ipt_add nat PREROUTING -s "$TOR_SUBNET" -p udp --dport 53 -j REDIRECT --to-ports 5353
-    ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp -d 10.0.0.0/8 -j RETURN
-    ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp -d 172.16.0.0/12 -j RETURN
-    ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp -d 192.168.0.0/16 -j RETURN
-    ipt_add nat PREROUTING -s "$TOR_SUBNET" -p tcp --syn -j REDIRECT --to-ports 9040
-fi
-
 ENABLE_PER_DEVICE_VPN="${ENABLE_PER_DEVICE_VPN:-0}"
 VPN_DEVICE_MACS="${VPN_DEVICE_MACS:-}"
 
@@ -147,50 +132,6 @@ else
     iptables -t mangle -D PREROUTING -i uap0 -j VPN_DEVICES 2>/dev/null || true
     iptables -t mangle -F VPN_DEVICES 2>/dev/null || true
     iptables -t mangle -X VPN_DEVICES 2>/dev/null || true
-fi
-
-ENABLE_GUEST_NETWORK="${ENABLE_GUEST_NETWORK:-0}"
-
-if [ "$ENABLE_GUEST_NETWORK" = "1" ]; then
-    # Determine WAN interface from default route
-    _wan=$(ip route show default 2>/dev/null | awk '/^default/ {print $5; exit}')
-    _wan="${_wan:-wlan0}"
-
-    # Assign gateway IP to guest interface (idempotent)
-    ip addr add 192.168.5.1/24 dev uap1 2>/dev/null || true
-
-    # Allow DHCP and DNS from guest subnet
-    ipt_add filter INPUT -i uap1 -p udp --dport 67 -j ACCEPT
-    ipt_add filter INPUT -i uap1 -p udp --dport 53 -j ACCEPT
-
-    # Forward guest traffic to WAN (non-kill-switch path only)
-    ipt_add filter FORWARD -i uap1 -o "$_wan" -j ACCEPT
-    ipt_add filter FORWARD -i "$_wan" -o uap1 \
-        -m state --state ESTABLISHED,RELATED -j ACCEPT
-
-    # Block guest <-> primary AP cross-traffic
-    ipt_add filter FORWARD -i uap1 -o uap0 -j DROP
-    ipt_add filter FORWARD -i uap0 -o uap1 -j DROP
-
-    # Block guest → router management interfaces
-    ipt_add filter INPUT -i uap1 -p tcp --dport 8080 -j DROP
-    ipt_add filter INPUT -i uap1 -p tcp --dport 22 -j DROP
-
-    # NAT masquerade for guest subnet
-    ipt_add nat POSTROUTING -s 192.168.5.0/24 -o "$_wan" -j MASQUERADE
-fi
-
-# Restore per-device QoS limits if any are configured
-if [[ -f /var/lib/travel-router/qos-limits.json ]] && command -v tc &>/dev/null; then
-    python3 -c "
-import json, subprocess, sys
-try:
-    limits = json.load(open('/var/lib/travel-router/qos-limits.json'))
-except Exception:
-    limits = []
-for l in limits:
-    subprocess.run(['/usr/local/sbin/apply-qos.sh', l.get('interface','uap0'), l['mac'], str(l['down_kbps']), str(l['up_kbps'])], check=False)
-" 2>/dev/null || true
 fi
 
 if [ "${1:-}" = "--save" ]; then

@@ -40,39 +40,23 @@ Items marked ✅ are deployed. The rest are future candidates, ordered by impact
 | ✅ | Bluetooth PAN tethering (#43) | `start-bt-tether.sh` + bnep0 as metric-300 uplink; set `IPHONE_BT_MAC` in `/etc/default/travel-router` |
 | ✅ | Captive portal auto-login (#47) | `attempt_portal_login()` in captive-check.sh; per-SSID hooks in `/etc/travel-router/portals/<SSID>.sh` |
 | ✅ | Captive portal MAC clone (#31) | `clone-mac.sh <MAC>` — clones laptop MAC to wlan0 before portal auth; `--restore` to reset |
-| ✅ | Threat intel IP blocklist (#41) | `update-blocklists.sh` + daily timer; enable with `ENABLE_BLOCKLISTS=1` in `/etc/default/travel-router` |
-| ✅ | Tor transparent proxy (#42) | Installed, disabled by default; enable with `ENABLE_TOR_TRANSPARENT=1`; uap1 (TorAP SSID) probed at install time |
 | ✅ | Auto-update from GitHub | `update-router.sh` + weekly timer (Sun 03:00); checks releases, falls back to main SHA; run manually with `sudo update-router.sh` |
 | ✅ | DNS-over-TLS (#16) | `stubby` → Cloudflare + Quad9; dnsmasq forwards via `server=127.0.0.1#5300`; enable with `ENABLE_DOT=1` |
 | ✅ | VPN kill switch (#17) | `KILL_SWITCH` iptables chain in `travel-router-firewall.sh`; blocks AP traffic when Tailscale drops; enable with `ENABLE_VPN_KILLSWITCH=1` |
 | ✅ | Unattended security updates (#26) | `unattended-upgrades` + auto-reboot at 03:30 + ntfy.sh notify; enable with `ENABLE_AUTO_UPDATES=1` |
 | ✅ | Android USB tethering (#24) | RNDIS/CDC-ECM udev rules; `rndis0`/`usb0` as metric-200 uplink; plug in Android with USB tethering on |
 | ✅ | Avahi mDNS reflector (#28) | bridges mDNS between uap0 and tailscale0; AirPrint/AirPlay/NAS discovery; enable with `ENABLE_AVAHI_REFLECTOR=1` |
-| ✅ | Tailscale peer watchdog (#35) | 5-min health check; ntfy alert on daemon down, stale handshake, or peer loss |
-| ✅ | AdGuard Home (#18) | DNS ad-blocker + per-client analytics + DoT upstreams; web UI at `:3000`; enable with `ENABLE_ADGUARD=1` |
-| ✅ | Scheduled AP disable (#29) | `ap-disable.timer` / `ap-enable.timer`; disable at 02:00, re-enable at 07:00; enable with `ENABLE_AP_SCHEDULE=1` |
-| ✅ | Per-client bandwidth fairness (#21) | CAKE `per-host` on uap0; prevents one device starving others; set `AP_CLIENT_BANDWIDTH` for hard cap; `ENABLE_CLIENT_QOS=1` |
 | ✅ | Per-device Tailscale routing (#44) | fwmark 0x64 + routing table 100; specified MACs routed through Tailscale, others direct; set `VPN_DEVICE_MACS` + `ENABLE_PER_DEVICE_VPN=1` |
 | ✅ | Hardware watchdog | BCM2835 dtoverlay + systemd `RuntimeWatchdogSec=15`; auto-reboot on kernel lockup (active after reboot) |
 | ✅ | Log rotation | `logrotate.d/travel-router` — daily rotation, 7-day retention, compressed |
-| ✅ | Daily digest notification | 08:00 ntfy push: uptime, active uplink, Tailscale state, AP clients, failed units; fires only when `NTFY_TOPIC` set |
 | ✅ | Stateful FORWARD policy (#7) | `FORWARD DROP`; ESTABLISHED/RELATED fast path; explicit uplink ACCEPTs; KILL_SWITCH before uplink rules |
 | ✅ | SSH hardening | `sshd_config.d/99-travel-router.conf`: PermitRootLogin no, MaxAuthTries 3, no X11/TCP forwarding; optional pubkey-only auth |
 | ✅ | Headscale self-hosted control server (#46) | `setup-headscale.sh` for VPS; `--login-server` arg to tailscale up; HEADSCALE_URL in config |
 | ✅ | nftables TTL/DSCP/hop-limit migration (#1) | Native `inet travel_mangle` table in `/etc/nftables.conf.d/travel-router.nft`; replaces iptables mangle; covers IPv4+IPv6 in one ruleset |
-| ✅ | CAKE bandwidth auto-tuning (#4) | `tune-cake.sh` + weekly timer; runs speedtest-cli, sets 90% upload as wlan0 CAKE bandwidth; enable with `ENABLE_CAKE_AUTOTUNE=1` |
-| ✅ | Domain-based split tunnel (#45) | `apply-split-tunnel.sh`; dnsmasq `ipset=` + fwmark 0x2 + routing table 200 via tailscale0; enable with `ENABLE_SPLIT_TUNNEL=1` + `SPLIT_TUNNEL_DOMAINS` |
-| ✅ | SSH TOTP 2FA (#19) | `setup-2fa.sh` (google-authenticator); PAM `sshd-2fa.conf`; enable with `ENABLE_2FA=1` then run `setup-2fa.sh` as user |
+| ✅ | CIDR-based split tunnel (#6) | `apply-wg-split-tunnel.sh`; ipset + fwmark 0x3 + routing table 201; enable with `ENABLE_WG_SPLIT_TUNNEL=1` + `WG_SPLIT_TUNNEL_CIDRS` |
 | ✅ | WAN metric auto-management (#27) | NetworkManager dispatcher `50-wan-metrics`; enforces enx*=100 rndis0=200 bnep0=300 wlan0=600 on every ifup |
-| ✅ | Bandwidth analytics dashboard (#32) | `generate-bandwidth-report.sh` + daily timer; dark HTML report at `/var/lib/travel-router/bandwidth.html`; enable with `ENABLE_BANDWIDTH_DASHBOARD=1` |
-| ✅ | Prometheus node exporter (#33) | `prometheus-node-exporter` on :9100; accessible over Tailscale; enable with `ENABLE_PROMETHEUS_EXPORTER=1` |
-| ✅ | Real-time traffic inspector (#34) | `bmon` (per-interface) + `iftop` (per-connection) installed; accessible from TUI Network submenu |
-| ✅ | vnStat Prometheus push (#48) | `vnstat-push.sh` + hourly timer; pushes rx/tx bytes to `PUSHGW_URL` as Prometheus text metrics |
-| ✅ | PiSugar 3 UPS monitor (#50) | `ups-monitor.sh` + 5-min timer; REST API → sysfs fallback; ntfy alert + safe shutdown at `UPS_SHUTDOWN_THRESHOLD`%; enable with `ENABLE_UPS_MONITOR=1` |
 | ✅ | USB drive file sharing (#30) | `usb-share.sh` — guest SMB share of `/media/travel-data` on uap0/usb0/tailscale0 only; enable with `ENABLE_USB_SHARE=1`; `USB_SHARE_NAME` / `USB_SHARE_RO` |
 | ✅ | Read-only root toggle (#10) | `overlayfs-ctl.sh` (enable / disable / status) — overlayfs via raspi-config; protects SD card from power-loss corruption; also in TUI System screen |
-
-Optional Privoxy HTTP User-Agent rewriting, Tor transparent proxying, and nftables blocklists are installed as templates/scripts but disabled by default until tested on the target Pi.
 
 ---
 

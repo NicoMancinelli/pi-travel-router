@@ -302,46 +302,7 @@ EOF
 EOF
     ok "Log rotation configured (daily, 7-day retention, compressed)"
 
-    # ── Guest network ─────────────────────────────────────────────────────────────
-    section "Guest network"
-    if [[ "${ENABLE_GUEST_NETWORK:-0}" == "1" && "${ENABLE_TOR_TRANSPARENT:-0}" == "1" ]]; then
-        die "ENABLE_GUEST_NETWORK and ENABLE_TOR_TRANSPARENT both use uap1 — enable only one"
-    fi
-    if [[ "${ENABLE_GUEST_NETWORK:-0}" == "1" ]]; then
-        info "Setting up guest network (${GUEST_SSID:-TravelRouter-Guest})"
-        # Install guest hostapd config
-        cp "${SCRIPT_DIR}/../config/hostapd-guest.conf" /etc/hostapd/hostapd-guest.conf
-        # Set SSID and passphrase
-        sed -i "s/^ssid=.*/ssid=${GUEST_SSID:-TravelRouter-Guest}/" /etc/hostapd/hostapd-guest.conf
-        if [[ -n "${GUEST_PASS:-}" ]]; then
-            # Add passphrase if not already present
-            grep -q "^wpa_passphrase=" /etc/hostapd/hostapd-guest.conf || \
-                echo "wpa_passphrase=${GUEST_PASS}" >> /etc/hostapd/hostapd-guest.conf
-        else
-            # Open network: remove WPA lines
-            sed -i '/^wpa=/d;/^wpa_key_mgmt=/d;/^rsn_pairwise=/d;/^wpa_passphrase=/d' \
-                /etc/hostapd/hostapd-guest.conf
-            sed -i 's/^auth_algs=1/auth_algs=1/' /etc/hostapd/hostapd-guest.conf
-        fi
-        # Install guest dnsmasq config (substitute subnet/gateway from defaults)
-        cp "${SCRIPT_DIR}/../config/dnsmasq-guest.conf" /etc/dnsmasq.d/guest.conf
-        local _GUEST_GW="${GUEST_GATEWAY:-192.168.5.1}"
-        local _GUEST_NET="${GUEST_SUBNET:-192.168.5.0/24}"
-        local _GUEST_RANGE_START
-        local _GUEST_RANGE_END
-        _GUEST_RANGE_START=$(python3 -c "import ipaddress; n=ipaddress.ip_network('$_GUEST_NET',strict=False); h=list(n.hosts()); print(h[9])" 2>/dev/null || echo "192.168.5.10")
-        _GUEST_RANGE_END=$(python3 -c "import ipaddress; n=ipaddress.ip_network('$_GUEST_NET',strict=False); h=list(n.hosts()); print(h[-1])" 2>/dev/null || echo "192.168.5.200")
-        sed -i "s|192.168.5.10,192.168.5.200,255.255.255.0|${_GUEST_RANGE_START},${_GUEST_RANGE_END},255.255.255.0|" /etc/dnsmasq.d/guest.conf
-        sed -i "s|dhcp-option=3,192.168.5.1|dhcp-option=3,${_GUEST_GW}|" /etc/dnsmasq.d/guest.conf
-        sed -i "s|dhcp-option=6,192.168.5.1|dhcp-option=6,${_GUEST_GW}|" /etc/dnsmasq.d/guest.conf
-        # Install and enable systemd service
-        cp "${SCRIPT_DIR}/../systemd/hostapd-guest.service" /etc/systemd/system/
-        run_or_dry systemctl daemon-reload
-        run_or_dry systemctl enable hostapd-guest.service
-        ok "Guest network configured: ${GUEST_SSID:-TravelRouter-Guest}"
-    else
-        ok "Guest network disabled (set ENABLE_GUEST_NETWORK=1 to activate)"
-    fi
+
 
     # ── usbmuxd hardening ─────────────────────────────────────────────────────────
     section "usbmuxd hardening"

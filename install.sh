@@ -608,8 +608,6 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
     curl wget git jq \
     usbmuxd libimobiledevice6 libimobiledevice-utils ipheth-utils \
     macchanger vnstat \
-    privoxy \
-    tor \
     stubby \
     unattended-upgrades \
     bluez bluez-tools python3-dbus \
@@ -925,18 +923,13 @@ for script in \
     start-tether.sh stop-tether.sh \
     failover-watchdog.sh wan-watchdog.sh captive-check.sh \
     notify-router.sh apply-cake.sh \
-    vnstat-metrics.sh update-blocklists.sh travel-router-firewall.sh \
+    travel-router-firewall.sh \
     start-bt-tether.sh stop-bt-tether.sh \
     clone-mac.sh \
-    ap-schedule.sh \
     update-router.sh \
-    tailscale-watchdog.sh \
-    wireguard-watchdog.sh \
-    modem-watchdog.sh \
     travel-status.sh \
-    daily-digest.sh \
     tailscale-exit-node.sh \
-    hardware-watchdog.sh; do
+    log-rotate.sh; do
     install_file "scripts/$script" "/usr/local/bin/$script" 755
     ok "  $script"
 done
@@ -946,24 +939,21 @@ ln -sfn update-router.sh /usr/local/bin/update-router
 ln -sfn travel-status.sh /usr/local/bin/travel-status
 ok "  command aliases: update-router, travel-status"
 
-# ── TUI: Python (preferred) + bash fallback ───────────────────────────────────
+# ── TUI: Python Textual ───────────────────────────────────
 # Install Python TUI
 cp "${REPO}/scripts/travel-tui.py" /usr/local/sbin/travel-tui.py
 chmod 0755 /usr/local/sbin/travel-tui.py
 ok "  travel-tui.py → /usr/local/sbin/travel-tui.py"
 
-# Keep bash TUI as fallback
-cp "${REPO}/scripts/travel-tui-legacy.sh" /usr/local/sbin/travel-tui-legacy
-chmod 0755 /usr/local/sbin/travel-tui-legacy
-ok "  travel-tui-legacy.sh → /usr/local/sbin/travel-tui-legacy"
-
-# Update /usr/local/sbin/travel-tui to prefer Python TUI, fall back to bash
+# Create /usr/local/sbin/travel-tui wrapper
 cat > /usr/local/sbin/travel-tui << 'EOF'
 #!/bin/bash
 if python3 -c "import textual" 2>/dev/null; then
     exec python3 /usr/local/sbin/travel-tui.py "$@"
 else
-    exec /usr/local/sbin/travel-tui-legacy "$@"
+    echo "python3-textual not found — run: sudo apt install python3-textual"
+    echo "For a quick overview, run: travel-status"
+    exit 1
 fi
 EOF
 chmod 0755 /usr/local/sbin/travel-tui
@@ -1085,54 +1075,23 @@ for unit in \
     wan-watchdog.service wan-watchdog.timer \
     cpu-performance.service cake-qdisc.service \
     wlan-mac-random.service \
-    vnstat-metrics.service vnstat-metrics.timer \
-    update-blocklists.service update-blocklists.timer \
-    tailscale-watchdog.service tailscale-watchdog.timer \
-    wireguard-watchdog.service wireguard-watchdog.timer \
-    modem-watchdog.service modem-watchdog.timer \
-    adguard-home.service \
-    ap-disable.service ap-disable.timer \
-    ap-enable.service ap-enable.timer \
-    daily-digest.service daily-digest.timer \
+    travel-router-log-rotate.service travel-router-log-rotate.timer \
     update-router.service update-router.timer \
-    tune-cake.service tune-cake.timer \
-    ota-commit.service ota-commit.timer; do
+    wg-split-tunnel.service; do
     install_file "systemd/$unit" "$SYSTEMD_DEST/$unit" 644
     ok "  $unit"
 done
-
-# OTA scripts
-install -m 0755 "${REPO}/scripts/ota-update.sh"   /usr/local/sbin/ota-update
-install -m 0755 "${REPO}/scripts/ota-commit.sh"   /usr/local/sbin/ota-commit
-install -m 0755 "${REPO}/scripts/ota-rollback.sh" /usr/local/sbin/ota-rollback
-ok "  ota-update / ota-commit / ota-rollback → /usr/local/sbin/"
 
 systemctl daemon-reload
 
 for unit in \
     failover-watchdog.timer wan-watchdog.timer \
-    modem-watchdog.timer \
     cpu-performance.service cake-qdisc.service \
     wlan-mac-random.service \
-    vnstat-metrics.timer update-blocklists.timer \
-    tailscale-watchdog.timer \
-    wireguard-watchdog.timer \
-    daily-digest.timer \
-    update-router.timer \
-    ota-commit.timer; do
+    travel-router-log-rotate.timer \
+    update-router.timer; do
     if systemctl enable "$unit" 2>/dev/null; then ok "  enabled: $unit"; else warn "  could not enable $unit"; fi
 done
-
-# Trigger initial blocklist load immediately if enabled (daily timer fires first time at next scheduled slot)
-if [[ "${ENABLE_BLOCKLISTS:-0}" = "1" ]]; then
-    info "Running initial blocklist load (this may take ~30s)..."
-    if systemctl start update-blocklists.service 2>/dev/null; then
-        ok "Initial blocklist loaded"
-    else
-        warn "Initial blocklist load failed — will retry at next timer fire"
-        warn "  Check: journalctl -u update-blocklists.service -n 20"
-    fi
-fi
 
 # ── 14. udev rules ────────────────────────────────────────────────────────────
 section "udev rules"
@@ -1161,112 +1120,6 @@ else:
 with open(path, 'w') as f: f.write(content)
 " /etc/log2ram.conf
     ok "log2ram: SIZE=128M, JOURNALD_AWARE=true"
-fi
-
-# ── 16. privoxy — optional User-Agent normalization ──────────────────────────
-section "privoxy — optional HTTP User-Agent normalization"
-
-install_file config/privoxy-user.action /etc/privoxy/user.action 644
-if [[ "${ENABLE_HTTP_UA_REWRITE:-0}" = "1" ]]; then
-    systemctl enable --now privoxy 2>/dev/null || true
-    ok "privoxy configured and enabled"
-else
-    systemctl disable --now privoxy 2>/dev/null || true
-    ok "privoxy installed but disabled by default"
-fi
-
-# ── 17. Tor — optional transparent proxy ─────────────────────────────────────
-section "Tor — optional transparent proxy config"
-
-# Append transparent proxy config if not already present
-if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" ]] && ! grep -q "TransPort 9040" /etc/tor/torrc 2>/dev/null; then
-    cat >> /etc/tor/torrc << 'EOF'
-
-# Transparent proxy (for Tor subnet 172.16.100.0/24)
-VirtualAddrNetworkIPv4 10.192.0.0/10
-AutomapHostsOnResolve 1
-TransPort 9040 IsolateClientAddr
-DNSPort 5353
-EOF
-    ok "Tor transparent proxy config added"
-elif [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" ]]; then
-    ok "Tor already configured for transparent proxy"
-else
-    ok "Tor transparent proxy disabled by default"
-fi
-
-if [[ "${ENABLE_TOR_TRANSPARENT:-0}" = "1" ]]; then
-    systemctl enable tor 2>/dev/null || true
-    ok "Tor enabled"
-
-    # Test whether brcmfmac supports a second virtual AP for a dedicated Tor SSID
-    if iw dev wlan0 interface add uap1 type __ap 2>/dev/null; then
-        iw dev uap1 del 2>/dev/null || true
-
-        # C7: TOR_AP_PASS must be set (guarded earlier), no fallback to 'changeme'
-        [[ -n "$TOR_AP_PASS" ]] || die "TOR_AP_PASS is empty"
-        # Second BSS in hostapd.conf (uses same radio, separate SSID)
-        if ! grep -q "^bss=uap1" /etc/hostapd/hostapd.conf; then
-            cat >> /etc/hostapd/hostapd.conf << 'TOREOF'
-
-# Tor transparent-proxy AP (all traffic routed through Tor)
-bss=uap1
-ssid=TorAP
-wpa=2
-wpa_passphrase=PLACEHOLDER_TOR_PASS
-wpa_key_mgmt=WPA-PSK
-wpa_pairwise=CCMP
-TOREOF
-            # C6/C7: write Tor passphrase safely via Python (atomic mktemp+replace)
-            python3 -c "
-import sys, os, tempfile
-path = '/etc/hostapd/hostapd.conf'
-with open(path) as f: lines = f.readlines()
-out = []
-in_tor_bss = False
-for l in lines:
-    if l.strip() == 'bss=uap1': in_tor_bss = True
-    if in_tor_bss and l.startswith('wpa_passphrase=PLACEHOLDER_TOR_PASS'):
-        out.append('wpa_passphrase=' + sys.argv[1] + '\n')
-    else: out.append(l)
-fd, tmp = tempfile.mkstemp(dir='/etc/hostapd', prefix='hostapd.conf.')
-try:
-    with os.fdopen(fd, 'w') as fh: fh.writelines(out)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
-except:
-    os.unlink(tmp); raise
-" "$TOR_AP_PASS"
-        fi
-
-        install_file config/dnsmasq-tor-ap.conf /etc/dnsmasq.d/tor-ap.conf
-
-        # I-H7: write uap1 creation to a drop-in instead of sed-patching rc.local
-        mkdir -p /etc/rc.local.d
-        cat > /etc/rc.local.d/50-tor-uap1.sh << 'RCEOF'
-#!/bin/sh
-# Created by pi-travel-router install.sh — I-H7
-# Create second virtual AP for Tor transparent proxy SSID
-iw dev wlan0 interface add uap1 type __ap || true
-RCEOF
-        chmod 755 /etc/rc.local.d/50-tor-uap1.sh
-
-        # Ensure rc.local sources drop-ins (idempotent)
-        if [[ -f /etc/rc.local ]] && ! grep -q "rc.local.d" /etc/rc.local; then
-            # shellcheck disable=SC2016  # single quotes intentional in sed script
-            sed -i '/^exit 0/i # Source rc.local drop-ins\nfor _f in /etc/rc.local.d/*.sh; do [ -f "$_f" ] \&\& . "$_f"; done' /etc/rc.local
-        fi
-
-        ok "uap1 supported — TorAP SSID configured on 172.16.100.0/24"
-    else
-        warn "uap1 not supported by brcmfmac — Tor AP uses static-IP fallback"
-        warn "  Clients: set static IP 172.16.100.x/24, GW+DNS 172.16.100.1 on the main AP"
-    fi
-else
-    systemctl disable --now tor 2>/dev/null || true
-    # I-H7: remove uap1 drop-in when Tor is disabled
-    rm -f /etc/rc.local.d/50-tor-uap1.sh
-    ok "Tor disabled by default"
 fi
 
 # ── 18. Tailscale ─────────────────────────────────────────────────────────────
@@ -1438,35 +1291,6 @@ nft -f /etc/nftables.conf.d/travel-router.nft 2>/dev/null || \
 systemctl enable nftables 2>/dev/null || true
 ok "nftables TTL/DSCP rules loaded (replaces iptables mangle for TTL + DSCP)"
 
-# ── §. Domain-based split tunnel (#45) ───────────────────────────────────────
-section "Domain-based split tunnel"
-
-install_file scripts/apply-split-tunnel.sh /usr/local/bin/apply-split-tunnel.sh 755
-
-SYSTEMD_DEST_ST="/etc/systemd/system"
-install_file systemd/split-tunnel.service "$SYSTEMD_DEST_ST/split-tunnel.service" 644
-systemctl daemon-reload
-
-if [[ "${ENABLE_SPLIT_TUNNEL:-0}" = "1" ]]; then
-    if [[ -z "${SPLIT_TUNNEL_DOMAINS:-}" ]]; then
-        warn "ENABLE_SPLIT_TUNNEL=1 but SPLIT_TUNNEL_DOMAINS is empty"
-        warn "  Set SPLIT_TUNNEL_DOMAINS in /etc/default/travel-router and run:"
-        warn "  sudo systemctl restart dnsmasq split-tunnel.service"
-    else
-        apt-get install -y ipset 2>/dev/null || true
-        _DOMAIN_PATH=$(printf '%s' "$SPLIT_TUNNEL_DOMAINS" | tr ' ' '/')
-        printf "# Split tunnel domains — generated by install.sh\nipset=/%s/vpn_domains\n" \
-            "$_DOMAIN_PATH" > /etc/dnsmasq.d/split-tunnel.conf
-        systemctl enable --now split-tunnel.service 2>/dev/null || true
-        systemctl restart dnsmasq 2>/dev/null || true
-        ok "Split tunnel enabled — domains via Tailscale: ${SPLIT_TUNNEL_DOMAINS}"
-    fi
-else
-    systemctl disable split-tunnel.service 2>/dev/null || true
-    rm -f /etc/dnsmasq.d/split-tunnel.conf
-    ok "Split tunnel disabled (set ENABLE_SPLIT_TUNNEL=1 + SPLIT_TUNNEL_DOMAINS)"
-fi
-
 # ── §. CIDR-based split tunnel (#6) ──────────────────────────────────────────
 section "CIDR-based split tunnel"
 
@@ -1490,45 +1314,7 @@ else
     ok "CIDR split tunnel disabled (set ENABLE_WG_SPLIT_TUNNEL=1 + WG_SPLIT_TUNNEL_CIDRS)"
 fi
 
-# ── §. CAKE bandwidth auto-tuning ─────────────────────────────────────────────
-section "CAKE bandwidth auto-tuning"
 
-install_file scripts/tune-cake.sh /usr/local/bin/tune-cake.sh 755
-
-if [[ "${ENABLE_CAKE_AUTOTUNE:-0}" = "1" ]]; then
-    apt-get install -y speedtest-cli 2>/dev/null || true
-    systemctl enable --now tune-cake.timer 2>/dev/null || true
-    ok "CAKE auto-tune enabled — weekly speedtest adjusts wlan0 CAKE bandwidth"
-    ok "Run manually: sudo tune-cake.sh"
-else
-    systemctl disable tune-cake.timer 2>/dev/null || true
-    ok "CAKE auto-tune disabled (set ENABLE_CAKE_AUTOTUNE=1 to activate)"
-fi
-
-# ── §. SSH two-factor authentication (#19) ───────────────────────────────────
-section "SSH 2FA (TOTP)"
-
-install_file scripts/setup-2fa.sh /usr/local/bin/setup-2fa.sh 755
-
-if [[ "${ENABLE_2FA:-0}" = "1" ]]; then
-    apt-get install -y libpam-google-authenticator 2>/dev/null || true
-    install_file config/sshd-2fa.conf /etc/ssh/sshd_config.d/98-travel-router-2fa.conf 644
-    # Add pam_google_authenticator to sshd PAM if not already present
-    if ! grep -q "pam_google_authenticator" /etc/pam.d/sshd 2>/dev/null; then
-        printf "auth required pam_google_authenticator.so nullok\n" >> /etc/pam.d/sshd
-    fi
-    systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
-    ok "SSH 2FA enabled — run: sudo -u \$(logname) setup-2fa.sh to configure TOTP"
-    # I-M3: warn for any login-shell users who have not yet configured TOTP
-    while IFS=: read -r _u _ _uid _ _ _home _shell; do
-        [[ "$_uid" -lt 1000 && "$_u" != "root" ]] && continue
-        [[ "$_shell" == */false || "$_shell" == */nologin ]] && continue
-        [[ -f "$_home/.google_authenticator" ]] && continue
-        warn "2FA not configured for user $_u — run: sudo -u $_u setup-2fa.sh"
-    done < /etc/passwd
-else
-    ok "SSH 2FA disabled (set ENABLE_2FA=1 then run setup-2fa.sh)"
-fi
 
 # ── §. WAN metric auto-management (#27) ─────────────────────────────────────
 section "WAN metric auto-management"
@@ -1619,99 +1405,7 @@ print('WIFI:T:WPA;S:' + mecard_escape(ssid) + ';P:' + mecard_escape(pwd) + ';;',
     fi
 fi
 
-# ── §. Monitoring — Prometheus node exporter (#33) ───────────────────────────
-section "Prometheus node exporter"
 
-if [[ "${ENABLE_PROMETHEUS_EXPORTER:-0}" = "1" ]]; then
-    apt-get install -y prometheus-node-exporter 2>/dev/null || true
-    systemctl enable --now prometheus-node-exporter 2>/dev/null || true
-    ok "Prometheus node exporter enabled on :9100 (accessible via Tailscale)"
-    ok "Scrape with: http://$(tailscale ip -4 2>/dev/null | head -1):9100/metrics"
-else
-    ok "Prometheus node exporter disabled (set ENABLE_PROMETHEUS_EXPORTER=1 to activate)"
-fi
-
-# ── §. Bandwidth analytics dashboard (#32) ───────────────────────────────────
-section "Bandwidth analytics dashboard"
-
-install_file scripts/generate-bandwidth-report.sh \
-    /usr/local/bin/generate-bandwidth-report.sh 755
-install_file systemd/generate-bandwidth-report.service \
-    "/etc/systemd/system/generate-bandwidth-report.service" 644
-install_file systemd/generate-bandwidth-report.timer \
-    "/etc/systemd/system/generate-bandwidth-report.timer" 644
-install_file systemd/vnstat-push.service \
-    "/etc/systemd/system/vnstat-push.service" 644
-install_file systemd/vnstat-push.timer \
-    "/etc/systemd/system/vnstat-push.timer" 644
-install_file scripts/vnstat-push.sh /usr/local/bin/vnstat-push.sh 755
-systemctl daemon-reload
-
-if [[ "${ENABLE_BANDWIDTH_DASHBOARD:-0}" = "1" ]]; then
-    systemctl enable --now generate-bandwidth-report.timer 2>/dev/null || true
-    /usr/local/bin/generate-bandwidth-report.sh 2>/dev/null || true
-    # Serve via lighttpd: symlink into webroot
-    ln -sf /var/lib/travel-router/bandwidth.html \
-        /var/www/html/bandwidth.html 2>/dev/null || true
-    ok "Bandwidth dashboard: http://${AP_GATEWAY}/bandwidth.html"
-    ok "Regenerated daily at 00:05"
-else
-    systemctl disable generate-bandwidth-report.timer 2>/dev/null || true
-    ok "Bandwidth dashboard disabled (set ENABLE_BANDWIDTH_DASHBOARD=1)"
-fi
-
-# Install bmon + iftop for real-time traffic inspection (#34)
-apt-get install -y bmon iftop 2>/dev/null || true
-ok "Real-time traffic: bmon (interfaces) and iftop (per-connection) installed"
-
-# Enable vnStat push if PUSHGW_URL configured
-if [[ -n "${PUSHGW_URL:-}" ]]; then
-    systemctl enable --now vnstat-push.timer 2>/dev/null || true
-    ok "vnStat Prometheus push enabled (hourly) → $PUSHGW_URL"
-else
-    ok "vnStat push disabled (set PUSHGW_URL in /etc/default/travel-router)"
-fi
-
-# ── §. Avahi — mDNS reflector ────────────────────────────────────────────────
-section "Avahi — mDNS reflector"
-
-install_file config/avahi-daemon.conf /etc/avahi/avahi-daemon.conf 644
-
-if [[ "${ENABLE_AVAHI_REFLECTOR:-0}" = "1" ]]; then
-    systemctl enable --now avahi-daemon 2>/dev/null || true
-    ok "Avahi mDNS reflector enabled (uap0 ↔ tailscale0)"
-else
-    systemctl disable --now avahi-daemon 2>/dev/null || true
-    ok "Avahi installed but disabled (set ENABLE_AVAHI_REFLECTOR=1 to activate)"
-fi
-
-# ── §. UPS / PiSugar battery monitor (#50) ───────────────────────────────────
-section "UPS battery monitor (PiSugar 3)"
-
-install_file scripts/ups-monitor.sh /usr/local/bin/ups-monitor.sh 755
-install_file systemd/ups-monitor.service "/etc/systemd/system/ups-monitor.service" 644
-install_file systemd/ups-monitor.timer "/etc/systemd/system/ups-monitor.timer" 644
-systemctl daemon-reload
-
-if [[ "${ENABLE_UPS_MONITOR:-0}" = "1" ]]; then
-    systemctl enable --now ups-monitor.timer 2>/dev/null || true
-    ok "UPS monitor enabled — battery checked every 5 min, shutdown at ${UPS_SHUTDOWN_THRESHOLD:-10}%"
-    ok "PiSugar server (optional): https://github.com/PiSugar/pisugar-power-manager-rs"
-else
-    systemctl disable ups-monitor.timer 2>/dev/null || true
-    ok "UPS monitor disabled (set ENABLE_UPS_MONITOR=1 to activate)"
-    ok "Requires: PiSugar 3 HAT — https://www.pisugar.com"
-fi
-
-# ── §. Hardware & Thermal Watchdog ───────────────────────────────────────────
-section "Hardware & Thermal Watchdog"
-
-install_file scripts/hardware-watchdog.sh /usr/local/bin/hardware-watchdog.sh 755
-install_file systemd/hardware-watchdog.service "/etc/systemd/system/hardware-watchdog.service" 644
-install_file systemd/hardware-watchdog.timer "/etc/systemd/system/hardware-watchdog.timer" 644
-systemctl daemon-reload
-systemctl enable --now hardware-watchdog.timer 2>/dev/null || true
-ok "Hardware watchdog enabled (undervoltage & thermal check every 2 min)"
 
 # ── §. USB drive file sharing — travel NAS (#30) ─────────────────────────────
 section "USB file sharing (travel NAS)"
@@ -1732,51 +1426,7 @@ else
     ok "USB file sharing disabled (set ENABLE_USB_SHARE=1 to activate)"
 fi
 
-# ── §. Scheduled AP disable (#29) ────────────────────────────────────────────
-section "Scheduled AP disable"
 
-if [[ "${ENABLE_AP_SCHEDULE:-0}" = "1" ]]; then
-    # H20: write drop-in overrides with user-supplied times
-    mkdir -p /etc/systemd/system/ap-disable.timer.d
-    cat > /etc/systemd/system/ap-disable.timer.d/time.conf << EOF
-[Timer]
-OnCalendar=
-OnCalendar=*-*-* ${AP_DISABLE_TIME:-02:00}:00
-EOF
-    mkdir -p /etc/systemd/system/ap-enable.timer.d
-    cat > /etc/systemd/system/ap-enable.timer.d/time.conf << EOF
-[Timer]
-OnCalendar=
-OnCalendar=*-*-* ${AP_ENABLE_TIME:-07:00}:00
-EOF
-    systemctl daemon-reload
-    systemctl enable ap-disable.timer ap-enable.timer 2>/dev/null || true
-    ok "AP schedule enabled: disable at ${AP_DISABLE_TIME:-02:00}, re-enable at ${AP_ENABLE_TIME:-07:00}"
-else
-    systemctl disable ap-disable.timer ap-enable.timer 2>/dev/null || true
-    ok "AP schedule disabled (set ENABLE_AP_SCHEDULE=1 to activate)"
-fi
-
-# ── §. AdGuard Home — DNS ad-blocker ─────────────────────────────────────────
-section "AdGuard Home — DNS ad-blocker"
-
-if [[ "${ENABLE_ADGUARD:-0}" = "1" ]]; then
-    info "Downloading AdGuard Home binary..."
-    # I-M4: handle install-adguard.sh failures gracefully
-    if ! bash "$REPO/scripts/install-adguard.sh"; then
-        warn "AdGuard Home installation failed — check network and retry"
-        warn "To retry: bash /opt/pi-travel-router/scripts/install-adguard.sh"
-        ENABLE_ADGUARD=0
-    fi
-    install_file config/AdGuardHome.yaml /opt/AdGuardHome/AdGuardHome.yaml 640
-    install_file config/dnsmasq-adguard.conf /etc/dnsmasq.d/adguard.conf
-    rm -f /etc/dnsmasq.d/dot.conf
-    systemctl enable --now adguard-home 2>/dev/null || true
-    ok "AdGuard Home enabled — web UI at http://${AP_GATEWAY}:3000 (set password on first visit)"
-    ok "DNS: dnsmasq → AdGuard Home (127.0.0.1:5335) → DoT upstreams"
-else
-    ok "AdGuard Home disabled (set ENABLE_ADGUARD=1 to activate)"
-fi
 
 # ── §. Web management dashboard ───────────────────────────────────────────────
 install_web_dashboard() {
@@ -1870,14 +1520,7 @@ else
     ok "Per-device VPN routing disabled (set ENABLE_PER_DEVICE_VPN=1 + VPN_DEVICE_MACS)"
 fi
 
-# ── §. Daily digest notification ─────────────────────────────────────────────
-section "Daily digest notification"
 
-if [[ -n "${NTFY_TOPIC:-}" ]]; then
-    ok "Daily digest enabled — 08:00 ntfy push with uptime, uplink, Tailscale state"
-else
-    ok "Daily digest installed — set NTFY_TOPIC in /etc/default/travel-router to activate"
-fi
 
 # ── §. SSH hardening ─────────────────────────────────────────────────────────
 section "SSH hardening"

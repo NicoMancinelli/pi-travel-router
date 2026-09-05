@@ -35,7 +35,9 @@ write_tui_wrapper() {
 if python3 -c "import textual" 2>/dev/null; then
     exec python3 /usr/local/sbin/travel-tui.py "$@"
 else
-    exec /usr/local/sbin/travel-tui-legacy "$@"
+    echo "python3-textual not installed. Run: sudo apt install -y python3-textual"
+    echo "For a quick status check, run: travel-status"
+    exit 1
 fi
 EOF
     chmod 755 "${dest}.tmp"
@@ -128,32 +130,21 @@ apply_update() {
     # This prevents a compromised tarball from installing arbitrary executables.
     SCRIPT_ALLOWLIST=(
         failover-watchdog.sh wan-watchdog.sh captive-check.sh travel-router-firewall.sh
-        apply-split-tunnel.sh apply-wg-split-tunnel.sh start-tether.sh start-bt-tether.sh
-        stop-tether.sh clone-mac.sh ap-schedule.sh tailscale-watchdog.sh wireguard-watchdog.sh ups-monitor.sh notify-router.sh
-        travel-status.sh travel-diagnostic.sh generate-bandwidth-report.sh
-        vnstat-push.sh vnstat-metrics.sh tune-cake.sh daily-digest.sh update-router.sh update-blocklists.sh
-        setup-2fa.sh install-adguard.sh apply-cake.sh
-        log-rotate.sh modem-watchdog.sh tailscale-exit-node.sh hardware-watchdog.sh
-    )
-    TUI_SHELL_ALLOWLIST=(
-        travel-tui-legacy.sh
+        apply-wg-split-tunnel.sh start-tether.sh start-bt-tether.sh
+        stop-tether.sh stop-bt-tether.sh clone-mac.sh notify-router.sh
+        travel-status.sh travel-diagnostic.sh update-router.sh
+        apply-cake.sh log-rotate.sh tailscale-exit-node.sh
     )
     # Admin scripts installed to /usr/local/sbin by install.sh / 10-finalize.sh.
     # Installed with their .sh extension, matching the installer.
     SBIN_SCRIPT_ALLOWLIST=(
-        mount-storage.sh usb-share.sh overlayfs-ctl.sh schedule-reboot.sh
+        mount-storage.sh usb-share.sh overlayfs-ctl.sh
         speedtest.sh set-doh-resolver.sh apply-privacy-profile.sh
-        config-backup.sh apply-qos.sh
-        wg-key-rotate.sh wg-peer-expire.sh aide-check.sh
+        config-backup.sh
     )
     # Shared libraries sourced by shipped scripts (installed 0644).
     LIB_SCRIPT_ALLOWLIST=(
         net-common.sh
-    )
-    OTA_SCRIPT_ALLOWLIST=(
-        ota-update.sh
-        ota-commit.sh
-        ota-rollback.sh
     )
     PYTHON_SCRIPT_ALLOWLIST=(
         travel-tui.py
@@ -193,27 +184,6 @@ apply_update() {
     shopt -u nullglob
 
     shopt -s nullglob
-    for script in "${src}"/scripts/*.sh; do
-        name=$(basename "$script")
-
-        local _allowed=0
-        for _a in "${TUI_SHELL_ALLOWLIST[@]}"; do
-            [[ "$_a" = "$name" ]] && { _allowed=1; break; }
-        done
-        if [[ "$_allowed" -eq 0 ]]; then
-            continue
-        fi
-
-        dest="${sbin_dir}/travel-tui-legacy"
-        if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
-            cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
-            log "  updated TUI fallback: $name"
-            changed=1
-        fi
-    done
-    shopt -u nullglob
-
-    shopt -s nullglob
     for script in "${src}"/scripts/*.py; do
         name=$(basename "$script")
 
@@ -239,27 +209,6 @@ apply_update() {
         log "  updated TUI wrapper"
         changed=1
     fi
-
-    shopt -s nullglob
-    for script in "${src}"/scripts/*.sh; do
-        name=$(basename "$script")
-
-        local _allowed=0
-        for _a in "${OTA_SCRIPT_ALLOWLIST[@]}"; do
-            [[ "$_a" = "$name" ]] && { _allowed=1; break; }
-        done
-        if [[ "$_allowed" -eq 0 ]]; then
-            continue
-        fi
-
-        dest="${sbin_dir}/${name%.sh}"
-        if ! diff -q "$script" "$dest" >/dev/null 2>&1; then
-            cp "$script" "${dest}.tmp" && chmod 755 "${dest}.tmp" && mv "${dest}.tmp" "$dest"
-            log "  updated OTA script: $name"
-            changed=1
-        fi
-    done
-    shopt -u nullglob
 
     shopt -s nullglob
     for script in "${src}"/scripts/*.sh; do

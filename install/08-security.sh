@@ -54,30 +54,6 @@ run_security() {
     run_or_dry systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
     ok "sshd restarted with hardened config"
 
-    # ── SSH 2FA (TOTP) ───────────────────────────────────────────────────────────
-    section "SSH 2FA (TOTP)"
-
-    install_file scripts/setup-2fa.sh /usr/local/bin/setup-2fa.sh 755
-
-    if [[ "${ENABLE_2FA:-0}" = "1" ]]; then
-        run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y libpam-google-authenticator 2>/dev/null || true
-        install_file config/sshd-2fa.conf /etc/ssh/sshd_config.d/98-travel-router-2fa.conf 644
-        if ! grep -q "pam_google_authenticator" /etc/pam.d/sshd 2>/dev/null; then
-            printf "auth required pam_google_authenticator.so nullok\n" >> /etc/pam.d/sshd
-        fi
-        run_or_dry systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
-        ok "SSH 2FA enabled — run: sudo -u \$(logname) setup-2fa.sh to configure TOTP"
-        # Warn for users who have not yet configured TOTP
-        while IFS=: read -r _u _ _uid _ _ _home _shell; do
-            [[ "$_uid" -lt 1000 && "$_u" != "root" ]] && continue
-            [[ "$_shell" == */false || "$_shell" == */nologin ]] && continue
-            [[ -f "$_home/.google_authenticator" ]] && continue
-            warn "2FA not configured for user $_u — run: sudo -u $_u setup-2fa.sh"
-        done < /etc/passwd
-    else
-        ok "SSH 2FA disabled (set ENABLE_2FA=1 then run setup-2fa.sh)"
-    fi
-
     # ── Unattended security updates ──────────────────────────────────────────────
     section "Unattended security updates"
 
@@ -89,69 +65,5 @@ run_security() {
         ok "Auto security updates enabled (reboot at 03:30 when required)"
     else
         ok "Auto security updates disabled (set ENABLE_AUTO_UPDATES=1 to activate)"
-    fi
-
-    # ── WireGuard key rotation (opt-in — #265) ──────────────────────────────────
-    # Rotating the server identity key invalidates every peer config until the
-    # owner re-enrols clients, so rotation is OFF unless explicitly enabled.
-    section "WireGuard key rotation"
-
-    if [[ "${ENABLE_WG_KEY_ROTATION:-0}" = "1" ]]; then
-        install_file scripts/wg-key-rotate.sh /usr/local/sbin/wg-key-rotate.sh 755
-        install_file systemd/wg-key-rotate.service /etc/systemd/system/wg-key-rotate.service 644
-        install_file systemd/wg-key-rotate.timer   /etc/systemd/system/wg-key-rotate.timer   644
-        run_or_dry systemctl daemon-reload
-        run_or_dry systemctl enable wg-key-rotate.timer
-        ok "WireGuard monthly key rotation timer enabled"
-    else
-        run_or_dry systemctl disable wg-key-rotate.timer 2>/dev/null || true
-        ok "WireGuard key rotation disabled (set ENABLE_WG_KEY_ROTATION=1 to activate)"
-    fi
-
-    # ── AIDE file integrity ──────────────────────────────────────────────────────
-    section "AIDE file integrity"
-
-    if ! command -v aide > /dev/null 2>&1; then
-        run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y aide
-    fi
-    # Initialise AIDE database if it has never been run
-    if [[ ! -f /var/lib/aide/aide.db ]]; then
-        info "Initialising AIDE database (this may take a few minutes)"
-        run_or_dry aideinit -y -f 2>/dev/null || \
-            run_or_dry aide --init --config=/etc/aide/aide.conf 2>/dev/null || true
-        # The aideinit wrapper names the new db aide.db.new; rename to aide.db
-        if [[ -f /var/lib/aide/aide.db.new ]]; then
-            run_or_dry mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
-        fi
-    fi
-    install_file scripts/aide-check.sh /usr/local/sbin/aide-check.sh 755
-    install_file systemd/aide-check.service /etc/systemd/system/aide-check.service 644
-    install_file systemd/aide-check.timer   /etc/systemd/system/aide-check.timer   644
-    run_or_dry systemctl daemon-reload
-    run_or_dry systemctl enable aide-check.timer
-    ok "AIDE daily integrity check timer enabled (runs at 03:00)"
-
-    # ── Scheduled AP disable ─────────────────────────────────────────────────────
-    section "Scheduled AP disable"
-
-    if [[ "${ENABLE_AP_SCHEDULE:-0}" = "1" ]]; then
-        mkdir -p /etc/systemd/system/ap-disable.timer.d
-        cat > /etc/systemd/system/ap-disable.timer.d/time.conf << EOF
-[Timer]
-OnCalendar=
-OnCalendar=*-*-* ${AP_DISABLE_TIME:-02:00}:00
-EOF
-        mkdir -p /etc/systemd/system/ap-enable.timer.d
-        cat > /etc/systemd/system/ap-enable.timer.d/time.conf << EOF
-[Timer]
-OnCalendar=
-OnCalendar=*-*-* ${AP_ENABLE_TIME:-07:00}:00
-EOF
-        systemctl daemon-reload
-        run_or_dry systemctl enable ap-disable.timer ap-enable.timer 2>/dev/null || true
-        ok "AP schedule enabled: disable at ${AP_DISABLE_TIME:-02:00}, re-enable at ${AP_ENABLE_TIME:-07:00}"
-    else
-        systemctl disable ap-disable.timer ap-enable.timer 2>/dev/null || true
-        ok "AP schedule disabled (set ENABLE_AP_SCHEDULE=1 to activate)"
     fi
 }

@@ -1,9 +1,0 @@
-[Unit]
-Description=Hardware Health & Thermal Watchdog
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/hardware-watchdog.sh
-StandardOutput=journal
-StandardError=journal

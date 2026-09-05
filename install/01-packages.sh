@@ -17,8 +17,6 @@ run_packages() {
         curl wget git jq \
         usbmuxd "${_libimob}" libimobiledevice-utils ipheth-utils \
         macchanger vnstat \
-        privoxy \
-        tor \
         stubby \
         unattended-upgrades \
         bluez bluez-tools python3-dbus \

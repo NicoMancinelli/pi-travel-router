@@ -23,7 +23,7 @@ BASH_CHECK_SCRIPTS=(
     build/stage-travel-router/files/imager-compat.sh
     scripts/wan-watchdog.sh
     scripts/captive-check.sh
-    scripts/travel-tui-legacy.sh
+    scripts/failover-watchdog.sh
 )
 
 for f in "${BASH_CHECK_SCRIPTS[@]}"; do
@@ -167,7 +167,6 @@ REQUIRED_FILES=(
     build/stage-travel-router/00-setup/00-packages
     build/stage-travel-router/00-setup/01-run.sh
     build/config
-    scripts/travel-tui-legacy.sh
     scripts/travel-tui.py
     web/app.py
     web/static/index.html

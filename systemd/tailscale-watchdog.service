@@ -1,9 +1,0 @@
-[Unit]
-Description=Tailscale peer health watchdog
-After=tailscaled.service network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/tailscale-watchdog.sh
-StandardOutput=journal
-StandardError=journal

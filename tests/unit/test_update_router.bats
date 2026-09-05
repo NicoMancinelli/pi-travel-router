@@ -51,52 +51,21 @@ _load_update_router() {
     grep -q "updated TUI wrapper" "${TEST_ROOT}/update.log"
 }
 
-@test "apply_update installs TUI fallback in sbin path used by wrapper" {
+@test "apply_update installs command aliases in bin" {
     _load_update_router
 
     src="${TEST_ROOT}/src"
     mkdir -p "${src}/scripts"
-    printf '%s\n' '#!/bin/bash' 'echo new legacy' > "${src}/scripts/travel-tui-legacy.sh"
+    printf '%s\n' '#!/bin/bash' 'echo update' > "${src}/scripts/update-router.sh"
+    printf '%s\n' '#!/bin/bash' 'echo status' > "${src}/scripts/travel-status.sh"
     printf '%s\n' '#!/bin/bash' 'echo install' > "${src}/install.sh"
-
-    printf '%s\n' '#!/bin/bash' 'echo old legacy' > "${UPDATE_ROUTER_SBIN_DIR}/travel-tui-legacy"
-    printf '%s\n' '#!/bin/bash' 'echo old install' > "${UPDATE_ROUTER_SHARE_DIR}/install.sh"
 
     changed=0
     run apply_update "$src"
 
     [ "$status" -eq 0 ]
-    grep -q "new legacy" "${UPDATE_ROUTER_SBIN_DIR}/travel-tui-legacy"
-    [ -x "${UPDATE_ROUTER_SBIN_DIR}/travel-tui-legacy" ]
-    [ -x "${UPDATE_ROUTER_SBIN_DIR}/travel-tui" ]
-    [ ! -e "${UPDATE_ROUTER_BIN_DIR}/travel-tui-legacy.sh" ]
-    grep -q "updated TUI fallback: travel-tui-legacy.sh" "${TEST_ROOT}/update.log"
-}
-
-@test "apply_update installs OTA scripts in sbin and command aliases in bin" {
-    _load_update_router
-
-    src="${TEST_ROOT}/src"
-    mkdir -p "${src}/scripts"
-    printf '%s\n' '#!/bin/bash' 'echo ota update' > "${src}/scripts/ota-update.sh"
-    printf '%s\n' '#!/bin/bash' 'echo ota commit' > "${src}/scripts/ota-commit.sh"
-    printf '%s\n' '#!/bin/bash' 'echo ota rollback' > "${src}/scripts/ota-rollback.sh"
-    printf '%s\n' '#!/bin/bash' 'echo install' > "${src}/install.sh"
-
-    printf '%s\n' '#!/bin/bash' 'echo old update' > "${UPDATE_ROUTER_SBIN_DIR}/ota-update"
-    printf '%s\n' '#!/bin/bash' 'echo old install' > "${UPDATE_ROUTER_SHARE_DIR}/install.sh"
-
-    changed=0
-    run apply_update "$src"
-
-    [ "$status" -eq 0 ]
-    grep -q "ota update" "${UPDATE_ROUTER_SBIN_DIR}/ota-update"
-    grep -q "ota commit" "${UPDATE_ROUTER_SBIN_DIR}/ota-commit"
-    grep -q "ota rollback" "${UPDATE_ROUTER_SBIN_DIR}/ota-rollback"
-    [ -x "${UPDATE_ROUTER_SBIN_DIR}/ota-update" ]
     [ "$(readlink "${UPDATE_ROUTER_BIN_DIR}/update-router")" = "update-router.sh" ]
     [ "$(readlink "${UPDATE_ROUTER_BIN_DIR}/travel-status")" = "travel-status.sh" ]
-    grep -q "updated OTA script: ota-update.sh" "${TEST_ROOT}/update.log"
 }
 
 @test "apply_update installs allowlisted sbin scripts during OTA" {
@@ -158,7 +127,7 @@ _load_update_router() {
 
     src="${TEST_ROOT}/src"
     mkdir -p "${src}/scripts"
-    printf '%s\n' '#!/bin/bash' 'echo new wg watchdog' > "${src}/scripts/wireguard-watchdog.sh"
+    printf '%s\n' '#!/bin/bash' 'echo new ts exit node' > "${src}/scripts/tailscale-exit-node.sh"
     printf '%s\n' '#!/bin/bash' 'echo new wg split tunnel' > "${src}/scripts/apply-wg-split-tunnel.sh"
     printf '%s\n' '#!/bin/bash' 'echo install' > "${src}/install.sh"
 
@@ -166,9 +135,9 @@ _load_update_router() {
     run apply_update "$src"
 
     [ "$status" -eq 0 ]
-    grep -q "new wg watchdog" "${UPDATE_ROUTER_BIN_DIR}/wireguard-watchdog.sh"
+    grep -q "new ts exit node" "${UPDATE_ROUTER_BIN_DIR}/tailscale-exit-node.sh"
     grep -q "new wg split tunnel" "${UPDATE_ROUTER_BIN_DIR}/apply-wg-split-tunnel.sh"
-    grep -q "updated script: wireguard-watchdog.sh" "${TEST_ROOT}/update.log"
+    grep -q "updated script: tailscale-exit-node.sh" "${TEST_ROOT}/update.log"
     grep -q "updated script: apply-wg-split-tunnel.sh" "${TEST_ROOT}/update.log"
 }
 
@@ -179,21 +148,15 @@ _load_update_router() {
 
     src="${TEST_ROOT}/src"
     mkdir -p "${src}/scripts"
-    printf '%s\n' '#!/bin/bash' 'echo new key rotate' > "${src}/scripts/wg-key-rotate.sh"
-    printf '%s\n' '#!/bin/bash' 'echo new peer expire' > "${src}/scripts/wg-peer-expire.sh"
-    printf '%s\n' '#!/bin/bash' 'echo new aide' > "${src}/scripts/aide-check.sh"
+    printf '%s\n' '#!/bin/bash' 'echo new config backup' > "${src}/scripts/config-backup.sh"
     printf '%s\n' '#!/bin/bash' 'echo new log rotate' > "${src}/scripts/log-rotate.sh"
-    printf '%s\n' '#!/bin/bash' 'echo new modem watchdog' > "${src}/scripts/modem-watchdog.sh"
 
     changed=0
     run apply_update "$src"
 
     [ "$status" -eq 0 ]
-    grep -q "new key rotate" "${UPDATE_ROUTER_SBIN_DIR}/wg-key-rotate.sh"
-    grep -q "new peer expire" "${UPDATE_ROUTER_SBIN_DIR}/wg-peer-expire.sh"
-    grep -q "new aide" "${UPDATE_ROUTER_SBIN_DIR}/aide-check.sh"
+    grep -q "new config backup" "${UPDATE_ROUTER_SBIN_DIR}/config-backup.sh"
     grep -q "new log rotate" "${UPDATE_ROUTER_BIN_DIR}/log-rotate.sh"
-    grep -q "new modem watchdog" "${UPDATE_ROUTER_BIN_DIR}/modem-watchdog.sh"
 }
 
 @test "apply_update delivers shared libs to the travel-router lib dir" {

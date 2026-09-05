@@ -1,9 +1,0 @@
-[Unit]
-Description=WireGuard peer expiry — remove peers past their # expires: date
-After=network.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/wg-peer-expire.sh
-StandardOutput=journal
-StandardError=journal

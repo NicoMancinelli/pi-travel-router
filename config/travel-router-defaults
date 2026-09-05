@@ -15,38 +15,23 @@ NTFY_TOPIC=""
 # Pair first with bluetoothctl, then set the phone MAC here.
 IPHONE_BT_MAC=""
 
-# Prometheus push gateway endpoint for vnStat metrics.
-PUSHGW_URL=""
-
 # Tailscale restore arguments used after captive portal login.
 TAILSCALE_UP_ARGS="--advertise-routes=10.3.141.0/24 --accept-dns=false"
 
 # WAN probe targets tried in order by wan-watchdog.sh.
 WAN_PING_TARGETS="1.1.1.1 8.8.8.8"
 
-# Optional features. Keep disabled until tested end-to-end on the target Pi.
+# Optional features.
 ENABLE_OPEN_WIFI_FALLBACK="0"
-ENABLE_HTTP_UA_REWRITE="0"
-ENABLE_TOR_TRANSPARENT="0"
-ENABLE_BLOCKLISTS="0"
 ENABLE_DOT="0"
 ENABLE_VPN_KILLSWITCH="0"
 ENABLE_AUTO_UPDATES="0"
 ENABLE_AVAHI_REFLECTOR="0"
-ENABLE_ADGUARD="0"
-ENABLE_AP_SCHEDULE="0"
-AP_DISABLE_TIME="02:00"
-AP_ENABLE_TIME="07:00"
-
-ENABLE_CLIENT_QOS="0"
-AP_CLIENT_BANDWIDTH="unlimited"
 
 ENABLE_PER_DEVICE_VPN="0"
 # Space-separated MAC addresses to route through Tailscale (all others go direct)
 # Example: VPN_DEVICE_MACS="aa:bb:cc:dd:ee:ff 11:22:33:44:55:66"
 VPN_DEVICE_MACS=""
-
-ENABLE_CAKE_AUTOTUNE="0"
 
 # SSH public key for admin access. If set at install time, password auth is
 # disabled and only this key is accepted. Set during install or add manually:
@@ -59,15 +44,6 @@ SSH_ADMIN_KEY=""
 # Run scripts/setup-headscale.sh on your VPS to get this value.
 HEADSCALE_URL=""
 
-ENABLE_BANDWIDTH_DASHBOARD="0"
-ENABLE_PROMETHEUS_EXPORTER="0"
-
-# Domain-based split tunnel: route specific domains through Tailscale exit node.
-# Enable with ENABLE_SPLIT_TUNNEL=1, then list domains separated by spaces.
-# Example: SPLIT_TUNNEL_DOMAINS="mybank.com work.example.com linkedin.com"
-ENABLE_SPLIT_TUNNEL="0"
-SPLIT_TUNNEL_DOMAINS=""
-
 # CIDR-based split tunnel (#6): route specific destination subnets through the
 # VPN uplink while everything else goes direct. Egress is Tailscale by default;
 # set WG_SPLIT_TUNNEL_DEV=wg0 to use a WireGuard upstream peer instead.
@@ -77,37 +53,19 @@ ENABLE_WG_SPLIT_TUNNEL="0"
 WG_SPLIT_TUNNEL_CIDRS=""
 WG_SPLIT_TUNNEL_DEV="tailscale0"
 
-# Safety cap for update-blocklists.sh on memory-constrained Pi Zero hardware.
-MAX_BLOCKLIST_ENTRIES="20000"
-
-# SSH two-factor authentication (TOTP). After enabling:
-#   run: sudo -u <user> setup-2fa.sh
-ENABLE_2FA="0"
-
 # WAN metric auto-management: re-enforce uplink route metrics on each ifup.
 ENABLE_WAN_METRICS="1"
-
-# PiSugar 3 / PiSugar 2 UPS monitoring.
-# Enable to check battery every 5 min and shutdown safely when critical.
-# Requires a PiSugar HAT connected to GPIO/I2C.
-ENABLE_UPS_MONITOR="0"
-UPS_SHUTDOWN_THRESHOLD="10"
 
 # USB drive file sharing (travel NAS, #30).
 # Shares /media/travel-data over SMB to AP clients (guest access — the AP
 # passphrase is the gate; never exposed on uplink interfaces).
-# Mount a drive first (TUI Storage screen or mount-storage.sh), then enable.
+# Mount a drive first (mount-storage.sh), then enable.
 # Clients connect to smb://10.3.141.1/<USB_SHARE_NAME>.
 ENABLE_USB_SHARE="0"
 USB_SHARE_NAME="TravelData"
 USB_SHARE_RO="0"
 
-# Tor AP passphrase (set during install; stored empty here to avoid plaintext).
-TOR_AP_PASS=""
-
 # AP subnet and gateway IP.
-# I-M5: these are used by dnsmasq, hostapd comments, firewall, and the summary.
-# Change both together if you need a different RFC-1918 range.
 AP_SUBNET="10.3.141.0/24"
 AP_GATEWAY="10.3.141.1"
 
@@ -117,29 +75,9 @@ WG_LISTEN_PORT=51820
 WG_NETWORK=10.9.0.0/24
 WG_INTERFACE=wg0
 
-# Monthly WireGuard server key rotation (#265). OFF by default: rotating the
-# server identity key invalidates every peer config until clients are
-# re-enrolled with the new public key (announced via ntfy when it fires).
-ENABLE_WG_KEY_ROTATION="0"
-
-ENABLE_LTE_MODEM=0
-LTE_APN=internet
-LTE_NM_PROFILE=lte-modem
-
-# Guest WiFi network (second SSID on uap1, isolated from primary AP clients)
-# Set GUEST_PASS to a passphrase (8-63 chars) or leave empty for open network.
-# MUTUAL EXCLUSION: ENABLE_GUEST_NETWORK and ENABLE_TOR_TRANSPARENT both use uap1.
-ENABLE_GUEST_NETWORK=0
-GUEST_SSID=TravelRouter-Guest
-GUEST_PASS=
-GUEST_SUBNET="192.168.5.0/24"
-GUEST_GATEWAY="192.168.5.1"
-
-# DNS-over-HTTPS resolver. Presets: cloudflare, quad9, nextdns, adguard, system.
+# DNS-over-HTTPS resolver. Presets: cloudflare, quad9, nextdns, system.
 # Set to 'system' to use DHCP-provided DNS (DoH disabled).
 DOH_RESOLVER=system
 
 # Local port for stubby DNS-over-TLS daemon (dnsmasq forwards to 127.0.0.1:DOT_PORT).
 DOT_PORT=5300
-# Local port for AdGuard Home DNS (dnsmasq forwards to 127.0.0.1:ADGUARD_DNS_PORT).
-ADGUARD_DNS_PORT=5335

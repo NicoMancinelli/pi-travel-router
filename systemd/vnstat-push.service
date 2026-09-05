@@ -1,9 +1,0 @@
-[Unit]
-Description=Push vnStat metrics to Prometheus push gateway
-After=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/vnstat-push.sh
-StandardOutput=journal
-StandardError=journal
