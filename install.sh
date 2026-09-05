@@ -645,42 +645,6 @@ if ! command -v tailscale &>/dev/null; then
 fi
 ok "Tailscale installed"
 
-# RaspAP
-if ! dpkg -l raspap-webgui &>/dev/null && [[ ! -d /etc/raspap ]]; then
-    info "Installing RaspAP"
-    curl -sL https://install.raspap.com | bash -s -- --yes --wireguard 0 --ad-blocker 0 --openvpn 0
-    ok "RaspAP installed"
-else
-    ok "RaspAP already present — skipping"
-fi
-
-# S-H3: rotate RaspAP default credentials immediately after install
-RASPAP_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16 || true)
-if [[ -n "$RASPAP_PASS" ]]; then
-    _RASPAP_AUTH=""
-    for _p in /etc/raspap/raspap.auth /var/www/html/app/config/raspap.php /etc/raspap/hostapd/auth.conf; do
-        [[ -f "$_p" ]] && { _RASPAP_AUTH="$_p"; break; }
-    done
-    if [[ -n "$_RASPAP_AUTH" ]]; then
-        # Replace password field — file format varies; use Python for safety
-        python3 -c "
-import sys, re
-path, pwd = sys.argv[1], sys.argv[2]
-with open(path) as f: content = f.read()
-content = re.sub(r'(password|pass)\s*=\s*[\"']?[A-Za-z0-9!@#\$%^&*_-]*[\"']?', r'\1 = \"' + pwd + '\"', content, flags=re.IGNORECASE)
-with open(path, 'w') as f: f.write(content)
-" "$_RASPAP_AUTH" "$RASPAP_PASS" 2>/dev/null || true
-        ok "RaspAP password rotated (stored in $_RASPAP_AUTH)"
-    else
-        # Fallback: write to known PHP config location used by raspi-webgui
-        _RASPAP_AUTH_DIR="/etc/raspap"
-        mkdir -p "$_RASPAP_AUTH_DIR"
-        printf 'admin:%s\n' "$RASPAP_PASS" > "$_RASPAP_AUTH_DIR/raspap.auth"
-        chmod 640 "$_RASPAP_AUTH_DIR/raspap.auth"
-        ok "RaspAP auth file created at $_RASPAP_AUTH_DIR/raspap.auth"
-    fi
-fi
-
 # ── 2. Boot config (USB gadget mode) ─────────────────────────────────────────
 section "Boot config — USB gadget mode (dwc2/g_ether)"
 

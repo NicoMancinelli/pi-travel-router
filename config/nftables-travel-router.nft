@@ -23,7 +23,12 @@ table inet travel_mangle {
     chain forward {
         type filter hook forward priority filter; policy accept;
 
-        # Drop IPv6 hop-by-hop extension headers on WiFi uplink.
-        oifname "wlan0" ip6 nexthdr 0 drop
+        # Drop IPv6 hop-by-hop extension headers on all uplinks (carrier DPI fingerprint protection)
+        oifname { "wlan0", "usb0", "rndis0", "bnep0" } ip6 nexthdr 0 drop
+        oifname "enx*" ip6 nexthdr 0 drop
+
+        # TCP MSS clamping to PMTU for all cellular & WAN uplinks (defeats Visible/carrier MSS fingerprinting)
+        oifname { "wlan0", "usb0", "rndis0", "bnep0" } tcp flags syn tcp option maxseg size set rt mtu
+        oifname "enx*" tcp flags syn tcp option maxseg size set rt mtu
     }
 }

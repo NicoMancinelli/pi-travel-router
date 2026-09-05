@@ -57,44 +57,6 @@ run_packages() {
         run_or_dry curl -fsSL https://tailscale.com/install.sh | sh
     fi
     ok "Tailscale installed"
-
-    # RaspAP
-    if ! dpkg -l raspap-webgui &>/dev/null && [[ ! -d /etc/raspap ]]; then
-        info "Installing RaspAP"
-        run_or_dry curl -sL https://install.raspap.com | bash -s -- --yes --wireguard 0 --ad-blocker 0 --openvpn 0
-        ok "RaspAP installed"
-    else
-        ok "RaspAP already present — skipping"
-    fi
-
-    # S-H3: rotate RaspAP default credentials immediately after install
-    RASPAP_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16 || true)
-    if [[ -n "$RASPAP_PASS" ]]; then
-        _RASPAP_AUTH=""
-        for _p in /etc/raspap/raspap.auth /var/www/html/app/config/raspap.php /etc/raspap/hostapd/auth.conf; do
-            [[ -f "$_p" ]] && { _RASPAP_AUTH="$_p"; break; }
-        done
-        if [[ -n "$_RASPAP_AUTH" ]]; then
-            python3 -c "
-import sys, re
-path, pwd = sys.argv[1], sys.argv[2]
-with open(path) as f: content = f.read()
-content = re.sub(r'(password|pass)\s*=\s*[\"']?[A-Za-z0-9!@#\$%^&*_-]*[\"']?', r'\1 = \"' + pwd + '\"', content, flags=re.IGNORECASE)
-with open(path, 'w') as f: f.write(content)
-" "$_RASPAP_AUTH" "$RASPAP_PASS" 2>/dev/null || true
-            ok "RaspAP password rotated (stored in $_RASPAP_AUTH)"
-        else
-            _RASPAP_AUTH_DIR="/etc/raspap"
-            mkdir -p "$_RASPAP_AUTH_DIR"
-            printf 'admin:%s\n' "$RASPAP_PASS" > "$_RASPAP_AUTH_DIR/raspap.auth"
-            chmod 640 "$_RASPAP_AUTH_DIR/raspap.auth"
-            ok "RaspAP auth file created at $_RASPAP_AUTH_DIR/raspap.auth"
-        fi
-        # Export for finalize summary
-        RASPAP_PASS_DISPLAY="$RASPAP_PASS"
-        export RASPAP_PASS_DISPLAY
-    fi
-
     # Extra monitoring tools
     run_or_dry env DEBIAN_FRONTEND=noninteractive apt-get install -y bmon iftop 2>/dev/null || true
     ok "Real-time traffic tools installed (bmon, iftop)"

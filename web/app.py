@@ -1625,20 +1625,18 @@ def api_guest_network_post():
 @require_auth
 def api_wifi_qr():
     """Return WiFi QR code as a PNG data-URL and the raw WiFi string."""
-    # Read SSID and WPA passphrase from /etc/raspap/hostapd.ini or hostapd.conf
+    # Read SSID and WPA passphrase from /etc/hostapd/hostapd.conf
     ssid = "TravelRouter"
     password = ""
     try:
-        # Try RaspAP config first
-        conf_path = Path("/etc/raspap/hostapd.ini")
-        if not conf_path.exists():
-            conf_path = Path("/etc/hostapd/hostapd.conf")
-        text = conf_path.read_text()
-        for line in text.splitlines():
-            if line.startswith("ssid="):
-                ssid = line.split("=", 1)[1].strip()
-            elif line.startswith("wpa_passphrase="):
-                password = line.split("=", 1)[1].strip()
+        conf_path = Path("/etc/hostapd/hostapd.conf")
+        if conf_path.exists():
+            text = conf_path.read_text()
+            for line in text.splitlines():
+                if line.startswith("ssid="):
+                    ssid = line.split("=", 1)[1].strip()
+                elif line.startswith("wpa_passphrase="):
+                    password = line.split("=", 1)[1].strip()
     except OSError:
         pass
     # Build WiFi QR string: WIFI:T:WPA;S:<ssid>;P:<pass>;;
@@ -2519,22 +2517,21 @@ def api_wifi_ap_config_get():
     """Return current AP configuration from hostapd."""
     cfg = {"ssid": "", "channel": "", "hw_mode": "", "country_code": "", "tx_power": "", "interface": "uap0"}
     try:
-        conf_path = Path("/etc/raspap/hostapd.ini")
-        if not conf_path.exists():
-            conf_path = Path("/etc/hostapd/hostapd.conf")
-        text = conf_path.read_text()
-        for line in text.splitlines():
-            line = line.strip()
-            if line.startswith("ssid="):
-                cfg["ssid"] = line.split("=", 1)[1].strip()
-            elif line.startswith("channel="):
-                cfg["channel"] = line.split("=", 1)[1].strip()
-            elif line.startswith("hw_mode="):
-                cfg["hw_mode"] = line.split("=", 1)[1].strip()
-            elif line.startswith("country_code="):
-                cfg["country_code"] = line.split("=", 1)[1].strip()
-            elif line.startswith("interface="):
-                cfg["interface"] = line.split("=", 1)[1].strip()
+        conf_path = Path("/etc/hostapd/hostapd.conf")
+        if conf_path.exists():
+            text = conf_path.read_text()
+            for line in text.splitlines():
+                line = line.strip()
+                if line.startswith("ssid="):
+                    cfg["ssid"] = line.split("=", 1)[1].strip()
+                elif line.startswith("channel="):
+                    cfg["channel"] = line.split("=", 1)[1].strip()
+                elif line.startswith("hw_mode="):
+                    cfg["hw_mode"] = line.split("=", 1)[1].strip()
+                elif line.startswith("country_code="):
+                    cfg["country_code"] = line.split("=", 1)[1].strip()
+                elif line.startswith("interface="):
+                    cfg["interface"] = line.split("=", 1)[1].strip()
     except OSError:
         pass
     # Get TX power from iw
@@ -2560,9 +2557,9 @@ def api_wifi_ap_config_post():
     if channel not in valid_channels:
         return jsonify({"error": f"invalid channel: {channel}"}), 400
     try:
-        conf_path = Path("/etc/raspap/hostapd.ini")
+        conf_path = Path("/etc/hostapd/hostapd.conf")
         if not conf_path.exists():
-            conf_path = Path("/etc/hostapd/hostapd.conf")
+            return jsonify({"error": "hostapd.conf not found"}), 404
         text = conf_path.read_text()
         new_lines = []
         found = False

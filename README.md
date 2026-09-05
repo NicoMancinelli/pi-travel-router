@@ -266,8 +266,6 @@ The TUI gives you:
 
 All changes write directly to `/etc/default/travel-router` and take effect immediately. No need to edit config files manually.
 
-**RaspAP** web UI is available at `http://10.3.141.1` (credentials: `admin` / `secret`). It provides a graphical interface for hostapd/dnsmasq configuration. The `travel-tui` covers most management tasks, but RaspAP can be useful for advanced WiFi tuning. **Change these immediately** — go to RaspAP → System → Authentication. The defaults are publicly known.
-
 ---
 
 ## Updates

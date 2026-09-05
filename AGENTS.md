@@ -65,7 +65,7 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 
 ## What's Deployed and Working
 
-- RaspAP (lighttpd + hostapd + dnsmasq), AP/STA concurrent mode on uap0
+- Native AP/STA concurrent mode on uap0 (hostapd + dnsmasq)
 - iOS USB tethering: udev auto-detect (05ac vendor), start/stop-tether.sh
 - Uplink failover watchdog: 30s timer, tether metric 100 / WiFi metric 600 / BT metric 300
 - WAN watchdog + graduated recovery: 60s timer, reassociate → restart → reboot
@@ -144,5 +144,4 @@ After adding to the TUI, run `python3 -m py_compile scripts/travel-tui.py` to ve
 - brcmfmac may only support **one virtual AP interface** (uap0). Test before building Tor SSID on uap1.
 - The nftables blocklist load previously caused an OOM crash. The current `update-blocklists.sh` caps generated entries; monitor RAM during first enabled run.
 - Tor on Pi Zero 2W is slow (~1-3 Mbps). Keep it disabled unless that tradeoff is acceptable.
-- RaspAP web UI: http://10.3.141.1 (admin / secret) — manages hostapd/dnsmasq via web
 - iptables-nft is the backend on Bookworm — `nft list ruleset` and `iptables -L` both work
