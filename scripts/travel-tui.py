@@ -893,7 +893,7 @@ class PrivacyScreen(Screen):
 
 # ── Services screen ───────────────────────────────────────────────────────────
 SERVICES = [
-    "tailscaled", "hostapd", "dnsmasq", "stubby",
+    "tailscaled", "hostapd", "dnsmasq", "stubby", "nftables",
     "failover-watchdog", "wan-watchdog", "travel-router-web",
 ]
 

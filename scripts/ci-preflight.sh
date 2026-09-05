@@ -110,8 +110,15 @@ fi
 # ── 5. Bats unit tests ───────────────────────────────────────────────────────
 _section "Bats unit tests"
 
+BATS_BIN=""
 if command -v bats &>/dev/null; then
-    _bats_out="$(bats tests/unit/ 2>&1)" || { echo "${_bats_out}" | tail -5; _fail "bats: test failures (see above)"; _bats_out=""; }
+    BATS_BIN="bats"
+elif command -v npx &>/dev/null && npx --yes bats --version &>/dev/null; then
+    BATS_BIN="npx bats"
+fi
+
+if [ -n "${BATS_BIN}" ]; then
+    _bats_out="$(${BATS_BIN} tests/unit/ 2>&1)" || { echo "${_bats_out}" | tail -5; _fail "bats: test failures (see above)"; _bats_out=""; }
     [ -n "${_bats_out}" ] && { echo "${_bats_out}" | tail -5; _ok "bats: all tests passed"; }
 else
     echo "  (bats not installed — skipping; install with: brew install bats-core)"
@@ -136,8 +143,8 @@ fi
 # ── 7. Integration tests (mirrors unit-tests.yml, blocking) ──────────────────
 _section "Integration tests"
 
-if command -v bats &>/dev/null; then
-    if _ibats_out="$(bats tests/integration/ 2>&1)"; then
+if [ -n "${BATS_BIN}" ]; then
+    if _ibats_out="$(${BATS_BIN} tests/integration/ 2>&1)"; then
         echo "${_ibats_out}" | tail -3
         _ok "bats integration: all tests passed"
     else

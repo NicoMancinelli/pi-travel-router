@@ -73,10 +73,10 @@ Tailscale ──[tailscale0]──────────────▶│ <TA
 - ntfy.sh push notifications via notify-router.sh
 - USB Ethernet gadget (g_ether/dwc2): 192.168.7.1/24 — pre-enabled in the image; no post-install reboot needed for USB gadget reachability
 - Open WiFi fallback is available but disabled by default (`ENABLE_OPEN_WIFI_FALLBACK=0`)
-- Tailscale + subnet router (10.3.141.0/24), exit node capable
-- TTL=65 + IPv6 hop-limit=65 + DSCP strip + IPv6 ext-header drop via nftables `inet travel_mangle` table (`/etc/nftables.conf.d/travel-router.nft`) — carrier bypass
-- IPv6 disabled on uplinks (DPI fingerprint protection)
-- TCP BBR + CAKE qdisc (bufferbloat control)
+- TTL=65 + IPv6 hop-limit=65 + DSCP strip + TCP MSS clamping to PMTU + IPv6 ext-header drop via nftables `inet travel_mangle` table (`/etc/nftables.conf.d/travel-router.nft`) + iptables mangle fallback — carrier bypass (Visible Wireless / Verizon MVNO)
+- IPv6 dynamically disabled on all carrier uplinks (USB `enx*`/`rndis0`, Bluetooth `bnep0`) + sysctl defaults (DPI fingerprint & leak protection)
+- Client port 53 DNS interception on `uap0` redirected to local dnsmasq (prevents carrier DPI profiling of desktop operating systems)
+- Native NAT MASQUERADE across all failover uplinks in `travel-router-firewall.sh`
 - CPU performance governor (systemd oneshot)
 - hostapd 802.11n: HT40, WMM, DTIM=1
 - dnsmasq tuning: cache-size=2048, min-cache-ttl=300, dns-forward-max=300

@@ -225,7 +225,7 @@ A condensed view of what you get after the install completes. Full feature list 
 - **WAN watchdog** with graduated recovery: reassociate -> restart dhcpcd -> reboot
 - **Tailscale subnet router** advertising `10.3.141.0/24`; optional Headscale control server
 - **Captive portal** detection, MAC clone helper (`clone-mac.sh`), and per-SSID auto-login hooks
-- **Carrier bypass:** TTL=65, IPv6 hop-limit=65, DSCP strip, IPv6 ext-header drop (nftables `inet travel_mangle`)
+- **Carrier bypass (Visible/Verizon):** TTL=65, IPv6 hop-limit=65, TCP MSS clamping to PMTU, DSCP strip, IPv6 ext-header drop (nftables `inet travel_mangle` + iptables defense-in-depth), DNS port 53 interception, dynamic IPv6 uplink suppression (USB/BT)
 - **Stateful firewall:** `FORWARD DROP` with explicit ACCEPTs, AP client isolation, optional VPN kill switch
 - **DNS:** dnsmasq with rebind protection; optional DNS-over-TLS via stubby
 - **QoS:** TCP BBR congestion control, CAKE queue discipline
@@ -362,7 +362,7 @@ Runs as a subnet router advertising `10.3.141.0/24`. AP clients reach your tailn
 
 **Firewall**
 
-`iptables-nft` for filter/NAT (FORWARD policy `DROP`, ESTABLISHED/RELATED fast path, explicit per-uplink ACCEPTs, AP client isolation, optional `KILL_SWITCH` chain). Native nftables `inet travel_mangle` table handles TTL=65, IPv6 hop-limit=65, DSCP strip, and IPv6 extension-header drop in one ruleset across IPv4 and IPv6.
+`iptables-nft` for filter/NAT (FORWARD policy `DROP`, ESTABLISHED/RELATED fast path, explicit per-uplink ACCEPTs, NAT masquerade across all uplinks, client port 53 DNS interception, AP client isolation, optional `KILL_SWITCH` chain). Native nftables `inet travel_mangle` table handles TTL=65, IPv6 hop-limit=65, DSCP CS0 strip, TCP MSS clamping to PMTU, and IPv6 extension-header drop across IPv4 and IPv6.
 
 ---
 

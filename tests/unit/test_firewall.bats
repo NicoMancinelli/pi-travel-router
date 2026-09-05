@@ -179,3 +179,24 @@ PYEOF
     grep -q -- "--ctstate ESTABLISHED,RELATED -j ACCEPT" "${IPT_LOG}"
     grep -q -- "--ctstate ESTABLISHED,RELATED -j ACCEPT" "${IP6T_LOG}"
 }
+
+# ---------------------------------------------------------------------------
+# Test 9: DNS interception redirects uap0 port 53 UDP/TCP to local dnsmasq
+# ---------------------------------------------------------------------------
+@test "firewall: redirects client port 53 DNS queries to local dnsmasq" {
+    _run_firewall
+
+    grep -q -- "-i uap0 -p udp --dport 53 -j REDIRECT --to-ports 53" "${IPT_LOG}"
+    grep -q -- "-i uap0 -p tcp --dport 53 -j REDIRECT --to-ports 53" "${IPT_LOG}"
+}
+
+# ---------------------------------------------------------------------------
+# Test 10: NAT masquerade rules are added for uplinks
+# ---------------------------------------------------------------------------
+@test "firewall: adds NAT masquerade rules for uplinks" {
+    _run_firewall
+
+    grep -q -- "-t nat -C POSTROUTING -o wlan0 -j MASQUERADE" "${IPT_LOG}"
+    grep -q -- "-t nat -C POSTROUTING -o enx+ -j MASQUERADE" "${IPT_LOG}"
+}
+

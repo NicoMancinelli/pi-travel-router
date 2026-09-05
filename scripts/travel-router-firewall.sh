@@ -110,6 +110,26 @@ ip6t_add filter INPUT -i uap0 -p tcp --dport 22 -j DROP
 ipt_add filter INPUT -i uap0 -p tcp --dport 80 -j DROP
 ip6t_add filter INPUT -i uap0 -p tcp --dport 80 -j DROP
 
+# NAT: Masquerade outgoing traffic on all uplinks
+for _out in wlan0 bnep0 tailscale0 wg0 usb0 rndis0 enx+; do
+    ipt_add nat POSTROUTING -o "$_out" -j MASQUERADE
+done
+
+# DNS interception: redirect client DNS queries on uap0 to local dnsmasq (:53).
+# Prevents carrier DPI (Visible/Verizon) from profiling desktop OS domains (Windows Update, telemetry)
+# when clients configure public DNS (e.g. 8.8.8.8) or bypass DHCP DNS.
+ipt_add nat PREROUTING -i uap0 -p udp --dport 53 -j REDIRECT --to-ports 53
+ipt_add nat PREROUTING -i uap0 -p tcp --dport 53 -j REDIRECT --to-ports 53
+ip6t_add nat PREROUTING -i uap0 -p udp --dport 53 -j REDIRECT --to-ports 53 2>/dev/null || true
+ip6t_add nat PREROUTING -i uap0 -p tcp --dport 53 -j REDIRECT --to-ports 53 2>/dev/null || true
+
+# Carrier bypass defense-in-depth (Visible/Verizon): enforce TTL=65, DSCP 0, and MSS clamping in iptables
+for _out in wlan0 bnep0 usb0 rndis0 enx+; do
+    ipt_add mangle POSTROUTING -o "$_out" -j TTL --ttl-set 65 2>/dev/null || true
+    ipt_add mangle POSTROUTING -o "$_out" -j DSCP --set-dscp 0 2>/dev/null || true
+    ipt_add mangle FORWARD -o "$_out" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null || true
+done
+
 ENABLE_PER_DEVICE_VPN="${ENABLE_PER_DEVICE_VPN:-0}"
 VPN_DEVICE_MACS="${VPN_DEVICE_MACS:-}"
 

@@ -35,6 +35,9 @@ if ! ip link show bnep0 >/dev/null 2>&1; then
     exit 1
 fi
 
+# Crucial for Visible/Verizon bypass: dynamically disable IPv6 on bnep0
+sysctl -w net.ipv6.conf.bnep0.disable_ipv6=1 >/dev/null 2>&1 || true
+
 DHCP_RC=0
 dhclient -v -timeout 30 bnep0 2>&1 | logger -t bt-tether || DHCP_RC=$?
 if [[ "$DHCP_RC" -ne 0 ]]; then
